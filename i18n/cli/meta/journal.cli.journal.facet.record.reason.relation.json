@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet record reason relation.",
+  "context": "Journal command-line text for facet record reason relation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "94cbf63364afdca34beaca56d41c5a9448339bf47c5b15178aeb1b2132b24bc5",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

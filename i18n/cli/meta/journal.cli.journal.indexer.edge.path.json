@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer edge path.",
+  "context": "Journal command-line text for indexer edge path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "95d168fb489d4c93b517f91e59b22d475dd8ff14c489a327b3ce1fafdfa772fd",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

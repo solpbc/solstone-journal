@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer scan calendar invites.",
+  "context": "Journal command-line text for indexer scan calendar invites.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6f40f7652f12c0bb62cdb166a0762c1d47fa7ae564dc0b3b93a3929a1c5a087a",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

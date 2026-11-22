@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation file encoding.",
+  "context": "Journal command-line text for indexer calendar validation file encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c54b0d4cf7af91b3f65212db76eb60d5c1a94d77bf29e646c1b84865711a9551",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

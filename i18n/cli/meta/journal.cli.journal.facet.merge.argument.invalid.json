@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet merge argument invalid.",
+  "context": "Journal command-line text for facet merge argument invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4694905fc6ff33d196d40d0d08041b9a8b18113efafc8049452d31c1691acdd6",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "source_argument",
+      "kind": "accepted-input",
+      "value": "SOURCE"
+    },
+    {
+      "name": "destination_argument",
+      "kind": "accepted-input",
+      "value": "DEST"
+    }
+  ]
+}

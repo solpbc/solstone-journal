@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive source io stat opened inventoried file member.",
+  "context": "Journal command-line text for archive source io stat opened inventoried file member.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d4a6136a3afa0bc4cd68eff6b1d026476aef0b275c7b3154d38be2d3c64e327a",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

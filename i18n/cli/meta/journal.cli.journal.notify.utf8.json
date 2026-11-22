@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for notify utf8.",
+  "context": "Journal command-line text for notify utf8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8fba55cbcd6787f4e539a4df07b3df43320554fbe05af2ea955e210e9096cab0",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

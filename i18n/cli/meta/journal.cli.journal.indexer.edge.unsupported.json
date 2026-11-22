@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer edge unsupported.",
+  "context": "Journal command-line text for indexer edge unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    },
+    {
+      "name": "value_type",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1569af7173023eb7f4aca4c4fcd69d814e7e0c861efeba28c31977c7ddee5e10",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

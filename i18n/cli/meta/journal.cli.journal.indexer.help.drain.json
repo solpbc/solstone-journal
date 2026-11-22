@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for indexer help drain.",
+  "context": "Journal command-line text for indexer help drain.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0fa86cc74d1093503cf8a054e8b4beb33ad10c4bd196810560cf1b731732440e",
+  "max_length": 291,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal indexer drain [--force] [--budget-seconds N] [--json]"
+    },
+    {
+      "name": "force_flag",
+      "kind": "flag",
+      "value": "--force"
+    },
+    {
+      "name": "budget_seconds_flag",
+      "kind": "flag",
+      "value": "--budget-seconds"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

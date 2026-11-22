@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer stream path.",
+  "context": "Journal command-line text for indexer stream path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel_segment",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "63740efad6bb67d1461a111b41b4683527c8acbf68a8bd54ace5c55ba6f016c3",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

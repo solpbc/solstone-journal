@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation imported at must be a time with an offset.",
+  "context": "Journal command-line text for indexer calendar validation imported at must be a time with an offset.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eb2db30a437f9236edd69103303f8037dea7c8bab0a91504709cb71c1dc442ab",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "imported_at_key",
+      "kind": "accepted-input",
+      "value": "imported_at"
+    }
+  ]
+}

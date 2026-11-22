@@ -1,0 +1,42 @@
+{
+  "description": "Journal command-line text for facet doctor twins preview.",
+  "context": "Journal command-line text for facet doctor twins preview.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "destination",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ac4e37f189c4f63e7ce413483abda9d7b21132431211cd117edc7138e7c0c141",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "merge_command",
+      "kind": "command",
+      "value": "solstone journal facet merge"
+    },
+    {
+      "name": "into_flag",
+      "kind": "flag",
+      "value": "--into"
+    },
+    {
+      "name": "dry_run_flag",
+      "kind": "flag",
+      "value": "--dry-run"
+    }
+  ]
+}

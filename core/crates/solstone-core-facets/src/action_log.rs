@@ -147,7 +147,14 @@ fn append_journal_action_log_with_hint_boundary(
         &namespace,
         &diagnostic.join(format!("{day}.jsonl")),
     ) {
-        log::warn!("action log search update could not be queued: {error}");
+        log::warn!(
+            "{}",
+            solstone_core_cli_copy::display_for(
+                solstone_core_cli_copy::manual_log_locale(),
+                "journal.cli.journal.facet.log.action.queue",
+                [("error", &(error))]
+            )
+        );
     }
     check_root()?;
     Ok(())
@@ -244,7 +251,14 @@ fn append_action_log_at_day(
     )?;
     if let Err(error) = solstone_core_indexer_store::todo::enqueue_path(journal_root, &destination)
     {
-        log::warn!("action log search update could not be queued: {error}");
+        log::warn!(
+            "{}",
+            solstone_core_cli_copy::display_for(
+                solstone_core_cli_copy::manual_log_locale(),
+                "journal.cli.journal.facet.log.action.queue",
+                [("error", &(error))]
+            )
+        );
     }
     Ok(())
 }

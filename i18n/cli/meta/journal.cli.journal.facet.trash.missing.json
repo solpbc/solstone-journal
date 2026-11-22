@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet trash missing.",
+  "context": "Journal command-line text for facet trash missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "item",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b04d0581b7bafd61dc72c01c6ee91503850416645a4e430657850a378f16317b",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

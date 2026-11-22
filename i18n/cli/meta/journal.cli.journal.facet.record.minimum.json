@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet record minimum.",
+  "context": "Journal command-line text for facet record minimum.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3c13481a8e1d1c20d906aa7143c7441334a82d2faf25bcfe178e8ba339fdc657",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

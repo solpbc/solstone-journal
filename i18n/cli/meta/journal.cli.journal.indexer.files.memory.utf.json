@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for indexer files memory utf.",
+  "context": "Journal command-line text for indexer files memory utf.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "84c840092e40e50b8b33dd664276c98b8546bb027fa9a6a69ef353e4d86570dc",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "utf",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

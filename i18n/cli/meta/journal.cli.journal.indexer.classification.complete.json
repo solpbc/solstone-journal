@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer classification complete.",
+  "context": "Journal command-line text for indexer classification complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "processed",
+      "type": "string"
+    },
+    {
+      "name": "unclassified",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "80d8a10a82c39498d0009e4f9acf6cb5943a713b32c592e0ef8467af795a815b",
+  "max_length": 116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

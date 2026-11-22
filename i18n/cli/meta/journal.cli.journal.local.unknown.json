@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for local unknown.",
+  "context": "Journal command-line text for local unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "df37e463555cc55846601be1127c1efc97d68f629d6ca0677528e10286e02eb8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

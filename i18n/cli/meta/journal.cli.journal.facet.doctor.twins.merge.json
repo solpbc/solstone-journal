@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet doctor twins merge.",
+  "context": "Journal command-line text for facet doctor twins merge.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d69307239a9cca4cd94986914838b5d9ab331f14ea2bdaf7067bdc37b196274",
+  "max_length": 199,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "adopt_flag",
+      "kind": "flag",
+      "value": "--adopt"
+    },
+    {
+      "name": "merge_flag",
+      "kind": "flag",
+      "value": "--merge"
+    }
+  ]
+}

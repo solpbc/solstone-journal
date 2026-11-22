@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor failed heading.",
+  "context": "Journal command-line text for facet doctor failed heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8213a4a88dcaa2e67677894b787e3c708ad7af8d2a51735d185c7f301c946151",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

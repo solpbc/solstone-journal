@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for archive import legacy.",
+  "context": "Journal command-line text for archive import legacy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ff35db02dd937ab8ef368aa867cbc8fb8b0651e5579c97fb9a283288d06c0b1c",
+  "max_length": 387,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_tar_gz",
+      "kind": "accepted-input",
+      "value": ".tar.gz"
+    },
+    {
+      "name": "token_tgz",
+      "kind": "accepted-input",
+      "value": ".tgz"
+    },
+    {
+      "name": "token_zip",
+      "kind": "accepted-input",
+      "value": ".zip"
+    },
+    {
+      "name": "token_2_x",
+      "kind": "accepted-input",
+      "value": "2.x"
+    }
+  ]
+}

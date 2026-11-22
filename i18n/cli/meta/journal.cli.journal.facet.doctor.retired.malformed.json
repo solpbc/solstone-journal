@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for facet doctor retired malformed.",
+  "context": "Journal command-line text for facet doctor retired malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9453736b9e0b1c6938a1563944668e4392eb86c15c96ca60fe87d5a6c01ced6b",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "retired_path",
+      "kind": "accepted-input",
+      "value": "facets/retired.json"
+    },
+    {
+      "name": "fix_flag",
+      "kind": "flag",
+      "value": "--fix"
+    }
+  ]
+}

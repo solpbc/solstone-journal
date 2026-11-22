@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet merge trash failed.",
+  "context": "Journal command-line text for facet merge trash failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ccfad657969297e45bc72c7e4c679a9b3996386dfb159ccfaa2994b39165d78d",
+  "max_length": 178,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "repair_command",
+      "kind": "command",
+      "value": "solstone journal facet doctor --fix"
+    }
+  ]
+}

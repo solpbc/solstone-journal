@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for indexer stream json.",
+  "context": "Journal command-line text for indexer stream json.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "050b44273f8c075a82edd2c48ec74696a6106542eff5dead686018b3ef4f23f4",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

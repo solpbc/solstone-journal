@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet merge failed.",
+  "context": "Journal command-line text for facet merge failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "37e13b581d622b46a73c62803a23715d0e363f172eb6728aa7ed603eb54682f1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

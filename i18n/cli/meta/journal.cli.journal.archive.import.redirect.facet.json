@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive import redirect facet.",
+  "context": "Journal command-line text for archive import redirect facet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "39d0951b5c0af06b58914ddf626d74506ac8199053552c019ed338efd06f1061",
+  "max_length": 181,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

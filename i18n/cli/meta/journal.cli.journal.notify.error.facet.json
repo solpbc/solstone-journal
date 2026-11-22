@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for notify error facet.",
+  "context": "Journal command-line text for notify error facet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "option",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "db22bab766d882ba163df04fa3c6e8746add3cb4701bb89e6fd3b815c5225308",
+  "max_length": 176,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "example",
+      "kind": "accepted-input",
+      "value": "/app/entities?facet=work"
+    },
+    {
+      "name": "invocation",
+      "kind": "command",
+      "value": "solstone journal notify"
+    },
+    {
+      "name": "action_flag",
+      "kind": "flag",
+      "value": "--action"
+    }
+  ]
+}

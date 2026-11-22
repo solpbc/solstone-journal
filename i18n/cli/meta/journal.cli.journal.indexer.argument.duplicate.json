@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer argument duplicate.",
+  "context": "Journal command-line text for indexer argument duplicate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e719973d74d613b2d59a31c158c3579c2db4c78620039447ab3fcf9d51931192",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

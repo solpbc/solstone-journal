@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive import encrypted validation.",
+  "context": "Journal command-line text for archive import encrypted validation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entry",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0b3a84f78decb5a839d409fb2f60c2ec3e84a52b5dd0a2ee1911cf03d5eed1d6",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

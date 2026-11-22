@@ -14,31 +14,30 @@ pub enum NativeExecutableError {
     NonExecutable { path: PathBuf },
 }
 
-/// On a mac the command line ships inside the journal app, so reinstalling the app
-/// restores it.
-#[cfg(target_os = "macos")]
-const REINSTALL: &str = "Reinstall the journal app.";
-#[cfg(not(target_os = "macos"))]
-const REINSTALL: &str = "Reinstall solstone-journal.";
+impl NativeExecutableError {
+    pub(crate) fn render(&self, locale: &str) -> String {
+        match self {
+            Self::CurrentExe(error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.helper.inspect",
+                [("error", &error)],
+            ),
+            Self::Missing { path } | Self::NonExecutable { path } => {
+                let id = match (self, cfg!(target_os = "macos")) {
+                    (Self::Missing { .. }, true) => "journal.cli.journal.helper.missing.mac",
+                    (Self::Missing { .. }, false) => "journal.cli.journal.helper.missing.other",
+                    (_, true) => "journal.cli.journal.helper.mode.mac",
+                    (_, false) => "journal.cli.journal.helper.mode.other",
+                };
+                solstone_core_cli_copy::display_for(locale, id, [("path", &path.display())])
+            }
+        }
+    }
+}
 
 impl std::fmt::Display for NativeExecutableError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::CurrentExe(error) => write!(
-                formatter,
-                "native-helper-current-exe: could not inspect the native journal executable: {error}"
-            ),
-            Self::Missing { path } => write!(
-                formatter,
-                "native-helper-missing: {}. {REINSTALL}",
-                path.display()
-            ),
-            Self::NonExecutable { path } => write!(
-                formatter,
-                "native-helper-not-executable: {}. {REINSTALL}",
-                path.display()
-            ),
-        }
+        formatter.write_str(&self.render(solstone_core_cli_copy::ENGLISH))
     }
 }
 
@@ -142,6 +141,17 @@ pub(crate) fn installed_task_request(
             acknowledgement_timeout: std::time::Duration::from_secs(30),
         },
     ))
+}
+
+pub(crate) fn spawn_failure(error: &std::io::Error, locale: &str) -> String {
+    #[cfg(windows)]
+    if let Some(cause) = error.get_ref().and_then(|cause| {
+        cause.downcast_ref::<solstone_core_system::process::BoundedHelperFailure>()
+    }) {
+        return solstone_core_cli_copy::MessageDetail::from(cause).render(locale);
+    }
+    let _ = locale;
+    error.to_string()
 }
 
 pub(crate) fn exec_process(

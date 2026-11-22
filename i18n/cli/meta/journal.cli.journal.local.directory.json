@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for local directory.",
+  "context": "Journal command-line text for local directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a5b6cbe4fed56eb969eadd96ed1a005db4efb4c8aec2c515fb31f19fc6724274",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

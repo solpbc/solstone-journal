@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for notify error unknown.",
+  "context": "Journal command-line text for notify error unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "token",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cc31e0b0487ce3c0011686d7981ec9c9707e7c7afb4165e7dd0153f60e71ba2b",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "invocation",
+      "kind": "command",
+      "value": "solstone journal notify"
+    }
+  ]
+}

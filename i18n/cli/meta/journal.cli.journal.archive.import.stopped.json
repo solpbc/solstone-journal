@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive import stopped.",
+  "context": "Journal command-line text for archive import stopped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e27c42c3cbb14749ed0e850f6821bb556251c7538b7410f805712170be201ec",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

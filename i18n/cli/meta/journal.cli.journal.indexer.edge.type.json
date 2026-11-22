@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer edge type.",
+  "context": "Journal command-line text for indexer edge type.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "value_type",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fc8a580b3b9584edaf03e83a1fd067b97890d2f740606caf17f8cf2604208863",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

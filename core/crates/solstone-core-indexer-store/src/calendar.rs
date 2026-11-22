@@ -123,7 +123,13 @@ pub(crate) fn index_calendar_file(
     day: &str,
     stream: Option<&str>,
     bucket: &str,
-) -> Result<(BTreeSet<Identity>, Vec<String>), StoreError> {
+) -> Result<
+    (
+        BTreeSet<Identity>,
+        Vec<solstone_core_cli_copy::MessageDetail>,
+    ),
+    StoreError,
+> {
     let mut identities = BTreeSet::new();
     if stream == Some(CALENDAR_IMPORT_STREAM) {
         return index_imported_calendar_file(conn, rel, text);
@@ -133,8 +139,9 @@ pub(crate) fn index_calendar_file(
     else {
         return Ok((
             identities,
-            vec![format!(
-                "calendar notes are read only from calendar streams and calendar imports: {rel}"
+            vec![solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.source",
+                [("rel", &(rel))],
             )],
         ));
     };
@@ -317,7 +324,13 @@ fn index_imported_calendar_file(
     conn: &Connection,
     rel: &str,
     text: &str,
-) -> Result<(BTreeSet<Identity>, Vec<String>), StoreError> {
+) -> Result<
+    (
+        BTreeSet<Identity>,
+        Vec<solstone_core_cli_copy::MessageDetail>,
+    ),
+    StoreError,
+> {
     let parts = rel
         .strip_prefix("chronicle/")
         .unwrap_or(rel)
@@ -326,7 +339,10 @@ fn index_imported_calendar_file(
     let [day, _, segment, file_name] = parts.as_slice() else {
         return Ok((
             BTreeSet::new(),
-            vec![format!("calendar notes skipped: {rel} is not in a segment")],
+            vec![solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.segment",
+                [("rel", &(rel))],
+            )],
         ));
     };
     let notes = match validate_import_calendar_file(file_name, text.as_bytes(), day, segment) {
@@ -334,7 +350,11 @@ fn index_imported_calendar_file(
         Err(error) => {
             return Ok((
                 BTreeSet::new(),
-                vec![format!("calendar notes in {rel} skipped: {error}")],
+                vec![error.into_detail().context_slot(
+                    "journal.cli.journal.indexer.calendar.import",
+                    "error",
+                    [("rel", &rel)],
+                )],
             ));
         }
     };
@@ -513,7 +533,7 @@ pub(crate) fn owner_addresses(journal: &Path) -> Result<OwnerAddresses, StoreErr
         .map_err(|error| {
             StoreError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                error.to_string(),
+                error.diagnostic(),
             ))
         })
 }
@@ -641,7 +661,7 @@ pub(crate) fn reindex_calendar_if_owner_changed(
 /// What a relist leaves for its caller.
 #[derive(Debug, Default)]
 pub(crate) struct Relisted {
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Vec<solstone_core_cli_copy::MessageDetail>,
     /// Files whose latest note could not be listed yet. The caller marks them
     /// for the next scan after its own `files` writes, so nothing overwrites
     /// the mark.
@@ -686,8 +706,9 @@ pub(crate) fn relist(
     let identities = &identities;
     let mut event_owners: BTreeMap<String, OwnerAddresses> = BTreeMap::new();
     let mut relisted = Relisted::default();
-    let mut zone: Option<Result<TimeZone, String>> = None;
-    let mut owner_read: Option<Result<OwnerAddresses, String>> = None;
+    let mut zone: Option<Result<TimeZone, solstone_core_cli_copy::MessageDetail>> = None;
+    let mut owner_read: Option<Result<OwnerAddresses, solstone_core_cli_copy::MessageDetail>> =
+        None;
     let mut event_covers: BTreeMap<String, EventImports> = BTreeMap::new();
     for identity in identities {
         let (event, occurrence) = identity;
@@ -718,13 +739,16 @@ pub(crate) fn relist(
         // the rows stand and the file waits for the next scan, as for the zone.
         let (owner, owner_known) = match (
             &winner,
-            &*owner_read
-                .get_or_insert_with(|| owner_addresses(journal).map_err(|error| error.to_string())),
+            &*owner_read.get_or_insert_with(|| {
+                owner_addresses(journal).map_err(|error| error.diagnostic())
+            }),
         ) {
             (_, Ok(owner)) => (owner, true),
             (Some((path, ..)), Err(error)) => {
-                relisted.warnings.push(format!(
-                    "calendar event in {path} is listed once the settings file can be read: {error}"
+                relisted.warnings.push(error.clone().context_slot(
+                    "journal.cli.journal.indexer.calendar.settings",
+                    "error",
+                    [("path", &path)],
                 ));
                 relisted.reindex.insert(path.clone());
                 continue;
@@ -748,22 +772,26 @@ pub(crate) fn relist(
             owner.clone()
         };
         if let Some((path, line, record, stream)) = winner {
-            match parse_calendar_note(&record) {
-                Err(reason) => relisted
-                    .warnings
-                    .push(format!("calendar note in {path} not listed: {reason}")),
+            match solstone_core_format::calendar::parse_calendar_note_detail(&record) {
+                Err(reason) => relisted.warnings.push(reason.context_slot(
+                    "journal.cli.journal.indexer.calendar.unlisted",
+                    "reason",
+                    [("path", &path)],
+                )),
                 Ok(note) => {
                     if let Some(schedule) = &note.schedule {
                         let listing = if matches!(schedule.start, When::Date(_)) {
                             Some(listed_days(schedule, &TimeZone::UTC))
                         } else {
                             match zone.get_or_insert_with(|| {
-                                listing_zone(journal).map_err(|error| error.to_string())
+                                listing_zone(journal).map_err(|error| error.diagnostic())
                             }) {
                                 Ok(zone) => Some(listed_days(schedule, zone)),
                                 Err(error) => {
-                                    relisted.warnings.push(format!(
-                                        "calendar event in {path} is listed once the settings file can be read: {error}"
+                                    relisted.warnings.push(error.clone().context_slot(
+                                        "journal.cli.journal.indexer.calendar.settings",
+                                        "error",
+                                        [("path", &path)],
                                     ));
                                     relisted.reindex.insert(path.clone());
                                     None

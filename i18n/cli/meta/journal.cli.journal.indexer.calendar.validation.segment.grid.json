@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer calendar validation segment grid.",
+  "context": "Journal command-line text for indexer calendar validation segment grid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b56a17f5dd6723c0e23850dfbd615546f4f7874811eb96ebc20672586fba7296",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

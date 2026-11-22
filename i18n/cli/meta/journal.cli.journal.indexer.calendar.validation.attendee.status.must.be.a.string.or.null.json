@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer calendar validation attendee status must be a string or null.",
+  "context": "Journal command-line text for indexer calendar validation attendee status must be a string or null.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "02ce1163f46e30e2e89a40d2048edae0f8203c74cc475453019d92fa7501af29",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "status_field",
+      "kind": "accepted-input",
+      "value": "status"
+    },
+    {
+      "name": "null_key",
+      "kind": "accepted-input",
+      "value": "null"
+    }
+  ]
+}

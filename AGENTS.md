@@ -498,7 +498,7 @@ It also updates the messages the Unix launcher prints when it cannot start the n
 
 Keep the English Markdown that Think and Describe write readable on its own. Store the message identities and argument ranges in the matching `.md.display` file. When reading it, check that it still matches the Markdown before translating only the marked messages.
 
-Converted crates: `solstone-core-about`, `solstone-core-backfill-cli`, `solstone-core-backup-cli`, `solstone-core-brain`, `solstone-core-brain-owner`, `solstone-core-cli-boundary`, `solstone-core-depict`, `solstone-core-describe`, `solstone-core-doctor`, `solstone-core-journal-stats-cli`, `solstone-core-offload`, `solstone-core-reprocess-cli`, `solstone-core-retention`, `solstone-core-segment-cli`, `solstone-core-sol`, `solstone-core-streams-cli`, `solstone-core-talent-cli`, `solstone-core-talent-config`, `solstone-core-think-cli`, `solstone-core-transcribe`, `solstone-core-update`.
+Converted crates: `solstone-core-about`, `solstone-core-backfill-cli`, `solstone-core-backup-cli`, `solstone-core-brain`, `solstone-core-brain-owner`, `solstone-core-cli-boundary`, `solstone-core-depict`, `solstone-core-describe`, `solstone-core-doctor`, `solstone-core-journal-cli`, `solstone-core-journal-stats-cli`, `solstone-core-offload`, `solstone-core-reprocess-cli`, `solstone-core-retention`, `solstone-core-segment-cli`, `solstone-core-sol`, `solstone-core-streams-cli`, `solstone-core-talent-cli`, `solstone-core-talent-config`, `solstone-core-think-cli`, `solstone-core-transcribe`, `solstone-core-update`.
 
 ## 9. File headers, naming, dependencies
 

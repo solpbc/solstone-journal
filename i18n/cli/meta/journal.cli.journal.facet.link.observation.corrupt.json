@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for facet link observation corrupt.",
+  "context": "Journal command-line text for facet link observation corrupt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "afc7c06ff761396c1dff09a1d3b626062a249b5d0af963b8a4810d2f91e8f175",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

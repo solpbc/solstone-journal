@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive import undo.",
+  "context": "Journal command-line text for archive import undo.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "failures",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e5f8af566eeec68523e4b0c7f9545728a1fbead162cede4c28c88ef9a732c094",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

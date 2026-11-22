@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for facet record malformed observation.",
+  "context": "Journal command-line text for facet record malformed observation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "line",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f021a36aa7fbf5bb97d901f672982e83bb61c6bf21c319ff7bbd2cd3895e071a",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

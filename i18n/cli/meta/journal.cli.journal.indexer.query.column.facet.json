@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer query column facet.",
+  "context": "Journal command-line text for indexer query column facet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f84bcde9589658f2b950ece39de6c7cf66539b16c570a25cd1c330d6e3789744",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

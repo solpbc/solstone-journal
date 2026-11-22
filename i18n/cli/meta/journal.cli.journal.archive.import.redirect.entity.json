@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive import redirect entity.",
+  "context": "Journal command-line text for archive import redirect entity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source_id",
+      "type": "string"
+    },
+    {
+      "name": "survivor",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "037e1a481468e36db0ee87b2a91b04870b283d585354ab30141338bb1a43138e",
+  "max_length": 152,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

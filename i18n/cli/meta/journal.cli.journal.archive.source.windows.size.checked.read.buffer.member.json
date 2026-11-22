@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive source windows size checked read buffer member.",
+  "context": "Journal command-line text for archive source windows size checked read buffer member.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "01a55f369762909a419567c26650c6412068b14ee13d78c9b57137eb2db07aff",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

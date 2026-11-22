@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet doctor leftovers failed.",
+  "context": "Journal command-line text for facet doctor leftovers failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c39d867f78c7c434eb508db14da2b2e4cba7ba259f2559b6afee0fbb028e411e",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

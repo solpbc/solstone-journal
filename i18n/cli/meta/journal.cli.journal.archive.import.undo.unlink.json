@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive import undo unlink.",
+  "context": "Journal command-line text for archive import undo unlink.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "relative",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8e9e994cfdf1140c9ae5e3ac7b7f23d0d001b10d286a1b9582b87e3b64e765c3",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

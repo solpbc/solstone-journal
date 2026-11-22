@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer status removals.",
+  "context": "Journal command-line text for indexer status removals.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "removals",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dc375b13bd660c8289f99fbd1b9feca8b5cb393a83e0779e4550f5367440d6c3",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

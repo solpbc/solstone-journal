@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for archive fact archive output path is not valid utf8.",
+  "context": "Journal command-line text for archive fact archive output path is not valid utf8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cd06c7dd9799080c21af1e6b3357e71039bbd42e23f4338a8255fbec4a2c196c",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_utf_8",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

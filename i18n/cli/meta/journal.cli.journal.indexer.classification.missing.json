@@ -1,0 +1,26 @@
+{
+  "description": "Journal command-line text for indexer classification missing.",
+  "context": "Journal command-line text for indexer classification missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "missing",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "13bd9938a192282dcf7acb6443728e410a9aa4547d7d3a757a2ccf0100f387fe",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "missing",
+    "type": "cardinal"
+  }
+}

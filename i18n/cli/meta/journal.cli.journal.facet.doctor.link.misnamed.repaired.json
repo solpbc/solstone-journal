@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for facet doctor link misnamed repaired.",
+  "context": "Journal command-line text for facet doctor link misnamed repaired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "folders",
+      "type": "string"
+    },
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2531a963fd8420ab8613833c4701debc116a2b00a91a131346039b04eaeaa5ce",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

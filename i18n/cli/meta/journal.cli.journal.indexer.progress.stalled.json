@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer progress stalled.",
+  "context": "Journal command-line text for indexer progress stalled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b837c618a560544a903ded6531e487ccb4513b3671be3f9d333b71828a98d69d",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

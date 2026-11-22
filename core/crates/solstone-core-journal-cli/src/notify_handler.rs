@@ -5,7 +5,9 @@ use std::fmt::Write as _;
 
 use solstone_core_sol_client::command::{CommandContext, CommandOutput};
 
+#[cfg(test)]
 const HELP: &str = "usage: solstone journal notify [-h] [--title TITLE] [--icon ICON] [--event EVENT]\n                  [--action ACTION] [--app APP] [--badge BADGE]\n                  [--auto-dismiss AUTO_DISMISS] [--no-dismiss] [-v] [-d]\n                  message [message ...]\n\nSend a notification via callosum\n\npositional arguments:\n  message               notification message text\n\noptions:\n  -h, --help            show this help message and exit\n  --title TITLE         notification title\n  --icon ICON           Lucide icon name (default: mailbox)\n  --event EVENT         event name (default: show)\n  --action ACTION       URL path to open on click\n  --app APP             source app name\n  --badge BADGE         badge text or number\n  --auto-dismiss AUTO_DISMISS\n                        auto-dismiss after N milliseconds\n  --no-dismiss          make notification non-dismissible\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging\n";
+#[cfg(test)]
 const FAILURE: &str = "Failed to send notification (is callosum running?)\n";
 
 #[must_use]
@@ -15,10 +17,21 @@ pub(crate) fn notify(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return argparse_error(error),
     };
     if parsed.help {
-        return CommandOutput::success(HELP);
+        return CommandOutput::success(format!(
+            "{}\n",
+            solstone_core_cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.notify.help",
+                &[]
+            )
+        ));
     }
     if !parsed.message_present {
-        return argparse_error("the following arguments are required: message".to_string());
+        return argparse_error(solstone_core_cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.notify.error.message",
+            &[],
+        ));
     }
     let Some(sink) = ctx.notification_sink else {
         return send_failed();
@@ -29,7 +42,14 @@ pub(crate) fn notify(ctx: CommandContext<'_>) -> CommandOutput {
     }
     CommandOutput {
         stdout: String::new(),
-        stderr: "Notification sent\n".to_string(),
+        stderr: format!(
+            "{}\n",
+            solstone_core_cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.notify.sent",
+                &[]
+            )
+        ),
         exit: 0,
     }
 }
@@ -102,8 +122,10 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             index += 1;
             parsed.action = Some(take_value(args, index, "--action")?.to_string());
         } else if let Some(option) = retired_facet_option(token) {
-            return Err(format!(
-                "{option} is no longer supported. Put facet selection in --action; for example, --action /app/entities?facet=work."
+            return Err(solstone_core_cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.notify.error.facet",
+                [("option", &option)],
             ));
         } else if let Some(value) = token.strip_prefix("--app=") {
             parsed.app = Some(value.to_string());
@@ -122,7 +144,11 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             let value = take_value(args, index, "--auto-dismiss")?;
             parsed.auto_dismiss = Some(parse_auto_dismiss(value)?);
         } else if token.starts_with('-') {
-            return Err(format!("unrecognized arguments: {token}"));
+            return Err(solstone_core_cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.notify.error.unknown",
+                [("token", &token)],
+            ));
         } else {
             message.push(token.clone());
         }
@@ -134,26 +160,51 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
 }
 
 fn take_value<'a>(args: &'a [String], index: usize, option: &str) -> Result<&'a str, String> {
-    args.get(index)
-        .map(String::as_str)
-        .ok_or_else(|| format!("argument {option}: expected one argument"))
+    args.get(index).map(String::as_str).ok_or_else(|| {
+        solstone_core_cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.notify.error.value",
+            [("option", &option)],
+        )
+    })
 }
 
 fn parse_auto_dismiss(value: &str) -> Result<i64, String> {
-    value
-        .parse::<i64>()
-        .map_err(|_| format!("argument --auto-dismiss: invalid int value: '{value}'"))
+    value.parse::<i64>().map_err(|_| {
+        solstone_core_cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.notify.error.integer",
+            [("value", &value)],
+        )
+    })
 }
 
 fn argparse_error(error: String) -> CommandOutput {
     CommandOutput::failure(
-        format!("{HELP}solstone journal notify: error: {error}\n"),
+        format!(
+            "{}\n{error}\n",
+            solstone_core_cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.notify.help",
+                &[]
+            )
+        ),
         2,
     )
 }
 
 fn send_failed() -> CommandOutput {
-    CommandOutput::failure(FAILURE, 1)
+    CommandOutput::failure(
+        format!(
+            "{}\n",
+            solstone_core_cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.notify.failed",
+                &[]
+            )
+        ),
+        1,
+    )
 }
 
 fn notification_line(parsed: &ParsedArgs) -> String {
@@ -288,7 +339,17 @@ mod tests {
     fn help_matches_argparse_bytes() {
         let output = run_notify_case(&["--help"], None);
 
-        assert_eq!(output, CommandOutput::success(HELP));
+        assert_eq!(
+            output,
+            CommandOutput::success(format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.notify.help",
+                    &[]
+                )
+            ))
+        );
         assert!(HELP.ends_with('\n'));
         assert!(!HELP.contains("facet"));
     }
@@ -302,7 +363,14 @@ mod tests {
             output,
             CommandOutput {
                 stdout: String::new(),
-                stderr: "Notification sent\n".to_string(),
+                stderr: format!(
+                    "{}\n",
+                    solstone_core_cli_copy::render_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.notify.sent",
+                        &[]
+                    )
+                ),
                 exit: 0,
             }
         );

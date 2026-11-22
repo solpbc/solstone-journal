@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer query column agent.",
+  "context": "Journal command-line text for indexer query column agent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e37aba78a1adad5bb6c005fe3a9a808275f00e5cbe85240bb2010fd0421206c0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

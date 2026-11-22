@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive root parent.",
+  "context": "Journal command-line text for archive root parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0a7b589d76a64d3762eacd4a4d1fd114f15e99e72c6240f2340016b6e5faaabb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer query unreadable.",
+  "context": "Journal command-line text for indexer query unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a4c78c3e5d676d75c6a74d1fc233b2791169ec25fff866f0484bb9aac8624ebd",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

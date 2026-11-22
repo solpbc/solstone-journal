@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for indexer status check.",
+  "context": "Journal command-line text for indexer status check.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    },
+    {
+      "name": "indexed",
+      "type": "string"
+    },
+    {
+      "name": "removed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7dd2b177bf97231f7eac29afecc9600c4cef6b736a9c17c281679871618cb4ed",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

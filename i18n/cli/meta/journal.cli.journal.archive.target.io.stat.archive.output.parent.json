@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive target io stat archive output parent.",
+  "context": "Journal command-line text for archive target io stat archive output parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "44a3c1ca6a0464ed8fca3927d6ffdc7e7126141f771737877390e6b742b77916",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

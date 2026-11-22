@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive space platform.",
+  "context": "Journal command-line text for archive space platform.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bec751960cec4778c84cc3ccfb74a7c9a9e67fb78d95640436c743afb154130b",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

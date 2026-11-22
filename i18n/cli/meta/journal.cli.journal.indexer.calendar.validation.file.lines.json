@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer calendar validation file lines.",
+  "context": "Journal command-line text for indexer calendar validation file lines.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1801e5e675659abded4f57db0a44d752b2e709aab69e6d65242aa9d99e47d168",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

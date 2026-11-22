@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact must be a regular file.",
+  "context": "Journal command-line text for archive fact must be a regular file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2a360e118ab6669f5bba253492d5e69e2482ac2d5b0ab1b76c5fa1f91e8cf7dd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

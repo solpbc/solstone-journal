@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet doctor history failed.",
+  "context": "Journal command-line text for facet doctor history failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ee1e80ca511c852d7b937e54fa4da3049806cf020ef365a023c665d00d0e9d11",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

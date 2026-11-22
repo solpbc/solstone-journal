@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer calendar validation expanded must be true when present.",
+  "context": "Journal command-line text for indexer calendar validation expanded must be true when present.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c47e096130e24784d1e1c492ece71b56f4d8d4c6b2df19a725291c0d96fcabb9",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "expanded_field",
+      "kind": "accepted-input",
+      "value": "expanded"
+    },
+    {
+      "name": "true_key",
+      "kind": "accepted-input",
+      "value": "true"
+    }
+  ]
+}

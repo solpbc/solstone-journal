@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for indexer speaker duplicate.",
+  "context": "Journal command-line text for indexer speaker duplicate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "sentence",
+      "type": "string"
+    },
+    {
+      "name": "composite_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4db5f7cad57cfd1df94b75f7d7d7a2bec42f387ffe9e91427a646b33c65105b2",
+  "max_length": 112,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "field",
+      "kind": "accepted-input",
+      "value": "sentence_id"
+    }
+  ]
+}

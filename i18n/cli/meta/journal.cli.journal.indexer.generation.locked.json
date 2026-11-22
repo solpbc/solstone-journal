@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer generation locked.",
+  "context": "Journal command-line text for indexer generation locked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "generation",
+      "type": "string"
+    },
+    {
+      "name": "known",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "429aede8fb10eb1a7c261a539473f04b415ffd8100075fb1f3ea326b60d2a929",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

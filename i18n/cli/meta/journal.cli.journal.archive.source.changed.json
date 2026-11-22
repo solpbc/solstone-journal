@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source changed.",
+  "context": "Journal command-line text for archive source changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e74ef7bed6b68d9d279e75bbdb5d55cfb346ccc8308263eec218689fe965cf31",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

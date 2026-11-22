@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet trash io.",
+  "context": "Journal command-line text for facet trash io.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ed4c57a9d49e0cb550ec7e55a7a09d9433fc615dc52adad88ad01e9e7130cd95",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

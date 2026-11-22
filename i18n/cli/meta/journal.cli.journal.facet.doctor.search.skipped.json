@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet doctor search skipped.",
+  "context": "Journal command-line text for facet doctor search skipped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6a22f36cb7ce1cdbd7694b26961d50aee1bf2d43ddafd360cac76cccf04ea0bf",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "retired_path",
+      "kind": "accepted-input",
+      "value": "facets/retired.json"
+    }
+  ]
+}

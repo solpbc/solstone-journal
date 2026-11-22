@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer calendar validation end must be a string or null.",
+  "context": "Journal command-line text for indexer calendar validation end must be a string or null.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "491fb1cbe23e00ef979e4406f998ea990b4a27b2a446d7d370084aa64dcbacdf",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "null_key",
+      "kind": "accepted-input",
+      "value": "null"
+    },
+    {
+      "name": "end_field",
+      "kind": "accepted-input",
+      "value": "end"
+    }
+  ]
+}

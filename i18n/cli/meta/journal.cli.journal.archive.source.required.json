@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for archive source required.",
+  "context": "Journal command-line text for archive source required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e6c1cd9a9050a56ccf6843d00f5d83079ed7313c0947792afa95df1478fbf11c",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_source",
+      "kind": "accepted-input",
+      "value": "SOURCE"
+    }
+  ]
+}

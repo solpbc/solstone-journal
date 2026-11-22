@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for facet merge collisions trashed.",
+  "context": "Journal command-line text for facet merge collisions trashed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "destination",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e8e126d9eb4a2cdb8289f687a8c5d63b9d9cc905cde790290da56cd13afb47c2",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

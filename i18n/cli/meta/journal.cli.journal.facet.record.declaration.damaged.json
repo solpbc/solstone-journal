@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet record declaration damaged.",
+  "context": "Journal command-line text for facet record declaration damaged.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "79ccc2e06b0ecc9b5fe4170212911129cc8318ff94218bd244737d76b6de32f4",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

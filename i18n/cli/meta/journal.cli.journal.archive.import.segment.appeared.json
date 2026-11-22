@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive import segment appeared.",
+  "context": "Journal command-line text for archive import segment appeared.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "04e3d5625fcfdec73d8ecc4d3976f3627668f45b14aae36958402ba48401f543",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

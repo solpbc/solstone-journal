@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive import stage.",
+  "context": "Journal command-line text for archive import stage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8873e30a30373fd8b8f9dd0135b38ae4217e23d0154eaeb62b8267a61946b873",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

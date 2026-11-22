@@ -1,0 +1,37 @@
+{
+  "description": "Journal command-line text for facet doctor group ambiguous.",
+  "context": "Journal command-line text for facet doctor group ambiguous.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facets",
+      "type": "string"
+    },
+    {
+      "name": "members",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bc8c9c4052024092ab054e13aa459b00a99499522417fdfc339b49a72e092de5",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "adopt_flag",
+      "kind": "flag",
+      "value": "--adopt"
+    },
+    {
+      "name": "merge_flag",
+      "kind": "flag",
+      "value": "--merge"
+    }
+  ]
+}

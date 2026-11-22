@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet link not file.",
+  "context": "Journal command-line text for facet link not file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e9555cbe2c6fd8c91664886f01a84c3ef1765cc2cf3304d0e2a08babd95d3340",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

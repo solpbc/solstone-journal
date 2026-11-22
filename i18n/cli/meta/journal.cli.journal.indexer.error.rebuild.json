@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer error rebuild.",
+  "context": "Journal command-line text for indexer error rebuild.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9a45c5ee31d42782f8ec1fa1322f18a6b372266383abde194cec22f1922736b3",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -13,11 +13,16 @@ use crate::todo::enqueue_path;
 /// The search index, as retention's removal door addresses it.
 pub struct RetentionIndex<'a> {
     journal: &'a Path,
+    locale: &'a str,
 }
 
 impl<'a> RetentionIndex<'a> {
     pub fn new(journal: &'a Path) -> Self {
-        Self { journal }
+        Self::with_locale(journal, solstone_core_cli_copy::ENGLISH)
+    }
+
+    pub fn with_locale(journal: &'a Path, locale: &'a str) -> Self {
+        Self { journal, locale }
     }
 }
 
@@ -26,7 +31,11 @@ impl IndexNotify for RetentionIndex<'_> {
         for removed in removed {
             enqueue_path(self.journal, Path::new(removed.as_str())).map_err(|error| {
                 NotifyError {
-                    reason: format!("the search update could not be queued: {error}"),
+                    reason: solstone_core_cli_copy::display_for(
+                        self.locale,
+                        "journal.cli.journal.facet.notify.queue",
+                        [("error", &(error))],
+                    ),
                 }
             })?;
         }
@@ -37,7 +46,11 @@ impl IndexNotify for RetentionIndex<'_> {
         // The drain reads each path afresh: present is indexed, absent pruned.
         for path in returned {
             enqueue_path(self.journal, Path::new(path)).map_err(|error| NotifyError {
-                reason: format!("the search update could not be queued: {error}"),
+                reason: solstone_core_cli_copy::display_for(
+                    self.locale,
+                    "journal.cli.journal.facet.notify.queue",
+                    [("error", &(error))],
+                ),
             })?;
         }
         Ok(())

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source windows read observed file.",
+  "context": "Journal command-line text for archive source windows read observed file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "195eb77aea9ae9b67f114d97469d034e6a1e304d518e25873aa1b669d6254a80",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

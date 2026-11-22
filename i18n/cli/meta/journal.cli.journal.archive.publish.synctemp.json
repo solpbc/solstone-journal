@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive publish synctemp.",
+  "context": "Journal command-line text for archive publish synctemp.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "950277fcfb83795dc12c9fe58096a8e936eee8d8f546c00cb9c7dad36ea5e79c",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

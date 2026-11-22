@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet content unsafe.",
+  "context": "Journal command-line text for facet content unsafe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cf372b5db55b8530129a58d4127a8b567174fa582862834d6ae97f1d6b0284b5",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

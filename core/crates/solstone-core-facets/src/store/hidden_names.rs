@@ -14,8 +14,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use solstone_core_entity::hidden_names::{
-    HiddenName, HiddenNames, encode_hidden_names, hidden_name_key, hidden_names_rel,
-    read_hidden_names,
+    HiddenName, HiddenRecordError, encode_hidden_names, hidden_name_key, hidden_names_rel,
+    read_hidden_names_detailed,
 };
 use solstone_core_journal_io::{AtomicWriteError, AtomicWriteOptions, PathError, contained_path};
 
@@ -31,7 +31,7 @@ pub enum HiddenNamesError {
     /// The facet's hidden names can't be read; nothing was written over them.
     Damaged {
         path: PathBuf,
-        detail: String,
+        detail: HiddenRecordError,
     },
     /// The facet isn't declared.
     Facet(FacetWriteError),
@@ -153,10 +153,10 @@ pub fn merge_hidden_names_locked(
     source: &str,
     destination: &str,
 ) -> Result<bool, HiddenNamesError> {
-    let incoming = match read_hidden_names(journal, source) {
-        HiddenNames::Absent => return Ok(false),
-        HiddenNames::Present(names) => names,
-        HiddenNames::Damaged { path, detail } => {
+    let incoming = match read_hidden_names_detailed(journal, source) {
+        Ok(None) => return Ok(false),
+        Ok(Some(names)) => names,
+        Err((path, detail)) => {
             return Err(HiddenNamesError::Damaged { path, detail });
         }
     };
@@ -176,9 +176,9 @@ pub fn merge_hidden_names_locked(
 /// Whether `facet`'s hidden names can be read, for a caller that must refuse
 /// before it changes anything.
 pub fn check_hidden_names_readable(journal: &Path, facet: &str) -> Result<(), HiddenNamesError> {
-    match read_hidden_names(journal, facet) {
-        HiddenNames::Damaged { path, detail } => Err(HiddenNamesError::Damaged { path, detail }),
-        HiddenNames::Absent | HiddenNames::Present(_) => Ok(()),
+    match read_hidden_names_detailed(journal, facet) {
+        Err((path, detail)) => Err(HiddenNamesError::Damaged { path, detail }),
+        Ok(_) => Ok(()),
     }
 }
 
@@ -197,10 +197,10 @@ fn write_hidden_names_locked(
     facet: &str,
     change: impl FnOnce(&mut Vec<HiddenName>) -> bool,
 ) -> Result<bool, HiddenNamesError> {
-    let mut names = match read_hidden_names(journal, facet) {
-        HiddenNames::Absent => Vec::new(),
-        HiddenNames::Present(names) => names,
-        HiddenNames::Damaged { path, detail } => {
+    let mut names = match read_hidden_names_detailed(journal, facet) {
+        Ok(None) => Vec::new(),
+        Ok(Some(names)) => names,
+        Err((path, detail)) => {
             return Err(HiddenNamesError::Damaged { path, detail });
         }
     };
@@ -227,7 +227,7 @@ pub fn queue_facet_detections(journal: &Path, facet: &str) -> bool {
         Err(error) => {
             log::warn!(
                 target: "solstone::indexer",
-                "facet detections not queued for search facet={facet} cause={error}"
+                "{}", solstone_core_cli_copy::display_for(solstone_core_cli_copy::manual_log_locale(), "journal.cli.journal.facet.log.detections.queue", [("facet", &(facet)), ("error", &(error))])
             );
             false
         }

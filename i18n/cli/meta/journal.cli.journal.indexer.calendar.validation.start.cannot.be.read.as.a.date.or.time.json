@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation start cannot be read as a date or time.",
+  "context": "Journal command-line text for indexer calendar validation start cannot be read as a date or time.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "36b58e027fa0f4ddbba025ec5ed1c351ed2b3cb0dd9f0006d2bd6c28c0a58a5d",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "start_field",
+      "kind": "accepted-input",
+      "value": "start"
+    }
+  ]
+}

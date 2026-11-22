@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive import path outside.",
+  "context": "Journal command-line text for archive import path outside.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0636f53fda4deba7bf203dc80b1dff99e3bf3cc86eb7e240f5a19bf81f0f4d8a",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

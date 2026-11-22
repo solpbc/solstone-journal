@@ -113,7 +113,7 @@ pub struct NormalizedEdge {
 pub struct EdgeFileRows {
     pub rows: Vec<NormalizedEdge>,
     pub invalid_segment: Option<String>,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<solstone_core_cli_copy::MessageDetail>,
     /// The names this file resolved, with their answers.
     pub lookups: Vec<EdgeLookup>,
 }
@@ -1986,7 +1986,11 @@ mod tests {
         )
         .expect("extract unresolved speaker labels");
         assert_eq!(
-            unresolved.warnings,
+            unresolved
+                .warnings
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
             vec!["speaker edge transcript unresolved for 20260430/default/121000_300"]
         );
 
@@ -2009,7 +2013,11 @@ mod tests {
         )
         .expect("extract missing speaker transcript");
         assert_eq!(
-            missing.warnings,
+            missing
+                .warnings
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
             vec!["speaker edge transcript missing for 20260430/default/122000_300"]
         );
 

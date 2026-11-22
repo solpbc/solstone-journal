@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer edge kind.",
+  "context": "Journal command-line text for indexer edge kind.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2ff34aa9881cb3e44813612ed53bce50500f7918779f13ba37b16b9f1fb9143c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

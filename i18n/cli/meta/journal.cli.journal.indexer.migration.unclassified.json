@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer migration unclassified.",
+  "context": "Journal command-line text for indexer migration unclassified.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel_segment",
+      "type": "string"
+    },
+    {
+      "name": "rel",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8a65bd15795d289613d3a76be6378e1b8c63185818a8b898aeec37efcb9847b4",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

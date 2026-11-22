@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation attendees must be an array.",
+  "context": "Journal command-line text for indexer calendar validation attendees must be an array.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7ea4c42de9ff4ed83f5455517074612703c113f8dc85b6f153157ede47f5de36",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "attendees_field",
+      "kind": "accepted-input",
+      "value": "attendees"
+    }
+  ]
+}

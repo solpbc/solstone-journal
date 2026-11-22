@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer argument missing agent.",
+  "context": "Journal command-line text for indexer argument missing agent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "258c99c266346c07ec59f353ee505410c751c3bd3165b4455b8ead6197caaa0f",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "agent",
+      "kind": "accepted-input",
+      "value": "AGENT"
+    },
+    {
+      "name": "agent_flag",
+      "kind": "flag",
+      "value": "--agent"
+    }
+  ]
+}

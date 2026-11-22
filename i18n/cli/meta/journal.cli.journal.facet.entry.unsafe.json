@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet entry unsafe.",
+  "context": "Journal command-line text for facet entry unsafe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e11199216dacfc75b2cd6d299a7502714d41681fa092d6f590ac50a08e837779",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

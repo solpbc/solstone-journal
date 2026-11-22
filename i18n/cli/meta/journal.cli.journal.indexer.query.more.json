@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer query more.",
+  "context": "Journal command-line text for indexer query more.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "remaining",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "667f61d2a4c8c24b3b2daa9612f2c3fe5b6a3c679cf58d03ec49b9aa5cf116f5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

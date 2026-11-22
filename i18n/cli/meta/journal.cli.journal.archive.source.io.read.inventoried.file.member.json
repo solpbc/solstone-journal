@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive source io read inventoried file member.",
+  "context": "Journal command-line text for archive source io read inventoried file member.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6390e0b1f8109ba45f99229d6522db7237dca9ee2bd4b103119502f9638375e9",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

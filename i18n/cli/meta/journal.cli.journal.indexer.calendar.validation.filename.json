@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer calendar validation filename.",
+  "context": "Journal command-line text for indexer calendar validation filename.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "614419a75fb61ba462146dbb75dec18aadd0a50d00cdd872f028faccd3139904",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "prefix",
+      "kind": "accepted-input",
+      "value": "calendar_"
+    },
+    {
+      "name": "suffix",
+      "kind": "accepted-input",
+      "value": ".jsonl"
+    }
+  ]
+}

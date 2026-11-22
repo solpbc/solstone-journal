@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for facet doctor repairs maintenance count.",
+  "context": "Journal command-line text for facet doctor repairs maintenance count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "repaired",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "merges",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e8b75f97c133e2086e521dd6d03d71d952f0049bc9ee5a22b9c42f9ec945051f",
+  "max_length": 1040,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "repaired",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "rescan_command",
+      "kind": "command",
+      "value": "solstone journal indexer --rescan-full"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for indexer edge json.",
+  "context": "Journal command-line text for indexer edge json.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c6f5094643a9f0996c97e3d927004001a9736955c290e53a12a770c638584a9a",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

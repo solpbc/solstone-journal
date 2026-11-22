@@ -32,8 +32,14 @@ pub(crate) fn notify(owner_argv: &[OsString]) -> Outcome {
         None => {
             return Outcome::LocalFailure {
                 stdout: String::new(),
-                stderr: "native journal notify failed: owner arguments are not valid UTF-8\n"
-                    .to_string(),
+                stderr: format!(
+                    "{}\n",
+                    solstone_core_cli_copy::render_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.notify.utf8",
+                        &[]
+                    )
+                ),
                 exit: EXIT_TEMPFAIL,
             };
         }

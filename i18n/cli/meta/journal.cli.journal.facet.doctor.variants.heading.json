@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor variants heading.",
+  "context": "Journal command-line text for facet doctor variants heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d3ec4d6ad2f7485a1e517701c4f5ba5682a87ba02e2072676eb327e5f64476e8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

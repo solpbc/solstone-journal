@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor repairs failed.",
+  "context": "Journal command-line text for facet doctor repairs failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6f60981df88f55d25c09880ca96179a5a319541cdde8b0a28da31c2cd25fc229",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

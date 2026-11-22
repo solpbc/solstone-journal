@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source windows borrow admitted journal root namespace watch.",
+  "context": "Journal command-line text for archive source windows borrow admitted journal root namespace watch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1b1106ee0454356e2568537184355d67b6813c650cf5b131984f47bedfbabb4f",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for notify error message.",
+  "context": "Journal command-line text for notify error message.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a36897c4058e23603c493b7d180dd486ce6aaa116d4b6b7972a6831add7b8d14",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "invocation",
+      "kind": "command",
+      "value": "solstone journal notify"
+    },
+    {
+      "name": "positional",
+      "kind": "accepted-input",
+      "value": "message"
+    }
+  ]
+}

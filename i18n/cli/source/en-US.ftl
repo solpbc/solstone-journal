@@ -5688,3 +5688,1454 @@ journal.cli.sol.update.summary.route = route: { $value }
 journal.cli.sol.update.summary.target = available: { $available } (journal { $journal })
 
 journal.cli.sol.usage = Usage: { $syntax }
+
+journal.cli.journal.archive.argument = unexpected argument
+
+journal.cli.journal.archive.day.exclusive = { $day_flag } cannot be combined with { $from_flag } or { $to_flag }
+
+journal.cli.journal.archive.day.invalid = { $token_day } must be a real { $token_yyyymmdd } date
+
+journal.cli.journal.archive.day.required = { $day_flag } requires { $token_yyyymmdd }
+
+journal.cli.journal.archive.encode.finish.body = archive finish body: { $detail }
+
+journal.cli.journal.archive.encode.finish.finalize = archive finish finalize: { $detail }
+
+journal.cli.journal.archive.encode.member = archive write { $member }: { $detail }
+
+journal.cli.journal.archive.encode.metadata = invalid archive metadata { $field } { $value }: { $reason }
+
+journal.cli.journal.archive.encode.source = archive source: { $detail }
+
+journal.cli.journal.archive.encode.write = archive write: { $detail }
+
+journal.cli.journal.archive.encode.writer = invalid archive writer: { $reason }
+
+journal.cli.journal.archive.export.help = Usage: { $syntax }{ $line_break }{ $line_break }create a { $token_zip } of your journal, including settings and credentials.{ $line_break }processing logs, rebuildable indexes and caches, locks and temporary files are left out.{ $line_break }with a date filter, only the selected days are included.
+
+journal.cli.journal.archive.exports.unsafe = unsafe exports directory: { $path }
+
+journal.cli.journal.archive.fact.archive.output.contains.a.null.byte = archive output contains a null byte
+
+journal.cli.journal.archive.fact.archive.output.ends.with.a.separator = archive output ends with a separator
+
+journal.cli.journal.archive.fact.archive.output.has.no.file.name = archive output has no file name
+
+journal.cli.journal.archive.fact.archive.output.has.no.parent = archive output has no parent
+
+journal.cli.journal.archive.fact.archive.output.must.be.one.file.name = archive output must be one file name
+
+journal.cli.journal.archive.fact.archive.output.parent.is.missing.or.unsafe = archive output parent is missing or unsafe
+
+journal.cli.journal.archive.fact.archive.output.path.is.not.valid.utf8 = archive output path is not valid { $token_utf_8 }
+
+journal.cli.journal.archive.fact.archive.output.uses.an.unsupported.prefix = archive output uses an unsupported prefix
+
+journal.cli.journal.archive.fact.archive.parent.component.is.invalid = archive parent component is invalid
+
+journal.cli.journal.archive.fact.block.device = block device
+
+journal.cli.journal.archive.fact.character.device = character device
+
+journal.cli.journal.archive.fact.could.not.determine.writer.position = could not determine writer position
+
+journal.cli.journal.archive.fact.could.not.read.writer.flags = could not read writer flags
+
+journal.cli.journal.archive.fact.could.not.stat.writer = could not stat writer
+
+journal.cli.journal.archive.fact.directory = directory
+
+journal.cli.journal.archive.fact.fifo = fifo
+
+journal.cli.journal.archive.fact.filesystem.root.is.not.a.directory = filesystem root is not a directory
+
+journal.cli.journal.archive.fact.has.no.parent.directory = has no parent directory
+
+journal.cli.journal.archive.fact.must.be.a.regular.file = must be a regular file
+
+journal.cli.journal.archive.fact.must.be.empty = must be empty
+
+journal.cli.journal.archive.fact.must.be.opened.for.writing = must be opened for writing
+
+journal.cli.journal.archive.fact.must.be.positioned.at.the.start = must be positioned at the start
+
+journal.cli.journal.archive.fact.must.be.valid.utf8 = must be valid { $token_utf_8 }
+
+journal.cli.journal.archive.fact.must.name.one.normal.file.leaf = must name one normal file leaf
+
+journal.cli.journal.archive.fact.must.not.be.opened.in.append.mode = must not be opened in append mode
+
+journal.cli.journal.archive.fact.must.resolve.to.an.absolute.path = must resolve to an absolute path
+
+journal.cli.journal.archive.fact.other = other
+
+journal.cli.journal.archive.fact.regular.file = regular file
+
+journal.cli.journal.archive.fact.relative.archive.output.requires.an.absolute.cwd = relative archive output requires an absolute cwd
+
+journal.cli.journal.archive.fact.socket = socket
+
+journal.cli.journal.archive.fact.symlink = symlink
+
+journal.cli.journal.archive.fact.utf8.member.path.exceeds.zip.u16.byte.limit = { $token_utf_8 } member path exceeds { $token_zip } { $token_u16 } byte limit
+
+journal.cli.journal.archive.from.invalid = { $token_from } must be a real { $token_yyyymmdd } date
+
+journal.cli.journal.archive.from.required = { $from_flag } requires { $token_yyyymmdd }
+
+journal.cli.journal.archive.import.ambiguities = kind mismatch at { $token_entities_ambiguities_jsonl }
+
+journal.cli.journal.archive.import.appeared = { $relative } appeared while the import was running
+
+journal.cli.journal.archive.import.busy = archive merge lock is busy at { $path }: { $detail }
+
+journal.cli.journal.archive.import.cleanup = failed cleaning extraction { $path }: { $detail }
+
+journal.cli.journal.archive.import.compressed = { $count ->
+    [one] archive { $path } is { $bytes } byte; maximum is { $maximum }
+   *[other] archive { $path } is { $bytes } bytes; maximum is { $maximum }
+    }
+
+journal.cli.journal.archive.import.coordinate = invalid planned recording coordinate
+
+journal.cli.journal.archive.import.directory.remains = directory remains
+
+journal.cli.journal.archive.import.encrypted.extraction = encrypted archive entry during extraction: { $entry }
+
+journal.cli.journal.archive.import.encrypted.validation = encrypted archive entry during validation: { $entry }
+
+journal.cli.journal.archive.import.entity = entity merge failed for { $entity_id }: { $detail }
+
+journal.cli.journal.archive.import.expanded = { $count ->
+    [one] archive expands to { $bytes } byte; maximum is { $maximum }
+   *[other] archive expands to { $bytes } bytes; maximum is { $maximum }
+    }
+
+journal.cli.journal.archive.import.extract = failed extracting { $archive } into { $dir }: { $detail }
+
+journal.cli.journal.archive.import.facet = facet merge failed for { $facet }: { $detail }
+
+journal.cli.journal.archive.import.handling = while handling { $path }: { $detail }
+
+journal.cli.journal.archive.import.hidden.archive = this archive's hidden days of body data can't be read, so this archive can't be imported
+
+journal.cli.journal.archive.import.hidden.details = { $detail }; { $warning }
+
+journal.cli.journal.archive.import.hidden.target = this journal can't read which days of body data you hid, so this archive can't be imported
+
+journal.cli.journal.archive.import.hidden.warning = { $days ->
+    [one] 1 day of body data was hidden in the archive, so it's hidden in this journal too; you can unhide it on the body page.
+   *[other] { $days } days of body data were hidden in the archive, so they're hidden in this journal too; you can unhide them on the body page.
+    }
+
+journal.cli.journal.archive.import.invalid = invalid archive { $path }: { $detail }
+
+journal.cli.journal.archive.import.kind = kind mismatch at { $relative }
+
+journal.cli.journal.archive.import.legacy = a { $token_tgz } or { $token_tar_gz } archive isn't supported. if it's an old transfer archive, export that day again as a { $token_zip } from the journal it came from and merge that, or merge this file into a new, empty journal on an earlier { $token_2_x } release, export that journal as a { $token_zip }, and merge that { $token_zip } into your journal
+
+journal.cli.journal.archive.import.lock = archive merge lock failed at { $path }: { $detail }
+
+journal.cli.journal.archive.import.log = decision log write failed at { $path }: { $detail }
+
+journal.cli.journal.archive.import.magic = unrecognized archive magic
+
+journal.cli.journal.archive.import.marker = stream marker update failed after archive content was published: { $detail }; published content was not rolled back
+
+journal.cli.journal.archive.import.marker.day = { $day }: { $detail }
+
+journal.cli.journal.archive.import.merge = import merge failed at { $path }: { $detail }
+
+journal.cli.journal.archive.import.missing = archive not found: { $path }
+
+journal.cli.journal.archive.import.name = non-{ $token_utf_8 } or missing path name
+
+journal.cli.journal.archive.import.owner = wait for the holder or inspect/remove only verified-stale owner metadata at { $path }
+
+journal.cli.journal.archive.import.path.encoding = { $path } is not { $token_utf_8 }
+
+journal.cli.journal.archive.import.path.outside = { $path } is outside the journal
+
+journal.cli.journal.archive.import.publish = archive merge publish failed: { $detail }
+
+journal.cli.journal.archive.import.redirect.entity = this journal merged '{ $source_id }' into '{ $survivor }', and merges can't be undone, so this archive can't be imported
+
+journal.cli.journal.archive.import.redirect.facet = this journal had a facet named '{ $facet }' that was merged or renamed into another, and that name leads there now, so this archive can't be imported
+
+journal.cli.journal.archive.import.segment = segment merge failed at { $path }: { $detail }
+
+journal.cli.journal.archive.import.segment.appeared = segment appeared before archive publication
+
+journal.cli.journal.archive.import.segment.changed = published archive segment changed
+
+journal.cli.journal.archive.import.segment.symlink = symbolic link in segment
+
+journal.cli.journal.archive.import.space = insufficient free space at { $path }: { $available } available, { $required } required
+
+journal.cli.journal.archive.import.stage = staging write failed at { $path }: { $detail }
+
+journal.cli.journal.archive.import.stage.changed = archive staging parent changed
+
+journal.cli.journal.archive.import.stopped = import stopped
+
+journal.cli.journal.archive.import.symlink = symbolic link
+
+journal.cli.journal.archive.import.traversal = absolute or traversal path
+
+journal.cli.journal.archive.import.unambiguous = archive has no unambiguous journal root
+
+journal.cli.journal.archive.import.undo = { $detail }; undo incomplete: { $failures }
+
+journal.cli.journal.archive.import.undo.coordinate = coordinate { $relative }: { $detail }
+
+journal.cli.journal.archive.import.undo.restore = restore { $relative }: { $detail }
+
+journal.cli.journal.archive.import.undo.rewrite = rewrite identity map: { $detail }
+
+journal.cli.journal.archive.import.undo.unlink = unlink { $relative }: { $detail }
+
+journal.cli.journal.archive.import.unimplemented = import-sources: unimplemented: { $module }
+
+journal.cli.journal.archive.import.unsafe.extraction = unsafe archive entry during extraction: { $entry }: { $detail }
+
+journal.cli.journal.archive.import.unsafe.validation = unsafe archive entry during validation: { $entry }: { $detail }
+
+journal.cli.journal.archive.incomplete = { $committed } committed, { $skipped } skipped, { $failed } failed
+
+journal.cli.journal.archive.ios = unavailable on { $token_ios }
+
+journal.cli.journal.archive.merge.help = Usage: { $syntax }
+
+journal.cli.journal.archive.metadata.reason.invalid.calendar.date.or.time = invalid calendar date or time
+
+journal.cli.journal.archive.metadata.reason.invalid.day = invalid day
+
+journal.cli.journal.archive.metadata.reason.invalid.hour = invalid hour
+
+journal.cli.journal.archive.metadata.reason.invalid.minute = invalid minute
+
+journal.cli.journal.archive.metadata.reason.invalid.month = invalid month
+
+journal.cli.journal.archive.metadata.reason.invalid.second = invalid second
+
+journal.cli.journal.archive.metadata.reason.must.contain.digits.in.numeric.positions = must contain digits in numeric positions
+
+journal.cli.journal.archive.metadata.reason.must.not.be.empty = must not be empty
+
+journal.cli.journal.archive.metadata.reason.must.not.contain.ascii.control.characters = must not contain ASCII control characters
+
+journal.cli.journal.archive.metadata.reason.must.use.yyyy.mm.ddthh.mm.ssz = must use YYYY-MM-DDTHH:MM:SSZ
+
+journal.cli.journal.archive.metadata.reason.second.must.be.in.seconds = second must be in 0..=59
+
+journal.cli.journal.archive.metadata.reason.year.must.be.in.years = year must be in 1980..=2107
+
+journal.cli.journal.archive.negative.identity = source identity is negative
+
+journal.cli.journal.archive.negative.size = regular-file size is negative
+
+journal.cli.journal.archive.out.required = { $out_flag } requires { $token_path }
+
+journal.cli.journal.archive.output.parent = archive output has no parent
+
+journal.cli.journal.archive.output.tree = output is inside exported { $family } tree
+
+journal.cli.journal.archive.preview = Archive merge (days: { $days }): 0 committed, { $skipped } skipped, 0 failed.
+
+journal.cli.journal.archive.publish.cleanup = clean archive temporary file: { $detail }
+
+journal.cli.journal.archive.publish.createtemp = create archive temporary file: { $detail }
+
+journal.cli.journal.archive.publish.publish = publish archive: { $detail }
+
+journal.cli.journal.archive.publish.syncdirectory = sync archive directory: { $detail }
+
+journal.cli.journal.archive.publish.synctemp = sync archive temporary file: { $detail }
+
+journal.cli.journal.archive.range = { $from_flag } must not be after { $to_flag }
+
+journal.cli.journal.archive.root.name = journal root has no file name
+
+journal.cli.journal.archive.root.parent = journal root has no parent
+
+journal.cli.journal.archive.scratch.name = could not allocate an exclusive archive scratch file
+
+journal.cli.journal.archive.skipped = { $token_solstone_journal_archive_export }: skipped top-level entries: { $skipped }
+
+journal.cli.journal.archive.source.budget = unsupported journal root { $path }: archive source exceeds its supported inventory budget
+
+journal.cli.journal.archive.source.changed = journal source changed at { $member }
+
+journal.cli.journal.archive.source.io.list.journal.directory = list journal directory: { $detail }
+
+journal.cli.journal.archive.source.io.list.journal.directory.member = list journal directory { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.member = { $operation } { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.open.journal.directory.for.listing = open journal directory for listing: { $detail }
+
+journal.cli.journal.archive.source.io.open.journal.directory.for.listing.member = open journal directory for listing { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.open.journal.directory.member = open journal directory { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.open.journal.file = open journal file: { $detail }
+
+journal.cli.journal.archive.source.io.open.journal.file.member = open journal file { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.open.retained.journal.root = open retained journal root: { $detail }
+
+journal.cli.journal.archive.source.io.open.retained.journal.root.member = open retained journal root { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.read.inventoried.file = read inventoried file: { $detail }
+
+journal.cli.journal.archive.source.io.read.inventoried.file.member = read inventoried file { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.read.regular.file.size = read regular-file size: { $detail }
+
+journal.cli.journal.archive.source.io.read.regular.file.size.member = read regular-file size { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.read.source.file.identity.member = read source file identity { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.stat.inventoried.directory = stat inventoried directory: { $detail }
+
+journal.cli.journal.archive.source.io.stat.inventoried.directory.member = stat inventoried directory { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.stat.inventoried.file = stat inventoried file: { $detail }
+
+journal.cli.journal.archive.source.io.stat.inventoried.file.member = stat inventoried file { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.stat.journal.entry = stat journal entry: { $detail }
+
+journal.cli.journal.archive.source.io.stat.journal.entry.member = stat journal entry { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.stat.opened.inventoried.directory = stat opened inventoried directory: { $detail }
+
+journal.cli.journal.archive.source.io.stat.opened.inventoried.directory.member = stat opened inventoried directory { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.stat.opened.inventoried.file = stat opened inventoried file: { $detail }
+
+journal.cli.journal.archive.source.io.stat.opened.inventoried.file.member = stat opened inventoried file { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.stat.opened.journal.directory = stat opened journal directory: { $detail }
+
+journal.cli.journal.archive.source.io.stat.opened.journal.directory.member = stat opened journal directory { $member }: { $detail }
+
+journal.cli.journal.archive.source.io.stat.opened.journal.file = stat opened journal file: { $detail }
+
+journal.cli.journal.archive.source.io.stat.opened.journal.file.member = stat opened journal file { $member }: { $detail }
+
+journal.cli.journal.archive.source.missing = { $token_source } does not exist: { $path }
+
+journal.cli.journal.archive.source.regular = { $token_source } must be a regular file
+
+journal.cli.journal.archive.source.required = { $token_source } is required
+
+journal.cli.journal.archive.source.unsafe = unsafe journal entry { $member }: { $kind }
+
+journal.cli.journal.archive.source.windows.arm.recursive.namespace.witness = arm recursive namespace witness: { $detail }
+
+journal.cli.journal.archive.source.windows.arm.recursive.namespace.witness.member = arm recursive namespace witness { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.borrow.admitted.journal.root = borrow admitted journal root: { $detail }
+
+journal.cli.journal.archive.source.windows.borrow.admitted.journal.root.member = borrow admitted journal root { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.borrow.admitted.journal.root.namespace.watch = borrow admitted journal-root namespace watch: { $detail }
+
+journal.cli.journal.archive.source.windows.borrow.admitted.journal.root.namespace.watch.member = borrow admitted journal-root namespace watch { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.cancel.recursive.namespace.witness = cancel recursive namespace witness: { $detail }
+
+journal.cli.journal.archive.source.windows.cancel.recursive.namespace.witness.member = cancel recursive namespace witness { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.check.recursive.namespace.witness = check recursive namespace witness: { $detail }
+
+journal.cli.journal.archive.source.windows.check.recursive.namespace.witness.member = check recursive namespace witness { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.create.recursive.namespace.witness.event = create recursive namespace witness event: { $detail }
+
+journal.cli.journal.archive.source.windows.create.recursive.namespace.witness.event.member = create recursive namespace witness event { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.drain.recursive.namespace.witness = drain recursive namespace witness: { $detail }
+
+journal.cli.journal.archive.source.windows.drain.recursive.namespace.witness.member = drain recursive namespace witness { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.list.retained.directory = list retained directory: { $detail }
+
+journal.cli.journal.archive.source.windows.list.retained.directory.member = list retained directory { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.open.retained.relative.entry = open retained relative entry: { $detail }
+
+journal.cli.journal.archive.source.windows.open.retained.relative.entry.member = open retained relative entry { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.parse.retained.directory.listing = parse retained directory listing: { $detail }
+
+journal.cli.journal.archive.source.windows.parse.retained.directory.listing.member = parse retained directory listing { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.query.retained.entry.attributes = query retained entry attributes: { $detail }
+
+journal.cli.journal.archive.source.windows.query.retained.entry.attributes.member = query retained entry attributes { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.query.retained.entry.identity = query retained entry identity: { $detail }
+
+journal.cli.journal.archive.source.windows.query.retained.entry.identity.member = query retained entry identity { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.query.retained.entry.metadata = query retained entry metadata: { $detail }
+
+journal.cli.journal.archive.source.windows.query.retained.entry.metadata.member = query retained entry metadata { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.query.retained.entry.type = query retained entry type: { $detail }
+
+journal.cli.journal.archive.source.windows.query.retained.entry.type.member = query retained entry type { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.read.observed.file = read observed file: { $detail }
+
+journal.cli.journal.archive.source.windows.read.observed.file.member = read observed file { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.reverify.retained.relative.directory.identity = reverify retained relative directory identity: { $detail }
+
+journal.cli.journal.archive.source.windows.reverify.retained.relative.directory.identity.member = reverify retained relative directory identity { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.size.checked.read.buffer = size checked-read buffer: { $detail }
+
+journal.cli.journal.archive.source.windows.size.checked.read.buffer.member = size checked-read buffer { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.trace.retained.relative.directory.listing.open = trace retained relative directory listing open: { $detail }
+
+journal.cli.journal.archive.source.windows.trace.retained.relative.directory.listing.open.member = trace retained relative directory listing open { $member }: { $detail }
+
+journal.cli.journal.archive.source.windows.unsupported.arm.recursive.namespace.witness = unsupported journal root { $path }: arm recursive namespace witness
+
+journal.cli.journal.archive.source.windows.unsupported.cancel.recursive.namespace.witness = unsupported journal root { $path }: cancel recursive namespace witness
+
+journal.cli.journal.archive.source.windows.unsupported.check.recursive.namespace.witness = unsupported journal root { $path }: check recursive namespace witness
+
+journal.cli.journal.archive.source.windows.unsupported.drain.recursive.namespace.witness = unsupported journal root { $path }: drain recursive namespace witness
+
+journal.cli.journal.archive.source.windows.unsupported.wait.for.recursive.namespace.witness = unsupported journal root { $path }: wait for recursive namespace witness
+
+journal.cli.journal.archive.source.windows.wait.for.recursive.namespace.witness = wait for recursive namespace witness: { $detail }
+
+journal.cli.journal.archive.source.windows.wait.for.recursive.namespace.witness.member = wait for recursive namespace witness { $member }: { $detail }
+
+journal.cli.journal.archive.space.overflow = available disk space overflow
+
+journal.cli.journal.archive.space.platform = disk-space inspection is unsupported on this platform
+
+journal.cli.journal.archive.summary = Archive merge: { $committed } committed, { $skipped } skipped, { $failed } failed.
+
+journal.cli.journal.archive.target.changed = archive output route changed during export: { $path }
+
+journal.cli.journal.archive.target.collision = archive output already exists: { $path }
+
+journal.cli.journal.archive.target.invalid = invalid archive output { $path }: { $reason }
+
+journal.cli.journal.archive.target.io = { $operation } failed for { $path }: { $detail }
+
+journal.cli.journal.archive.target.io.open.archive.output.filesystem.root = open archive output filesystem root failed for { $path }: { $detail }
+
+journal.cli.journal.archive.target.io.open.archive.output.parent = open archive output parent failed for { $path }: { $detail }
+
+journal.cli.journal.archive.target.io.retain.admitted.archive.output.parent = retain admitted archive output parent failed for { $path }: { $detail }
+
+journal.cli.journal.archive.target.io.revalidate.admitted.archive.output.parent = revalidate admitted archive output parent failed for { $path }: { $detail }
+
+journal.cli.journal.archive.target.io.stat.admitted.archive.output.parent = stat admitted archive output parent failed for { $path }: { $detail }
+
+journal.cli.journal.archive.target.io.stat.archive.output.filesystem.root = stat archive output filesystem root failed for { $path }: { $detail }
+
+journal.cli.journal.archive.target.io.stat.archive.output.final.name = stat archive output final name failed for { $path }: { $detail }
+
+journal.cli.journal.archive.target.io.stat.archive.output.parent = stat archive output parent failed for { $path }: { $detail }
+
+journal.cli.journal.archive.target.io.stat.opened.archive.output.parent = stat opened archive output parent failed for { $path }: { $detail }
+
+journal.cli.journal.archive.target.io.stat.retained.archive.output.parent = stat retained archive output parent failed for { $path }: { $detail }
+
+journal.cli.journal.archive.target.unsafe = archive output is an unsafe { $kind }: { $path }
+
+journal.cli.journal.archive.target.windows.changed = archive output changed: { $path }
+
+journal.cli.journal.archive.target.windows.io = archive output { $path }: { $detail }
+
+journal.cli.journal.archive.target.windows.unsafe = unsafe archive output { $path }: { $reason }
+
+journal.cli.journal.archive.temp.name = could not allocate a unique archive temporary name
+
+journal.cli.journal.archive.to.invalid = { $token_to } must be a real { $token_yyyymmdd } date
+
+journal.cli.journal.archive.to.required = { $to_flag } requires { $token_yyyymmdd }
+
+journal.cli.journal.archive.zero.write = archive writer returned zero bytes for a nonempty write
+
+journal.cli.journal.facet.argument.ios = unavailable on { $platform }
+
+journal.cli.journal.facet.argument.unexpected = unexpected argument
+
+journal.cli.journal.facet.content.unsafe = unsafe facet content: { $path }
+
+journal.cli.journal.facet.doctor.adopted.heading = Adopted orphan facets
+
+journal.cli.journal.facet.doctor.adoption.failed = { $destination } (adoption failed: { $error })
+
+journal.cli.journal.facet.doctor.adoption.unmerged = { $folders_remaining ->
+    [one] { $destination } (adoption failed: { $error }; { $unmerged } was not merged)
+   *[other] { $destination } (adoption failed: { $error }; { $unmerged } were not merged)
+    }
+
+journal.cli.journal.facet.doctor.argument.merge = { $merge_flag } requires { $adopt_flag }
+
+journal.cli.journal.facet.doctor.collision.heading = Regular-file collisions
+
+journal.cli.journal.facet.doctor.empty = Nothing to report.
+
+journal.cli.journal.facet.doctor.failed.heading = Failed orphan facets
+
+journal.cli.journal.facet.doctor.fix.ios = { $fix_flag } is unavailable on { $platform }
+
+journal.cli.journal.facet.doctor.folders.hidden = Folders whose names start with a dot are never facets, so these facet declarations are ignored: { $folders }
+
+journal.cli.journal.facet.doctor.group.ambiguous = { $members }: named like { $facets }; rename the folder to match one, then run with { $adopt_flag } { $merge_flag }
+
+journal.cli.journal.facet.doctor.group.damaged = { $members }: named like { $facets }, whose { $declaration } needs repair first
+
+journal.cli.journal.facet.doctor.help = Usage: { $syntax }{ $line_break }{ $retire_syntax }
+
+journal.cli.journal.facet.doctor.history.failed = action log scan failed: { $error }
+
+journal.cli.journal.facet.doctor.history.merged = { $name } was merged into { $destination }
+
+journal.cli.journal.facet.doctor.history.recorded = Recorded retired facet names from the action logs:
+
+journal.cli.journal.facet.doctor.history.renamed = { $name } was renamed into { $destination }
+
+journal.cli.journal.facet.doctor.history.reused = These facets were renamed or merged away earlier and their names later given to a new facet, so older material that names them can't be told apart. Nothing was changed: { $names }
+
+journal.cli.journal.facet.doctor.history.unknown = The action logs mention these names but not where they went: { $names }. If material still names one, record it with { $retire_arguments } or { $deleted_flag }.
+
+journal.cli.journal.facet.doctor.history.unrecorded = Facet names the action logs show were retired but aren't recorded (run with { $fix_flag } to record them):
+
+journal.cli.journal.facet.doctor.leftovers.failed = merge leftovers couldn't be read: { $error }
+
+journal.cli.journal.facet.doctor.leftovers.kept = Leftover folders from a facet merge that may hold the only copy of some files. Don't delete them; run with { $fix_flag } to move them to the trash: { $folders }
+
+journal.cli.journal.facet.doctor.leftovers.moved = Moved leftover folders from a facet merge to the trash, as they were: { $folders }
+
+journal.cli.journal.facet.doctor.leftovers.safe = Leftover folders from an interrupted facet merge, safe to delete once no merge is running: { $folders }
+
+journal.cli.journal.facet.doctor.link.duplicate.open = { $facet }: '{ $id }' is linked from more than one folder ({ $folders })
+
+journal.cli.journal.facet.doctor.link.duplicate.repaired = { $facet }: '{ $id }' was linked from more than one folder ({ $folders })
+
+journal.cli.journal.facet.doctor.link.merged.open = { $folder_count ->
+    [one] { $facet }: '{ $id }' was merged into '{ $successor }', and folder { $folders } still links it
+   *[other] { $facet }: '{ $id }' was merged into '{ $successor }', and folders { $folders } still link it
+    }
+
+journal.cli.journal.facet.doctor.link.merged.repaired = { $folder_count ->
+    [one] { $facet }: '{ $id }' was merged into '{ $successor }', and folder { $folders } linked it
+   *[other] { $facet }: '{ $id }' was merged into '{ $successor }', and folders { $folders } linked it
+    }
+
+journal.cli.journal.facet.doctor.link.misnamed.open = { $facet }: '{ $id }' is linked from folder { $folders }, not a folder named '{ $id }'
+
+journal.cli.journal.facet.doctor.link.misnamed.repaired = { $facet }: '{ $id }' was linked from folder { $folders }, not a folder named '{ $id }'
+
+journal.cli.journal.facet.doctor.link.unreadable = { $facet }: folder { $folders } has a link that can't be read or used
+
+journal.cli.journal.facet.doctor.link.unreadable.check = { $facet }: folder { $folders } has a link that can't be read or used; { $fix_flag } leaves it as it is
+
+journal.cli.journal.facet.doctor.link.unreadable.undecided = { $facet }: folder { $folders } has a link that can't be read or used ({ $fix_flag } can't tell which entity it links, so it leaves it)
+
+journal.cli.journal.facet.doctor.links.check = Entity links to repair (run with { $fix_flag } to repair the ones that can be):
+
+journal.cli.journal.facet.doctor.links.check.failed = entity link check failed: { $error }
+
+journal.cli.journal.facet.doctor.links.left = Entity links left as they are:
+
+journal.cli.journal.facet.doctor.links.repair.failed = entity link repair failed: { $error }
+
+journal.cli.journal.facet.doctor.links.repaired = Entity links repaired:
+
+journal.cli.journal.facet.doctor.links.rescan = Run '{ $rescan_command }' to refresh the index.
+
+journal.cli.journal.facet.doctor.lock.failed = the facet lock wasn't taken: { $error }
+
+journal.cli.journal.facet.doctor.maintenance.heading = Committed merge maintenance failures
+
+journal.cli.journal.facet.doctor.merge.collision = { $source } -> { $destination }: { $path } (kept { $retained })
+
+journal.cli.journal.facet.doctor.merge.failed = { $source } -> { $destination } (merge failed before commit: { $error })
+
+journal.cli.journal.facet.doctor.merge.ios = facet merging unavailable on { $platform }
+
+journal.cli.journal.facet.doctor.merged.heading = Merged orphan facets
+
+journal.cli.journal.facet.doctor.merged.none = No orphan facet was registered or merged.
+
+journal.cli.journal.facet.doctor.merges.incomplete = one or more orphan facet merges committed with maintenance failures
+
+journal.cli.journal.facet.doctor.orphans.count = { $count ->
+    [one] { $count } orphan facet found. Run with { $adopt_flag } to register it.
+   *[other] { $count } orphan facet(s) found. Run with { $adopt_flag } to register them.
+    }
+
+journal.cli.journal.facet.doctor.orphans.heading = Orphan facets:
+
+journal.cli.journal.facet.doctor.orphans.held = The action logs show these facet names were retired, so their folders are not registered; run with { $fix_flag } to record them: { $folders }
+
+journal.cli.journal.facet.doctor.orphans.none = No orphan facets found.
+
+journal.cli.journal.facet.doctor.orphans.retired = These folders have content under facet names that were merged or renamed into another facet, so they are not registered as facets; their files are left in place: { $folders }
+
+journal.cli.journal.facet.doctor.queue.failed = the repair finished, but its search update could not be queued: { $error }
+
+journal.cli.journal.facet.doctor.reference = - { $name }: { $count } ({ $first } to { $last })
+
+journal.cli.journal.facet.doctor.references.command = To make one reachable again, run: { $retire_command }
+
+journal.cli.journal.facet.doctor.references.failed = reference scan failed: { $error }
+
+journal.cli.journal.facet.doctor.references.missing = Segments name these facets, which don't exist and aren't recorded as retired. Agents limited to chosen facets can't see that material; everything else can:
+
+journal.cli.journal.facet.doctor.registered.none = No orphan facet was registered.
+
+journal.cli.journal.facet.doctor.registration.failed = registered { $slug }, but its record could not be written: { $error }
+
+journal.cli.journal.facet.doctor.repair.failed = retired facet names could not be repaired: { $error }
+
+journal.cli.journal.facet.doctor.repaired.count = { $repaired ->
+    [one] { $repaired } orphan facet repaired. search is catching up.
+   *[other] { $repaired } orphan facet(s) repaired. search is catching up.
+    }
+
+journal.cli.journal.facet.doctor.repaired.heading = Repaired orphan facets:
+
+journal.cli.journal.facet.doctor.repairs.failed = one or more orphan facet repairs failed
+
+journal.cli.journal.facet.doctor.repairs.failed.count = { $repaired ->
+    [one] { $failed_orphans ->
+        [one] { $repaired } orphan facet repaired; { $failed_orphans } orphan facet failed. Run '{ $rescan_command }' to refresh the index.
+       *[other] { $repaired } orphan facet repaired; { $failed_orphans } orphan facet(s) failed. Run '{ $rescan_command }' to refresh the index.
+        }
+   *[other] { $failed_orphans ->
+        [one] { $repaired } orphan facet(s) repaired; { $failed_orphans } orphan facet failed. Run '{ $rescan_command }' to refresh the index.
+       *[other] { $repaired } orphan facet(s) repaired; { $failed_orphans } orphan facet(s) failed. Run '{ $rescan_command }' to refresh the index.
+        }
+    }
+
+journal.cli.journal.facet.doctor.repairs.maintenance.count = { $repaired ->
+    [one] { $merges ->
+        [one] { $repaired } orphan facet repaired; { $merges } merge committed but reported a maintenance failure after commit. See 'Committed merge maintenance failures' above. Run '{ $rescan_command }' to refresh the index.
+       *[other] { $repaired } orphan facet repaired; { $merges } merge(s) committed but reported a maintenance failure after commit. See 'Committed merge maintenance failures' above. Run '{ $rescan_command }' to refresh the index.
+        }
+   *[other] { $merges ->
+        [one] { $repaired } orphan facet(s) repaired; { $merges } merge committed but reported a maintenance failure after commit. See 'Committed merge maintenance failures' above. Run '{ $rescan_command }' to refresh the index.
+       *[other] { $repaired } orphan facet(s) repaired; { $merges } merge(s) committed but reported a maintenance failure after commit. See 'Committed merge maintenance failures' above. Run '{ $rescan_command }' to refresh the index.
+        }
+    }
+
+journal.cli.journal.facet.doctor.retired.malformed = { $retired_path } does not parse ({ $detail }). Run with { $fix_flag } to rebuild it; no name it reserves is freed.
+
+journal.cli.journal.facet.doctor.retired.rebuilt = { $retired_path } did not parse ({ $detail }); it was moved to { $path } and rebuilt.
+
+journal.cli.journal.facet.doctor.retired.reserved = These names could not be traced and are recorded as deleted: { $names }.
+
+journal.cli.journal.facet.doctor.retired.unreadable = { $retired_path } could not be read ({ $detail }). Check its permissions; it was left as it is.
+
+journal.cli.journal.facet.doctor.search.failed = search update could not be queued: { $error }
+
+journal.cli.journal.facet.doctor.search.queued = search is catching up with the facet changes.
+
+journal.cli.journal.facet.doctor.search.skipped = Search was not updated, because { $retired_path } can't be used yet.
+
+journal.cli.journal.facet.doctor.twins.heading = Folders named like a facet you have:
+
+journal.cli.journal.facet.doctor.twins.merge = These are never registered beside it. Run with { $adopt_flag } { $merge_flag } to fold them into it; a merge is permanent, and a file both have keeps the facet's copy.
+
+journal.cli.journal.facet.doctor.twins.preview = To see what one would bring first: { $merge_command } { $source } { $into_flag } { $destination } { $dry_run_flag }
+
+journal.cli.journal.facet.doctor.unclear.heading = Folders left as they are
+
+journal.cli.journal.facet.doctor.variants.heading = Name-variant groups:
+
+journal.cli.journal.facet.doctor.variants.merge = These were not registered. Run with { $adopt_flag } { $merge_flag } to collapse them into one.
+
+journal.cli.journal.facet.doctor.variants.register = Run with { $adopt_flag } { $merge_flag } to collapse name variants before registering them.
+
+journal.cli.journal.facet.entry.unsafe = unsafe facet entry: { $path }
+
+journal.cli.journal.facet.hidden.damaged = the hidden names at { $path } can't be read, so nothing was changed: { $detail }
+
+journal.cli.journal.facet.hidden.empty = no name was given
+
+journal.cli.journal.facet.hidden.field.text = { $key } is not text
+
+journal.cli.journal.facet.hidden.field.unknown = unknown field { $key }
+
+journal.cli.journal.facet.hidden.names.list = { $names_field } is not a list
+
+journal.cli.journal.facet.hidden.row.empty = name is empty
+
+journal.cli.journal.facet.hidden.row.error = name { $index }: { $detail }
+
+journal.cli.journal.facet.hidden.row.object = not an object
+
+journal.cli.journal.facet.json.object = { $path } is not a { $json_format } object
+
+journal.cli.journal.facet.link.conflict = { $path } has different contents in the folders being combined, so nothing was combined
+
+journal.cli.journal.facet.link.file.encoding = { $path } is not { $encoding } text
+
+journal.cli.journal.facet.link.ids.exhausted = notes have run out of id numbers
+
+journal.cli.journal.facet.link.invalid.name = '{ $name }' can't be used as an entity id
+
+journal.cli.journal.facet.link.not.file = { $path } is a folder or link, not a file, so nothing was combined
+
+journal.cli.journal.facet.link.observation.corrupt = corrupt observation in { $source }: { $detail }
+
+journal.cli.journal.facet.link.observation.malformed = malformed observation in { $source } at line { $line }: { $reason }
+
+journal.cli.journal.facet.link.occupied = folder '{ $id }' holds another entity or can't be read
+
+journal.cli.journal.facet.link.repair.destination = the folder for '{ $id }' in the facet being merged into holds another entity or can't be read, so nothing was changed; run '{ $doctor_command }' to see what needs repair
+
+journal.cli.journal.facet.link.repair.named = the folder for '{ $id }' in the '{ $facet }' facet holds another entity or can't be read, so nothing was changed; run '{ $doctor_command }' to see what needs repair
+
+journal.cli.journal.facet.link.successor.missing = the entity it joined can't be found
+
+journal.cli.journal.facet.log.action.queue = action log search update could not be queued: { $error }
+
+journal.cli.journal.facet.log.detections.queue = facet detections not queued for search facet={ $facet } cause={ $error }
+
+journal.cli.journal.facet.log.trash.unfinished = trash item { $id }: moved, finishing later: { $error }
+
+journal.cli.journal.facet.merge.argument.confirm = a merge is permanent and can't be undone; review it with { $dry_run_flag }, then run it again with { $yes_flag }
+
+journal.cli.journal.facet.merge.argument.dest = { $into_flag } requires { $destination_argument }
+
+journal.cli.journal.facet.merge.argument.into = { $into_dest } is required
+
+journal.cli.journal.facet.merge.argument.invalid = invalid { $source_argument } or { $destination_argument }
+
+journal.cli.journal.facet.merge.argument.source = { $source_argument } is required
+
+journal.cli.journal.facet.merge.cleanup.failed = the merge finished, but its leftover folders couldn't be removed: { $error }; run '{ $repair_command }' to tidy them
+
+journal.cli.journal.facet.merge.collisions.kept = Both facets had these files. '{ $destination }' kept its own copy; the copy in '{ $source }' was kept, and '{ $repair_command }' moves it to the trash:
+
+journal.cli.journal.facet.merge.collisions.trashed = Both facets had these files. '{ $destination }' kept its own copy; the copy in '{ $source }' is in the trash:
+
+journal.cli.journal.facet.merge.complete = Merged '{ $source }' into '{ $destination }'. Index rebuild completed.
+
+journal.cli.journal.facet.merge.destination.absent = '{ $destination }' isn't a facet
+
+journal.cli.journal.facet.merge.destination.id = '{ $destination }' has no stable id yet; run '{ $backfill_command }' first
+
+journal.cli.journal.facet.merge.destination.retired = '{ $destination }' is recorded as a retired facet name; run '{ $doctor_command }' for details
+
+journal.cli.journal.facet.merge.detections.failed = its detections were not queued
+
+journal.cli.journal.facet.merge.failed = facet merge failed
+
+journal.cli.journal.facet.merge.help = Usage: { $syntax }
+
+journal.cli.journal.facet.merge.preview.empty = Nothing.
+
+journal.cli.journal.facet.merge.preview.entities = { $count ->
+    [one] { $count } entity is linked in both facets; it would end up with one link, keeping every note.
+   *[other] { $count } entities are linked in both facets; each would end up with one link, keeping every note.
+    }
+
+journal.cli.journal.facet.merge.preview.fields = Entity fields where '{ $destination }' would keep its own, different value:
+
+journal.cli.journal.facet.merge.preview.files = Files both facets have that can't be combined. '{ $destination }' would keep its own copy, and the copy in '{ $source }' would go to the trash:
+
+journal.cli.journal.facet.merge.preview.heading = Dry run, nothing was changed. Merging '{ $source }' into '{ $destination }' would lose:
+
+journal.cli.journal.facet.merge.preview.notes = { $count ->
+    [one] { $count } note would get a new number, after the notes already there.
+   *[other] { $count } notes would get a new number, after the notes already there.
+    }
+
+journal.cli.journal.facet.merge.preview.records = Records that would be dropped because a different record with the same id is kept (the first record with each id is kept, reading '{ $destination }' first):
+
+journal.cli.journal.facet.merge.preview.settings = The settings in the { $declaration } of '{ $source }', which would not be carried over.
+
+journal.cli.journal.facet.merge.queue.failed = the repair finished, but its search update could not be queued: { $error }
+
+journal.cli.journal.facet.merge.scratch.failed = dry run could not remove its scratch copy { $path }: { $error }; nothing else was changed, and that folder can be deleted
+
+journal.cli.journal.facet.merge.source.absent = '{ $source }' isn't a facet
+
+journal.cli.journal.facet.merge.source.declared = '{ $source }' is a declared facet, not an orphan folder
+
+journal.cli.journal.facet.merge.source.only = '{ $source }' is the only facet that isn't muted, and a journal keeps at least one; unmute '{ $destination }' first
+
+journal.cli.journal.facet.merge.source.retired = '{ $source }' is a retired facet name
+
+journal.cli.journal.facet.merge.trash.failed = the merge finished, but the files it replaced couldn't be moved to the trash: { $error }; they're kept, and '{ $repair_command }' moves them there
+
+journal.cli.journal.facet.name.encoding = facet name is not { $encoding }
+
+journal.cli.journal.facet.name.unsafe = unsafe facet declaration for { $slug }
+
+journal.cli.journal.facet.notify.queue = the search update could not be queued: { $error }
+
+journal.cli.journal.facet.notify.search = search was not updated: { $reason }
+
+journal.cli.journal.facet.path.encoding = { $path } isn't { $encoding }
+
+journal.cli.journal.facet.path.plain = { $path } isn't a plain path
+
+journal.cli.journal.facet.record.declaration.damaged = facet declaration is damaged: { $detail }
+
+journal.cli.journal.facet.record.declaration.exists = facet declaration already exists: { $path }
+
+journal.cli.journal.facet.record.declaration.invalid = facet declaration is not an object: { $path }
+
+journal.cli.journal.facet.record.declaration.missing = facet declaration is missing: { $path }
+
+journal.cli.journal.facet.record.declaration.unreadable = facet declaration could not be read: { $detail }
+
+journal.cli.journal.facet.record.id.duplicate = duplicate well-formed facet identifier already on disk: { $id }
+
+journal.cli.journal.facet.record.id.entropy = could not obtain random bytes for identifier: { $error }
+
+journal.cli.journal.facet.record.id.exhausted = exhausted retries generating a unique facet identifier
+
+journal.cli.journal.facet.record.link.invalid = facet entity link is not an object: { $path }
+
+journal.cli.journal.facet.record.malformed.activity = cannot read activity definitions at { $path } line { $line }: { $reason }
+
+journal.cli.journal.facet.record.malformed.observation = malformed observation { $source } line { $line }: { $reason }
+
+journal.cli.journal.facet.record.marker.invalid = facet entity-link repair completion marker is empty or malformed: { $path }
+
+journal.cli.journal.facet.record.minimum = facet '{ $facet }' is the only enabled facet; a journal keeps at least one
+
+journal.cli.journal.facet.record.missing.names = missing { $names_field } object
+
+journal.cli.journal.facet.record.name.retired = the facet name '{ $name }' belonged to a facet that was merged or renamed, and leads to it now
+
+journal.cli.journal.facet.record.not.object = not a { $json_format } object
+
+journal.cli.journal.facet.record.reason.content = expected an object with nonblank string content
+
+journal.cli.journal.facet.record.reason.history = invalid { $history_field } field
+
+journal.cli.journal.facet.record.reason.id = { $id_field } must be an unsigned integer
+
+journal.cli.journal.facet.record.reason.json = invalid { $json_format }
+
+journal.cli.journal.facet.record.reason.object = expected an object
+
+journal.cli.journal.facet.record.reason.relation = expected an object with nonblank string content or relation
+
+journal.cli.journal.facet.record.reason.retired = invalid { $retired_field } field
+
+journal.cli.journal.facet.record.retired.conflict = the facet name '{ $name }' is already recorded as retired with a different outcome
+
+journal.cli.journal.facet.record.retired.damaged = { $retired_path } could not be read ({ $detail }); run '{ $repair_command }'
+
+journal.cli.journal.facet.record.source.snapshot = captured snapshot
+
+journal.cli.journal.facet.retire.argument = { $retire_flag } needs { $name_argument } and then { $into_facet } or { $deleted_flag }
+
+journal.cli.journal.facet.retire.deleted = Recorded '{ $name }' as deleted. search is catching up.
+
+journal.cli.journal.facet.retire.encoding = names must be { $encoding }
+
+journal.cli.journal.facet.retire.folder = '{ $name }' is a folder in this journal; only a name that no longer exists can be retired
+
+journal.cli.journal.facet.retire.merged = Recorded '{ $name }' as merged into '{ $target }'. search is catching up.
+
+journal.cli.journal.facet.retire.name = '{ $name }' isn't a facet name
+
+journal.cli.journal.facet.retire.target = '{ $target }' isn't a facet with a stable id; run '{ $backfill_command }' first
+
+journal.cli.journal.facet.transaction.exists = transaction path already exists: { $path }
+
+journal.cli.journal.facet.transaction.rollback = transaction failed and was rolled back: { $primary }
+
+journal.cli.journal.facet.transaction.rollback.failed = transaction failed ({ $primary }); rollback also failed ({ $rollback_error })
+
+journal.cli.journal.facet.trash.absent = that is no longer in the trash
+
+journal.cli.journal.facet.trash.busy = that is already being recovered or erased
+
+journal.cli.journal.facet.trash.io = your trash couldn't be changed: { $error }
+
+journal.cli.journal.facet.trash.missing = there is no such { $item } in your journal
+
+journal.cli.journal.facet.trash.unfinished = it's in the trash, which will finish putting it away
+
+journal.cli.journal.facet.trash.unknown = this build can't recover that
+
+journal.cli.journal.help.overview = { $invocation } - the journal on this computer{ $line_break }{ $line_break }Usage: { $syntax }{ $line_break }{ $line_break }{ $old_command } has moved to '{ $invocation }'; use that command for local journal operations.{ $line_break }{ $line_break }Local commands:{ $line_break }{ $commands }{ $line_break }{ $line_break }Process commands:{ $line_break }{ $processes }{ $line_break }{ $line_break }Journal-local commands:{ $line_break }{ $local }{ $line_break }{ $line_break }Options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_4 }Show this help{ $line_break }{ $syntax_continuation_17 }{ $line_break }{ $syntax_continuation_18 }
+
+journal.cli.journal.help.path = usage: { $syntax }{ $line_break }{ $line_break }Print the resolved journal path.
+
+journal.cli.journal.help.root = usage: { $syntax }{ $line_break }{ $line_break }Print the project root.
+
+journal.cli.journal.help.setup.copy = usage: { $syntax }
+
+journal.cli.journal.help.status = usage: { $syntax }{ $line_break }{ $line_break }Print whether the journal exists and how many days it has.
+
+journal.cli.journal.help.usage = Usage: { $syntax }
+
+journal.cli.journal.helper.inspect = { $code }: could not inspect the native journal executable: { $error }
+
+journal.cli.journal.helper.missing.mac = { $code }: { $path }. Reinstall the journal app.
+
+journal.cli.journal.helper.missing.other = { $code }: { $path }. Reinstall { $package }.
+
+journal.cli.journal.helper.mode.mac = { $code }: { $path }. Reinstall the journal app.
+
+journal.cli.journal.helper.mode.other = { $code }: { $path }. Reinstall { $package }.
+
+journal.cli.journal.host.path.utf8 = native journal path resolution failed: resolved journal path is not valid UTF-8
+
+journal.cli.journal.host.status.absent = Journal: { $path }{ $line_break }Source: { $source }{ $line_break }Exists: no{ $line_break }Days: { $days }
+
+journal.cli.journal.host.status.directory = native journal status failed: journal root is not a directory: { $path }
+
+journal.cli.journal.host.status.exists = Journal: { $path }{ $line_break }Source: { $source }{ $line_break }Exists: yes{ $line_break }Days: { $days }
+
+journal.cli.journal.host.status.inspect = native journal status failed: could not inspect { $path }: { $error }
+
+journal.cli.journal.host.status.utf8 = native journal status failed: resolved journal path is not valid UTF-8
+
+journal.cli.journal.indexer.argument.argument = unexpected argument
+
+journal.cli.journal.indexer.argument.budget = { $budget_seconds_flag } needs a positive number
+
+journal.cli.journal.indexer.argument.drain = { $drain_flag } requires { $apply_flag }
+
+journal.cli.journal.indexer.argument.duplicate = unexpected or duplicate argument
+
+journal.cli.journal.indexer.argument.file = { $rescan_file_flag } requires { $path }
+
+journal.cli.journal.indexer.argument.ios = unavailable on { $ios }
+
+journal.cli.journal.indexer.argument.missing.agent = { $agent_flag } requires { $agent }
+
+journal.cli.journal.indexer.argument.missing.day = { $day_flag } requires { $day }
+
+journal.cli.journal.indexer.argument.missing.day.from = { $day_from_flag } requires { $day }
+
+journal.cli.journal.indexer.argument.missing.day.to = { $day_to_flag } requires { $day }
+
+journal.cli.journal.indexer.argument.missing.facet = { $facet_flag } requires { $facet }
+
+journal.cli.journal.indexer.argument.missing.limit = { $limit_flag } requires a non-negative integer
+
+journal.cli.journal.indexer.argument.missing.offset = { $offset_flag } requires a non-negative integer
+
+journal.cli.journal.indexer.argument.missing.stream = { $stream_flag } requires { $stream }
+
+journal.cli.journal.indexer.argument.missing.top = { $top_flag } requires a non-negative integer
+
+journal.cli.journal.indexer.argument.rescan.conflict = { $rescan_file_flag } cannot be combined with { $rescan_flag } or { $rescan_full_flag }
+
+journal.cli.journal.indexer.argument.unsupported = unsupported file
+
+journal.cli.journal.indexer.build.building = build: building
+
+journal.cli.journal.indexer.build.complete = build: complete
+
+journal.cli.journal.indexer.build.unknown = build: unknown
+
+journal.cli.journal.indexer.calendar.at = line { $line }: { $reason }
+
+journal.cli.journal.indexer.calendar.import = calendar notes in { $rel } skipped: { $error }
+
+journal.cli.journal.indexer.calendar.line.repeat = calendar note line { $line } repeats an event
+
+journal.cli.journal.indexer.calendar.line.skip = calendar note line { $line } skipped: { $reason }
+
+journal.cli.journal.indexer.calendar.segment = calendar notes skipped: { $rel } is not in a segment
+
+journal.cli.journal.indexer.calendar.settings = calendar event in { $path } is listed once the settings file can be read: { $error }
+
+journal.cli.journal.indexer.calendar.source = calendar notes are read only from calendar streams and calendar imports: { $rel }
+
+journal.cli.journal.indexer.calendar.unlisted = calendar note in { $path } not listed: { $reason }
+
+journal.cli.journal.indexer.calendar.validation.account.must.be.a.string.or.null = { $account_field } must be a string or { $null_key }
+
+journal.cli.journal.indexer.calendar.validation.all.day.must.be.true.or.false = { $all_day_field } must be { $true_key } or { $false_key }
+
+journal.cli.journal.indexer.calendar.validation.attendee.status.must.be.a.string.or.null = attendee { $status_field } must be a string or { $null_key }
+
+journal.cli.journal.indexer.calendar.validation.attendee.you.must.be.true.or.false = attendee { $you_field } must be { $true_key } or { $false_key }
+
+journal.cli.journal.indexer.calendar.validation.attendees.must.be.an.array = { $attendees_field } must be an array
+
+journal.cli.journal.indexer.calendar.validation.change.must.be.added.changed.or.removed = { $change_field } must be { $added_changed_or_removed_key }
+
+journal.cli.journal.indexer.calendar.validation.changed.at.falls.outside.the.segment.window = { $changed_at_field } falls outside the segment window
+
+journal.cli.journal.indexer.calendar.validation.changed.at.must.be.a.time.with.an.offset = { $changed_at_field } must be a time with an offset
+
+journal.cli.journal.indexer.calendar.validation.each.attendee.must.be.an.object = each attendee must be an object
+
+journal.cli.journal.indexer.calendar.validation.end.cannot.be.read.as.a.date.or.time = { $end_field } cannot be read as a date or time
+
+journal.cli.journal.indexer.calendar.validation.end.is.before.start = { $end_field } is before start
+
+journal.cli.journal.indexer.calendar.validation.end.must.be.a.string.or.null = { $end_field } must be a string or { $null_key }
+
+journal.cli.journal.indexer.calendar.validation.event.and.occurrence.repeat.an.earlier.line = { $event_field } and occurrence repeat an earlier line
+
+journal.cli.journal.indexer.calendar.validation.event.must.be.a.non.empty.string = { $event_field } must be a non-empty string
+
+journal.cli.journal.indexer.calendar.validation.expanded.must.be.true.when.present = { $expanded_field } must be { $true_key } when present
+
+journal.cli.journal.indexer.calendar.validation.field.missing = { $key } is missing
+
+journal.cli.journal.indexer.calendar.validation.field.type = { $key } must be a string or { $null_input }
+
+journal.cli.journal.indexer.calendar.validation.file.encoding = file is not { $encoding }
+
+journal.cli.journal.indexer.calendar.validation.file.holds.no.notes = file holds no notes
+
+journal.cli.journal.indexer.calendar.validation.file.lines = file holds more than 5,000 notes
+
+journal.cli.journal.indexer.calendar.validation.file.size = file holds more than 8 { $unit }
+
+journal.cli.journal.indexer.calendar.validation.filename = file name must be { $prefix } followed by 64 lowercase hex digits and { $suffix }
+
+journal.cli.journal.indexer.calendar.validation.import.must.be.a.non.empty.string = { $import_field } must be a non-empty string
+
+journal.cli.journal.indexer.calendar.validation.imported.at.must.be.a.time.with.an.offset = { $imported_at_key } must be a time with an offset
+
+journal.cli.journal.indexer.calendar.validation.line.is.empty = line is empty
+
+journal.cli.journal.indexer.calendar.validation.line.is.not.a.json.object = line is not a { $json_key } object
+
+journal.cli.journal.indexer.calendar.validation.occurrence.cannot.be.read.as.a.date.or.time = { $occurrence_field } cannot be read as a date or time
+
+journal.cli.journal.indexer.calendar.validation.occurrence.must.be.a.string.or.null = { $occurrence_field } must be a string or { $null_key }
+
+journal.cli.journal.indexer.calendar.validation.organizer.must.be.an.object.or.null = { $organizer_field } must be an object or { $null_key }
+
+journal.cli.journal.indexer.calendar.validation.person.field = { $what } { $key } must be a string or { $null_input }
+
+journal.cli.journal.indexer.calendar.validation.segment.grid = segment must name one 300-second window on the journal's grid
+
+journal.cli.journal.indexer.calendar.validation.segment.must.name.a.span.on.its.day = segment must name a span on its day
+
+journal.cli.journal.indexer.calendar.validation.start.and.end.must.be.dates.exactly.when.all.day.is.true = { $start_field } and { $end_field } must be dates exactly when { $all_day_field } is { $true_key }
+
+journal.cli.journal.indexer.calendar.validation.start.and.end.must.both.carry.an.offset.or.both.have.none = { $start_field } and { $end_field } must both carry an offset or both have none
+
+journal.cli.journal.indexer.calendar.validation.start.cannot.be.read.as.a.date.or.time = { $start_field } cannot be read as a date or time
+
+journal.cli.journal.indexer.calendar.validation.start.is.missing = { $start_field } is missing
+
+journal.cli.journal.indexer.calendar.validation.version = { $v_field } must be 1
+
+journal.cli.journal.indexer.chunker.activity = unsupported desktop activity version
+
+journal.cli.journal.indexer.chunker.calendar = calendar note skipped: { $reason }
+
+journal.cli.journal.indexer.chunker.lines = { $collapsed ->
+    [one] Collapsed whitespace on { $collapsed } overlong Markdown line during indexing
+   *[other] Collapsed whitespace on { $collapsed } overlong Markdown line(s) during indexing
+    }
+
+journal.cli.journal.indexer.classification.absent = classifications: database absent
+
+journal.cli.journal.indexer.classification.complete = classifications: complete (processed { $processed }, unclassified { $unclassified })
+
+journal.cli.journal.indexer.classification.incomplete = classifications: incomplete sidecar at cursor '{ $cursor }' (run '{ $repair }')
+
+journal.cli.journal.indexer.classification.mismatch = classifications: coverage mismatch at cursor '{ $cursor }' (processed { $processed }, remaining { $remaining }, missing { $missing }, unclassified { $unclassified })
+
+journal.cli.journal.indexer.classification.missing = { $missing ->
+    [one] chunk classification coverage mismatch: { $missing } missing row
+   *[other] chunk classification coverage mismatch: { $missing } missing rows
+    }
+
+journal.cli.journal.indexer.classification.progress = classifications: in progress at cursor '{ $cursor }' (processed { $processed }, remaining { $remaining }, missing { $missing }, unclassified { $unclassified })
+
+journal.cli.journal.indexer.classification.stall = chunk classification backfill stalled: { $err }
+
+journal.cli.journal.indexer.classification.stalled = classifications: stalled at '{ $path }' (processed { $processed }, remaining { $remaining }, missing { $missing }, unclassified { $unclassified })
+
+journal.cli.journal.indexer.classification.unready = classifications: unready at cursor '{ $cursor }' (run '{ $repair_command }')
+
+journal.cli.journal.indexer.database.absent = index: absent
+
+journal.cli.journal.indexer.database.files = files: { $discovered } on disk, { $indexed } indexed, { $current } current, { $stale } stale, { $missing } missing, { $failed } failed, { $orphaned } orphaned, { $retained } kept until a full rescan, { $ineligible_rows } no longer indexable but still in search, { $unreadable } unreadable, { $ineligible } not indexable
+
+journal.cli.journal.indexer.database.present = index: present
+
+journal.cli.journal.indexer.database.sqlite = not a { $sqlite } database
+
+journal.cli.journal.indexer.database.unreadable = index: unreadable ({ $reason })
+
+journal.cli.journal.indexer.discovery.listing = glob traversal failed: attempting to read `{ $path }` resulted in an error: { $error }
+
+journal.cli.journal.indexer.discovery.pattern = invalid glob pattern: { $error }
+
+journal.cli.journal.indexer.discovery.prefix = discovered path { $path } is not under root { $root }
+
+journal.cli.journal.indexer.discovery.relative = discovered path is not valid { $encoding }: { $path }
+
+journal.cli.journal.indexer.discovery.root = glob root is not valid { $encoding }: { $path }
+
+journal.cli.journal.indexer.drain.result = { $processed ->
+    [one] applied { $processed } search update; { $failed } failed; { $remaining } { $remaining ->
+        [one] remains
+       *[other] remain
+    } queued.
+   *[other] applied { $processed } search updates; { $failed } failed; { $remaining } { $remaining ->
+        [one] remains
+       *[other] remain
+    } queued.
+    }
+
+journal.cli.journal.indexer.edge.blob = edge row contains an unsupported blob value
+
+journal.cli.journal.indexer.edge.day = Invalid edge day: { $day }
+
+journal.cli.journal.indexer.edge.dst = edge row requires non-empty string { $dst_field }
+
+journal.cli.journal.indexer.edge.event = event timestamp is outside { $integer } range
+
+journal.cli.journal.indexer.edge.integer = edge integer field { $field } is outside { $integer } range
+
+journal.cli.journal.indexer.edge.json = edge source { $json } parse failed for { $path }: { $error }
+
+journal.cli.journal.indexer.edge.kind = Unknown edge kind: { $kind }
+
+journal.cli.journal.indexer.edge.path = invalid observations path: { $path }
+
+journal.cli.journal.indexer.edge.payload = { $source } payload must be a { $json } object, got { $value_type }
+
+journal.cli.journal.indexer.edge.refresh = Skipping edge refresh for { $rel }: { $error }
+
+journal.cli.journal.indexer.edge.relation = observation relation is missing { $kind_field }
+
+journal.cli.journal.indexer.edge.segment.day = Invalid segment day: { $day }
+
+journal.cli.journal.indexer.edge.segment.key = Invalid segment key: { $segment }
+
+journal.cli.journal.indexer.edge.segment.time = segment timestamp is outside { $integer } range
+
+journal.cli.journal.indexer.edge.src = edge row requires non-empty string { $src_field }
+
+journal.cli.journal.indexer.edge.string = cannot reproduce { $python } for { $field } value of type { $value_type }
+
+journal.cli.journal.indexer.edge.target = observation relation { $target_field } must be a non-empty string
+
+journal.cli.journal.indexer.edge.type = edge kind for { $source } must be a string, got { $value_type }
+
+journal.cli.journal.indexer.edge.unsupported = edge field { $field } does not support { $value_type }
+
+journal.cli.journal.indexer.error.file = rescan-file failed: { $detail }
+
+journal.cli.journal.indexer.error.rebuild = edge rebuild failed: { $detail }
+
+journal.cli.journal.indexer.error.reset = reset failed: { $detail }
+
+journal.cli.journal.indexer.error.scan = scan failed: { $detail }
+
+journal.cli.journal.indexer.files.activity.membership.insert = activity membership insert failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.activity.provenance.insert = activity provenance insert failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.calendar.listing = calendar listing failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.calendar.note.insert = calendar note insert failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.chunk.group.offset.insert = chunk group offset insert failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.chunk.insert = chunk insert failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.chunk.source.mapping = chunk source mapping failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.classification.insert = classification insert failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.content.read = content read failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.facet = facet declaration scan failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.hidden = { $rel } is left out of search for now: { $cause }
+
+journal.cli.journal.indexer.files.memory.chain.serialization = memory chain serialization failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.memory.missing = validated memory original missing for { $rel }
+
+journal.cli.journal.indexer.files.memory.origin.serialization = memory origin serialization failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.memory.original.insert = memory original insert failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.memory.utf = memory original is not { $utf } for { $rel }: { $error }
+
+journal.cli.journal.indexer.files.partial = { $rel } is partly left out of search for now: { $cause }
+
+journal.cli.journal.indexer.files.screen.text.source.insert = screen text source insert failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.generation.locked = generation: { $generation } (this version reads up to { $known }; writable: no)
+
+journal.cli.journal.indexer.generation.writable = generation: { $generation } (this version reads up to { $known }; writable: yes)
+
+journal.cli.journal.indexer.help.drain = Usage: { $syntax }{ $line_break }apply queued search updates. { $force_flag } includes delayed retries.{ $line_break }{ $budget_seconds_flag } stops the drain after N seconds. a whole-journal update does not start with under 300 seconds left and stays queued.
+
+journal.cli.journal.indexer.help.main = Usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $syntax_continuation_3 }{ $line_break }{ $syntax_continuation_4 }
+
+journal.cli.journal.indexer.help.path = Usage: { $syntax }
+
+journal.cli.journal.indexer.help.status = Usage: { $syntax }
+
+journal.cli.journal.indexer.hidden.activity = can't tell whether this activity is hidden: { $rel } can't be read: { $error }
+
+journal.cli.journal.indexer.hidden.damaged = can't tell whether this activity is hidden: { $path } has a line that isn't a record
+
+journal.cli.journal.indexer.hidden.days = can't tell which days of body data are hidden: { $path } can't be read
+
+journal.cli.journal.indexer.hidden.trash = can't tell what the journal is making again: { $error }
+
+journal.cli.journal.indexer.hidden.week = can't tell what is left out of this week page: { $path } can't be read
+
+journal.cli.journal.indexer.hidden.weeks = can't tell what is left out of week pages: { $path } can't be read
+
+journal.cli.journal.indexer.merge.commit = index is correct and merely uncompacted: could not commit { $fts } merge: { $error }
+
+journal.cli.journal.indexer.merge.failed = index is correct and merely uncompacted: { $fts } merge failed: { $error }
+
+journal.cli.journal.indexer.merge.start = index is correct and merely uncompacted: could not start { $fts } merge transaction: { $error }
+
+journal.cli.journal.indexer.migration.child = segment aggregate migration retained { $rel_segment }: child file is not current: { $rel }
+
+journal.cli.journal.indexer.migration.discovery = segment aggregate migration retained { $rel_segment }: talent discovery failed: { $error }
+
+journal.cli.journal.indexer.migration.files = index files remain after migration: { $paths }
+
+journal.cli.journal.indexer.migration.mtime = segment aggregate migration retained { $rel_segment }: mtime read failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.migration.retained = segment aggregate migration retained { $rel }: { $error }
+
+journal.cli.journal.indexer.migration.unclassified = segment aggregate migration retained { $rel_segment }: unclassified talent Markdown { $rel }
+
+journal.cli.journal.indexer.original.incomplete = memory original is incomplete for { $rel }: { $state }
+
+journal.cli.journal.indexer.original.retained = memory original could not be checked for { $rel }; cached index retained: { $state }
+
+journal.cli.journal.indexer.original.state.absent = absent
+
+journal.cli.journal.indexer.original.state.corrupt = corrupt
+
+journal.cli.journal.indexer.original.state.deleted = deleted
+
+journal.cli.journal.indexer.original.state.ready = ready
+
+journal.cli.journal.indexer.original.state.staged = staged
+
+journal.cli.journal.indexer.original.state.unavailable = unavailable ({ $detail })
+
+journal.cli.journal.indexer.original.state.unready = unready
+
+journal.cli.journal.indexer.path.ready = path lookup: ready
+
+journal.cli.journal.indexer.path.unready = path lookup: unready
+
+journal.cli.journal.indexer.progress.absent = classification: absent
+
+journal.cli.journal.indexer.progress.complete = classification: complete
+
+journal.cli.journal.indexer.progress.incomplete = classification: incomplete
+
+journal.cli.journal.indexer.progress.stalled = classification: stalled at { $path }
+
+journal.cli.journal.indexer.progress.unknown = classification: stalled at unknown path
+
+journal.cli.journal.indexer.query.absent = journal index is absent: { $path }
+
+journal.cli.journal.indexer.query.column.agent = Agent
+
+journal.cli.journal.indexer.query.column.day = Day
+
+journal.cli.journal.indexer.query.column.facet = Facet
+
+journal.cli.journal.indexer.query.empty = journal index is empty: { $path }
+
+journal.cli.journal.indexer.query.error = { $command }: { $detail }
+
+journal.cli.journal.indexer.query.input = stdin read failed: { $error }
+
+journal.cli.journal.indexer.query.locked = journal index is locked ({ $path }): { $detail }
+
+journal.cli.journal.indexer.query.more = ... +{ $remaining } more
+
+journal.cli.journal.indexer.query.none = No results found
+
+journal.cli.journal.indexer.query.output = stdout write failed: { $error }
+
+journal.cli.journal.indexer.query.owner = connection query needs the owner
+
+journal.cli.journal.indexer.query.prompt = search>
+
+journal.cli.journal.indexer.query.showing = { $total ->
+    [one] Showing { $first }-{ $last } of { $total } result
+   *[other] Showing { $first }-{ $last } of { $total } results
+    }
+
+journal.cli.journal.indexer.query.total = { $total ->
+    [one] Total: { $total } chunk
+   *[other] Total: { $total } chunks
+    }
+
+journal.cli.journal.indexer.query.unreadable = journal index is unreadable ({ $path }): { $detail }
+
+journal.cli.journal.indexer.receipt.absent = last scan: not recorded
+
+journal.cli.journal.indexer.receipt.full.finished = last scan: full at { $time } ms, indexed { $indexed }, removed { $removed }, failed { $failed }
+
+journal.cli.journal.indexer.receipt.full.stopped = last scan: full at { $time } ms stopped: { $error }
+
+journal.cli.journal.indexer.receipt.light.finished = last scan: light at { $time } ms, indexed { $indexed }, removed { $removed }, failed { $failed }
+
+journal.cli.journal.indexer.receipt.light.stopped = last scan: light at { $time } ms stopped: { $error }
+
+journal.cli.journal.indexer.rel.absolute = { $rel } must be journal-{ $rel }ative
+
+journal.cli.journal.indexer.rel.backslash = { $rel } must use { $posix } separators
+
+journal.cli.journal.indexer.rel.empty = { $rel } must be non-empty
+
+journal.cli.journal.indexer.rel.invalidcomponent = { $rel } must not contain empty, { $current_component }, or { $parent_component } components
+
+journal.cli.journal.indexer.rel.trash = { $rel } must not name the trash
+
+journal.cli.journal.indexer.scan.calendar.invites = calendar invites not linked yet: { $error }
+
+journal.cli.journal.indexer.scan.connections = No new connections were added in this rescan. Run { $rebuild_command } to bring any still waiting up to date now.
+
+journal.cli.journal.indexer.scan.connections.failed = connections not checked against entity changes: { $error }
+
+journal.cli.journal.indexer.scan.deferred = a full search pass is already working through these changes, so this check left them to it. run { $status_command } for details.
+
+journal.cli.journal.indexer.scan.edge.skip = Skipping edge extraction for { $rel }: { $error }
+
+journal.cli.journal.indexer.scan.failed = { $indexed ->
+    [one] Indexed { $indexed } file, removed { $removed }, skipped { $skipped }, failed { $failed }
+   *[other] Indexed { $indexed } file(s), removed { $removed }, skipped { $skipped }, failed { $failed }
+    }
+
+journal.cli.journal.indexer.scan.failure = { $failed ->
+    [one] { $command }: { $failed } update couldn't be indexed; see the warnings above
+   *[other] { $command }: { $failed } update(s) couldn't be indexed; see the warnings above
+    }
+
+journal.cli.journal.indexer.scan.invalid.segment = Skipping edge extraction for { $rel }: invalid segment key { $segment }
+
+journal.cli.journal.indexer.scan.mtime = mtime read failed for { $rel }: { $error }
+
+journal.cli.journal.indexer.scan.retained = { $count ->
+    [one] light scan retained { $count } stale row for day { $day }: discovery produced no files for that day; rerun with { $full_flag } to remove it
+   *[other] light scan retained { $count } stale row(s) for day { $day }: discovery produced no files for that day; rerun with { $full_flag } to remove them
+    }
+
+journal.cli.journal.indexer.scan.summary = { $indexed ->
+    [one] Indexed { $indexed } file, removed { $removed }, skipped { $skipped }
+   *[other] Indexed { $indexed } file(s), removed { $removed }, skipped { $skipped }
+    }
+
+journal.cli.journal.indexer.speaker.duplicate = speaker edge transcript duplicate { $field } { $sentence } for { $composite_id }
+
+journal.cli.journal.indexer.speaker.missing = speaker edge transcript missing for { $composite_id }
+
+journal.cli.journal.indexer.speaker.unresolved = speaker edge transcript unresolved for { $composite_id }
+
+journal.cli.journal.indexer.status.check = last search check: at { $time } ms, indexed { $indexed }, removed { $removed }
+
+journal.cli.journal.indexer.status.check.absent = last search check: not recorded
+
+journal.cli.journal.indexer.status.check.overdue = last search check: overdue, it has run since then without finishing
+
+journal.cli.journal.indexer.status.failure = failure: { $reason }
+
+journal.cli.journal.indexer.status.health = health: { $state } ({ $description })
+
+journal.cli.journal.indexer.status.queued = queued: { $queued }
+
+journal.cli.journal.indexer.status.removals = removals still waiting: { $removals }
+
+journal.cli.journal.indexer.status.wait.days = oldest queued: waiting { $days } d { $hours } h
+
+journal.cli.journal.indexer.status.wait.hours = oldest queued: waiting { $hours } h { $minutes } min
+
+journal.cli.journal.indexer.status.wait.minutes = oldest queued: waiting { $minutes } min
+
+journal.cli.journal.indexer.status.wait.seconds = oldest queued: waiting { $seconds } s
+
+journal.cli.journal.indexer.store.admission = index writer admission failed for { $operation }: { $cause }
+
+journal.cli.journal.indexer.store.busy = index writer busy for { $operation }: { $cause }
+
+journal.cli.journal.indexer.store.encoding = path is not valid { $encoding }: { $path }
+
+journal.cli.journal.indexer.store.generation = the search index was written by a newer version of { $brand } (index generation { $found }; this version reads up to { $known }), so this version leaves it unchanged
+
+journal.cli.journal.indexer.store.lookup.cause = { $lookup_command }: { $cause }
+
+journal.cli.journal.indexer.store.missing = file not found: { $path }
+
+journal.cli.journal.indexer.store.original = memory original could not be checked at { $path }; cached index retained; retry when the source is readable: { $detail }
+
+journal.cli.journal.indexer.store.outside = file is outside journal directory: { $path }
+
+journal.cli.journal.indexer.stream.json = stream marker { $syntax } failed for { $path }: { $error }
+
+journal.cli.journal.indexer.stream.path = stream marker path failed for { $rel_segment }: { $error }
+
+journal.cli.journal.indexer.stream.read = stream marker read failed for { $path }: { $error }
+
+journal.cli.journal.indexer.warning = warning: { $warning }
+
+journal.cli.journal.local.directory = not a real directory: { $path }
+
+journal.cli.journal.local.failure = { $invocation } { $token }: { $message }
+
+journal.cli.journal.local.resolution.config = journal resolution failed: config decode failed
+
+journal.cli.journal.local.resolution.home = journal resolution failed: home unavailable
+
+journal.cli.journal.local.unknown = unknown local operation
+
+journal.cli.journal.notify.error.facet = { $invocation }: error: { $option } is no longer supported. Put facet selection in { $action_flag }; for example, { $action_flag } { $example }.
+
+journal.cli.journal.notify.error.integer = { $invocation }: error: argument { $auto_dismiss_flag }: invalid int value: '{ $value }'
+
+journal.cli.journal.notify.error.message = { $invocation }: error: the following arguments are required: { $positional }
+
+journal.cli.journal.notify.error.unknown = { $invocation }: error: unrecognized arguments: { $token }
+
+journal.cli.journal.notify.error.value = { $invocation }: error: argument { $option }: expected one argument
+
+journal.cli.journal.notify.failed = Failed to send notification (is { $channel } running?)
+
+journal.cli.journal.notify.help = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }                  { $message_options }{ $line_break }{ $line_break }Send a notification via { $channel }{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $positional }notification message text{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_12 }show this help message and exit{ $line_break }{ $indent_2 }{ $title_option }{ $gap_9 }notification title{ $line_break }{ $indent_2 }{ $icon_option }{ $gap_11 }{ $icon_set } icon name (default: { $mailbox }){ $line_break }{ $indent_2 }{ $event_option }{ $gap_9 }event name (default: { $default_show }{ $line_break }{ $indent_2 }{ $action_option }{ $gap_7 }URL path to open on click{ $line_break }{ $indent_2 }{ $app_option }{ $gap_13 }source app name{ $line_break }{ $indent_2 }{ $badge_option }{ $gap_9 }badge text or number{ $line_break }{ $syntax_continuation_18 }{ $line_break }                        auto-dismiss after N milliseconds{ $line_break }{ $indent_2 }{ $no_dismiss_option }{ $gap_10 }make notification non-dismissible{ $line_break }{ $indent_2 }{ $verbose_option }{ $gap_9 }Enable verbose output{ $line_break }{ $indent_2 }{ $debug_option }{ $gap_11 }Enable debug logging
+
+journal.cli.journal.notify.sent = Notification sent
+
+journal.cli.journal.notify.utf8 = native journal notify failed: owner arguments are not valid UTF-8
+
+journal.cli.journal.process.admission = journal process admission failed: { $detail }
+
+journal.cli.journal.process.body = native journal process launch failed: no native body for { $token }
+
+journal.cli.journal.process.launch = native journal process launch failed: { $error }
+
+journal.cli.journal.resolution.config = native journal resolution failed: config decode failed
+
+journal.cli.journal.resolution.home = native journal resolution failed: home unavailable
+
+journal.cli.journal.root.inspect = native journal project root resolution failed: could not inspect current executable: { $error }
+
+journal.cli.journal.root.package = native journal project root resolution failed: could not locate source checkout or installed { $product } package from { $path }

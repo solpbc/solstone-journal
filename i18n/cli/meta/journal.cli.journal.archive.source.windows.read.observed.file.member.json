@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive source windows read observed file member.",
+  "context": "Journal command-line text for archive source windows read observed file member.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "49e63748538c06625a9a68ec7bd8d93b226ceaed01a817bdb6bd2660d3bf1090",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

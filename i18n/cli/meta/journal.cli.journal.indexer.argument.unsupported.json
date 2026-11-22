@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer argument unsupported.",
+  "context": "Journal command-line text for indexer argument unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4f78ec61858355d6bd5282d19584f4c9fcb7ac76995cf43d53f4b4961afb4d56",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

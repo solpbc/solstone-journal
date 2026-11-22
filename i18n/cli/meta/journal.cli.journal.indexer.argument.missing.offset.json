@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer argument missing offset.",
+  "context": "Journal command-line text for indexer argument missing offset.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f397fa3affeae53686840674189cdac27cb974e2055d1f90f7116d5aa59799db",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "offset_flag",
+      "kind": "flag",
+      "value": "--offset"
+    }
+  ]
+}

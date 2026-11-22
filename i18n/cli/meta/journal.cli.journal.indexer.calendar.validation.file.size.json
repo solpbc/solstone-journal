@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation file size.",
+  "context": "Journal command-line text for indexer calendar validation file size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c42599265131acc53a4abde14a88b0f751adad0b67dd9892bc3996082101c2ae",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "unit",
+      "kind": "accepted-input",
+      "value": "MiB"
+    }
+  ]
+}

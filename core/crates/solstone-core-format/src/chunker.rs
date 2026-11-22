@@ -16,7 +16,7 @@ pub struct MarkdownChunk {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MarkdownFormat {
     pub chunks: Vec<MarkdownChunk>,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<solstone_core_cli_copy::MessageDetail>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,7 +127,7 @@ pub fn has_oversized_chunk(input: &str) -> bool {
         .any(|chunk| render_chunk(chunk).chars().nth(MAX_CHUNK_CHARS).is_some())
 }
 
-fn sanitize_markdown(input: &str) -> (Cow<'_, str>, Vec<String>) {
+fn sanitize_markdown(input: &str) -> (Cow<'_, str>, Vec<solstone_core_cli_copy::MessageDetail>) {
     let mut sanitized = String::new();
     let mut copied = 0;
     let mut collapsed = 0;
@@ -160,8 +160,13 @@ fn sanitize_markdown(input: &str) -> (Cow<'_, str>, Vec<String>) {
     sanitized.push_str(&input[copied..]);
     (
         Cow::Owned(sanitized),
-        vec![format!(
-            "Collapsed whitespace on {collapsed} overlong Markdown line(s) during indexing"
+        vec![solstone_core_cli_copy::MessageDetail::cardinal(
+            "journal.cli.journal.indexer.chunker.lines",
+            [("collapsed", collapsed)],
+            format!(
+                "Collapsed whitespace on {collapsed} overlong Markdown line(s) during indexing"
+            ),
+            [],
         )],
     )
 }
@@ -959,7 +964,15 @@ mod tests {
             let input = case["input"].as_str().expect("case input");
             let formatted = format_markdown(input);
             let expected_warnings = strings(&case["warnings"]);
-            assert_eq!(formatted.warnings, expected_warnings, "{id} warnings");
+            assert_eq!(
+                formatted
+                    .warnings
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+                expected_warnings,
+                "{id} warnings"
+            );
             assert_eq!(
                 formatted.chunks.len(),
                 case["chunk_count"].as_u64().expect("chunk count") as usize,

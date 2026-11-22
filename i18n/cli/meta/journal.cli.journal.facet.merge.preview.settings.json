@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet merge preview settings.",
+  "context": "Journal command-line text for facet merge preview settings.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3bbcc60d2ac6812ad4f6c9057b143a1196879197c211d7afc21fa48e470693ae",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "declaration",
+      "kind": "accepted-input",
+      "value": "facet.json"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer argument file.",
+  "context": "Journal command-line text for indexer argument file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "739bed0008791d70b53f1e141882a967f8ce69f8caed82a4f6538b00eb4f325a",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "path",
+      "kind": "accepted-input",
+      "value": "PATH"
+    },
+    {
+      "name": "rescan_file_flag",
+      "kind": "flag",
+      "value": "--rescan-file"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor registered none.",
+  "context": "Journal command-line text for facet doctor registered none.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1561b8d7042e7f52d9f860e5cd118c048fa394750d78b6a4eb0200d9e2be7822",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

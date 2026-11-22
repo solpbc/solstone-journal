@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer calendar validation line is empty.",
+  "context": "Journal command-line text for indexer calendar validation line is empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9530fdcbf1473942577c23ca8ba65d8a3fb0aab21f0791b57ea9c2c974a3ecfd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

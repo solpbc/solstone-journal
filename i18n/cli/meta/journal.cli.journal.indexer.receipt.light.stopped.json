@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer receipt light stopped.",
+  "context": "Journal command-line text for indexer receipt light stopped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b91cb5594a68834a7a86bc7b8168c43884787bcdb7bb219fa559c4d46ab3d34d",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "description": "Journal command-line text for help overview.",
+  "context": "Journal command-line text for help overview.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "commands",
+      "type": "string"
+    },
+    {
+      "name": "processes",
+      "type": "string"
+    },
+    {
+      "name": "local",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e2567ec87a92b964ace0e77837ba512558244409d676ea3d9ad1a62086ac932a",
+  "max_length": 668,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "invocation",
+      "kind": "command",
+      "value": "solstone journal"
+    },
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal <command> [args...]"
+    },
+    {
+      "name": "old_command",
+      "kind": "command",
+      "value": "'journal'"
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "gap_4",
+      "kind": "whitespace",
+      "value": "    "
+    },
+    {
+      "name": "syntax_continuation_17",
+      "kind": "accepted-input",
+      "value": "  -V, --version Show version"
+    },
+    {
+      "name": "syntax_continuation_18",
+      "kind": "accepted-input",
+      "value": "  -v, --verbose Enable verbose mode"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for facet doctor orphans count.",
+  "context": "Journal command-line text for facet doctor orphans count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "676b57a56e19a2b4b2e6a50ce53750d4b4b6c6c3d099195978688cc2e4b72759",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "count",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "adopt_flag",
+      "kind": "flag",
+      "value": "--adopt"
+    }
+  ]
+}

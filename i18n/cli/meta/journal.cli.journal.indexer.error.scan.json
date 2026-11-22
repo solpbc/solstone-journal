@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer error scan.",
+  "context": "Journal command-line text for indexer error scan.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2483f5237bc1bfb003e3b0e430472ebd38a7e53ae5e5183432e72475a48d83fd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

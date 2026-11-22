@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive source windows list retained directory member.",
+  "context": "Journal command-line text for archive source windows list retained directory member.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2926d875f4b888c883d19fb5edb4c28866ab9cda6effdbc1c5d035e22e3bcc6d",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive publish createtemp.",
+  "context": "Journal command-line text for archive publish createtemp.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cced060e4b65a4b0d9ffa9838819caf0cccda3d7659bc9f522707ac5a3139540",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

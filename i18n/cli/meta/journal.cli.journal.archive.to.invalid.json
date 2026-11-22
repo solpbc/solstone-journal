@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for archive to invalid.",
+  "context": "Journal command-line text for archive to invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dddb09e948a7ec51f0411373d856a3a5eb785c12380c130562fbca5fd3b38f2e",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_yyyymmdd",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    },
+    {
+      "name": "token_to",
+      "kind": "accepted-input",
+      "value": "TO"
+    }
+  ]
+}

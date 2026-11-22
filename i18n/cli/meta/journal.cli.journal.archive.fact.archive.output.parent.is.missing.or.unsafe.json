@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact archive output parent is missing or unsafe.",
+  "context": "Journal command-line text for archive fact archive output parent is missing or unsafe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59e5e0a67d8e0f1cd887ce93b73627453f6fb3637be165744c8ed5926764b0fb",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

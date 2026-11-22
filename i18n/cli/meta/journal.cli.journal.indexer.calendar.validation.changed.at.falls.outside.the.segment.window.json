@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation changed at falls outside the segment window.",
+  "context": "Journal command-line text for indexer calendar validation changed at falls outside the segment window.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "095ad0c3f5407d23e7f56ffbef01044c3e46da04a911a98a4c60c6b36b76bdf8",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "changed_at_field",
+      "kind": "accepted-input",
+      "value": "changed_at"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source windows check recursive namespace witness.",
+  "context": "Journal command-line text for archive source windows check recursive namespace witness.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f877aa9807f8e88e775cc0b070c51877cd6007b5934d17aabcc8e5c58aa6dc02",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

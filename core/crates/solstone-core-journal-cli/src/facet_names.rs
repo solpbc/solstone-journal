@@ -9,6 +9,8 @@
 //! search classifications in step with it, and the owner-run repairs in
 //! `journal facet doctor`.
 
+use crate::facet_copy;
+use solstone_core_cli_copy as cli_copy;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -41,7 +43,9 @@ impl MergeAdmission {
 type Declared = (Option<String>, Option<String>);
 
 fn declared_id(journal: &Path, name: &str) -> Result<Option<Declared>, String> {
-    let Some(snapshot) = read_facet_declaration(journal, name).map_err(|e| e.to_string())? else {
+    let Some(snapshot) =
+        read_facet_declaration(journal, name).map_err(|e| facet_copy::store(&e))?
+    else {
         return Ok(None);
     };
     let value = snapshot.value();
@@ -70,31 +74,45 @@ pub(crate) fn admit_facet_merge(
 ) -> Result<MergeAdmission, String> {
     let retired = read_retired_facets(journal)
         .entries_for_write()
-        .map_err(|error| error.to_string())?;
+        .map_err(|e| facet_copy::write(&e))?;
     let Some((destination_id, _)) = declared_id(journal, destination)? else {
-        return Err(format!("'{destination}' isn't a facet"));
+        return Err(cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.merge.destination.absent",
+            [("destination", &(destination))],
+        ));
     };
     let Some(destination_id) = destination_id else {
-        return Err(format!(
-            "'{destination}' has no stable id yet; run 'solstone journal backfill-facet-ids' first"
+        return Err(cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.merge.destination.id",
+            [("destination", &(destination))],
         ));
     };
     if retired.get(destination).is_some_and(|entry| {
         entry.redirects() && entry.id.as_deref() != Some(destination_id.as_str())
     }) {
-        return Err(format!(
-            "'{destination}' is recorded as a retired facet name; run 'solstone journal facet doctor' for details"
+        return Err(cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.merge.destination.retired",
+            [("destination", &(destination))],
         ));
     }
     let source_declaration = declared_id(journal, source)?;
     if doctor_orphan {
         if source_declaration.is_some() {
-            return Err(format!(
-                "'{source}' is a declared facet, not an orphan folder"
+            return Err(cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.source.declared",
+                [("source", &(source))],
             ));
         }
         if retired.get(source).is_some_and(RetiredFacet::redirects) {
-            return Err(format!("'{source}' is a retired facet name"));
+            return Err(cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.source.retired",
+                [("source", &(source))],
+            ));
         }
         return Ok(MergeAdmission {
             source_id: None,
@@ -103,12 +121,18 @@ pub(crate) fn admit_facet_merge(
         });
     }
     let Some((source_id, source_title)) = source_declaration else {
-        return Err(format!("'{source}' isn't a facet"));
+        return Err(cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.merge.source.absent",
+            [("source", &(source))],
+        ));
     };
-    let inventory = observe_declared_facet_inventory(journal).map_err(|e| e.to_string())?;
+    let inventory = observe_declared_facet_inventory(journal).map_err(|e| facet_copy::store(&e))?;
     if inventory.enabled.len() == 1 && inventory.enabled[0] == source {
-        return Err(format!(
-            "'{source}' is the only facet that isn't muted, and a journal keeps at least one; unmute '{destination}' first"
+        return Err(cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.merge.source.only",
+            [("source", &(source)), ("destination", &(destination))],
         ));
     }
     Ok(MergeAdmission {
@@ -245,8 +269,8 @@ fn read_log_events(journal: &Path) -> Vec<(String, LoggedEvent)> {
 /// Live facet directory names mapped to their ids.
 fn live_facets(journal: &Path) -> Result<BTreeMap<String, Option<String>>, String> {
     let mut live = BTreeMap::new();
-    for name in
-        solstone_core_facets::list_declared_facet_names(journal).map_err(|e| e.to_string())?
+    for name in solstone_core_facets::list_declared_facet_names(journal)
+        .map_err(|e| facet_copy::store(&e))?
     {
         let id = declared_id(journal, &name)?.and_then(|(id, _)| id);
         live.insert(name, id);
@@ -340,15 +364,22 @@ pub(crate) fn scan_history(
                     _ => RetiredFacet::merged(id, successor, None),
                 };
                 scan.proposals.push(HistoryProposal {
-                    evidence: format!(
-                        "{name} was {} into {}",
+                    evidence: {
+                        let destination = current_live_name(&live, entry.successor.as_deref());
                         if state == RetiredFacetState::Renamed {
-                            "renamed"
+                            cli_copy::display_for(
+                                crate::terminal_language(),
+                                "journal.cli.journal.facet.doctor.history.renamed",
+                                [("name", &(name)), ("destination", &(destination))],
+                            )
                         } else {
-                            "merged"
-                        },
-                        current_live_name(&live, entry.successor.as_deref())
-                    ),
+                            cli_copy::display_for(
+                                crate::terminal_language(),
+                                "journal.cli.journal.facet.doctor.history.merged",
+                                [("name", &(name)), ("destination", &(destination))],
+                            )
+                        }
+                    },
                     name,
                     entry,
                 });
@@ -378,7 +409,7 @@ pub(crate) fn scan_unresolved_references(
     // A facet waiting in the trash is still the owner's: its name isn't one
     // to retire into another facet.
     let trashed: BTreeSet<String> = solstone_core_trash::held_paths(journal)
-        .map_err(|error| error.to_string())?
+        .map_err(|e| facet_copy::trash(&e))?
         .into_iter()
         .filter_map(|path| {
             path.strip_prefix("facets/")
@@ -504,8 +535,8 @@ pub(crate) fn repair_malformed_retired_file(journal: &Path) -> Result<Option<Str
     let RetiredFacets::Malformed(detail) = read_retired_facets(journal) else {
         return Ok(None);
     };
-    let _trust = hold_facet_trust_lock(journal).map_err(|e| e.to_string())?;
-    let path = retired_facets_path(journal).map_err(|e| e.to_string())?;
+    let _trust = hold_facet_trust_lock(journal).map_err(|e| facet_copy::trust(&e))?;
+    let path = retired_facets_path(journal).map_err(|e| facet_copy::write(&e))?;
     let damaged = fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let aside = path.with_file_name(format!(
         "retired.json.malformed-{}",
@@ -535,16 +566,24 @@ pub(crate) fn repair_malformed_retired_file(journal: &Path) -> Result<Option<Str
         reserved.push(name);
     }
     for (name, entry) in recovered {
-        record_retired_facet(journal, &name, entry).map_err(|e| e.to_string())?;
+        record_retired_facet(journal, &name, entry).map_err(|e| facet_copy::write(&e))?;
     }
-    let mut message = format!(
-        "facets/retired.json did not parse ({detail}); it was moved to {} and rebuilt.",
-        aside.display()
+    let mut message = cli_copy::display_for(
+        crate::terminal_language(),
+        "journal.cli.journal.facet.doctor.retired.rebuilt",
+        [
+            ("path", &(aside.display())),
+            ("detail", &facet_copy::retired(&detail)),
+        ],
     );
     if !reserved.is_empty() {
         message.push_str(&format!(
-            " These names could not be traced and are recorded as deleted: {}.",
-            reserved.join(", ")
+            " {}",
+            cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.retired.reserved",
+                [("names", &(reserved.join(", ")))]
+            )
         ));
     }
     Ok(Some(message))
@@ -607,27 +646,35 @@ pub(crate) fn retire_name(
     into: Option<&str>,
 ) -> Result<String, String> {
     if !valid_facet_name(name) {
-        return Err(format!("'{name}' isn't a facet name"));
+        return Err(cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.retire.name",
+            [("name", &(name))],
+        ));
     }
     let entry = {
-        let _trust = hold_facet_trust_lock(journal).map_err(|e| e.to_string())?;
+        let _trust = hold_facet_trust_lock(journal).map_err(|e| facet_copy::trust(&e))?;
         if journal.join("facets").join(name).exists() {
-            return Err(format!(
-                "'{name}' is a folder in this journal; only a name that no longer exists can be retired"
+            return Err(cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.retire.folder",
+                [("name", &(name))],
             ));
         }
         let entry = match into {
             Some(target) => {
                 let Some((Some(id), _)) = declared_id(journal, target)? else {
-                    return Err(format!(
-                        "'{target}' isn't a facet with a stable id; run 'solstone journal backfill-facet-ids' first"
+                    return Err(cli_copy::display_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.retire.target",
+                        [("target", &(target))],
                     ));
                 };
                 RetiredFacet::merged(None, id, None)
             }
             None => RetiredFacet::deleted(None, None),
         };
-        record_retired_facet(journal, name, entry.clone()).map_err(|e| e.to_string())?;
+        record_retired_facet(journal, name, entry.clone()).map_err(|e| facet_copy::write(&e))?;
         let _ = append_action_log(
             journal,
             None,
@@ -646,9 +693,23 @@ pub(crate) fn retire_name(
     enqueue_facet_classifications(journal)?;
     Ok(match (into, entry.successor.is_some()) {
         (Some(target), true) => {
-            format!("Recorded '{name}' as merged into '{target}'. search is catching up.\n")
+            format!(
+                "{}\n",
+                cli_copy::display_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.retire.merged",
+                    [("name", &(name)), ("target", &(target))]
+                )
+            )
         }
-        _ => format!("Recorded '{name}' as deleted. search is catching up.\n"),
+        _ => format!(
+            "{}\n",
+            cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.retire.deleted",
+                [("name", &(name))]
+            )
+        ),
     })
 }
 

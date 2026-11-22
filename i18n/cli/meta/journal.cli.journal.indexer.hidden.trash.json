@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer hidden trash.",
+  "context": "Journal command-line text for indexer hidden trash.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e583cad8b16e66cdf76a5c3af4fe3ceb7b651e21cedf163317e80921e8ca247b",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

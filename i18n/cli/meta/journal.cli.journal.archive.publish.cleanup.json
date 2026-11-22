@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive publish cleanup.",
+  "context": "Journal command-line text for archive publish cleanup.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fb1e1947557a2c1d406c2730ce559baf7afa3a3c4a030df978934c75338b87a9",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

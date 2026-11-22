@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor links repaired.",
+  "context": "Journal command-line text for facet doctor links repaired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "34a9a59b4f6c82ad07a0df13fbdaf9569513ce4c6857a1cbf00ceff33fe93e3f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

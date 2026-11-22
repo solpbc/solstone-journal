@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive metadata reason second must be in seconds.",
+  "context": "Journal command-line text for archive metadata reason second must be in seconds.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "965dff2968b2c79e9c9e0a4d803ffbbe2f48b4a77d4f6891d52728915141402e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

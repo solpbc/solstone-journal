@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive import coordinate.",
+  "context": "Journal command-line text for archive import coordinate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9e21ce115d594c6351e24c1528d6119321ebc233d6ca36ff7157da8b400574b",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer files memory original insert.",
+  "context": "Journal command-line text for indexer files memory original insert.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0f14ab1c740d15fddc85a6c3fa59db2b7bd8cbc16b027f1f53ab069c21c61b9e",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

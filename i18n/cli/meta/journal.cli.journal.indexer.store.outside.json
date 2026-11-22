@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer store outside.",
+  "context": "Journal command-line text for indexer store outside.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f21006c6d55c6b6e83c5d54ebf6144906cf295d5cbb7286a88f9fe28823c17b6",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

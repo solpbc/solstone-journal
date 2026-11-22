@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer edge event.",
+  "context": "Journal command-line text for indexer edge event.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e7e5a0f27d1ac8789623271c37096a9e111b6ba7f5a7731a758bef6c01147e1",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "integer",
+      "kind": "accepted-input",
+      "value": "i64"
+    }
+  ]
+}

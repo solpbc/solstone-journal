@@ -33,7 +33,11 @@ pub fn manual_log_locale() -> &'static str {
     TERMINAL_LOCALE.get().copied().unwrap_or(ENGLISH)
 }
 
-pub fn render_for(locale: &str, id: &str, args: &[(&str, Value<'_>)]) -> String {
+fn checked_render(
+    locale: &str,
+    id: &str,
+    args: &[(&str, Value<'_>)],
+) -> Result<String, compiled::RenderError> {
     let (locale, id) = id
         .strip_prefix('!')
         .map_or((locale, id), |id| (ENGLISH, id));
@@ -42,7 +46,16 @@ pub fn render_for(locale: &str, id: &str, args: &[(&str, Value<'_>)]) -> String 
     if matches!(result, Err(compiled::RenderError::UnknownLocale)) {
         result = compiled::render_dotted_with_options(ENGLISH, id, args, false);
     }
-    result.unwrap_or_else(|error| panic!("CLI catalog message {id} for {locale}: {error:?}"))
+    result
+}
+
+pub fn render_for(locale: &str, id: &str, args: &[(&str, Value<'_>)]) -> String {
+    checked_render(locale, id, args)
+        .unwrap_or_else(|error| panic!("CLI catalog message {id} for {locale}: {error:?}"))
+}
+
+pub fn try_render_for(locale: &str, id: &str, args: &[(&str, Value<'_>)]) -> Option<String> {
+    checked_render(locale, id, args).ok()
 }
 
 pub fn render(id: &str, args: &[(&str, Value<'_>)]) -> String {
@@ -121,10 +134,19 @@ pub struct MessageDetail(Box<DetailValue>);
 enum DetailValue {
     External(String),
     Catalog(Diagnostic),
+    Window(Diagnostic),
     Count {
         message: Diagnostic,
         counts: Vec<(&'static str, i64)>,
         source: String,
+    },
+    Multiple {
+        id: &'static str,
+        fields: Vec<(&'static str, MessageDetail)>,
+    },
+    Joined {
+        items: Vec<MessageDetail>,
+        separator: &'static str,
     },
     Context {
         slot: &'static str,
@@ -141,6 +163,22 @@ impl MessageDetail {
         Self(Box::new(DetailValue::Catalog(Diagnostic::new(id, args))))
     }
 
+    pub fn catalog_fields(&self) -> Option<(&'static str, &[(&'static str, String)])> {
+        match self.0.as_ref() {
+            DetailValue::Catalog(message) | DetailValue::Window(message) => {
+                Some((message.id, &message.values))
+            }
+            _ => None,
+        }
+    }
+
+    pub fn window<const N: usize>(
+        id: &'static str,
+        args: [(&'static str, &dyn std::fmt::Display); N],
+    ) -> Self {
+        Self(Box::new(DetailValue::Window(Diagnostic::new(id, args))))
+    }
+
     pub fn cardinal<const C: usize, const N: usize>(
         id: &'static str,
         counts: [(&'static str, i64); C],
@@ -152,6 +190,21 @@ impl MessageDetail {
             counts: counts.into(),
             source,
         }))
+    }
+
+    /// Preserve each diagnostic's origin when several failures form one message.
+    pub fn with_details<const N: usize>(
+        id: &'static str,
+        fields: [(&'static str, Self); N],
+    ) -> Self {
+        Self(Box::new(DetailValue::Multiple {
+            id,
+            fields: fields.into(),
+        }))
+    }
+
+    pub fn joined(items: Vec<Self>, separator: &'static str) -> Self {
+        Self(Box::new(DetailValue::Joined { items, separator }))
     }
 
     pub fn context(self, id: &'static str) -> Self {
@@ -189,6 +242,16 @@ impl MessageDetail {
         match self.0.as_ref() {
             DetailValue::External(text) => text.clone(),
             DetailValue::Catalog(diagnostic) => diagnostic.render(locale),
+            DetailValue::Window(diagnostic) => {
+                let args = diagnostic
+                    .values
+                    .iter()
+                    .map(|(name, value)| {
+                        (*name, solstone_core_window_catalog::Value::String(value))
+                    })
+                    .collect::<Vec<_>>();
+                solstone_core_window_catalog::render(locale, diagnostic.id, &args)
+            }
             DetailValue::Count { source, .. } if requested.is_none() => source.clone(),
             DetailValue::Count {
                 message, counts, ..
@@ -205,6 +268,22 @@ impl MessageDetail {
                 );
                 render_for(locale, message.id, &values)
             }
+            DetailValue::Multiple { id, fields } => {
+                let rendered: Vec<_> = fields
+                    .iter()
+                    .map(|(name, detail)| (*name, detail.render_for_output(requested)))
+                    .collect();
+                let values: Vec<_> = rendered
+                    .iter()
+                    .map(|(name, text)| (*name, Value::String(text)))
+                    .collect();
+                render_for(locale, id, &values)
+            }
+            DetailValue::Joined { items, separator } => items
+                .iter()
+                .map(|item| item.render_for_output(requested))
+                .collect::<Vec<_>>()
+                .join(separator),
             DetailValue::Context {
                 slot,
                 message,

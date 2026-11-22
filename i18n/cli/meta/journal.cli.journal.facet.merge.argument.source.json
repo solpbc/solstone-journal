@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet merge argument source.",
+  "context": "Journal command-line text for facet merge argument source.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f1930151d7732857b2a51d018d2d245096f437003f64ac2dda6fc1c14d6b18f5",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "source_argument",
+      "kind": "accepted-input",
+      "value": "SOURCE"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for indexer scan failed.",
+  "context": "Journal command-line text for indexer scan failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indexed",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "removed",
+      "type": "string"
+    },
+    {
+      "name": "skipped",
+      "type": "string"
+    },
+    {
+      "name": "failed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c2122ca683f97279f41d8f77cebfdc62965b6f1500ff7eed7dcb83a8f9bdf146",
+  "max_length": 256,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "indexed",
+    "type": "cardinal"
+  }
+}

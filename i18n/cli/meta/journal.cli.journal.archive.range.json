@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for archive range.",
+  "context": "Journal command-line text for archive range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9e9f915d94705bbfda0c42a008ce6b544423d1206d3b935446d1e6966dc38ef",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "from_flag",
+      "kind": "flag",
+      "value": "--from"
+    },
+    {
+      "name": "to_flag",
+      "kind": "flag",
+      "value": "--to"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for local resolution config.",
+  "context": "Journal command-line text for local resolution config.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d11b845db9bef64703963e1c5e385666c8f6f9ba2c50aba8b2c7c28b7cdb44a",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

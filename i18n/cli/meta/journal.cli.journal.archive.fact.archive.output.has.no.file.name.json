@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact archive output has no file name.",
+  "context": "Journal command-line text for archive fact archive output has no file name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "56819c9597337a03a7c1a45e82ff2376befb64a2c8a6e25d558c814238fc8947",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

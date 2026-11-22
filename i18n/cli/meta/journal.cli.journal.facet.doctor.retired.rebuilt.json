@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for facet doctor retired rebuilt.",
+  "context": "Journal command-line text for facet doctor retired rebuilt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "14b0edc690f8da3ead854db41fc2668d6dc20e49d94ecd54b2952ddf40cad81a",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "retired_path",
+      "kind": "accepted-input",
+      "value": "facets/retired.json"
+    }
+  ]
+}

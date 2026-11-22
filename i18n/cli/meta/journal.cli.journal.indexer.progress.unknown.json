@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer progress unknown.",
+  "context": "Journal command-line text for indexer progress unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba00519c36d08a281361027531c6aa1af01b5fa823b6f845e2f77ee0abe545f9",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

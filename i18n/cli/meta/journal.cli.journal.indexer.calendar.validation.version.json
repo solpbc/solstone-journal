@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation version.",
+  "context": "Journal command-line text for indexer calendar validation version.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f18abc5b214a7f059a3e45851f316295795554a4b4e4fea26cb43299609c803",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "v_field",
+      "kind": "accepted-input",
+      "value": "v"
+    }
+  ]
+}

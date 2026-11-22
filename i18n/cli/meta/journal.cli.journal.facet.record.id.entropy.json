@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet record id entropy.",
+  "context": "Journal command-line text for facet record id entropy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d462b2953c4d812f97540aaaa9db210f9afef1f99b800bc6d814cab7642cf326",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

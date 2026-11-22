@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet merge destination absent.",
+  "context": "Journal command-line text for facet merge destination absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "destination",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cf2c60ddf1668c8ae570dbab3241210c54b719849b04a1af9128d818a24d14df",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

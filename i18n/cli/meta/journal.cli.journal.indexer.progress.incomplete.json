@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer progress incomplete.",
+  "context": "Journal command-line text for indexer progress incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba421950653c722860f8f6c0f033369114fbe006fe290638fe8d67d1099391b9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

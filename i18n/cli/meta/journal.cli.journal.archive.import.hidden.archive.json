@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive import hidden archive.",
+  "context": "Journal command-line text for archive import hidden archive.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5cd909254b494f566112e23b96e6d5d1f7f98ae4f16abb08930d6c5f8a212269",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

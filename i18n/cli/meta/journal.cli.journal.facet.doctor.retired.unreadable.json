@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet doctor retired unreadable.",
+  "context": "Journal command-line text for facet doctor retired unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e494a315a37bb4bc67f9d922ac56166c4223eaa5609fc22e8c4c8c2917b9e657",
+  "max_length": 127,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "retired_path",
+      "kind": "accepted-input",
+      "value": "facets/retired.json"
+    }
+  ]
+}

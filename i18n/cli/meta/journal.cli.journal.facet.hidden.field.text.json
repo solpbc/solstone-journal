@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet hidden field text.",
+  "context": "Journal command-line text for facet hidden field text.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8ddf87d1ab8d93a235fefd5b078f9f43a6a94d7c2bcc4fccb059a10457a2f84c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

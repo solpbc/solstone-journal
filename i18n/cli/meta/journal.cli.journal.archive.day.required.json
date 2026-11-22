@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for archive day required.",
+  "context": "Journal command-line text for archive day required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ae479ec73849f2698641909be277f19938ce832d87e3396715a2ece2da5d8451",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_yyyymmdd",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    },
+    {
+      "name": "day_flag",
+      "kind": "flag",
+      "value": "--day"
+    }
+  ]
+}

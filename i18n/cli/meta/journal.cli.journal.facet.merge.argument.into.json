@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet merge argument into.",
+  "context": "Journal command-line text for facet merge argument into.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "40c39a9dc1f3a5cbcfafb187b046d36483675ea5e5e1112a7a54de91b7ebd532",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "into_dest",
+      "kind": "accepted-input",
+      "value": "--into DEST"
+    }
+  ]
+}

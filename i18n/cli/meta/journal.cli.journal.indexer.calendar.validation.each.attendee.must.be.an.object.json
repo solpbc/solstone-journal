@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer calendar validation each attendee must be an object.",
+  "context": "Journal command-line text for indexer calendar validation each attendee must be an object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "831686f4f589114fd0c61180f8b1c70919b232409a409b42fa28148eafd58be4",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

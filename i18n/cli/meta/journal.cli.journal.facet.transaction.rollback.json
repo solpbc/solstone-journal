@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet transaction rollback.",
+  "context": "Journal command-line text for facet transaction rollback.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "primary",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e495513ce7ff87fdf3f3b4a796dfcfcf5e8e0f59ccde8a3f2ca78ac5c127de13",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

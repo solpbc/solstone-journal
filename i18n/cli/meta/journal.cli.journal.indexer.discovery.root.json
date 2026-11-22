@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer discovery root.",
+  "context": "Journal command-line text for indexer discovery root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ce7eea7d1b8d68bc24d79fc7d366dce8cde8bf623bd6b4f18a4784f99aacba82",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

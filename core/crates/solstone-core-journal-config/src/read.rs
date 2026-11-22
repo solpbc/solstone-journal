@@ -82,13 +82,16 @@ impl fmt::Display for ConfigLoadError {
 }
 
 impl ConfigLoadError {
-    pub fn render(&self, locale: &str) -> String {
+    pub fn diagnostic(&self) -> solstone_core_cli_copy::MessageDetail {
         let Self::Corrupt { path, .. } = self;
-        solstone_core_window_catalog::strings(
-            locale,
+        solstone_core_cli_copy::MessageDetail::window(
             "journal.window.facets.awareness.response.detail.unreadable.settings",
-            [("settings_path", path.display().to_string().as_str())],
+            [("settings_path", &path.display())],
         )
+    }
+
+    pub fn render(&self, locale: &str) -> String {
+        self.diagnostic().render(locale)
     }
 }
 

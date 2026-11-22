@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation start is missing.",
+  "context": "Journal command-line text for indexer calendar validation start is missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3927d7b12787241f89b908cb1d4cf83e361c11ee4b74fc6fe2532718ade9c574",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "start_field",
+      "kind": "accepted-input",
+      "value": "start"
+    }
+  ]
+}

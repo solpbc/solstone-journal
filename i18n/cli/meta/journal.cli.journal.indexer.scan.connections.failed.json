@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer scan connections failed.",
+  "context": "Journal command-line text for indexer scan connections failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d8158ed8740a553b866ee92bb13f9c30778477bf1d5e05357df25b0046c7aa88",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

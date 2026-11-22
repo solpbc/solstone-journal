@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer speaker unresolved.",
+  "context": "Journal command-line text for indexer speaker unresolved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "composite_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0576a05f21a00d2db1aca698c7a2f2fc37fb53cd2316ef28dd63c7aa269dc103",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

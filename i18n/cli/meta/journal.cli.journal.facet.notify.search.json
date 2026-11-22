@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet notify search.",
+  "context": "Journal command-line text for facet notify search.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "92e36c44115b323564be54f652e6e02ada8c9dd60b3387a9426d2a7ca0f7eb9a",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

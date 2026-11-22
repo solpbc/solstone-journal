@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source io stat inventoried file.",
+  "context": "Journal command-line text for archive source io stat inventoried file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eabe1fdf92cd7a6e628ff4e09e713f082217c7f67cc61ce55f411181a45a8a96",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

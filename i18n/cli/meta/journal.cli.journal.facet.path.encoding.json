@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet path encoding.",
+  "context": "Journal command-line text for facet path encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0e261ebf6efd9352780a5cdea09c5b732bd53bd805362aa2df2b188842f0d98d",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

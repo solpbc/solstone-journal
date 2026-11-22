@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for archive source missing.",
+  "context": "Journal command-line text for archive source missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7e1a2775712554641bd07ecbfa5150d9bfdce38b619617d023bbda34bcc3efde",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_source",
+      "kind": "accepted-input",
+      "value": "SOURCE"
+    }
+  ]
+}

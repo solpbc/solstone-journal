@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer query prompt.",
+  "context": "Journal command-line text for indexer query prompt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59116d1b67736ca7594afe62471e72a992726c6ec6a4eb981db3969860b8291e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "description": "Journal command-line text for indexer scan summary.",
+  "context": "Journal command-line text for indexer scan summary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indexed",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "removed",
+      "type": "string"
+    },
+    {
+      "name": "skipped",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7682d2948fbe645b82a51b4c6f542ec51023409946dcf755edaa71ea9f0f55bf",
+  "max_length": 216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "indexed",
+    "type": "cardinal"
+  }
+}

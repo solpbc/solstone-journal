@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for archive out required.",
+  "context": "Journal command-line text for archive out required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b9f1845690e703ec3aaa5cf26677e34963f9d42a3aec38caaa7443619ebf5501",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_path",
+      "kind": "accepted-input",
+      "value": "PATH"
+    },
+    {
+      "name": "out_flag",
+      "kind": "flag",
+      "value": "--out"
+    }
+  ]
+}

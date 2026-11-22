@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for notify sent.",
+  "context": "Journal command-line text for notify sent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c78d7dc634a1eac367e7aa2082584647c50a3a58d9ef106f3f090b58ad49a683",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

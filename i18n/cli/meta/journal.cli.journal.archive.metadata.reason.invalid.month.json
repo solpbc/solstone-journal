@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive metadata reason invalid month.",
+  "context": "Journal command-line text for archive metadata reason invalid month.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce082abf4dd09734d8817325536ecd20473448653dc2a141c3881c554b3d4b04",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

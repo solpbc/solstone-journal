@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact archive parent component is invalid.",
+  "context": "Journal command-line text for archive fact archive parent component is invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "51665a1af60b76096c406863c5cfe64794d2be27fb0d3313b91b893ca2cf208f",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer query none.",
+  "context": "Journal command-line text for indexer query none.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c1c32b066530c9d819c157fb27a99ce548d20d37f203770969cbfb6ab16138b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

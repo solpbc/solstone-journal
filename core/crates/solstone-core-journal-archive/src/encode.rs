@@ -519,7 +519,10 @@ impl SinkState {
             Ok(0) if requested != 0 => {
                 self.record_fault(io::Error::new(
                     io::ErrorKind::WriteZero,
-                    "archive writer returned zero bytes for a nonempty write",
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.journal.archive.zero.write",
+                        [],
+                    ),
                 ));
                 Ok(self.virtual_write(requested))
             }

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for archive source regular.",
+  "context": "Journal command-line text for archive source regular.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e447d092a756dde294ecf07c98657c7a7efedd3a0cbd39420f47ba3564ee1c4e",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_source",
+      "kind": "accepted-input",
+      "value": "SOURCE"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive target io revalidate admitted archive output parent.",
+  "context": "Journal command-line text for archive target io revalidate admitted archive output parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ce58c229057a97924aff852f5626c207b89f62bdc483cee6a41703e09b8c1a0d",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

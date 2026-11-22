@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet record link invalid.",
+  "context": "Journal command-line text for facet record link invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d3e6c57a1b5c9789afae9f7d06c4d1f6f8b8257abbbe47264f465ec154432d25",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

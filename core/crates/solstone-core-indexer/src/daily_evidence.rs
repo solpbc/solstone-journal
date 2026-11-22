@@ -490,7 +490,7 @@ fn project_sources(
             content_digest,
             agent: agent.clone(),
             facet: metadata.facet.to_lowercase(),
-            warnings: produced.warnings.clone(),
+            warnings: produced.warnings.iter().map(ToString::to_string).collect(),
         });
         for (idx, chunk) in produced.chunks.into_iter().enumerate() {
             if chunk.content.trim().is_empty() {
@@ -504,7 +504,7 @@ fn project_sources(
                 facet: metadata.facet.to_lowercase(),
                 agent: agent.clone(),
                 occurrence_time_ms: chunk.occurrence_time_ms.map(|t| t.0),
-                warnings: produced.warnings.clone(),
+                warnings: produced.warnings.iter().map(ToString::to_string).collect(),
             });
         }
     }

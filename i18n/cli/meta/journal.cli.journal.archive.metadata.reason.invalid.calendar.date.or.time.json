@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive metadata reason invalid calendar date or time.",
+  "context": "Journal command-line text for archive metadata reason invalid calendar date or time.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c562ab4630dd5c96894107c810103be77b9785aa35c13c6db9fa482e882b39d4",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

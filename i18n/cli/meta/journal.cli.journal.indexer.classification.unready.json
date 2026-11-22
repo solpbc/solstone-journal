@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer classification unready.",
+  "context": "Journal command-line text for indexer classification unready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "cursor",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8a3f484b274adc72846dae2b436dcef92f8e8ee35533e1b6bcc456dfca648809",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "repair_command",
+      "kind": "command",
+      "value": "solstone-core indexer path-lookup --apply"
+    }
+  ]
+}

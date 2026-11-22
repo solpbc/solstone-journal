@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer rel absolute.",
+  "context": "Journal command-line text for indexer rel absolute.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eace5697b289430473f4c73cb5b66e09833d115739710cdf0220dc022a7293bf",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "rel",
+      "kind": "accepted-input",
+      "value": "rel"
+    }
+  ]
+}

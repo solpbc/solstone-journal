@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer classification absent.",
+  "context": "Journal command-line text for indexer classification absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "704713cb338e1384d945b2ebe9fd3f182ee97b2900a67cf603d11b2d269edede",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

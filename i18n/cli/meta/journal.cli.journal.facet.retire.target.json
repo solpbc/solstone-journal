@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet retire target.",
+  "context": "Journal command-line text for facet retire target.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "target",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cdb5f06043f25ce0722e79347124219ffcbd8c0af0ba0ba124cb386f48ecf65b",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "backfill_command",
+      "kind": "command",
+      "value": "solstone journal backfill-facet-ids"
+    }
+  ]
+}

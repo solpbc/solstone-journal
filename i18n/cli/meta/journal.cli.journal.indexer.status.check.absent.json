@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer status check absent.",
+  "context": "Journal command-line text for indexer status check absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f4efe6668ee0d05c1f990d95675c5f28d33d34e588dcfb6677178909f7c6a06",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -85,8 +85,9 @@ pub use freshness::{
 pub use grep_compile::{GrepCompileError, GrepPattern, compile_grep_pattern, decimal_digit_value};
 pub use index_health::{
     IndexFailure, IndexHealth, IndexHealthState, behind_text, evaluate_index_health,
-    evaluate_index_health_of, evaluate_index_health_recent, evaluate_index_health_recent_in,
-    evaluate_index_health_with, evaluate_index_health_with_in, retained_text,
+    evaluate_index_health_of, evaluate_index_health_of_in, evaluate_index_health_recent,
+    evaluate_index_health_recent_in, evaluate_index_health_with, evaluate_index_health_with_in,
+    retained_text,
 };
 pub use indexing_observation::{
     IndexingAttemptObservation, IndexingDiagnostics, IndexingObservations,

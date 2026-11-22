@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer calendar validation organizer must be an object or null.",
+  "context": "Journal command-line text for indexer calendar validation organizer must be an object or null.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3cccc377053e995bdadbc2f96bf892b48016806bd93780ad09a7b50c2d2a01c7",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "organizer_field",
+      "kind": "accepted-input",
+      "value": "organizer"
+    },
+    {
+      "name": "null_key",
+      "kind": "accepted-input",
+      "value": "null"
+    }
+  ]
+}

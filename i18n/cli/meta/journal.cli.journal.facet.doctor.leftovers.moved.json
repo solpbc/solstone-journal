@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet doctor leftovers moved.",
+  "context": "Journal command-line text for facet doctor leftovers moved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "folders",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a85d49679f718c59dd35a62036d1524e95d374059bdca4885eb2e9c44d26aafe",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

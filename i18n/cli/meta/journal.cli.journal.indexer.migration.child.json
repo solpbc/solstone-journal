@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer migration child.",
+  "context": "Journal command-line text for indexer migration child.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel_segment",
+      "type": "string"
+    },
+    {
+      "name": "rel",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "06208f6dd5b2dab9190669395f792de93061924cc176908c446a2620a191215b",
+  "max_length": 122,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

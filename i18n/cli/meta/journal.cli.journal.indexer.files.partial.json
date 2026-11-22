@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer files partial.",
+  "context": "Journal command-line text for indexer files partial.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f8a821470c28eb57365b8d8cc0cdbfd85aa028061d33927b28d54ee6a7bbf1f2",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

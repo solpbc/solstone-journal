@@ -344,11 +344,16 @@ fn merge_folder(name: &str) -> bool {
 /// leftover folders.
 pub struct FacetDrops<'a> {
     index: &'a dyn IndexNotify,
+    locale: &'a str,
 }
 
 impl<'a> FacetDrops<'a> {
     pub fn new(index: &'a dyn IndexNotify) -> Self {
-        Self { index }
+        Self::with_locale(index, solstone_core_cli_copy::ENGLISH)
+    }
+
+    pub fn with_locale(index: &'a dyn IndexNotify, locale: &'a str) -> Self {
+        Self { index, locale }
     }
 
     /// Move a merge's folder `facets/<folder>` to the trash as one item, as
@@ -446,9 +451,13 @@ impl<'a> FacetDrops<'a> {
         // Every file the merge dropped that is in the facet now, whether this
         // run moved it or an earlier one did: the folder goes only once search
         // has been told, so a folder gone means search was told.
-        self.index
-            .paths_returned(&returned)
-            .map_err(|error| format!("search was not updated: {}", error.reason))?;
+        self.index.paths_returned(&returned).map_err(|error| {
+            solstone_core_cli_copy::display_for(
+                self.locale,
+                "journal.cli.journal.facet.notify.search",
+                [("reason", &(error.reason))],
+            )
+        })?;
         // Only the manifest and empty folders are left; a file still there is
         // never removed with them.
         let files = staging.join(DROPPED_FILES);
@@ -553,7 +562,13 @@ impl Kind for FacetDrops<'_> {
                 self.index
                     .paths_removed(&removed)
                     .map(|_| ())
-                    .map_err(|error| format!("search was not updated: {}", error.reason))
+                    .map_err(|error| {
+                        solstone_core_cli_copy::display_for(
+                            self.locale,
+                            "journal.cli.journal.facet.notify.search",
+                            [("reason", &(error.reason))],
+                        )
+                    })
             }
             Change::Attached => self.put_back(journal, item),
         }

@@ -10,6 +10,7 @@ publish = false
 workspace = true
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 solstone-core-indexer-todo.workspace = true
 solstone-core-entity.workspace = true
 jiff.workspace = true

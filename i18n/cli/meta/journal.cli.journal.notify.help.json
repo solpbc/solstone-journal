@@ -1,0 +1,158 @@
+{
+  "description": "Journal command-line text for notify help.",
+  "context": "Journal command-line text for notify help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "66e2e4d9b71f7d5172ceb6704e2269dc34de528d398c5e4174757594d6cbc679",
+  "max_length": 1336,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal notify [-h] [--title TITLE] [--icon ICON] [--event EVENT]"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                  [--action ACTION] [--app APP] [--badge BADGE]"
+    },
+    {
+      "name": "syntax_continuation_2",
+      "kind": "accepted-input",
+      "value": "                  [--auto-dismiss AUTO_DISMISS] [--no-dismiss] [-v] [-d]"
+    },
+    {
+      "name": "message_options",
+      "kind": "accepted-input",
+      "value": "message [message ...]"
+    },
+    {
+      "name": "channel",
+      "kind": "accepted-input",
+      "value": "callosum"
+    },
+    {
+      "name": "positional",
+      "kind": "accepted-input",
+      "value": "  message               "
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "gap_12",
+      "kind": "whitespace",
+      "value": "            "
+    },
+    {
+      "name": "title_option",
+      "kind": "accepted-input",
+      "value": "--title TITLE"
+    },
+    {
+      "name": "gap_9",
+      "kind": "whitespace",
+      "value": "         "
+    },
+    {
+      "name": "icon_option",
+      "kind": "accepted-input",
+      "value": "--icon ICON"
+    },
+    {
+      "name": "gap_11",
+      "kind": "whitespace",
+      "value": "           "
+    },
+    {
+      "name": "mailbox",
+      "kind": "accepted-input",
+      "value": "mailbox"
+    },
+    {
+      "name": "icon_set",
+      "kind": "mark-word",
+      "value": "Lucide"
+    },
+    {
+      "name": "event_option",
+      "kind": "accepted-input",
+      "value": "--event EVENT"
+    },
+    {
+      "name": "default_show",
+      "kind": "accepted-input",
+      "value": "show)"
+    },
+    {
+      "name": "action_option",
+      "kind": "accepted-input",
+      "value": "--action ACTION"
+    },
+    {
+      "name": "gap_7",
+      "kind": "whitespace",
+      "value": "       "
+    },
+    {
+      "name": "app_option",
+      "kind": "accepted-input",
+      "value": "--app APP"
+    },
+    {
+      "name": "gap_13",
+      "kind": "whitespace",
+      "value": "             "
+    },
+    {
+      "name": "badge_option",
+      "kind": "accepted-input",
+      "value": "--badge BADGE"
+    },
+    {
+      "name": "syntax_continuation_18",
+      "kind": "accepted-input",
+      "value": "  --auto-dismiss AUTO_DISMISS"
+    },
+    {
+      "name": "no_dismiss_option",
+      "kind": "accepted-input",
+      "value": "--no-dismiss"
+    },
+    {
+      "name": "gap_10",
+      "kind": "whitespace",
+      "value": "          "
+    },
+    {
+      "name": "verbose_option",
+      "kind": "accepted-input",
+      "value": "-v, --verbose"
+    },
+    {
+      "name": "debug_option",
+      "kind": "accepted-input",
+      "value": "-d, --debug"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

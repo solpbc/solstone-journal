@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer merge failed.",
+  "context": "Journal command-line text for indexer merge failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2dc315f5e2e1b188212d0dbd944bd25988486161402244a1477fd1c6b02ec71c",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "fts",
+      "kind": "accepted-input",
+      "value": "FTS5"
+    }
+  ]
+}

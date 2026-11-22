@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for archive import ambiguities.",
+  "context": "Journal command-line text for archive import ambiguities.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e891314b87fece64612c2cdbfa03c1b9f72af83084c4449546c55d3f82b99be8",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_entities_ambiguities_jsonl",
+      "kind": "accepted-input",
+      "value": "entities/ambiguities.jsonl"
+    }
+  ]
+}

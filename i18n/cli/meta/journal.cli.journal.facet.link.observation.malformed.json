@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for facet link observation malformed.",
+  "context": "Journal command-line text for facet link observation malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "line",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3aefe8bb02560f5c1b98ffbc8bd5ed40944b731ba2642cc22799a69e4fc54a43",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

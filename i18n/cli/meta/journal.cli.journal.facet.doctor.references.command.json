@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet doctor references command.",
+  "context": "Journal command-line text for facet doctor references command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f2188c5c2452d019b976e55e8d23e88395ebbded8b330074add2ba6c2f5547ba",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "retire_command",
+      "kind": "command",
+      "value": "solstone journal facet doctor --retire NAME --into FACET"
+    }
+  ]
+}

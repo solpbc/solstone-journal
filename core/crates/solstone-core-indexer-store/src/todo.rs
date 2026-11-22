@@ -815,7 +815,7 @@ fn process(
                     target: "solstone::indexer",
                     "connections refresh left {} file(s) failed: {}",
                     report.failed,
-                    report.warnings.join("; ")
+                    report.warnings.iter().map(ToString::to_string).collect::<Vec<_>>().join("; ")
                 );
             }
             if report.files + report.failed > 0 && report.remaining > 0 {

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact filesystem root is not a directory.",
+  "context": "Journal command-line text for archive fact filesystem root is not a directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64e71cbeebf414a458f8a05f4d54e4a24a1066b211b752c109a75fd0ece2e874",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

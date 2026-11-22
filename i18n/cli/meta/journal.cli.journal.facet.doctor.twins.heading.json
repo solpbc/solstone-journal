@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor twins heading.",
+  "context": "Journal command-line text for facet doctor twins heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a0fae920f2d12f4d60b6848ec2857d5e75ae6d9cf2fa1772f37a117d43b7fa30",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

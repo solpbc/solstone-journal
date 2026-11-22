@@ -1,0 +1,48 @@
+{
+  "description": "Journal command-line text for indexer help main.",
+  "context": "Journal command-line text for indexer help main.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b7efc72ddfe8da5430168f763b1b3ed92d47d82126007d47b771b20e7a28f322",
+  "max_length": 214,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal indexer [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH] [-q [QUERY]] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--limit N] [--offset N] [--top N]"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "command",
+      "value": "       solstone journal indexer drain [--force] [--budget-seconds N] [--json]"
+    },
+    {
+      "name": "syntax_continuation_2",
+      "kind": "command",
+      "value": "       solstone journal indexer status [--json]"
+    },
+    {
+      "name": "syntax_continuation_3",
+      "kind": "command",
+      "value": "       solstone journal indexer path-lookup [--apply] [--json]"
+    },
+    {
+      "name": "syntax_continuation_4",
+      "kind": "command",
+      "value": "       solstone journal indexer classifications [--json] [--apply] [--drain]"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet link file encoding.",
+  "context": "Journal command-line text for facet link file encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0bd5accb0e5c1f3b7e47e30f560c1e31b2c7ea264fc7dbb64f7ef8b1d6e28337",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

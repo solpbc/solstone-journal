@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source windows borrow admitted journal root.",
+  "context": "Journal command-line text for archive source windows borrow admitted journal root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "076392c27cdf19f75ef996258cacd3f78b2728055141dd363e88385e304df6b8",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

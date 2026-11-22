@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet doctor orphans held.",
+  "context": "Journal command-line text for facet doctor orphans held.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "folders",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f2da33dcacd8ff37e1d1bac5a5e7269347802e3cc169b605be5d38a3a3682bad",
+  "max_length": 173,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "fix_flag",
+      "kind": "flag",
+      "value": "--fix"
+    }
+  ]
+}

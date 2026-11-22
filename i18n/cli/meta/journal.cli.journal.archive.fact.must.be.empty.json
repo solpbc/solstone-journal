@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact must be empty.",
+  "context": "Journal command-line text for archive fact must be empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "838b1ea10d6c93709776e3b14c60bb5c5c95c018fbc7caa7e352f2e46a4a0dc1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

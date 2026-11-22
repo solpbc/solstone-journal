@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet doctor orphans retired.",
+  "context": "Journal command-line text for facet doctor orphans retired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "folders",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7b73b81359dcf8c72241bbf99f130e741508a432ee4429451062622230f6d189",
+  "max_length": 206,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

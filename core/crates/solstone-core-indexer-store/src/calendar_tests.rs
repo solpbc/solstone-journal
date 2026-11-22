@@ -665,7 +665,11 @@ fn an_unreadable_settings_file_keeps_the_listing_and_reports_once_until_it_is_fi
     let report = scan_journal(journal.path(), false).unwrap();
     assert_eq!(report.failed, 1);
     assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
-    assert!(report.warnings[0].starts_with("your settings file"));
+    assert!(
+        report.warnings[0]
+            .to_string()
+            .starts_with("your settings file")
+    );
     assert_eq!(journal.listing(), before);
     // Once the file reads again, the next scan lists the newer note with no
     // other action.
@@ -1363,14 +1367,22 @@ fn an_import_file_outside_its_segment_span_is_skipped_and_reported_once() {
     let about = report
         .warnings
         .iter()
-        .filter(|warning| warning.contains(&bad))
+        .filter(|warning| warning.to_string().contains(&bad))
         .count();
     assert_eq!(about, 1, "{:?}", report.warnings);
-    assert!(report.warnings.iter().all(|warning| !warning.contains(&ok)));
+    assert!(
+        report
+            .warnings
+            .iter()
+            .all(|warning| !warning.to_string().contains(&ok))
+    );
     assert_eq!(days(&journal.listed_from(WEEKLY)), ["20261028"]);
     let again = scan_journal(journal.path(), false).unwrap();
     assert!(
-        again.warnings.iter().all(|warning| !warning.contains(&bad)),
+        again
+            .warnings
+            .iter()
+            .all(|warning| !warning.to_string().contains(&bad)),
         "{:?}",
         again.warnings
     );

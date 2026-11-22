@@ -56,7 +56,7 @@ pub struct EdgeRefresh {
     /// Files skipped for an invalid segment key.
     pub skipped: usize,
     pub failed: Vec<String>,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<solstone_core_cli_copy::MessageDetail>,
     /// Stale files left for a later pass.
     pub remaining: usize,
 }
@@ -191,7 +191,9 @@ pub(crate) fn invalidate_edges(
 }
 
 fn edge_error(error: solstone_core_indexer::edges::EdgeError) -> StoreError {
-    StoreError::Io(std::io::Error::other(error.to_string()))
+    StoreError::Io(std::io::Error::other(crate::cli_detail::edge_message(
+        &error,
+    )))
 }
 
 /// The stale edge files, newest day first; files without a day come last.
@@ -257,9 +259,11 @@ pub(crate) fn refresh_stale_edges(
             Err(error) => {
                 hand_to_scan(conn, rel)?;
                 report.failed.push(rel.clone());
-                report
-                    .warnings
-                    .push(format!("Skipping edge refresh for {rel}: {error}"));
+                report.warnings.push(error.diagnostic().context_slot(
+                    "journal.cli.journal.indexer.edge.refresh",
+                    "error",
+                    [("rel", &rel)],
+                ));
                 continue;
             }
         };

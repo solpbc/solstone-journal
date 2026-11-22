@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact archive output must be one file name.",
+  "context": "Journal command-line text for archive fact archive output must be one file name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9caac95e37d817e3a881f66f42584f36be8d729ab26215bb37a89325646d0846",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

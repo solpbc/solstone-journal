@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet record marker invalid.",
+  "context": "Journal command-line text for facet record marker invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e8f521c3a974317d4ce1df55ea25869043d0cc07b8089f7db4621941a8d0ff68",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

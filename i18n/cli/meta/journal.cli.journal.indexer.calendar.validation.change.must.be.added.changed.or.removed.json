@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer calendar validation change must be added changed or removed.",
+  "context": "Journal command-line text for indexer calendar validation change must be added changed or removed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "73341b97c3344d4a8b5b8b408d66a8c344e3dcd4027d1ead7153ff0619e84681",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "added_changed_or_removed_key",
+      "kind": "accepted-input",
+      "value": "added, changed or removed"
+    },
+    {
+      "name": "change_field",
+      "kind": "accepted-input",
+      "value": "change"
+    }
+  ]
+}

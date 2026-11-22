@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet transaction exists.",
+  "context": "Journal command-line text for facet transaction exists.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2968db89f6e3c816b9cd9f64c55ee703fb389e03bf0252ff4cbc683b778aee2d",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

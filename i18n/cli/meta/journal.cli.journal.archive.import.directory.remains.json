@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive import directory remains.",
+  "context": "Journal command-line text for archive import directory remains.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "09b50b88a2f37c128995c9a9031747ac9aaa8fe7027ce6b7b803c48f0afd3b59",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

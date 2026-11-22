@@ -302,7 +302,7 @@ pub fn evaluate_index_health_of(
 }
 
 #[must_use]
-fn evaluate_index_health_of_in(
+pub fn evaluate_index_health_of_in(
     journal: &Path,
     status: &IndexStatus,
     observations: &IndexingObservations,

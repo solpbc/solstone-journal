@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer files facet.",
+  "context": "Journal command-line text for indexer files facet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a0400c459747e59bdcf8aceee82385e345d779884e25ab1fa071e9bf81a1f3df",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for indexer argument rescan conflict.",
+  "context": "Journal command-line text for indexer argument rescan conflict.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be15ad127fb9eabb1f1555d3694b9523e59cbc6d72724c77e1a813cca840b2d0",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "rescan_file_flag",
+      "kind": "flag",
+      "value": "--rescan-file"
+    },
+    {
+      "name": "rescan_flag",
+      "kind": "flag",
+      "value": "--rescan"
+    },
+    {
+      "name": "rescan_full_flag",
+      "kind": "flag",
+      "value": "--rescan-full"
+    }
+  ]
+}

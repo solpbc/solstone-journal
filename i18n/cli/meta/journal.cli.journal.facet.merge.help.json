@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet merge help.",
+  "context": "Journal command-line text for facet merge help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3e2f0692e2c34c0ab29085143cee58da86eeed7f7206cfb5a879ea1486ad1bb8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal facet merge SOURCE --into DEST (--dry-run | --yes) [--consent]"
+    }
+  ]
+}

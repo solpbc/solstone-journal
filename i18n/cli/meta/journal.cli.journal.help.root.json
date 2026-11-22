@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for help root.",
+  "context": "Journal command-line text for help root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e96246fd596dd51a22bfd076bd22fdce0f705ba73b383d206fd04aebbba4bde2",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal root [-h]"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet retire name.",
+  "context": "Journal command-line text for facet retire name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0419eedeae03379028d4ac7bb119824bcb944a4a414bb68b0efd73c52da46224",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

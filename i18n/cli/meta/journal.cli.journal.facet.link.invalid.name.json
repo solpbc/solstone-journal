@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet link invalid name.",
+  "context": "Journal command-line text for facet link invalid name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a0dcaaf9502a69c53ac398bfbb3c536060ee20c6b08865219141ce41b6084a08",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

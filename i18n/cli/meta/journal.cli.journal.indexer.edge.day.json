@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer edge day.",
+  "context": "Journal command-line text for indexer edge day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6d26231e7b3f307ff96ddcf2abfa3133cf59c0c01265bcd248cf6afff08d7ac6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

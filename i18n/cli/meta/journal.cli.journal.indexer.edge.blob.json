@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer edge blob.",
+  "context": "Journal command-line text for indexer edge blob.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eb375340987764ccaedab10e44a586d540de6c7718864948f1494e7922602dd2",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

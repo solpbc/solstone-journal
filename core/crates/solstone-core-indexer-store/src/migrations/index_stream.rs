@@ -113,10 +113,12 @@ pub fn remove_legacy_index_artifacts(
         .map(|path| relative_label(journal, &path).into_owned())
         .collect::<Vec<_>>();
     if !surviving.is_empty() {
-        return Err(StoreError::EdgeFileFailed(format!(
-            "index files remain after migration: {}",
-            surviving.join(", ")
-        )));
+        return Err(StoreError::EdgeFileFailed(
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.migration.files",
+                [("paths", &(surviving.join(", ")))],
+            ),
+        ));
     }
     Ok(report)
 }

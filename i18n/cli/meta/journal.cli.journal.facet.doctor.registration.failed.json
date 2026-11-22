@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for facet doctor registration failed.",
+  "context": "Journal command-line text for facet doctor registration failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    },
+    {
+      "name": "slug",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "919b44b677d60417ba5dfedf46811f82db602aec4f644e72202545cd37333f88",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

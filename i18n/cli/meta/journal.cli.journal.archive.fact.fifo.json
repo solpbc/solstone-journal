@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact fifo.",
+  "context": "Journal command-line text for archive fact fifo.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c7446a818773e54145428a98e958cb4817dc97528368da6881020545dd727ea7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

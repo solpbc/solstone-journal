@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive import entity.",
+  "context": "Journal command-line text for archive import entity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity_id",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3b16dabfc749eaac276524dc59bd4c3c2f5369e1f51bb5d864b8986deceb04f7",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

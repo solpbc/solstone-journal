@@ -13,7 +13,7 @@ use solstone_core_format::segment::segment_key;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamLookup {
     pub stream: Option<String>,
-    pub warning: Option<String>,
+    pub warning: Option<solstone_core_cli_copy::MessageDetail>,
 }
 
 pub fn extract_stream(journal: &Path, rel: &str) -> StreamLookup {
@@ -39,8 +39,9 @@ pub fn extract_stream(journal: &Path, rel: &str) -> StreamLookup {
         Err(error) => {
             return StreamLookup {
                 stream: None,
-                warning: Some(format!(
-                    "stream marker path failed for {rel_segment}: {error}"
+                warning: Some(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.stream.path",
+                    [("rel_segment", &(rel_segment)), ("error", &(error))],
                 )),
             };
         }
@@ -57,9 +58,9 @@ pub fn extract_stream(journal: &Path, rel: &str) -> StreamLookup {
             }
             return StreamLookup {
                 stream: None,
-                warning: Some(format!(
-                    "stream marker read failed for {}: {error}",
-                    marker_path.display()
+                warning: Some(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.stream.read",
+                    [("path", &(marker_path.display())), ("error", &(error))],
                 )),
             };
         }
@@ -69,9 +70,9 @@ pub fn extract_stream(journal: &Path, rel: &str) -> StreamLookup {
         Err(error) => {
             return StreamLookup {
                 stream: None,
-                warning: Some(format!(
-                    "stream marker JSON failed for {}: {error}",
-                    marker_path.display()
+                warning: Some(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.stream.json",
+                    [("path", &(marker_path.display())), ("error", &(error))],
                 )),
             };
         }
@@ -130,7 +131,7 @@ mod tests {
         assert!(
             lookup
                 .warning
-                .is_some_and(|warning| warning.contains("stream marker JSON failed"))
+                .is_some_and(|warning| warning.to_string().contains("stream marker JSON failed"))
         );
         fs::remove_dir_all(root).expect("cleanup stream root");
     }

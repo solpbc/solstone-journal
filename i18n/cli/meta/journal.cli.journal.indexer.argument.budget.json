@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer argument budget.",
+  "context": "Journal command-line text for indexer argument budget.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9106102dc5fbfb1afaacd6d08e20d1a466b98a368292a8260e28ec2e22046968",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "budget_seconds_flag",
+      "kind": "flag",
+      "value": "--budget-seconds"
+    }
+  ]
+}

@@ -139,7 +139,7 @@ pub enum FacetWriteError {
     /// `facets/retired.json` exists but could not be read or parsed; it is
     /// never overwritten.
     RetiredFileDamaged {
-        detail: String,
+        detail: super::retired::RetiredRecordError,
     },
     /// A permanent retired entry already records a different outcome.
     RetiredEntryConflict {

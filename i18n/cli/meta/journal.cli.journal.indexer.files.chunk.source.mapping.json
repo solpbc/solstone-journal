@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer files chunk source mapping.",
+  "context": "Journal command-line text for indexer files chunk source mapping.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "09a307953be63718a1e41baaae545423c0fe355ac2e4017ebd222c8a10394267",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

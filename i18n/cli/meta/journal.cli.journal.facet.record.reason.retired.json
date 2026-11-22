@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet record reason retired.",
+  "context": "Journal command-line text for facet record reason retired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "72b3218f7cb5b8b75d0f01fda18422e5f5dcc8f7504a829242d5e18f69f624ff",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "retired_field",
+      "kind": "accepted-input",
+      "value": "retired"
+    }
+  ]
+}

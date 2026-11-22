@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive import unsafe extraction.",
+  "context": "Journal command-line text for archive import unsafe extraction.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entry",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ff92e0adff9126c4f03d3f1bc9239701d4f72d39e1aff4d27b07d077dc1589b9",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

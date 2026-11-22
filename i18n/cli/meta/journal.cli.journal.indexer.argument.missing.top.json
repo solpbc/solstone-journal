@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer argument missing top.",
+  "context": "Journal command-line text for indexer argument missing top.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a19bdf3d7da59e1f6ac16bd9a999a807c911aefa93b79c1805aac97dfb2ce927",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "top_flag",
+      "kind": "flag",
+      "value": "--top"
+    }
+  ]
+}

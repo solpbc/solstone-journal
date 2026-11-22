@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet link ids exhausted.",
+  "context": "Journal command-line text for facet link ids exhausted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59b0dd74ae93f4833a89f9421524b7495e1e17fdebecd61ad33328b2a8dc9b2f",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

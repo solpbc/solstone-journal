@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for archive target io.",
+  "context": "Journal command-line text for archive target io.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "db442989ad787dcd9cd0e0d0ae652728fe3d5e9f0beaac29d0e153d1e48f691d",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

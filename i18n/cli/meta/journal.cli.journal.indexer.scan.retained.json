@@ -1,0 +1,37 @@
+{
+  "description": "Journal command-line text for indexer scan retained.",
+  "context": "Journal command-line text for indexer scan retained.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ee3b04a93fb64935e45d8da5e22bc10999e0667c812aabfc88aa3f6dbed85fbe",
+  "max_length": 356,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "count",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "full_flag",
+      "kind": "flag",
+      "value": "--rescan-full"
+    }
+  ]
+}

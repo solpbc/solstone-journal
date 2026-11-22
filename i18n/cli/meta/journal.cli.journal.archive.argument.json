@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive argument.",
+  "context": "Journal command-line text for archive argument.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "677b8e07ef90b731719b5444faf3ad807efd2d3b5644879d0b164489bc95a825",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

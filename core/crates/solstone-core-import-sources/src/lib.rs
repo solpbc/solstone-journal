@@ -43,6 +43,8 @@ pub use producer::{
 pub use shared::{
     ImportPlan, PlannedEntry, PlannedSegment, SkipLocator, SkipReason, SkippedEntry, SourceError,
 };
+use solstone_core_cli_copy::MessageDetail;
+
 pub use strava::{looks_like_strava_csv_bytes, looks_like_strava_download};
 
 /// The independent safety layer that rejected an archive entry.
@@ -85,7 +87,7 @@ pub enum ImportSourcesError {
     },
     ArchiveInvalid {
         path: PathBuf,
-        detail: String,
+        detail: MessageDetail,
     },
     ArchiveEntryEncrypted {
         phase: ArchiveSafetyPhase,
@@ -94,7 +96,7 @@ pub enum ImportSourcesError {
     ArchiveUnsafeEntry {
         phase: ArchiveSafetyPhase,
         entry: String,
-        reason: String,
+        reason: MessageDetail,
     },
     ArchiveUncompressedTooLarge {
         bytes: u64,
@@ -108,11 +110,11 @@ pub enum ImportSourcesError {
     ExtractionFailed {
         archive: PathBuf,
         extraction_dir: PathBuf,
-        detail: String,
+        detail: MessageDetail,
     },
     ExtractionCleanupFailed {
         extraction_dir: PathBuf,
-        detail: String,
+        detail: MessageDetail,
         mutation: MergeMutationState,
     },
     // The two secondary paths are boxed so the error stays small on Windows, where
@@ -122,38 +124,38 @@ pub enum ImportSourcesError {
         sidecar_path: Box<PathBuf>,
         owner_metadata_path: Box<PathBuf>,
         owner: Option<String>,
-        remedy: String,
+        remedy: MessageDetail,
     },
     LockFailed {
         path: PathBuf,
-        detail: String,
+        detail: MessageDetail,
     },
     DecisionLogWrite {
         path: PathBuf,
-        detail: String,
+        detail: MessageDetail,
     },
     StagingWrite {
         path: PathBuf,
-        detail: String,
+        detail: MessageDetail,
     },
     SegmentMerge {
         path: PathBuf,
-        detail: String,
+        detail: MessageDetail,
     },
     EntityMerge {
         entity_id: String,
-        detail: String,
+        detail: MessageDetail,
     },
     FacetMerge {
         facet: String,
-        detail: String,
+        detail: MessageDetail,
     },
     ImportMerge {
         path: PathBuf,
-        detail: String,
+        detail: MessageDetail,
     },
     MergePublishFailed {
-        detail: String,
+        detail: MessageDetail,
         mutation: MergeMutationState,
     },
 }
@@ -185,114 +187,163 @@ impl ImportSourcesError {
     }
 }
 
-impl fmt::Display for ImportSourcesError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl ImportSourcesError {
+    pub fn terminal_message(&self, locale: &str) -> String {
+        self.message().render(locale)
+    }
+
+    fn message(&self) -> MessageDetail {
         match self {
-            Self::Unimplemented { module } => {
-                write!(formatter, "import-sources: unimplemented: {module}")
-            }
-            Self::ArchiveNotFound { path } => {
-                write!(formatter, "archive not found: {}", path.display())
-            }
+            Self::Unimplemented { module } => MessageDetail::message(
+                "journal.cli.journal.archive.import.unimplemented",
+                [("module", &(module))],
+            ),
+            Self::ArchiveNotFound { path } => MessageDetail::message(
+                "journal.cli.journal.archive.import.missing",
+                [("path", &(path.display()))],
+            ),
             Self::ArchiveTooLarge {
                 path,
                 bytes,
                 maximum,
-            } => write!(
-                formatter,
-                "archive {} is {bytes} bytes; maximum is {maximum}",
-                path.display()
+            } => MessageDetail::cardinal(
+                "journal.cli.journal.archive.import.compressed",
+                [(
+                    "count",
+                    i64::from(i32::try_from(*bytes).unwrap_or(i32::MAX)),
+                )],
+                format!(
+                    "archive {} is {bytes} bytes; maximum is {maximum}",
+                    path.display()
+                ),
+                [
+                    ("bytes", bytes),
+                    ("maximum", maximum),
+                    ("path", &path.display()),
+                ],
             ),
-            Self::ArchiveInvalid { path, detail } => {
-                write!(formatter, "invalid archive {}: {detail}", path.display())
-            }
-            Self::ArchiveEntryEncrypted { phase, entry } => {
-                write!(formatter, "encrypted archive entry during {phase}: {entry}")
-            }
+            Self::ArchiveUncompressedTooLarge { bytes, maximum } => MessageDetail::cardinal(
+                "journal.cli.journal.archive.import.expanded",
+                [(
+                    "count",
+                    i64::from(i32::try_from(*bytes).unwrap_or(i32::MAX)),
+                )],
+                format!("archive expands to {bytes} bytes; maximum is {maximum}"),
+                [("bytes", bytes), ("maximum", maximum)],
+            ),
+            Self::ArchiveInvalid { path, detail } => detail.clone().context_with(
+                "journal.cli.journal.archive.import.invalid",
+                [("path", &(path.display()))],
+            ),
+            Self::ArchiveEntryEncrypted {
+                phase: ArchiveSafetyPhase::Validation,
+                entry,
+            } => MessageDetail::message(
+                "journal.cli.journal.archive.import.encrypted.validation",
+                [("entry", &(entry))],
+            ),
             Self::ArchiveUnsafeEntry {
-                phase,
+                phase: ArchiveSafetyPhase::Validation,
                 entry,
                 reason,
-            } => write!(
-                formatter,
-                "unsafe archive entry during {phase}: {entry}: {reason}"
+            } => reason.clone().context_with(
+                "journal.cli.journal.archive.import.unsafe.validation",
+                [("entry", &(entry))],
             ),
-            Self::ArchiveUncompressedTooLarge { bytes, maximum } => write!(
-                formatter,
-                "archive expands to {bytes} bytes; maximum is {maximum}"
+            Self::ArchiveEntryEncrypted {
+                phase: ArchiveSafetyPhase::Extraction,
+                entry,
+            } => MessageDetail::message(
+                "journal.cli.journal.archive.import.encrypted.extraction",
+                [("entry", &(entry))],
+            ),
+            Self::ArchiveUnsafeEntry {
+                phase: ArchiveSafetyPhase::Extraction,
+                entry,
+                reason,
+            } => reason.clone().context_with(
+                "journal.cli.journal.archive.import.unsafe.extraction",
+                [("entry", &(entry))],
             ),
             Self::ArchiveInsufficientSpace {
                 available,
                 required,
                 path,
-            } => write!(
-                formatter,
-                "insufficient free space at {}: {available} available, {required} required",
-                path.display()
+            } => MessageDetail::message(
+                "journal.cli.journal.archive.import.space",
+                [
+                    ("path", &(path.display())),
+                    ("available", &(available)),
+                    ("required", &(required)),
+                ],
             ),
             Self::ExtractionFailed {
                 archive,
                 extraction_dir,
                 detail,
-            } => write!(
-                formatter,
-                "failed extracting {} into {}: {detail}",
-                archive.display(),
-                extraction_dir.display()
+            } => detail.clone().context_with(
+                "journal.cli.journal.archive.import.extract",
+                [
+                    ("archive", &(archive.display())),
+                    ("dir", &(extraction_dir.display())),
+                ],
             ),
             Self::ExtractionCleanupFailed {
                 extraction_dir,
                 detail,
                 ..
-            } => write!(
-                formatter,
-                "failed cleaning extraction {}: {detail}",
-                extraction_dir.display()
+            } => detail.clone().context_with(
+                "journal.cli.journal.archive.import.cleanup",
+                [("path", &(extraction_dir.display()))],
             ),
             Self::LockBusy {
                 protected_path,
                 remedy,
                 ..
-            } => write!(
-                formatter,
-                "archive merge lock is busy at {}: {remedy}",
-                protected_path.display()
+            } => remedy.clone().context_with(
+                "journal.cli.journal.archive.import.busy",
+                [("path", &(protected_path.display()))],
             ),
-            Self::LockFailed { path, detail } => write!(
-                formatter,
-                "archive merge lock failed at {}: {detail}",
-                path.display()
+            Self::LockFailed { path, detail, .. } => detail.clone().context_with(
+                "journal.cli.journal.archive.import.lock",
+                [("path", &(path.display()))],
             ),
-            Self::DecisionLogWrite { path, detail } => write!(
-                formatter,
-                "decision log write failed at {}: {detail}",
-                path.display()
+            Self::DecisionLogWrite { path, detail, .. } => detail.clone().context_with(
+                "journal.cli.journal.archive.import.log",
+                [("path", &(path.display()))],
             ),
-            Self::StagingWrite { path, detail } => write!(
-                formatter,
-                "staging write failed at {}: {detail}",
-                path.display()
+            Self::StagingWrite { path, detail, .. } => detail.clone().context_with(
+                "journal.cli.journal.archive.import.stage",
+                [("path", &(path.display()))],
             ),
-            Self::SegmentMerge { path, detail } => write!(
-                formatter,
-                "segment merge failed at {}: {detail}",
-                path.display()
+            Self::SegmentMerge { path, detail, .. } => detail.clone().context_with(
+                "journal.cli.journal.archive.import.segment",
+                [("path", &(path.display()))],
             ),
-            Self::EntityMerge { entity_id, detail } => {
-                write!(formatter, "entity merge failed for {entity_id}: {detail}")
-            }
-            Self::FacetMerge { facet, detail } => {
-                write!(formatter, "facet merge failed for {facet}: {detail}")
-            }
-            Self::ImportMerge { path, detail } => write!(
-                formatter,
-                "import merge failed at {}: {detail}",
-                path.display()
+            Self::EntityMerge {
+                entity_id, detail, ..
+            } => detail.clone().context_with(
+                "journal.cli.journal.archive.import.entity",
+                [("entity_id", &(entity_id))],
             ),
-            Self::MergePublishFailed { detail, .. } => {
-                write!(formatter, "archive merge publish failed: {detail}")
-            }
+            Self::FacetMerge { facet, detail, .. } => detail.clone().context_with(
+                "journal.cli.journal.archive.import.facet",
+                [("facet", &(facet))],
+            ),
+            Self::ImportMerge { path, detail, .. } => detail.clone().context_with(
+                "journal.cli.journal.archive.import.merge",
+                [("path", &(path.display()))],
+            ),
+            Self::MergePublishFailed { detail, .. } => detail
+                .clone()
+                .context_with("journal.cli.journal.archive.import.publish", []),
         }
+    }
+}
+
+impl fmt::Display for ImportSourcesError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.message().fmt(formatter)
     }
 }
 
@@ -306,3 +357,26 @@ pub const MODULE_STUBS: &[ModuleStub] = &[
     ("registry", registry::reserved_seam),
     ("oura", oura::reserved_seam),
 ];
+
+#[cfg(test)]
+mod archive_size_copy_tests {
+    use super::ImportSourcesError;
+
+    #[test]
+    fn archive_refusals_show_the_full_byte_count_past_the_plural_selector_limit() {
+        let bytes = u64::MAX;
+        let maximum = 50 * 1024_u64.pow(3);
+        for error in [
+            ImportSourcesError::ArchiveTooLarge {
+                path: "large.zip".into(),
+                bytes,
+                maximum,
+            },
+            ImportSourcesError::ArchiveUncompressedTooLarge { bytes, maximum },
+        ] {
+            let line = error.terminal_message("en-US");
+            assert_eq!(line, error.to_string());
+            assert!(line.contains(&format!("{bytes} bytes; maximum is {maximum}")));
+        }
+    }
+}

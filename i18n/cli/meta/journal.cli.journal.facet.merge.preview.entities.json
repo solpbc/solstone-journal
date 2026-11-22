@@ -1,0 +1,26 @@
+{
+  "description": "Journal command-line text for facet merge preview entities.",
+  "context": "Journal command-line text for facet merge preview entities.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ebc71b72b71d5f55fca110778c7da82bb822997ea14937ef225473c09a25a487",
+  "max_length": 266,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "count",
+    "type": "cardinal"
+  }
+}

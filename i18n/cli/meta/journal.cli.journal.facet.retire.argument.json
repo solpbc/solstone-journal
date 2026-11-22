@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for facet retire argument.",
+  "context": "Journal command-line text for facet retire argument.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "01180b37b399272bb88c4bbd1a9beec170139aad3f0336d0004a30d0500dd8d5",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "into_facet",
+      "kind": "accepted-input",
+      "value": "--into FACET"
+    },
+    {
+      "name": "name_argument",
+      "kind": "accepted-input",
+      "value": "NAME"
+    },
+    {
+      "name": "retire_flag",
+      "kind": "flag",
+      "value": "--retire"
+    },
+    {
+      "name": "deleted_flag",
+      "kind": "flag",
+      "value": "--deleted"
+    }
+  ]
+}

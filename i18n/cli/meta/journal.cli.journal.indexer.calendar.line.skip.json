@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer calendar line skip.",
+  "context": "Journal command-line text for indexer calendar line skip.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "line",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5acf2e0d50e0023e1ddd1108b23a9ee2759234f51ec28bdf73b7f1b40c53e4dc",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

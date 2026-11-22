@@ -10,6 +10,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 getrandom = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }

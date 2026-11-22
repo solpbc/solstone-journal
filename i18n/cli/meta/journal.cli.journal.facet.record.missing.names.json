@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet record missing names.",
+  "context": "Journal command-line text for facet record missing names.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5fade230c9d09dd701f006064c4734da5a15741ad0382561ccd22b31fcc9c9c5",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "names_field",
+      "kind": "accepted-input",
+      "value": "names"
+    }
+  ]
+}

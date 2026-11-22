@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for archive incomplete.",
+  "context": "Journal command-line text for archive incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "committed",
+      "type": "string"
+    },
+    {
+      "name": "skipped",
+      "type": "string"
+    },
+    {
+      "name": "failed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7ee239b14ad360050fe090f56b776a3e417ff6329830b59bd585af8abae5cdca",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

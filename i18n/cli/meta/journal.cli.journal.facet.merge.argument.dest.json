@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet merge argument dest.",
+  "context": "Journal command-line text for facet merge argument dest.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fc215aede3f5035dde8c3981b121795c3682154a3cd8fba83d68b89d33662fcb",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "destination_argument",
+      "kind": "accepted-input",
+      "value": "DEST"
+    },
+    {
+      "name": "into_flag",
+      "kind": "flag",
+      "value": "--into"
+    }
+  ]
+}

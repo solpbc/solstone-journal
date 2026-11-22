@@ -632,7 +632,13 @@ fn file_proof(stat: &FileStat) -> Result<FileProof, ArchiveError> {
     let size = u64::try_from(stat.st_size).map_err(|_| ArchiveError::SourceIo {
         operation: "read regular-file size",
         member: None,
-        source: io::Error::new(io::ErrorKind::InvalidData, "regular-file size is negative"),
+        source: io::Error::new(
+            io::ErrorKind::InvalidData,
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.archive.negative.size",
+                [],
+            ),
+        ),
     })?;
     Ok(FileProof {
         identity: ProofIdentity::Unix {
@@ -647,7 +653,13 @@ fn stat_identifier(value: impl TryInto<u64>) -> Result<u64, ArchiveError> {
     value.try_into().map_err(|_| ArchiveError::SourceIo {
         operation: "read source file identity",
         member: None,
-        source: io::Error::new(io::ErrorKind::InvalidData, "source identity is negative"),
+        source: io::Error::new(
+            io::ErrorKind::InvalidData,
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.archive.negative.identity",
+                [],
+            ),
+        ),
     })
 }
 

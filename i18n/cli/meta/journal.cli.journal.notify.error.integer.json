@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for notify error integer.",
+  "context": "Journal command-line text for notify error integer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6855cae95a512891fca6a3f93a3f6f560af18a8d62d625470d107f8f9f9e4f0d",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "invocation",
+      "kind": "command",
+      "value": "solstone journal notify"
+    },
+    {
+      "name": "auto_dismiss_flag",
+      "kind": "flag",
+      "value": "--auto-dismiss"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet record declaration unreadable.",
+  "context": "Journal command-line text for facet record declaration unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "667f9d7e694d71605463123f81d913e6ab63e44c5c9e6815c36c4997ec9f5993",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

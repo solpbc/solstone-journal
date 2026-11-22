@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer rel backslash.",
+  "context": "Journal command-line text for indexer rel backslash.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "088ab1683ee59f4cf54b0aa117800de1879672bc6b7bda49528e88892b58efee",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "posix",
+      "kind": "accepted-input",
+      "value": "POSIX"
+    },
+    {
+      "name": "rel",
+      "kind": "accepted-input",
+      "value": "rel"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet retire encoding.",
+  "context": "Journal command-line text for facet retire encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "71278aafbc986ffd123d95a916f21b26ce249939c59ba471c87c845e41e2404c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

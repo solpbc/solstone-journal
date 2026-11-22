@@ -4,37 +4,39 @@
 use crate::SegmentIdentityError;
 
 pub fn path_detail(locale: &str, error: &crate::PathError) -> String {
+    path_message(error).render(locale)
+}
+
+pub fn path_message(error: &crate::PathError) -> solstone_core_cli_copy::MessageDetail {
     use crate::{PathError, paths::RelativePathProblem};
+    use solstone_core_cli_copy::MessageDetail;
     match error {
         PathError::InvalidRelativePath { rel, .. } => match RelativePathProblem::of(rel) {
             Some(RelativePathProblem::Empty) => {
-                solstone_core_cli_copy::render_for(locale, "journal.cli.talent.path.empty", &[])
+                MessageDetail::message("journal.cli.talent.path.empty", [])
             }
             Some(RelativePathProblem::Absolute) => {
-                solstone_core_cli_copy::render_for(locale, "journal.cli.talent.path.absolute", &[])
+                MessageDetail::message("journal.cli.talent.path.absolute", [])
             }
             Some(RelativePathProblem::Backslash) => {
-                solstone_core_cli_copy::render_for(locale, "journal.cli.talent.path.backslash", &[])
+                MessageDetail::message("journal.cli.talent.path.backslash", [])
             }
             Some(RelativePathProblem::Component) => {
-                solstone_core_cli_copy::render_for(locale, "journal.cli.talent.path.component", &[])
+                MessageDetail::message("journal.cli.talent.path.component", [])
             }
-            Some(RelativePathProblem::Unreadable) => solstone_core_cli_copy::render_for(
-                locale,
-                "journal.cli.talent.path.unreadable",
-                &[],
-            ),
-            None => error.to_string(),
+            Some(RelativePathProblem::Unreadable) => {
+                MessageDetail::message("journal.cli.talent.path.unreadable", [])
+            }
+            None => error.to_string().into(),
         },
-        PathError::Escape(error) => solstone_core_cli_copy::display_for(
-            locale,
+        PathError::Escape(error) => MessageDetail::message(
             "journal.cli.talent.path.escape",
             [
                 ("relative", &(format!("{:?}", error.rel))),
                 ("path", &(error.path.display())),
             ],
         ),
-        PathError::Io { .. } => error.to_string(),
+        PathError::Io { .. } => error.to_string().into(),
     }
 }
 
@@ -132,4 +134,4 @@ pub fn health_marker_detail(locale: &str, error: &crate::HealthMarkerError) -> S
 }
 
 mod publication;
-pub use publication::{atomic_message, flat_message, io_message};
+pub use publication::{atomic_message, flat_message, io_message, root_io_message, root_reason};

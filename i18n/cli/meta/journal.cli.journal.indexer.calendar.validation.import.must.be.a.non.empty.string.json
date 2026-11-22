@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation import must be a non empty string.",
+  "context": "Journal command-line text for indexer calendar validation import must be a non empty string.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6b0f832779d20a6f7f575f4f3550bf1f6db4114c48f2dca352ecbb863b7a8306",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "import_field",
+      "kind": "accepted-input",
+      "value": "import"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer files calendar note insert.",
+  "context": "Journal command-line text for indexer files calendar note insert.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c0c6932c07f45e3064598ca7fe321ce6279ea1f96c24fd062b2e3fabd2c2ce91",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

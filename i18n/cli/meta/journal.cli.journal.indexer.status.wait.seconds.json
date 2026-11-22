@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer status wait seconds.",
+  "context": "Journal command-line text for indexer status wait seconds.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2daa6a94563a6dad1e836988d1e9d600c1bad2c626fbf030bcc17e913914ac02",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

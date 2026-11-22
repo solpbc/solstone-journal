@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer rel trash.",
+  "context": "Journal command-line text for indexer rel trash.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9ee8ea686afbf73d4b53b8373b377e5001b06eeae5659dc2e11d3d1d1d828b28",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "rel",
+      "kind": "accepted-input",
+      "value": "rel"
+    }
+  ]
+}

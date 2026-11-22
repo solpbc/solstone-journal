@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer query column day.",
+  "context": "Journal command-line text for indexer query column day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "41830fe044fb58f6350dfd228580df06f59c8383a7ede30cff9284eb266f9e40",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

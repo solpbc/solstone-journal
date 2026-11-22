@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for facet hidden row error.",
+  "context": "Journal command-line text for facet hidden row error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "index",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7748c3a43eba158d735fffecf048c7ff0696c7a047fc951f56a1064e5de7f228",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

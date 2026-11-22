@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive source windows query retained entry identity member.",
+  "context": "Journal command-line text for archive source windows query retained entry identity member.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8a357a5708b51ba5711fd44db3ac8c1b27cbf2ee51a5e32f8fbf760ac48bbc7b",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

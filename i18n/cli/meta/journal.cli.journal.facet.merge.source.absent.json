@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet merge source absent.",
+  "context": "Journal command-line text for facet merge source absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8f01ffce7514017aebd008e6b8fc93ff94733b2b95fde84489a841bda3c6a8a7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

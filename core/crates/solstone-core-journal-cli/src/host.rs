@@ -9,11 +9,6 @@ use crate::layout::{inspect_journal_days, resolve_current_journal, resolve_proje
 const EXIT_IOERR: u8 = 74;
 const EXIT_TEMPFAIL: u8 = 75;
 
-pub(crate) const PATH_HELP: &str =
-    "usage: solstone journal path [-h]\n\nPrint the resolved journal path.\n";
-pub(crate) const STATUS_HELP: &str = "usage: solstone journal status [-h]\n\nPrint whether the journal exists and how many days it has.\n";
-pub(crate) const ROOT_HELP: &str = "usage: solstone journal root [-h]\n\nPrint the project root.\n";
-
 pub(crate) fn is_help_only(args: &[std::ffi::OsString]) -> bool {
     args.len() == 1 && (args[0] == "--help" || args[0] == "-h")
 }
@@ -26,9 +21,14 @@ pub(crate) fn path() -> Outcome {
     let Some(path) = journal.path.to_str() else {
         return Outcome::LocalFailure {
             stdout: String::new(),
-            stderr:
-                "native journal path resolution failed: resolved journal path is not valid UTF-8\n"
-                    .to_string(),
+            stderr: format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.host.path.utf8",
+                    &[]
+                )
+            ),
             exit: EXIT_TEMPFAIL,
         };
     };
@@ -46,8 +46,14 @@ pub(crate) fn status() -> Outcome {
     let Some(path) = journal.path.to_str() else {
         return Outcome::LocalFailure {
             stdout: String::new(),
-            stderr: "native journal status failed: resolved journal path is not valid UTF-8\n"
-                .to_string(),
+            stderr: format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.host.status.utf8",
+                    &[]
+                )
+            ),
             exit: EXIT_TEMPFAIL,
         };
     };
@@ -58,7 +64,12 @@ pub(crate) fn status() -> Outcome {
             return Outcome::LocalFailure {
                 stdout: String::new(),
                 stderr: format!(
-                    "native journal status failed: journal root is not a directory: {path}\n"
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.host.status.directory",
+                        [("path", &path)]
+                    )
                 ),
                 exit: EXIT_IOERR,
             };
@@ -68,7 +79,12 @@ pub(crate) fn status() -> Outcome {
             return Outcome::LocalFailure {
                 stdout: String::new(),
                 stderr: format!(
-                    "native journal status failed: could not inspect {path}: {error}\n"
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.host.status.inspect",
+                        [("path", &path), ("error", &error)]
+                    )
                 ),
                 exit: EXIT_TEMPFAIL,
             };
@@ -81,7 +97,12 @@ pub(crate) fn status() -> Outcome {
             return Outcome::LocalFailure {
                 stdout: String::new(),
                 stderr: format!(
-                    "native journal status failed: could not inspect {path}: {error}\n"
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.host.status.inspect",
+                        [("path", &path), ("error", &error)]
+                    )
                 ),
                 exit: EXIT_TEMPFAIL,
             };
@@ -90,8 +111,16 @@ pub(crate) fn status() -> Outcome {
     let source = journal.source;
     Outcome::LocalSuccess {
         stdout: format!(
-            "Journal: {path}\nSource: {source}\nExists: {}\nDays: {days}\n",
-            if exists { "yes" } else { "no" }
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                crate::terminal_language(),
+                if exists {
+                    "journal.cli.journal.host.status.exists"
+                } else {
+                    "journal.cli.journal.host.status.absent"
+                },
+                [("path", &path), ("source", &source), ("days", &days)],
+            )
         ),
         stderr: String::new(),
     }
@@ -105,16 +134,16 @@ pub(crate) fn root() -> Outcome {
         },
         Err(error) => Outcome::LocalFailure {
             stdout: String::new(),
-            stderr: format!("{error}\n"),
+            stderr: format!("{}\n", error.render(crate::terminal_language())),
             exit: EXIT_TEMPFAIL,
         },
     }
 }
 
-pub(crate) fn resolution_failure(error: impl std::fmt::Display) -> Outcome {
+pub(crate) fn resolution_failure(error: crate::layout::JournalResolutionError) -> Outcome {
     Outcome::LocalFailure {
         stdout: String::new(),
-        stderr: format!("native journal resolution failed: {error}\n"),
+        stderr: format!("{}\n", error.native_message(crate::terminal_language())),
         exit: EXIT_TEMPFAIL,
     }
 }

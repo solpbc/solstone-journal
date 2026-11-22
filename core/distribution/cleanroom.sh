@@ -141,7 +141,7 @@ fresh_journal_loop() {
 	solstone journal indexer --rescan
 	solstone journal indexer -q CLEANROOM_SENTINEL_260817 --day 20200101 --stream default --limit 10 \
 		>"$journal/query.out"
-	grep -F 'Total: 1 chunks' "$journal/query.out" >/dev/null \
+	grep -Fx 'Total: 1 chunk' "$journal/query.out" >/dev/null \
 		|| refuse "$rung query did not return exactly one chunk"
 	grep -F 'CLEANROOM_SENTINEL_260817' "$journal/query.out" >/dev/null \
 		|| refuse "$rung query lost its sentinel"

@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for archive import extract.",
+  "context": "Journal command-line text for archive import extract.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "archive",
+      "type": "string"
+    },
+    {
+      "name": "dir",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a4d13532acb36d6050dc83aa347585ddb8fb49260a9df4c4f4e6187a3f53ec95",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

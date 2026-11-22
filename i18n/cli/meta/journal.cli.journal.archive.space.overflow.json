@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive space overflow.",
+  "context": "Journal command-line text for archive space overflow.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "58d21ee09bb92ae2a5f42b0a162eb2ea6056e0f8e083e8a1ef203bee870ac308",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

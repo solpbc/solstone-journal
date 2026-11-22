@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation event must be a non empty string.",
+  "context": "Journal command-line text for indexer calendar validation event must be a non empty string.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ae8bea73d7d402390048aff21567f7a51d376bcb8619835b7428184cf48cdef",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "event_field",
+      "kind": "accepted-input",
+      "value": "event"
+    }
+  ]
+}

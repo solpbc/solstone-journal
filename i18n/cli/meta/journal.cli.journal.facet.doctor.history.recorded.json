@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor history recorded.",
+  "context": "Journal command-line text for facet doctor history recorded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "074a0140a9419ce64cf4316c8a428cfc47cee8cdc346f6a269015bffa0bca7de",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer edge dst.",
+  "context": "Journal command-line text for indexer edge dst.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "40894235857019db993010d86c15d481d13983b14d320773423316a0ae57088e",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "dst_field",
+      "kind": "accepted-input",
+      "value": "dst"
+    }
+  ]
+}

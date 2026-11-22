@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for indexer calendar validation start and end must be dates exactly when all day is true.",
+  "context": "Journal command-line text for indexer calendar validation start and end must be dates exactly when all day is true.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7cdaa851c513e268cfad85789e359dc6b2ff4db0bdbac16607c19004e8ce4e51",
+  "max_length": 130,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "all_day_field",
+      "kind": "accepted-input",
+      "value": "all_day"
+    },
+    {
+      "name": "start_field",
+      "kind": "accepted-input",
+      "value": "start"
+    },
+    {
+      "name": "true_key",
+      "kind": "accepted-input",
+      "value": "true"
+    },
+    {
+      "name": "end_field",
+      "kind": "accepted-input",
+      "value": "end"
+    }
+  ]
+}

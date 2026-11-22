@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer database absent.",
+  "context": "Journal command-line text for indexer database absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ba62c487e5c4d23959dae82c576a460aa339533172dd05978b6092e5eceb41e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

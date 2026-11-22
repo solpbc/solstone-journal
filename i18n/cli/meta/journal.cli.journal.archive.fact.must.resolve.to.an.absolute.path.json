@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact must resolve to an absolute path.",
+  "context": "Journal command-line text for archive fact must resolve to an absolute path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e0f069bb1ac4d020df367991b4987fbb9ea3da96bd10cfcd463825699ad0417",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

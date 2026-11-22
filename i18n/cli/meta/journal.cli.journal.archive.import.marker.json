@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive import marker.",
+  "context": "Journal command-line text for archive import marker.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8dff244c7d4f1ccbc92b5678b5a6232cc1c6b4b339b076f7e0a651db6f04cb5d",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

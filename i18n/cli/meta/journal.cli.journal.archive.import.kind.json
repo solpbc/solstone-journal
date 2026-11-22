@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive import kind.",
+  "context": "Journal command-line text for archive import kind.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "relative",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c66d4e97ef562a8c8fc6958510a54ae310659cffcf8ed0184c5a971fa8c661e4",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

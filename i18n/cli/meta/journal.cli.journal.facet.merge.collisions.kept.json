@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for facet merge collisions kept.",
+  "context": "Journal command-line text for facet merge collisions kept.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "destination",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b9dc2a11b2c818221ab5fcf05c450a0b453b695fa59994bc3505cf882640b508",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "repair_command",
+      "kind": "command",
+      "value": "solstone journal facet doctor --fix"
+    }
+  ]
+}

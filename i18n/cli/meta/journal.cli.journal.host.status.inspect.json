@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for host status inspect.",
+  "context": "Journal command-line text for host status inspect.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "357ec6a8665a0a687981bc70b3a35e84f98e743c4fbb78040de16bb31b107bf4",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

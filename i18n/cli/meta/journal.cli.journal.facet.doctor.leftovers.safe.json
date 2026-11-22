@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet doctor leftovers safe.",
+  "context": "Journal command-line text for facet doctor leftovers safe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "folders",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "db4f243ec359a4bf8ce48ea712e3eed620fbc566c41b4793ac7e85b6638967af",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

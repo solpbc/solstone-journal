@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for archive summary.",
+  "context": "Journal command-line text for archive summary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "committed",
+      "type": "string"
+    },
+    {
+      "name": "skipped",
+      "type": "string"
+    },
+    {
+      "name": "failed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6c87ed9bdd1a1b2f223ae3b046808e165757d46fbcd8af00c6b13efb8164538c",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

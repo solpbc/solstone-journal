@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet argument ios.",
+  "context": "Journal command-line text for facet argument ios.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a807e05aa10947b5db9aa3f116a27100b64891168d946473a49af81d6c34d9af",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "platform",
+      "kind": "mark-word",
+      "value": "iOS"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact has no parent directory.",
+  "context": "Journal command-line text for archive fact has no parent directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "066c32142e1acb60d4a52f906d1470fcb59f9a0a9230eb20fed46d66fdbbdd7b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

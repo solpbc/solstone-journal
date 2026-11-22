@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer store missing.",
+  "context": "Journal command-line text for indexer store missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1b06e791f1f4934d079b3432d13e9dece26f4e88f5d23baa7f135914c4590006",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

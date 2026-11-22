@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive source io read source file identity member.",
+  "context": "Journal command-line text for archive source io read source file identity member.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "03bde8557b61b5ab0fed5c2b63469bd37c245140a5b1af16e689ba9f2100a73a",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

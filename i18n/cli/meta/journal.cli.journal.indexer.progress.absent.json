@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer progress absent.",
+  "context": "Journal command-line text for indexer progress absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f5c2b7918ab20feaaf346caa1b373605678b21372f7c025c1509d0ae7192945",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

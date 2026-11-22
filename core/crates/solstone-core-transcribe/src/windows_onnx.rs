@@ -37,27 +37,7 @@ impl OnnxHelperError {
         match self {
             Self::Admission(detail) => detail,
             Self::Validation(failure) => crate::TranscribeDetail::from(&failure),
-            Self::Launch(failure) => {
-                let cause = crate::TranscribeDetail::from(failure.cause());
-                match (failure.cleanup(), failure.blockers()) {
-                    (None, []) => cause,
-                    (Some(cleanup), []) => cause.context_with(
-                        "journal.cli.transcribe.error.windows.cleanup",
-                        [("cleanup", &format!("{cleanup:?}"))],
-                    ),
-                    (None, blockers) => cause.context_with(
-                        "journal.cli.transcribe.error.windows.blocked",
-                        [("blockers", &format!("{blockers:?}"))],
-                    ),
-                    (Some(cleanup), blockers) => cause.context_with(
-                        "journal.cli.transcribe.error.windows.cleanup.blocked",
-                        [
-                            ("cleanup", &format!("{cleanup:?}")),
-                            ("blockers", &format!("{blockers:?}")),
-                        ],
-                    ),
-                }
-            }
+            Self::Launch(failure) => (&failure).into(),
         }
     }
 }

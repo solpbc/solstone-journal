@@ -172,7 +172,7 @@ fn create_temp(
     }
     Err(ArchivePublicationError::CreateTemp(Error::new(
         std::io::ErrorKind::AlreadyExists,
-        "could not allocate a unique archive temporary name",
+        solstone_core_cli_copy::MessageDetail::message("journal.cli.journal.archive.temp.name", []),
     )))
 }
 

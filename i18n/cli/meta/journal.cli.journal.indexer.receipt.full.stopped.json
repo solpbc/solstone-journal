@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer receipt full stopped.",
+  "context": "Journal command-line text for indexer receipt full stopped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7c0710af6c2f1a0468b37090856cd6ce5bd69b2d5e4b6cf7f3f6229c8859b9dd",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

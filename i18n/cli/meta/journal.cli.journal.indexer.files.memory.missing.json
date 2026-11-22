@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer files memory missing.",
+  "context": "Journal command-line text for indexer files memory missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "886d3065bfd19d063ded80ecd299021d68c5c35c4653e0a9798f731aab2f41df",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

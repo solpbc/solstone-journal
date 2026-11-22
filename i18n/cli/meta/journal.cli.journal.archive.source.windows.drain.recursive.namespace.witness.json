@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source windows drain recursive namespace witness.",
+  "context": "Journal command-line text for archive source windows drain recursive namespace witness.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f6491314120c65d800ff5ee4420c75cadcee8bbaeb17a698ae99f7130412beea",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

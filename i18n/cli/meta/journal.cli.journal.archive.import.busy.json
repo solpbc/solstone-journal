@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive import busy.",
+  "context": "Journal command-line text for archive import busy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "313d888f51fadb2fd283851553a0b0b86f5f252b1647474cc66855586e333a4c",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

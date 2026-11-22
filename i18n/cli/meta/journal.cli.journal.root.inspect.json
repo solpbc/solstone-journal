@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for root inspect.",
+  "context": "Journal command-line text for root inspect.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "26a3ed63bc1cb096d148c2129ecd6ab0d5bc7d776096b7a85bdb104bb8b3eb07",
+  "max_length": 127,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

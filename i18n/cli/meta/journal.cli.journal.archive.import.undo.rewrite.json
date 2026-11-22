@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive import undo rewrite.",
+  "context": "Journal command-line text for archive import undo rewrite.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6f67917608020286791f6d68bdfd935593c87fff4e8e480b7facfd30d1a9c20a",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

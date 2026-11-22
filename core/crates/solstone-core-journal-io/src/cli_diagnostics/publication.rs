@@ -44,99 +44,97 @@ fn root_message(error: &crate::JournalRootError) -> MessageDetail {
             operation,
             source: error,
             ..
-        } => {
-            let detail = source(error);
-            let id = match *operation {
-                "canonicalize journal root" => {
-                    "journal.cli.describe.pipeline.root.canonicalize.journal.root"
-                }
-                "open filesystem root" => "journal.cli.describe.pipeline.root.open.filesystem.root",
-                "open journal directory" => {
-                    "journal.cli.describe.pipeline.root.open.journal.directory"
-                }
-                "open journal root" => "journal.cli.describe.pipeline.root.open.journal.root",
-                "open journal root ancestor" => {
-                    "journal.cli.describe.pipeline.root.open.journal.root.ancestor"
-                }
-                "open journal root namespace watch" => {
-                    "journal.cli.describe.pipeline.root.open.journal.root.namespace.watch"
-                }
-                "open verified drive root" => {
-                    "journal.cli.describe.pipeline.root.open.verified.drive.root"
-                }
-                "open verified journal root" => {
-                    "journal.cli.describe.pipeline.root.open.verified.journal.root"
-                }
-                "query journal root ancestor attributes" => {
-                    "journal.cli.describe.pipeline.root.query.journal.root.ancestor.attributes"
-                }
-                "query journal root attributes" => {
-                    "journal.cli.describe.pipeline.root.query.journal.root.attributes"
-                }
-                "query journal root drive type" => {
-                    "journal.cli.describe.pipeline.root.query.journal.root.drive.type"
-                }
-                "query journal root identity" => {
-                    "journal.cli.describe.pipeline.root.query.journal.root.identity"
-                }
-                "query journal root namespace-watch attributes" => {
-                    "journal.cli.describe.pipeline.root.query.journal.root.namespace.watch.attributes"
-                }
-                "query journal root namespace-watch identity" => {
-                    "journal.cli.describe.pipeline.root.query.journal.root.namespace.watch.identity"
-                }
-                "query retained journal root attributes" => {
-                    "journal.cli.describe.pipeline.root.query.retained.journal.root.attributes"
-                }
-                "query retained journal root identity" => {
-                    "journal.cli.describe.pipeline.root.query.retained.journal.root.identity"
-                }
-                "query verified drive root attributes" => {
-                    "journal.cli.describe.pipeline.root.query.verified.drive.root.attributes"
-                }
-                "query verified drive root identity" => {
-                    "journal.cli.describe.pipeline.root.query.verified.drive.root.identity"
-                }
-                "query verified journal root attributes" => {
-                    "journal.cli.describe.pipeline.root.query.verified.journal.root.attributes"
-                }
-                "query verified journal root identity" => {
-                    "journal.cli.describe.pipeline.root.query.verified.journal.root.identity"
-                }
-                "read source file identity" => {
-                    "journal.cli.describe.pipeline.root.read.source.file.identity"
-                }
-                "restat acquired journal root" => {
-                    "journal.cli.describe.pipeline.root.restat.acquired.journal.root"
-                }
-                "stat acquired journal root" => {
-                    "journal.cli.describe.pipeline.root.stat.acquired.journal.root"
-                }
-                "stat canonical root component" => {
-                    "journal.cli.describe.pipeline.root.stat.canonical.root.component"
-                }
-                "stat opened canonical root component" => {
-                    "journal.cli.describe.pipeline.root.stat.opened.canonical.root.component"
-                }
-                "stat opened filesystem root" => {
-                    "journal.cli.describe.pipeline.root.stat.opened.filesystem.root"
-                }
-                _ => {
-                    return detail.context_slot(
-                        "journal.cli.transcribe.claim.root.io",
-                        "reason",
-                        [("operation", operation)],
-                    );
-                }
-            };
-            detail.context(id)
-        }
+        } => root_io_message(operation, error),
         Root::Changed => MessageDetail::message("journal.cli.transcribe.claim.root.changed", []),
     }
 }
 
+pub fn root_io_message(operation: &'static str, error: &io::Error) -> MessageDetail {
+    let detail = source(error);
+    let id = match operation {
+        "canonicalize journal root" => {
+            "journal.cli.describe.pipeline.root.canonicalize.journal.root"
+        }
+        "open filesystem root" => "journal.cli.describe.pipeline.root.open.filesystem.root",
+        "open journal directory" => "journal.cli.describe.pipeline.root.open.journal.directory",
+        "open journal root" => "journal.cli.describe.pipeline.root.open.journal.root",
+        "open journal root ancestor" => {
+            "journal.cli.describe.pipeline.root.open.journal.root.ancestor"
+        }
+        "open journal root namespace watch" => {
+            "journal.cli.describe.pipeline.root.open.journal.root.namespace.watch"
+        }
+        "open verified drive root" => "journal.cli.describe.pipeline.root.open.verified.drive.root",
+        "open verified journal root" => {
+            "journal.cli.describe.pipeline.root.open.verified.journal.root"
+        }
+        "query journal root ancestor attributes" => {
+            "journal.cli.describe.pipeline.root.query.journal.root.ancestor.attributes"
+        }
+        "query journal root attributes" => {
+            "journal.cli.describe.pipeline.root.query.journal.root.attributes"
+        }
+        "query journal root drive type" => {
+            "journal.cli.describe.pipeline.root.query.journal.root.drive.type"
+        }
+        "query journal root identity" => {
+            "journal.cli.describe.pipeline.root.query.journal.root.identity"
+        }
+        "query journal root namespace-watch attributes" => {
+            "journal.cli.describe.pipeline.root.query.journal.root.namespace.watch.attributes"
+        }
+        "query journal root namespace-watch identity" => {
+            "journal.cli.describe.pipeline.root.query.journal.root.namespace.watch.identity"
+        }
+        "query retained journal root attributes" => {
+            "journal.cli.describe.pipeline.root.query.retained.journal.root.attributes"
+        }
+        "query retained journal root identity" => {
+            "journal.cli.describe.pipeline.root.query.retained.journal.root.identity"
+        }
+        "query verified drive root attributes" => {
+            "journal.cli.describe.pipeline.root.query.verified.drive.root.attributes"
+        }
+        "query verified drive root identity" => {
+            "journal.cli.describe.pipeline.root.query.verified.drive.root.identity"
+        }
+        "query verified journal root attributes" => {
+            "journal.cli.describe.pipeline.root.query.verified.journal.root.attributes"
+        }
+        "query verified journal root identity" => {
+            "journal.cli.describe.pipeline.root.query.verified.journal.root.identity"
+        }
+        "read source file identity" => {
+            "journal.cli.describe.pipeline.root.read.source.file.identity"
+        }
+        "restat acquired journal root" => {
+            "journal.cli.describe.pipeline.root.restat.acquired.journal.root"
+        }
+        "stat acquired journal root" => {
+            "journal.cli.describe.pipeline.root.stat.acquired.journal.root"
+        }
+        "stat canonical root component" => {
+            "journal.cli.describe.pipeline.root.stat.canonical.root.component"
+        }
+        "stat opened canonical root component" => {
+            "journal.cli.describe.pipeline.root.stat.opened.canonical.root.component"
+        }
+        "stat opened filesystem root" => {
+            "journal.cli.describe.pipeline.root.stat.opened.filesystem.root"
+        }
+        _ => {
+            return detail.context_slot(
+                "journal.cli.transcribe.claim.root.io",
+                "reason",
+                [("operation", &operation)],
+            );
+        }
+    };
+    detail.context(id)
+}
+
 // These are typed root-refusal facts from journal-io, never input or helper text.
-fn root_reason(reason: &'static str) -> MessageDetail {
+pub fn root_reason(reason: &'static str) -> MessageDetail {
     match reason {
         "journal root does not exist" => {
             MessageDetail::message("journal.cli.transcribe.claim.root.absent", [])

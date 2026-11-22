@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet hidden names list.",
+  "context": "Journal command-line text for facet hidden names list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a8a99c5aab92ade1f44d95cacad7204e7c1f4b086a4119b7f5ac224273fb4e4",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "names_field",
+      "kind": "accepted-input",
+      "value": "names"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet retire deleted.",
+  "context": "Journal command-line text for facet retire deleted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fb1edd2da653fa89c290a46d96e06b6f2dfca747f18ae242aa643ef94a06c662",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

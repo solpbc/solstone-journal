@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor maintenance heading.",
+  "context": "Journal command-line text for facet doctor maintenance heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3eebf4892b457e75470ada8795399677143ca168ef416cbf5e24becf7844ea88",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

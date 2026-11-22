@@ -456,7 +456,7 @@ fn a_damaged_hidden_names_file_holds_the_facets_detections_until_it_reads_again(
         report
             .warnings
             .iter()
-            .any(|warning| warning.contains("hidden-names.json")),
+            .any(|warning| warning.to_string().contains("hidden-names.json")),
         "{report:?}"
     );
     assert!(journal.search("Alice").is_empty());
@@ -499,7 +499,7 @@ fn a_hidden_day_made_undecidable_before_its_hint_keeps_nothing_and_is_retried() 
     assert!(
         warnings
             .iter()
-            .any(|warning| warning.contains("hidden-names.json")),
+            .any(|warning| warning.to_string().contains("hidden-names.json")),
         "{warnings:?}"
     );
     assert!(journal.rows(&day).is_empty());

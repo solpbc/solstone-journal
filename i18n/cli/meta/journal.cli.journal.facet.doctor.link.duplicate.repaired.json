@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for facet doctor link duplicate repaired.",
+  "context": "Journal command-line text for facet doctor link duplicate repaired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "folders",
+      "type": "string"
+    },
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e2c0ac4eb1f9b43e0c47bcf15a58a28cdcf1c757ea879261bbd4fa58871229fa",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

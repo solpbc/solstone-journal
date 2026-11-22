@@ -445,9 +445,14 @@ fn archive_marker_failure_is_terminal_after_published_content_is_preserved() {
 
     match error {
         ImportSourcesError::MergePublishFailed { detail, .. } => {
-            assert!(detail.contains("stream marker update failed"), "{detail}");
             assert!(
-                detail.contains("published content was not rolled back"),
+                detail.to_string().contains("stream marker update failed"),
+                "{detail}"
+            );
+            assert!(
+                detail
+                    .to_string()
+                    .contains("published content was not rolled back"),
                 "{detail}"
             );
         }
@@ -609,7 +614,7 @@ fn validation_refuses_unsafe_entries_and_busy_lock_reports_metadata_remedy() {
         } => {
             assert_eq!(owner, None);
             assert!(owner_metadata_path.ends_with("archive-merge.owner.json"));
-            assert!(remedy.contains("owner metadata"));
+            assert!(remedy.to_string().contains("owner metadata"));
         }
         other => panic!("unexpected error: {other:?}"),
     }

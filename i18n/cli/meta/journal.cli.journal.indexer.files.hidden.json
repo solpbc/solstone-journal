@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer files hidden.",
+  "context": "Journal command-line text for indexer files hidden.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aab5dc46aa60c8e3cf8066f98f693bb611b7bd1f124d4282169f7b95e94a38bb",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

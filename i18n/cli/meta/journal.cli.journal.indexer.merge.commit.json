@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer merge commit.",
+  "context": "Journal command-line text for indexer merge commit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "911b4db0d35b805049e2c07ba70a18556aaa18cb4f87c0e78a3559b436f53d74",
+  "max_length": 116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "fts",
+      "kind": "accepted-input",
+      "value": "FTS5"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet doctor links check.",
+  "context": "Journal command-line text for facet doctor links check.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a45ad08a29df6821d9d03e2b70d3d8deb175a08c55ef3f075566d4254cd5a09b",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "fix_flag",
+      "kind": "flag",
+      "value": "--fix"
+    }
+  ]
+}

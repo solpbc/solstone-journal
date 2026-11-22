@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for resolution home.",
+  "context": "Journal command-line text for resolution home.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "89afe7092792e57ffc556dc008fad4ac7a7bd9b3ca485af313c9d03da5bae00e",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

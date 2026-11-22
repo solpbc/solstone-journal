@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for archive skipped.",
+  "context": "Journal command-line text for archive skipped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "skipped",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9db184d91d8d1e51247af14df1c6480923c4d9315cc985c7a7407fd9d546a82e",
+  "max_length": 115,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_solstone_journal_archive_export",
+      "kind": "command",
+      "value": "solstone journal archive export"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer migration retained.",
+  "context": "Journal command-line text for indexer migration retained.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1cedebba4ab9d48048256382fd7fd06695f662f6949b23506290bf7f2299675c",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

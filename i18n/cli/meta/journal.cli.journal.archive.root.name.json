@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive root name.",
+  "context": "Journal command-line text for archive root name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f560250c610e5e432fd930273f17c9878467fcb4b0c3dff2469c1171bdb820e1",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source windows open retained relative entry.",
+  "context": "Journal command-line text for archive source windows open retained relative entry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8493e3ba70ef8b5b055899e18de3ed8be46958711d5c8323cc22bc7a46ee72fc",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for archive day exclusive.",
+  "context": "Journal command-line text for archive day exclusive.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6ef7b84f2e76040f7f05ba9649227dd91d6aef7d1d4e57b630024b65224365ee",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "day_flag",
+      "kind": "flag",
+      "value": "--day"
+    },
+    {
+      "name": "from_flag",
+      "kind": "flag",
+      "value": "--from"
+    },
+    {
+      "name": "to_flag",
+      "kind": "flag",
+      "value": "--to"
+    }
+  ]
+}

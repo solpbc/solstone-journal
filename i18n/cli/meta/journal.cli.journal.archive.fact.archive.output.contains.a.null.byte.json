@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact archive output contains a null byte.",
+  "context": "Journal command-line text for archive fact archive output contains a null byte.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eb09f9164e6809a7002309e42913c21211a8256a8bc9646dab9f422aa4bd8b9a",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

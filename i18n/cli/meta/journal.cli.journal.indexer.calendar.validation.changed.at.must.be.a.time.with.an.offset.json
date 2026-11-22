@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation changed at must be a time with an offset.",
+  "context": "Journal command-line text for indexer calendar validation changed at must be a time with an offset.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "681ac2a3ef04f8a4bef44baeaaa09ff569d676df92553965bfe94fafdea85383",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "changed_at_field",
+      "kind": "accepted-input",
+      "value": "changed_at"
+    }
+  ]
+}

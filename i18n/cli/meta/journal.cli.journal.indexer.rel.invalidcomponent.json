@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for indexer rel invalidcomponent.",
+  "context": "Journal command-line text for indexer rel invalidcomponent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ac61054dd50387a7ba39d3d72bfe7d28b0f2580257c8e00af2a5d3958dd56d43",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "parent_component",
+      "kind": "accepted-input",
+      "value": "'..'"
+    },
+    {
+      "name": "rel",
+      "kind": "accepted-input",
+      "value": "rel"
+    },
+    {
+      "name": "current_component",
+      "kind": "accepted-input",
+      "value": "'.'"
+    }
+  ]
+}

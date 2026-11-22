@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer status wait hours.",
+  "context": "Journal command-line text for indexer status wait hours.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "hours",
+      "type": "string"
+    },
+    {
+      "name": "minutes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6200d006682d652311846bef86f4a9d0eda9857f48331e97ffa9ca355bbb7a43",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

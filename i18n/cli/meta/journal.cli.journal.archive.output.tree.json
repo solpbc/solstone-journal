@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive output tree.",
+  "context": "Journal command-line text for archive output tree.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "family",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "72b20bc8f16137834b3b0df58663dff805447567c6b414cf24861a4133fc9f71",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

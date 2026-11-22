@@ -18,16 +18,23 @@ pub(crate) enum JournalResolutionError {
     Home,
 }
 
-impl std::fmt::Display for JournalResolutionError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Config => formatter.write_str("config decode failed"),
-            Self::Home => formatter.write_str("home unavailable"),
-        }
+impl JournalResolutionError {
+    pub(crate) fn native_message(&self, locale: &str) -> String {
+        let id = match self {
+            Self::Config => "journal.cli.journal.resolution.config",
+            Self::Home => "journal.cli.journal.resolution.home",
+        };
+        solstone_core_cli_copy::render_for(locale, id, &[])
+    }
+
+    pub(crate) fn local_message(&self, locale: &str) -> String {
+        let id = match self {
+            Self::Config => "journal.cli.journal.local.resolution.config",
+            Self::Home => "journal.cli.journal.local.resolution.home",
+        };
+        solstone_core_cli_copy::render_for(locale, id, &[])
     }
 }
-
-impl std::error::Error for JournalResolutionError {}
 
 #[derive(Debug)]
 pub(crate) enum ProjectRootError {
@@ -35,23 +42,22 @@ pub(crate) enum ProjectRootError {
     Unclassified(PathBuf),
 }
 
-impl std::fmt::Display for ProjectRootError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ProjectRootError {
+    pub(crate) fn render(&self, locale: &str) -> String {
         match self {
-            Self::CurrentExe(error) => write!(
-                formatter,
-                "native journal project root resolution failed: could not inspect current executable: {error}"
+            Self::CurrentExe(error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.root.inspect",
+                [("error", &error)],
             ),
-            Self::Unclassified(executable) => write!(
-                formatter,
-                "native journal project root resolution failed: could not locate source checkout or installed solstone package from {}",
-                executable.display()
+            Self::Unclassified(path) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.root.package",
+                [("path", &path.display())],
             ),
         }
     }
 }
-
-impl std::error::Error for ProjectRootError {}
 
 pub(crate) fn resolve_current_journal() -> Result<ResolvedJournal, JournalResolutionError> {
     let env_journal = env::var_os("SOLSTONE_JOURNAL");

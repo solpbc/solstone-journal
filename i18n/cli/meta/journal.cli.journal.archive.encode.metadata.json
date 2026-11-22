@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for archive encode metadata.",
+  "context": "Journal command-line text for archive encode metadata.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d6528bf1cd3f14616e03a3daf2cac95ca8b7a3cecf41d562ccfab2a625e8c2ec",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

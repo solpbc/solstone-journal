@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer calendar validation occurrence must be a string or null.",
+  "context": "Journal command-line text for indexer calendar validation occurrence must be a string or null.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "332fe4e1ab481ab595d5316a839eba2c285895bf9d3d27f6a1e698ffaa3f8cc4",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "occurrence_field",
+      "kind": "accepted-input",
+      "value": "occurrence"
+    },
+    {
+      "name": "null_key",
+      "kind": "accepted-input",
+      "value": "null"
+    }
+  ]
+}

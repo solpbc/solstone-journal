@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive encode source.",
+  "context": "Journal command-line text for archive encode source.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "96068372cc2564552ae1af0aed375503e277c3801a8788f3c9baf4fed9ddda28",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

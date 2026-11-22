@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive import lock.",
+  "context": "Journal command-line text for archive import lock.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "376968f805ee3c243b28fdb8a939733680978a47bc104ee1665a12bb05cdf7e7",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -31,6 +31,7 @@ path = "tests/source_planning_contracts.rs"
 unsafe_code = "deny"
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 base64 = "0.22.1"
 getrandom.workspace = true
 image.workspace = true

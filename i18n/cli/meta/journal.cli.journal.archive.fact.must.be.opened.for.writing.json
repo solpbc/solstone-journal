@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact must be opened for writing.",
+  "context": "Journal command-line text for archive fact must be opened for writing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fd9ef98f4cb7dc65cca0e1164af6e2f6042358f0c4b81a8aec9785f0ffa770c3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

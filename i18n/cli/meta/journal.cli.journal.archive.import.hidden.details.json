@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive import hidden details.",
+  "context": "Journal command-line text for archive import hidden details.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "warning",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9e1ab275e2bde789b46795ebc66c0ef44925bc414f2ea811e7667e24c0b7dc30",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

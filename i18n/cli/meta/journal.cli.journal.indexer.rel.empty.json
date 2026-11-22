@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer rel empty.",
+  "context": "Journal command-line text for indexer rel empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b18f64cb03b7e88e8d7f52fbfb4045b50080822af1317061ba83bdb238997e48",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "rel",
+      "kind": "accepted-input",
+      "value": "rel"
+    }
+  ]
+}

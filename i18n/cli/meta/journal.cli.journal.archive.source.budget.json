@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source budget.",
+  "context": "Journal command-line text for archive source budget.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4068d47e88deb869dcf7638311b76038e216aca2d11fe8e6bfe30b3d5ea147f0",
+  "max_length": 121,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

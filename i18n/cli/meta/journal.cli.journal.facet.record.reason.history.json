@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet record reason history.",
+  "context": "Journal command-line text for facet record reason history.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6f0f5633a014068e3dc4871a039a31efac78cce3bc975008769735254d17b230",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "history_field",
+      "kind": "accepted-input",
+      "value": "history"
+    }
+  ]
+}

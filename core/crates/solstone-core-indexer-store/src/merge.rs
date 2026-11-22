@@ -53,7 +53,10 @@ fn append_json_value(output: &mut String, value: Value) -> Result<(), StoreError
         Value::Text(value) => append_json_string(output, &value),
         Value::Blob(_) => {
             return Err(StoreError::EdgeFileFailed(
-                "edge row contains an unsupported blob value".to_owned(),
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.edge.blob",
+                    [],
+                ),
             ));
         }
     }

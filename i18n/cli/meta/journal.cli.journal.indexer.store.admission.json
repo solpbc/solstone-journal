@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer store admission.",
+  "context": "Journal command-line text for indexer store admission.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fb1f8198011225c51a8e661bb84eae81cc86eeb97fcf37763963b82f0f7e0f36",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

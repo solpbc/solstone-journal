@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet doctor history unrecorded.",
+  "context": "Journal command-line text for facet doctor history unrecorded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21dbb3cca3450da585cf16a67f7bd6f722c6039db42bada00f2423f05b0455f6",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "fix_flag",
+      "kind": "flag",
+      "value": "--fix"
+    }
+  ]
+}

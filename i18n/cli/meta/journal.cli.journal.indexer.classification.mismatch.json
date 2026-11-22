@@ -1,0 +1,37 @@
+{
+  "description": "Journal command-line text for indexer classification mismatch.",
+  "context": "Journal command-line text for indexer classification mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "cursor",
+      "type": "string"
+    },
+    {
+      "name": "processed",
+      "type": "string"
+    },
+    {
+      "name": "remaining",
+      "type": "string"
+    },
+    {
+      "name": "missing",
+      "type": "string"
+    },
+    {
+      "name": "unclassified",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d6d5e1eaa20fc41c8708b8cf16114c0b2147bedbfd1150b33aecb4d830ee99f0",
+  "max_length": 197,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

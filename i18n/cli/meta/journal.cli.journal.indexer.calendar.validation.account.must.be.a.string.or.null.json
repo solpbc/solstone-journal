@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer calendar validation account must be a string or null.",
+  "context": "Journal command-line text for indexer calendar validation account must be a string or null.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "faa6bcc043e31007fcad9cbd23cdba2ce1affc80af9738350e4e6f45e6b74759",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "account_field",
+      "kind": "accepted-input",
+      "value": "account"
+    },
+    {
+      "name": "null_key",
+      "kind": "accepted-input",
+      "value": "null"
+    }
+  ]
+}

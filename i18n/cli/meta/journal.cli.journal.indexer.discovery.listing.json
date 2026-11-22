@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer discovery listing.",
+  "context": "Journal command-line text for indexer discovery listing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5ada4e45cd3f92ede4bcc49d3a972c027ee1f946135dff966464403182d4d265",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

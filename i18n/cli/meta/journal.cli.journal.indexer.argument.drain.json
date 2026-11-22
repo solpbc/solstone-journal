@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer argument drain.",
+  "context": "Journal command-line text for indexer argument drain.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "97ec0ea0b62cb96df1828f3ef47ba08e036e35c257318fdd3d86e9b9c37ecda0",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "drain_flag",
+      "kind": "flag",
+      "value": "--drain"
+    },
+    {
+      "name": "apply_flag",
+      "kind": "flag",
+      "value": "--apply"
+    }
+  ]
+}

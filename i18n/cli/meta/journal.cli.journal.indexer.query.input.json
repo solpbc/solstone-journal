@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer query input.",
+  "context": "Journal command-line text for indexer query input.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2a7d4429bab007371666be527a35735835dbcb6499716a95d287245f1b6aa096",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer migration files.",
+  "context": "Journal command-line text for indexer migration files.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "paths",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7975c65cf36c05904feeb949790c38df75b6aeaf212fb22e3fd68971114e3985",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

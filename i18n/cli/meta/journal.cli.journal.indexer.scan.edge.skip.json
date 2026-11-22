@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer scan edge skip.",
+  "context": "Journal command-line text for indexer scan edge skip.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dfd1f7a24980149db72e1b735d3908e519155984505070526dcdab73ff264ec6",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

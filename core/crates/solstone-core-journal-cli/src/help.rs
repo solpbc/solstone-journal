@@ -7,22 +7,36 @@ pub const JOURNAL_USAGE: &str = "Usage: solstone journal <command> [args...]\n";
 
 #[must_use]
 pub fn render_help() -> String {
-    let mut output = String::from(
-        "solstone journal - the journal on this computer\n\nUsage: solstone journal <command> [args...]\n\n'journal' has moved to 'solstone journal'; use that command for local journal operations.\n\nLocal commands:\n",
-    );
-    for command in ROOT_COMMANDS {
-        output.push_str(&format!("  {command}\n"));
-    }
-    output.push_str("\nProcess commands:\n");
-    for command in process_command_tokens() {
-        output.push_str(&format!("  {command}\n"));
-    }
-    output.push_str("\nJournal-local commands:\n");
-    for path in LOCAL_PATHS {
-        output.push_str(&format!("  {} {}\n", path.group, path.leaf));
-    }
-    output.push_str("\nOptions:\n  -h, --help    Show this help\n  -V, --version Show version\n  -v, --verbose Enable verbose mode\n");
-    output
+    render_help_for(solstone_core_cli_copy::ENGLISH)
+}
+
+pub(crate) fn render_help_for(locale: &str) -> String {
+    let commands = ROOT_COMMANDS
+        .iter()
+        .map(|name| format!("  {name}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let processes = process_command_tokens()
+        .map(|name| format!("  {name}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let local = LOCAL_PATHS
+        .iter()
+        .map(|path| format!("  {} {}", path.group, path.leaf))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "{}\n",
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.journal.help.overview",
+            [
+                ("commands", &commands),
+                ("processes", &processes),
+                ("local", &local)
+            ]
+        )
+    )
 }
 
 #[must_use]

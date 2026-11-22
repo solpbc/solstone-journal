@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet merge destination id.",
+  "context": "Journal command-line text for facet merge destination id.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "destination",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7ac15a1359000b75abcfc167d0ba4fe4fed40dcddc9e4fb6718faa9bc9d41ad4",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "backfill_command",
+      "kind": "command",
+      "value": "solstone journal backfill-facet-ids"
+    }
+  ]
+}

@@ -208,7 +208,7 @@ pub struct ProducedChunks {
     pub agent_override: Option<String>,
     pub header: Option<String>,
     pub error: Option<String>,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<solstone_core_cli_copy::MessageDetail>,
 }
 
 /// Screen-talent rendering plus projector-owned tmux chunk identity.
@@ -221,7 +221,7 @@ pub struct ScreenTalentRawScreen {
     pub agent_override: Option<String>,
     pub header: Option<String>,
     pub error: Option<String>,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<solstone_core_cli_copy::MessageDetail>,
     pub tmux_chunk_indices: Vec<usize>,
 }
 
@@ -2345,8 +2345,8 @@ fn render_calendar(records: &[JsonObject]) -> ProducedChunks {
     let mut warnings = Vec::new();
     let chunks = records
         .iter()
-        .filter_map(
-            |record| match crate::calendar::calendar_note_from_record(record.clone()) {
+        .filter_map(|record| {
+            match crate::calendar::calendar_note_from_record_detail(record.clone()) {
                 Ok(note) => Some(IndexChunk {
                     content: crate::calendar::render_calendar_note(
                         &note,
@@ -2357,11 +2357,15 @@ fn render_calendar(records: &[JsonObject]) -> ProducedChunks {
                     group_offset_ms: None,
                 }),
                 Err(reason) => {
-                    warnings.push(format!("calendar note skipped: {reason}"));
+                    warnings.push(reason.context_slot(
+                        "journal.cli.journal.indexer.chunker.calendar",
+                        "reason",
+                        [],
+                    ));
                     None
                 }
-            },
-        )
+            }
+        })
         .collect();
     ProducedChunks {
         chunks,
@@ -3533,7 +3537,11 @@ mod tests {
             let input = case["input"].as_str().expect("case input");
             let produced = produce_chunks(Family::Markdown, "20240101/talents/oracle.md", input);
             assert_eq!(
-                produced.warnings,
+                produced
+                    .warnings
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
                 strings(&case["warnings"]),
                 "{id} warnings"
             );

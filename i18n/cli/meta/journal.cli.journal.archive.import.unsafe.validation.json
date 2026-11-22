@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive import unsafe validation.",
+  "context": "Journal command-line text for archive import unsafe validation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entry",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e6d7335961d788762d26e85aa9eb6d2bf7b8d89756b081b50b3eab02f59c5010",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

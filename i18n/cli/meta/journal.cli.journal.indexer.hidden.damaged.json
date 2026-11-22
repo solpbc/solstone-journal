@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer hidden damaged.",
+  "context": "Journal command-line text for indexer hidden damaged.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "24fb18f020675e7e77b3f73e4789d2bd661a006e2046a5b2f9f382602328d99c",
+  "max_length": 116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

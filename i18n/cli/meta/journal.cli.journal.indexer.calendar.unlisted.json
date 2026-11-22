@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer calendar unlisted.",
+  "context": "Journal command-line text for indexer calendar unlisted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b40e8d1118b9490f6a33d78d2732652134fcc40ccf3fa9a319d62d2e8e4bc50d",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

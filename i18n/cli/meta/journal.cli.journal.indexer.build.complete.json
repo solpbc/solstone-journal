@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer build complete.",
+  "context": "Journal command-line text for indexer build complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "90a10f6485841e68df46c2112acdf8181e5e5c80ec9e6242b4e9e55e1ca65ca0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

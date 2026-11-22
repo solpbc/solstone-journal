@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive zero write.",
+  "context": "Journal command-line text for archive zero write.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "87d47e463d37c6b5dc70826ce1f87e4d2d1914f78ede8000190f39601e7878ff",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

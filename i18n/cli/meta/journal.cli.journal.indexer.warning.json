@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer warning.",
+  "context": "Journal command-line text for indexer warning.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "warning",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1b005fd2d3b99ebe10195e3c3bc5da3ee35e552cd7986d241fe89cd4d61f3967",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

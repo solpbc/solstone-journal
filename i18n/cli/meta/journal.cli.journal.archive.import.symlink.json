@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive import symlink.",
+  "context": "Journal command-line text for archive import symlink.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "50edd6c6aabe9daa153d0a84a303fe6830032d1b139c949fdd290a3aab076134",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

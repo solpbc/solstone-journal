@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for indexer receipt full finished.",
+  "context": "Journal command-line text for indexer receipt full finished.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    },
+    {
+      "name": "indexed",
+      "type": "string"
+    },
+    {
+      "name": "removed",
+      "type": "string"
+    },
+    {
+      "name": "failed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ec02f95d667d26af8cbb7019e5c4776096da9e4bd7d8df594ad301802c356f79",
+  "max_length": 127,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

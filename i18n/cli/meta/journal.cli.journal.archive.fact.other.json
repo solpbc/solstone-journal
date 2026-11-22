@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact other.",
+  "context": "Journal command-line text for archive fact other.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e1e8f895567afadcecdb303690d34433f5d9f63fdaa3dddf78b79a50c28383be",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

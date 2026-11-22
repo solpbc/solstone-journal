@@ -37,7 +37,7 @@ pub(crate) fn zip2_failure_to_zip_error(failure: Zip2NameFailure) -> zip::result
 pub(crate) fn archive_invalid(path: &Path, failure: Zip2NameFailure) -> ImportSourcesError {
     ImportSourcesError::ArchiveInvalid {
         path: path.to_path_buf(),
-        detail: failure.to_string(),
+        detail: failure.into_detail(),
     }
 }
 

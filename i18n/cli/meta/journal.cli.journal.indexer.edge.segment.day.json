@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer edge segment day.",
+  "context": "Journal command-line text for indexer edge segment day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bf869c771c516adf394dfd8a2a29acd2fc93935492d7ba633f5e87739e2f8df1",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

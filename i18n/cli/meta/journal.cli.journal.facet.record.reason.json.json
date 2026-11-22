@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet record reason json.",
+  "context": "Journal command-line text for facet record reason json.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "39086e57299d85697f648c3bc2b1da6290ff2b6cff2f5179a9a892eaf552cb1f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "json_format",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet link successor missing.",
+  "context": "Journal command-line text for facet link successor missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c900371a99589bbec6273edd737a310b8a8f227c545e17991fd839ac01ca202",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

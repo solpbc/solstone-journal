@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for facet doctor merge collision.",
+  "context": "Journal command-line text for facet doctor merge collision.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "destination",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "retained",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d0504248b8462f87941c3935183dd08cfb39daa23467e374885178f68b94db7c",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

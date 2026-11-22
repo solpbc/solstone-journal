@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet trash unknown.",
+  "context": "Journal command-line text for facet trash unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "db5daa41c03c64d680724675212a74cabb379b96f81a5dc40444c31bafa06fab",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

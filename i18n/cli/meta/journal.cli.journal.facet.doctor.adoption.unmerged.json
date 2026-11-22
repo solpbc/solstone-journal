@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for facet doctor adoption unmerged.",
+  "context": "Journal command-line text for facet doctor adoption unmerged.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "destination",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    },
+    {
+      "name": "folders_remaining",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "unmerged",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "33c6b88f65dcc8643ec50cc53d5a3cffac9cb0dc04e2e6a269692d97aaee629d",
+  "max_length": 238,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "folders_remaining",
+    "type": "cardinal"
+  }
+}

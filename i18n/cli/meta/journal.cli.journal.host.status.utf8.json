@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for host status utf8.",
+  "context": "Journal command-line text for host status utf8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2331cd96180984bc8c574a05017f46e8c6f3b96b83dfc4f9b2b36db752328e7c",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

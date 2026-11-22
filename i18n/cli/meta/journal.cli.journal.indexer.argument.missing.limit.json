@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer argument missing limit.",
+  "context": "Journal command-line text for indexer argument missing limit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9446fbd875b494c518080cbf4852b3ae16a684e38764a1ed8783c5c7472c1ffa",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "limit_flag",
+      "kind": "flag",
+      "value": "--limit"
+    }
+  ]
+}

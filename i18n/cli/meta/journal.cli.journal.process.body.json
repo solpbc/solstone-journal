@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for process body.",
+  "context": "Journal command-line text for process body.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "token",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c996d786fd4833d3d2f92dcf18d032b6b77289b62309db7d1ffdbe0481e7c3d9",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

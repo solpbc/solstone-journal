@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact archive output uses an unsupported prefix.",
+  "context": "Journal command-line text for archive fact archive output uses an unsupported prefix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a49a8d4eb74e90b99f85b9fd12d34c82b14a9d28d37be148a2bf9f1a3fb700e",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

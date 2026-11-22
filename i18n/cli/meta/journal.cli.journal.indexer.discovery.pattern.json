@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer discovery pattern.",
+  "context": "Journal command-line text for indexer discovery pattern.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ea4cca12230876c05cfd708a77557661eeba691ff07075d524ce613687dec611",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

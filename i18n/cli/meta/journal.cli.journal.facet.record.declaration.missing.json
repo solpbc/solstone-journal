@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet record declaration missing.",
+  "context": "Journal command-line text for facet record declaration missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9a7585e50b89236d7527fbaf8028ced8090cfa226d91d371ceb48246a11323cb",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

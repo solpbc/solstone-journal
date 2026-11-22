@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer edge segment time.",
+  "context": "Journal command-line text for indexer edge segment time.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "97da4ff8e4f13ff1ef019d8773e28bfeb7f86f4ec62e07a75d3d303e8e66bac5",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "integer",
+      "kind": "accepted-input",
+      "value": "i64"
+    }
+  ]
+}

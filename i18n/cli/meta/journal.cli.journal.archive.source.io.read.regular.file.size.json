@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source io read regular file size.",
+  "context": "Journal command-line text for archive source io read regular file size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f6461b8c51af6165fa7f97c08c601b135bc8cabd776e7483a741b15bfa1ee5c3",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

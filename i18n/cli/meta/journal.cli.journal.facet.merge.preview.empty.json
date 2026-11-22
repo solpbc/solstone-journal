@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet merge preview empty.",
+  "context": "Journal command-line text for facet merge preview empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "336afb03b970a7ec5d721e5cba8c4734addbe39b7aae2dd89a5b6cac419b3125",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

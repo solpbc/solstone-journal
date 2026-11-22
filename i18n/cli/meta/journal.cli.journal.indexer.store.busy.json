@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer store busy.",
+  "context": "Journal command-line text for indexer store busy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f53b13be3ebcfe9895995693623a135947223852d4f065e91326c0f73e1520c8",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

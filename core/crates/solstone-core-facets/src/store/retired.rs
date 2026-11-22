@@ -133,15 +133,42 @@ impl RetiredFacet {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RetiredRecordError {
+    NotObject,
+    MissingNames,
+    External(String),
+}
+
+impl std::fmt::Display for RetiredRecordError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotObject => f.write_str("not a JSON object"),
+            Self::MissingNames => f.write_str("missing names object"),
+            Self::External(message) => f.write_str(message),
+        }
+    }
+}
+impl From<&str> for RetiredRecordError {
+    fn from(message: &str) -> Self {
+        Self::External(message.to_owned())
+    }
+}
+impl From<String> for RetiredRecordError {
+    fn from(message: String) -> Self {
+        Self::External(message)
+    }
+}
+
 /// What `facets/retired.json` currently holds.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RetiredFacets {
     Absent,
     Loaded(BTreeMap<String, RetiredFacet>),
     /// The file was read but is not a valid record.
-    Malformed(String),
+    Malformed(RetiredRecordError),
     /// The file exists but could not be read.
-    Unreadable(String),
+    Unreadable(RetiredRecordError),
 }
 
 impl RetiredFacets {
@@ -184,7 +211,7 @@ pub fn read_retired_facets(journal_root: &Path) -> RetiredFacets {
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
         Err(error) if error.kind() == ErrorKind::NotFound => return RetiredFacets::Absent,
-        Err(error) => return RetiredFacets::Unreadable(error.to_string()),
+        Err(error) => return RetiredFacets::Unreadable(error.to_string().into()),
     };
     parse_retired_facets(&text)
 }
@@ -192,11 +219,11 @@ pub fn read_retired_facets(journal_root: &Path) -> RetiredFacets {
 pub fn parse_retired_facets(text: &str) -> RetiredFacets {
     let root = match serde_json::from_str::<Value>(text) {
         Ok(Value::Object(root)) => root,
-        Ok(_) => return RetiredFacets::Malformed("not a JSON object".to_owned()),
-        Err(error) => return RetiredFacets::Malformed(error.to_string()),
+        Ok(_) => return RetiredFacets::Malformed(RetiredRecordError::NotObject),
+        Err(error) => return RetiredFacets::Malformed(error.to_string().into()),
     };
     let Some(Value::Object(names)) = root.get("names") else {
-        return RetiredFacets::Malformed("missing names object".to_owned());
+        return RetiredFacets::Malformed(RetiredRecordError::MissingNames);
     };
     let well_formed = |value: Option<&Value>| {
         value
@@ -322,7 +349,7 @@ fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, FacetWriteError> {
         Ok(bytes) => Ok(Some(bytes)),
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
         Err(error) => Err(FacetWriteError::RetiredFileDamaged {
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         }),
     }
 }
@@ -360,7 +387,7 @@ pub fn restore_retired_files(
                 Err(error) if error.kind() == ErrorKind::NotFound => {}
                 Err(error) => {
                     return Err(FacetWriteError::RetiredFileDamaged {
-                        detail: error.to_string(),
+                        detail: error.to_string().into(),
                     });
                 }
             },

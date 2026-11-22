@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet trash unfinished.",
+  "context": "Journal command-line text for facet trash unfinished.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f54b3d6351e4fb7993168762811a2807cffd9d1fee8cc67fdf1378619b258569",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

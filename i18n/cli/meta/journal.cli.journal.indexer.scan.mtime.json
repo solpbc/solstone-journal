@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer scan mtime.",
+  "context": "Journal command-line text for indexer scan mtime.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "99059fdc6f6bab54571b3a196807fe6887107e0143d98de9ec61ffc46c14a077",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

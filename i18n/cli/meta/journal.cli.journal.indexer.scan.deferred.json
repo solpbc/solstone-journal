@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer scan deferred.",
+  "context": "Journal command-line text for indexer scan deferred.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a1f0ec3d0820eb61a457adb0df33484b8a59958e65e4d2d0343a5a8e1a3c490",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "status_command",
+      "kind": "command",
+      "value": "solstone journal indexer status"
+    }
+  ]
+}

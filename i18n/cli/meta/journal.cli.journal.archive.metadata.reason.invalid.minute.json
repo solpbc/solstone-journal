@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive metadata reason invalid minute.",
+  "context": "Journal command-line text for archive metadata reason invalid minute.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "04631960233443cae86ddf0f5e9bb70f13015b9863ede31417a4d3ad046c1037",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

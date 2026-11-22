@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive target io open archive output filesystem root.",
+  "context": "Journal command-line text for archive target io open archive output filesystem root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f8f3440916273f2c2d27f0c7abeab5729224d92948023e4f813b27ac24863fe7",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

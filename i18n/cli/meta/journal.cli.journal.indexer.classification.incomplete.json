@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer classification incomplete.",
+  "context": "Journal command-line text for indexer classification incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "cursor",
+      "type": "string"
+    },
+    {
+      "name": "repair",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4adbe883fca8fc5caa4446ce2b03fe74f30c32b13b58faa461994d4a245f150d",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

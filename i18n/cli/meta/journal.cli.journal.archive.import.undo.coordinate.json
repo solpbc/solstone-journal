@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive import undo coordinate.",
+  "context": "Journal command-line text for archive import undo coordinate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "relative",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bebfb3c7f0eb8db76a9bcb16a3408c17511609f3b49b8a631f23e0c972deece8",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

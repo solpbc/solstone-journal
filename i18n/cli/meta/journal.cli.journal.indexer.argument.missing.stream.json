@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer argument missing stream.",
+  "context": "Journal command-line text for indexer argument missing stream.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c7640148247a0ac206f3ee25a2399984ff2ccb7053c37510e7b47dadabfe49a5",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stream",
+      "kind": "accepted-input",
+      "value": "STREAM"
+    },
+    {
+      "name": "stream_flag",
+      "kind": "flag",
+      "value": "--stream"
+    }
+  ]
+}

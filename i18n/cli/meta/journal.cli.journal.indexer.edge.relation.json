@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer edge relation.",
+  "context": "Journal command-line text for indexer edge relation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4faab30393b3f048ada9429c2c0eb39090281d940555da5872ea0c9603d1575e",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "kind_field",
+      "kind": "accepted-input",
+      "value": "kind"
+    }
+  ]
+}

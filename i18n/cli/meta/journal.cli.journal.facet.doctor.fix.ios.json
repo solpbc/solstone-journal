@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet doctor fix ios.",
+  "context": "Journal command-line text for facet doctor fix ios.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c1290f7fe8642c0341a5e5c9ffe9ab20d64527a7ba54aa737c62f5abb38ea3b3",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "platform",
+      "kind": "mark-word",
+      "value": "iOS"
+    },
+    {
+      "name": "fix_flag",
+      "kind": "flag",
+      "value": "--fix"
+    }
+  ]
+}

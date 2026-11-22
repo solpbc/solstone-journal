@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer calendar validation field missing.",
+  "context": "Journal command-line text for indexer calendar validation field missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "17c9beb3a1d5347f469da7bffdc1dce99ceadc8238d2726498fc0ba9cf0acd88",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet log action queue.",
+  "context": "Journal command-line text for facet log action queue.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6f93093d26262f58f9f460e9dd3fcc6150ff83d8a44ab8abf0a9db037f5e7489",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

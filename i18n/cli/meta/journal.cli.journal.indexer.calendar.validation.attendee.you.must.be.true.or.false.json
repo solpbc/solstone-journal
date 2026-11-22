@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for indexer calendar validation attendee you must be true or false.",
+  "context": "Journal command-line text for indexer calendar validation attendee you must be true or false.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1ac2cb4016e086a096aa5ee8519f5ceb67a88c1db8cbcdc93e8ab58fd4aef88f",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "false_key",
+      "kind": "accepted-input",
+      "value": "false"
+    },
+    {
+      "name": "true_key",
+      "kind": "accepted-input",
+      "value": "true"
+    },
+    {
+      "name": "you_field",
+      "kind": "accepted-input",
+      "value": "you"
+    }
+  ]
+}

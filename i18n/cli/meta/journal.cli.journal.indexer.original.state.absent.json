@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer original state absent.",
+  "context": "Journal command-line text for indexer original state absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d6a9bd1c3afbcbdaa15af76e3450437dab5f36d840b6b63753856deaa778d717",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

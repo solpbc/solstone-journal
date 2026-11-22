@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet doctor links check failed.",
+  "context": "Journal command-line text for facet doctor links check failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "259c7faa65acf7fcd309310986e5ba74701b7dbc80d65918025194f23e04ef0d",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

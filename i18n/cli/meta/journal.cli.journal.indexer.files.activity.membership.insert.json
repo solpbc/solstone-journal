@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer files activity membership insert.",
+  "context": "Journal command-line text for indexer files activity membership insert.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fce811585d0b2c4c678666d77e3a574d2c28c581d4dd2a1e75601675c604b2fc",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

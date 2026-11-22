@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet doctor links rescan.",
+  "context": "Journal command-line text for facet doctor links rescan.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9128f099e5355db130330e36cca225cd4137b894aed27122455432f60595e60b",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "rescan_command",
+      "kind": "command",
+      "value": "solstone journal indexer --rescan-full"
+    }
+  ]
+}

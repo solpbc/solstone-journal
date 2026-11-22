@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact relative archive output requires an absolute cwd.",
+  "context": "Journal command-line text for archive fact relative archive output requires an absolute cwd.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d268de1aacdec4f6c42da3d3d1697c29f0c26b242aabd85761867db49ab3bc80",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for helper mode other.",
+  "context": "Journal command-line text for helper mode other.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9a4845dfe294f459e920f0cf5a4f9e1c1da3b5156e3d28d9bc491f3dc7b0d681",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code",
+      "kind": "accepted-input",
+      "value": "native-helper-not-executable"
+    },
+    {
+      "name": "package",
+      "kind": "accepted-input",
+      "value": "solstone-journal"
+    }
+  ]
+}

@@ -371,6 +371,45 @@ pub enum TrashError {
     Io(String),
 }
 
+impl TrashError {
+    pub fn message_for(&self, locale: &str) -> String {
+        use TrashError as E;
+        match self {
+            E::Missing(item) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.facet.trash.missing",
+                [("item", &(item))],
+            ),
+            E::NotInTrash => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.facet.trash.absent",
+                &[],
+            ),
+            E::InFlight => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.facet.trash.busy",
+                &[],
+            ),
+            E::UnknownKind => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.facet.trash.unknown",
+                &[],
+            ),
+            E::Unfinished(_) => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.facet.trash.unfinished",
+                &[],
+            ),
+            E::Held(message) => message.clone(),
+            E::Io(error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.facet.trash.io",
+                [("error", &(error))],
+            ),
+        }
+    }
+}
+
 impl From<PathError> for TrashError {
     fn from(error: PathError) -> Self {
         Self::Io(error.to_string())
@@ -532,7 +571,15 @@ fn detach_as(
         }
         // It has left the journal; the sweep finishes what remains.
         Err(error) => {
-            log::warn!("trash item {}: moved, finishing later: {error}", item.id);
+            let locale = solstone_core_cli_copy::manual_log_locale();
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.journal.facet.log.trash.unfinished",
+                    [("id", &(item.id)), ("error", &(error.message_for(locale)))]
+                )
+            );
             Err(TrashError::Unfinished(item.id.clone()))
         }
     }

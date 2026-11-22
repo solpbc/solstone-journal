@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for process admission.",
+  "context": "Journal command-line text for process admission.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "53343ffb3cc0f4861e64e986ea688446759d83b9b14a2f2b50ae79495b82b4e0",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

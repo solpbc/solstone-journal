@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor orphans heading.",
+  "context": "Journal command-line text for facet doctor orphans heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dea1d522c7c8f3dab6c5b0a59fdd826f9cc8b2b1c513bcba6961878c65833a27",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer scan connections.",
+  "context": "Journal command-line text for indexer scan connections.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "460f12024ce996104841d22452911a25b5aee72946e22d9605944b143dbac5ec",
+  "max_length": 145,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "rebuild_command",
+      "kind": "command",
+      "value": "solstone journal indexer --rebuild-edges"
+    }
+  ]
+}

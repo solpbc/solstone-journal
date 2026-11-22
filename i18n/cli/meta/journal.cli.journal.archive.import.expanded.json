@@ -1,0 +1,34 @@
+{
+  "description": "Journal command-line text for archive import expanded.",
+  "context": "Journal command-line text for archive import expanded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "bytes",
+      "type": "string"
+    },
+    {
+      "name": "maximum",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f903956592c84d43ec934fabb3b8fc73f277ebd8c1e0981064844cd5b6c68113",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "count",
+    "type": "cardinal"
+  }
+}

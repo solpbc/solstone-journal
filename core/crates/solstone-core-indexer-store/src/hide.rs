@@ -57,13 +57,13 @@ pub(crate) enum FileHide {
     /// workout's; `retry` says why the file is tried again, when it must be.
     ActivityRows {
         body_out: bool,
-        retry: Option<String>,
+        retry: Option<solstone_core_cli_copy::MessageDetail>,
         gone: Rc<HashSet<String>>,
     },
     /// Nothing: the whole file is hidden.
     Skip,
     /// Nothing for now: what is hidden can't be read. Says which store.
-    Undecidable(String),
+    Undecidable(solstone_core_cli_copy::MessageDetail),
 }
 
 impl FileHide {
@@ -94,9 +94,9 @@ impl FileHide {
     }
 
     /// Why the file must be indexed again on the next scan, when it must.
-    pub(crate) fn retry(&self) -> Option<&str> {
+    pub(crate) fn retry(&self) -> Option<&solstone_core_cli_copy::MessageDetail> {
         match self {
-            Self::ActivityRows { retry, .. } => retry.as_deref(),
+            Self::ActivityRows { retry, .. } => retry.as_ref(),
             _ => None,
         }
     }
@@ -110,7 +110,7 @@ struct DayRows {
     /// A line that isn't a record: it could be any id's row.
     damaged: bool,
     /// The file couldn't be read at all.
-    unreadable: Option<String>,
+    unreadable: Option<solstone_core_cli_copy::MessageDetail>,
     /// Rows naming a segment that is no longer in the journal.
     gone: Rc<HashSet<String>>,
 }
@@ -123,7 +123,7 @@ pub(crate) struct HideCache {
     days: HashMap<(String, String), Rc<DayRows>>,
     left_out: Option<LeftOut>,
     hidden_days: Option<HiddenDays>,
-    trash_asks: Option<Result<TrashPending, String>>,
+    trash_asks: Option<Result<TrashPending, solstone_core_cli_copy::MessageDetail>>,
     tombstoned: HashMap<String, bool>,
 }
 
@@ -135,14 +135,14 @@ impl HideCache {
             ["facets", facet, "entities", file] if is_detected_day(file) => {
                 match self.facet_keys(journal, facet) {
                     Ok(keys) => FileHide::DetectedNames(keys),
-                    Err(error) => FileHide::Undecidable(error),
+                    Err(error) => FileHide::Undecidable(error.into()),
                 }
             }
             ["facets", facet, "entities", folder, "observations.jsonl"] => {
                 match self.folder_hidden(journal, facet, folder) {
                     Ok(true) => FileHide::Skip,
                     Ok(false) => FileHide::Index,
-                    Err(error) => FileHide::Undecidable(error),
+                    Err(error) => FileHide::Undecidable(error.into()),
                 }
             }
             ["facets", facet, "activities", file] => match file.strip_suffix(".jsonl") {
@@ -174,8 +174,9 @@ impl HideCache {
                 } else if let Some(error) = &rows.unreadable {
                     FileHide::Undecidable(error.clone())
                 } else if rows.damaged {
-                    FileHide::Undecidable(format!(
-                        "can't tell whether this activity is hidden: facets/{facet}/activities/{day}.jsonl has a line that isn't a record"
+                    FileHide::Undecidable(solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.journal.indexer.hidden.damaged",
+                        [("path", &(format!("facets/{facet}/activities/{day}.jsonl")))],
                     ))
                 } else {
                     FileHide::Index
@@ -256,22 +257,29 @@ impl HideCache {
         match hidden.hides(day) {
             Some(false) => FileHide::Index,
             Some(true) => FileHide::Skip,
-            None => FileHide::Undecidable(format!(
-                "can't tell which days of body data are hidden: {HIDDEN_DAYS_RELATIVE_PATH} can't be read"
+            None => FileHide::Undecidable(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.hidden.days",
+                [("path", &(HIDDEN_DAYS_RELATIVE_PATH))],
             )),
         }
     }
 
     /// The trash's pending asks, read once a pass.
-    fn trash_asks(&mut self, journal: &Path) -> Result<&TrashPending, String> {
+    fn trash_asks(
+        &mut self,
+        journal: &Path,
+    ) -> Result<&TrashPending, solstone_core_cli_copy::MessageDetail> {
         self.trash_asks
             .get_or_insert_with(|| {
                 trash_pending(journal).map_err(|error| {
-                    format!("can't tell what the journal is making again: {error}")
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.journal.indexer.hidden.trash",
+                        [("error", &(error))],
+                    )
                 })
             })
             .as_ref()
-            .map_err(String::clone)
+            .map_err(Clone::clone)
     }
 
     /// Whether `day` holds a recording that went to the trash.
@@ -294,17 +302,21 @@ impl HideCache {
             LeftOut::Keys(keys) if keys.is_empty() => return FileHide::Index,
             LeftOut::Keys(keys) => keys,
             LeftOut::Unreadable => {
-                return FileHide::Undecidable(format!(
-                    "can't tell what is left out of week pages: {LEFT_OUT_RELATIVE_PATH} can't be read"
+                return FileHide::Undecidable(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.hidden.weeks",
+                    [("path", &(LEFT_OUT_RELATIVE_PATH))],
                 ));
             }
         };
         match read_week_page_keys(journal, start) {
             WeekPageKeys::Keys(page) if page.is_disjoint(keys) => FileHide::Index,
             WeekPageKeys::Keys(_) => FileHide::Skip,
-            WeekPageKeys::Absent | WeekPageKeys::Unreadable => FileHide::Undecidable(format!(
-                "can't tell what is left out of this week page: reflections/weekly/{start}.json can't be read"
-            )),
+            WeekPageKeys::Absent | WeekPageKeys::Unreadable => {
+                FileHide::Undecidable(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.hidden.week",
+                    [("path", &(format!("reflections/weekly/{start}.json")))],
+                ))
+            }
         }
     }
 }
@@ -350,16 +362,18 @@ fn read_day_rows(journal: &Path, facet: &str, day: &str) -> DayRows {
         }
         Ok(Err(error)) => {
             return DayRows {
-                unreadable: Some(format!(
-                    "can't tell whether this activity is hidden: {rel} can't be read: {error}"
+                unreadable: Some(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.hidden.activity",
+                    [("rel", &(rel)), ("error", &(error))],
                 )),
                 ..DayRows::default()
             };
         }
         Err(error) => {
             return DayRows {
-                unreadable: Some(format!(
-                    "can't tell whether this activity is hidden: {rel} can't be read: {error}"
+                unreadable: Some(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.hidden.activity",
+                    [("rel", &(rel)), ("error", &(error))],
                 )),
                 ..DayRows::default()
             };

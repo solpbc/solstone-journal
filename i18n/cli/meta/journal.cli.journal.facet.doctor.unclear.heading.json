@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor unclear heading.",
+  "context": "Journal command-line text for facet doctor unclear heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1e6ad28ba6d4f03999ed6772894ef1999945770fd1c22aa5d59bd1d4453b720b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive import magic.",
+  "context": "Journal command-line text for archive import magic.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d9c6f8c7e9e4addf70e85c1e0c8ea5499b2c7a66b8c0f769359508eb0f4979a2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

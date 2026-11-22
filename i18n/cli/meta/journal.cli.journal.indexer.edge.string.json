@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for indexer edge string.",
+  "context": "Journal command-line text for indexer edge string.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    },
+    {
+      "name": "value_type",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4d56332d56bbe4a69ed5ee11626c532d2c4602fd01f984315e7fa0c95213a0a9",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "python",
+      "kind": "accepted-input",
+      "value": "Python str()"
+    }
+  ]
+}

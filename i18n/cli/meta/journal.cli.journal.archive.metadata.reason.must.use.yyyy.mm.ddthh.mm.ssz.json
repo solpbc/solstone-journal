@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive metadata reason must use yyyy mm ddthh mm ssz.",
+  "context": "Journal command-line text for archive metadata reason must use yyyy mm ddthh mm ssz.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c0c01d665e5f57905a549280fb1992f8f900f5ab85875562623cb35d3b98fe4",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

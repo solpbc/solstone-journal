@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer argument ios.",
+  "context": "Journal command-line text for indexer argument ios.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "327152f2e2394524cbee7ab3c9a881a1e92aa0c1182956e2ab15c8a7e46fcd50",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "ios",
+      "kind": "accepted-input",
+      "value": "iOS"
+    }
+  ]
+}

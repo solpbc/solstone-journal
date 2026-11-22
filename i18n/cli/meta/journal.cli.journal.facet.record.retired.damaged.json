@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for facet record retired damaged.",
+  "context": "Journal command-line text for facet record retired damaged.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "85dd3f2c485fb8b5efd3691055e2a8da09e3f0886cffa8baebb97ae528bfb79a",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "repair_command",
+      "kind": "command",
+      "value": "solstone journal facet doctor --fix"
+    },
+    {
+      "name": "retired_path",
+      "kind": "accepted-input",
+      "value": "facets/retired.json"
+    }
+  ]
+}

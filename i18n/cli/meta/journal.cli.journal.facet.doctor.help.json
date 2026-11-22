@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for facet doctor help.",
+  "context": "Journal command-line text for facet doctor help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "00af7b7b9ce1ceef1757f414b601e6b51aa34dda50c3bcc6229f7a01980d2f94",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal facet doctor [--fix] [--adopt [--merge]]"
+    },
+    {
+      "name": "retire_syntax",
+      "kind": "command",
+      "value": "       solstone journal facet doctor --retire NAME (--into FACET | --deleted)"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

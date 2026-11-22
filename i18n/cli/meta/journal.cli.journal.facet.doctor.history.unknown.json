@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for facet doctor history unknown.",
+  "context": "Journal command-line text for facet doctor history unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5272df868607f697bfb7d7a8279477e6cfc49069c23794dd7329d68e6124b436",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "retire_arguments",
+      "kind": "command",
+      "value": "--retire NAME --into FACET"
+    },
+    {
+      "name": "deleted_flag",
+      "kind": "flag",
+      "value": "--deleted"
+    }
+  ]
+}

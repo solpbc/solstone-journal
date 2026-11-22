@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for root package.",
+  "context": "Journal command-line text for root package.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1fedf5e69613427fe6d4cc2ff74f6b255651d11976a4f238932be9d4d40b757b",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "product",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

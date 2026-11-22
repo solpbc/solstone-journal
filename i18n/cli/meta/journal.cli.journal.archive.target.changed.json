@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive target changed.",
+  "context": "Journal command-line text for archive target changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fbd635ab4af6a1a8f29b01fb476f13399c9a2b637e52bb94bd83940a45303fa6",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

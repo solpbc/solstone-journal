@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer argument missing day to.",
+  "context": "Journal command-line text for indexer argument missing day to.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5e6214a61c2d82381f9e24e1ddb09126dcf76a8cf81e7b4ffe65cd3d461f08e2",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "day",
+      "kind": "accepted-input",
+      "value": "DAY"
+    },
+    {
+      "name": "day_to_flag",
+      "kind": "flag",
+      "value": "--day-to"
+    }
+  ]
+}

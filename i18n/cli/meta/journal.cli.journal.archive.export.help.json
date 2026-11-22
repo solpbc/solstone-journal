@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for archive export help.",
+  "context": "Journal command-line text for archive export help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b43c5df08beb74ff4e16ed44035b5259d34d9eb4be82e26e60824b16f59bd521",
+  "max_length": 330,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]"
+    },
+    {
+      "name": "token_zip",
+      "kind": "accepted-input",
+      "value": "ZIP"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact symlink.",
+  "context": "Journal command-line text for archive fact symlink.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aaeaf1a155f707c7f96bb447332e3e23e8c37c05444385c7ef475f4b4aa4549b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

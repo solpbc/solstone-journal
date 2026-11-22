@@ -1,0 +1,35 @@
+{
+  "description": "Journal command-line text for indexer drain result.",
+  "context": "Journal command-line text for indexer drain result.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "processed",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "remaining",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "failed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a92ccde48d28073a9ac8d2d3d2d6cb3ffd26b1f17ee09799cdf8af007d183d40",
+  "max_length": 372,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "processed",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact must be positioned at the start.",
+  "context": "Journal command-line text for archive fact must be positioned at the start.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0247ffc15eabb6ff92cea73a5e6ee65609e8fa1eda6e720a23e36569e7a9fca3",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

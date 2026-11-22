@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer store encoding.",
+  "context": "Journal command-line text for indexer store encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0e5bb85db8cbc5a324e51d2792a9cbe7296a9a8432966eb38a75193d650293b3",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

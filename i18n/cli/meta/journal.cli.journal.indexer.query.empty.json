@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer query empty.",
+  "context": "Journal command-line text for indexer query empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "70a6587c2f25d2ef3da8be86c7b6af144250528c82df7ccf39494d9707ce1729",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

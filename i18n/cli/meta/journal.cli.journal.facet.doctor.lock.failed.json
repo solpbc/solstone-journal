@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet doctor lock failed.",
+  "context": "Journal command-line text for facet doctor lock failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a1a418a8c7dcfd88282a2d58e4b87e12d2784ba13f71cdab9eaf37902ecf76a1",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

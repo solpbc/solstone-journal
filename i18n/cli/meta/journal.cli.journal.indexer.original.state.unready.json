@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer original state unready.",
+  "context": "Journal command-line text for indexer original state unready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8da963e8332bbbfcb8577c85e0622228a285774d6deb906d6d2f4c523ddef743",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

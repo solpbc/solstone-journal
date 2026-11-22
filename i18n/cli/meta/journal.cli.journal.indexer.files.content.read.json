@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer files content read.",
+  "context": "Journal command-line text for indexer files content read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a4c2269b90bfb7c42d21722dc5c4474188e45f6fe2bfc2038875c301ff177592",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

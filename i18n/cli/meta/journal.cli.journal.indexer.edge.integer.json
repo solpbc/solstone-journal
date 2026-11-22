@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer edge integer.",
+  "context": "Journal command-line text for indexer edge integer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "936d7bf8373017d4ca4d1c7f7b5847f973208a43fdf954e10ba16496f6c6e66d",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "integer",
+      "kind": "accepted-input",
+      "value": "i64"
+    }
+  ]
+}

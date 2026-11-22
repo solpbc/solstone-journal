@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive source windows trace retained relative directory listing open member.",
+  "context": "Journal command-line text for archive source windows trace retained relative directory listing open member.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "371f69153a684a92cbff1b69c4c5c5b8c85e2f05842f5fa953b5823a10f391cb",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

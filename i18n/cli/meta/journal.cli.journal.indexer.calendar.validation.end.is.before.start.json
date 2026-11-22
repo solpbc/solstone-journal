@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation end is before start.",
+  "context": "Journal command-line text for indexer calendar validation end is before start.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c659225131acdc4e76d64f3976bfe01d1d294b0537f027805707bc53614a134",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "end_field",
+      "kind": "accepted-input",
+      "value": "end"
+    }
+  ]
+}

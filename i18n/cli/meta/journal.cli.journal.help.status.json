@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for help status.",
+  "context": "Journal command-line text for help status.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d2ee4d6cbe9b060c1fcee4312e4de2dfe4bc80436fe3b2532995af7571961863",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal status [-h]"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

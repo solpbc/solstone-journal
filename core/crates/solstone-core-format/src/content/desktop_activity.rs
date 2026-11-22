@@ -420,7 +420,10 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
 
     let mut warnings = Vec::new();
     if unsupported_version {
-        warnings.push("unsupported desktop activity version".to_string());
+        warnings.push(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.chunker.activity",
+            [],
+        ));
     }
 
     ProducedChunks {
@@ -737,7 +740,7 @@ mod tests {
         assert!(produced.chunks[0].content.contains(r#"app: "Finder""#));
         assert_eq!(produced.error, None);
         assert_eq!(produced.warnings.len(), 1);
-        assert!(!produced.warnings[0].contains("Terminal"));
+        assert!(!produced.warnings[0].to_string().contains("Terminal"));
         assert_eq!(produced.agent_override.as_deref(), Some("desktop_activity"));
     }
 

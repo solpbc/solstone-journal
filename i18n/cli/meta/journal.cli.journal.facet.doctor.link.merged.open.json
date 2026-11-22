@@ -1,0 +1,42 @@
+{
+  "description": "Journal command-line text for facet doctor link merged open.",
+  "context": "Journal command-line text for facet doctor link merged open.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "folder_count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "folders",
+      "type": "string"
+    },
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "successor",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "39f7f92e82d38eac303c8eb294add84639e7fd352e29eb2d44a34822f4591838",
+  "max_length": 268,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "folder_count",
+    "type": "cardinal"
+  }
+}

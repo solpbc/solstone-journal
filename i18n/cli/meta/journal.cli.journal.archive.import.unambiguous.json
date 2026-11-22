@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive import unambiguous.",
+  "context": "Journal command-line text for archive import unambiguous.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "62cd3da5110d6c92b76ea0328e1bda4d8c327be600ae776ab9eb132f12dad230",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

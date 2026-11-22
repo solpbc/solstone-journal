@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for indexer calendar validation all day must be true or false.",
+  "context": "Journal command-line text for indexer calendar validation all day must be true or false.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "40c3c335fc9ac27023bddeb309e108f62a6f66e54a130cd77aaafdf25ef1ee41",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "all_day_field",
+      "kind": "accepted-input",
+      "value": "all_day"
+    },
+    {
+      "name": "false_key",
+      "kind": "accepted-input",
+      "value": "false"
+    },
+    {
+      "name": "true_key",
+      "kind": "accepted-input",
+      "value": "true"
+    }
+  ]
+}

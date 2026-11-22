@@ -7,6 +7,7 @@ pub mod calendar_schedule;
 pub mod chunk_sources;
 pub mod classification;
 pub mod classification_batch;
+mod cli_detail;
 pub mod db;
 pub mod edge_refresh;
 pub mod generation;
@@ -49,7 +50,7 @@ use std::path::PathBuf;
 pub enum StoreError {
     Discovery(solstone_core_indexer::discovery::DiscoveryError),
     Edge(solstone_core_indexer::edges::EdgeError),
-    EdgeFileFailed(String),
+    EdgeFileFailed(solstone_core_cli_copy::MessageDetail),
     Io(io::Error),
     Path(solstone_core_format::paths::JournalPathError),
     Sql(rusqlite::Error),
@@ -106,53 +107,7 @@ impl StoreError {
 
 impl fmt::Display for StoreError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            StoreError::Discovery(error) => write!(formatter, "{error}"),
-            StoreError::Edge(error) => write!(formatter, "{error}"),
-            StoreError::EdgeFileFailed(message) => write!(formatter, "{message}"),
-            StoreError::Io(error) => write!(formatter, "{error}"),
-            StoreError::Path(error) => write!(formatter, "{error}"),
-            StoreError::Sql(error) => write!(formatter, "{error}"),
-            StoreError::OutsideJournal(path) => {
-                write!(
-                    formatter,
-                    "file is outside journal directory: {}",
-                    path.display()
-                )
-            }
-            StoreError::NonUtf8Path(path) => {
-                write!(formatter, "path is not valid UTF-8: {}", path.display())
-            }
-            StoreError::MissingFile(path) => {
-                write!(formatter, "file not found: {}", path.display())
-            }
-            StoreError::MemoryOriginalUnavailable { path, detail } => write!(
-                formatter,
-                "memory original could not be checked at {}; cached index retained; retry when the source is readable: {detail}",
-                path.display()
-            ),
-            StoreError::PathLookupRequired { cause: None } => {
-                write!(formatter, "indexer path-lookup --apply")
-            }
-            StoreError::PathLookupRequired {
-                cause: Some(message),
-            } => {
-                write!(formatter, "indexer path-lookup --apply: {message}")
-            }
-            StoreError::WriterBusy { operation, cause } => {
-                write!(formatter, "index writer busy for {operation}: {cause}")
-            }
-            StoreError::WriterAdmission { operation, cause } => {
-                write!(
-                    formatter,
-                    "index writer admission failed for {operation}: {cause}"
-                )
-            }
-            StoreError::IndexGenerationNewer { found, known } => write!(
-                formatter,
-                "the search index was written by a newer version of solstone (index generation {found}; this version reads up to {known}), so this version leaves it unchanged"
-            ),
-        }
+        fmt::Display::fmt(&self.diagnostic(), formatter)
     }
 }
 

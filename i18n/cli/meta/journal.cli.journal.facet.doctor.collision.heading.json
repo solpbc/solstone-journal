@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor collision heading.",
+  "context": "Journal command-line text for facet doctor collision heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "02376b11d9d8de47ced454ca80e9983f8c85504be73f780183a4883ffeaa1390",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer calendar validation start and end must both carry an offset or both have none.",
+  "context": "Journal command-line text for indexer calendar validation start and end must both carry an offset or both have none.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c46589c8934d41deab8f8d35467f6ee7ad84cf87a76665b5e65033ab9fbcfa1",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "start_field",
+      "kind": "accepted-input",
+      "value": "start"
+    },
+    {
+      "name": "end_field",
+      "kind": "accepted-input",
+      "value": "end"
+    }
+  ]
+}

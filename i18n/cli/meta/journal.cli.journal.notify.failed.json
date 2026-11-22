@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for notify failed.",
+  "context": "Journal command-line text for notify failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "32e6278e10a88a6faccc6051a4398fd1fbd165090ffd842331ee32d1e896cbf8",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "channel",
+      "kind": "accepted-input",
+      "value": "callosum"
+    }
+  ]
+}

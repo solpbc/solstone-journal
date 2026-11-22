@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet doctor history reused.",
+  "context": "Journal command-line text for facet doctor history reused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7a7d07d1a73ded35f8315a2a08f2f2e0535c88c222aad0c886efd0a45117ff0c",
+  "max_length": 211,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

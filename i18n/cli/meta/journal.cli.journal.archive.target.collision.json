@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive target collision.",
+  "context": "Journal command-line text for archive target collision.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fa2b60b8b28c9b4e52be68988aef90b92cf893884868935425db04843ae15131",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

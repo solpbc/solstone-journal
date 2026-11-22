@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for facet doctor link unreadable check.",
+  "context": "Journal command-line text for facet doctor link unreadable check.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "folders",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5ae4a142c2b53ab299c95ade2968ff8f6367f2eb4ab9a70aad5a11bea734c4a6",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "fix_flag",
+      "kind": "flag",
+      "value": "--fix"
+    }
+  ]
+}

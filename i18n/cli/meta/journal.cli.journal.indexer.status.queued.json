@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer status queued.",
+  "context": "Journal command-line text for indexer status queued.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "queued",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1af9bdc11b689cd5361d789ecb8897bf002e780c3eac54419a283c4c553c6f27",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

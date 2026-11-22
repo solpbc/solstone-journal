@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet doctor merge ios.",
+  "context": "Journal command-line text for facet doctor merge ios.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "85fe39b19f6099d60d01938552fe1511cca6f0e09eccc20f282980f72245fb3b",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "platform",
+      "kind": "mark-word",
+      "value": "iOS"
+    }
+  ]
+}

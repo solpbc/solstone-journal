@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive import segment changed.",
+  "context": "Journal command-line text for archive import segment changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "65b0e7e061d0846814ec83b99a4e487cd23d9e7301e81315241ffd5175e4441d",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

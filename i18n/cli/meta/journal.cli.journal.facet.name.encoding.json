@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet name encoding.",
+  "context": "Journal command-line text for facet name encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "90dfe7d8597c25fee84f4f1d19381137085bb36a8acaa79c2c73a7dfc698ea5b",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

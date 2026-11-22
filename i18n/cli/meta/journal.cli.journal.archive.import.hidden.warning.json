@@ -1,0 +1,26 @@
+{
+  "description": "Journal command-line text for archive import hidden warning.",
+  "context": "Journal command-line text for archive import hidden warning.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "edb7ddc08c12c9bed60bf5e210db50f82de0d0943cb3dd9ef4b41fa0df61f6fd",
+  "max_length": 321,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "days",
+    "type": "cardinal"
+  }
+}

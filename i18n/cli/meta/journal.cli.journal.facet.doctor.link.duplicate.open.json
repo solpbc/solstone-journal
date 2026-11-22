@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for facet doctor link duplicate open.",
+  "context": "Journal command-line text for facet doctor link duplicate open.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "folders",
+      "type": "string"
+    },
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3332a4add1f4c59f63a1f4868798e62506a6081aaeb39c5c302bc1f924af5b64",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

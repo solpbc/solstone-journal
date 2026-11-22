@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for archive ios.",
+  "context": "Journal command-line text for archive ios.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "669ab6b3e309c5793ccd7ecfdbfb6255a1677c1a6b4dded733cb977d8e7a300b",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_ios",
+      "kind": "accepted-input",
+      "value": "iOS"
+    }
+  ]
+}

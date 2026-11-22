@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer files classification insert.",
+  "context": "Journal command-line text for indexer files classification insert.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c56bf0b46891cbcc0a5fc3f1c2ece008463e74a228f68d50a0229234c4800a4d",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

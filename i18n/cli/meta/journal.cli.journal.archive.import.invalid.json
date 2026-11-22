@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive import invalid.",
+  "context": "Journal command-line text for archive import invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "63ba830a4932592b25c8d6a86ff6eb6fed7d49cdd904cd66520734487129fbdb",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor links left.",
+  "context": "Journal command-line text for facet doctor links left.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "43cd6c5a5a025cf977561a95755c29223167640cab303da33b1b3a70521aca5f",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

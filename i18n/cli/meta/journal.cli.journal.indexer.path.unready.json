@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer path unready.",
+  "context": "Journal command-line text for indexer path unready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ae8b50e4e01ab4fa392e49eb9065825182540dd8a064e8b3ba24e1dbd2cc4fb9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

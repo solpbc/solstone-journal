@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer hidden days.",
+  "context": "Journal command-line text for indexer hidden days.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5ea8f821cbaff17de5b0e72a2c7aebca1292860d94a452599f87aaafd920e1a3",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

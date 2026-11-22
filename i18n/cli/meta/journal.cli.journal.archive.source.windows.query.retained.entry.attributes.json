@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source windows query retained entry attributes.",
+  "context": "Journal command-line text for archive source windows query retained entry attributes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "20bd77c3e1e7317205a235fd1f0a26414cfbd701f0086894074ae0f9538e51fb",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive metadata reason must not be empty.",
+  "context": "Journal command-line text for archive metadata reason must not be empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2672a6f9b21e814c9a679a78dd2b5f3fee2985401a98f7df17b2c876d8cea888",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

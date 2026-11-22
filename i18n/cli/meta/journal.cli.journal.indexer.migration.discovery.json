@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer migration discovery.",
+  "context": "Journal command-line text for indexer migration discovery.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel_segment",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9cb185b3eeb3ad07d758a15e3b5f3780a3aba3af5ed619e5d4f093bf45301b78",
+  "max_length": 122,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

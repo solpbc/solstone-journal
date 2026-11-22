@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for facet merge complete.",
+  "context": "Journal command-line text for facet merge complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "destination",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "88d4699e3afdc794b040c93de95458c46e4447cb3eb32f8ef7a135ad280c0cb0",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

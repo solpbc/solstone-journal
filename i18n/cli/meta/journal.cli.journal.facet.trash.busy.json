@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet trash busy.",
+  "context": "Journal command-line text for facet trash busy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cad894d2d5d5dac91abf1d7a0ea242050322d4a76e50219b48db887d976b0931",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

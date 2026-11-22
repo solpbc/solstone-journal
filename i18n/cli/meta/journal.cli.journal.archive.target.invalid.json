@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive target invalid.",
+  "context": "Journal command-line text for archive target invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "036ec28e5d1041e7ba2202e16893710db65d59f96d4097f2269640cbdbd3ea45",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

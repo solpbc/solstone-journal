@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer store lookup cause.",
+  "context": "Journal command-line text for indexer store lookup cause.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "116f7277a5b168e5483cebd52a44d40269412b6984b986480206a8cc4d954e40",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "lookup_command",
+      "kind": "command",
+      "value": "indexer path-lookup --apply"
+    }
+  ]
+}

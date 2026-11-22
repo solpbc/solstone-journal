@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer status failure.",
+  "context": "Journal command-line text for indexer status failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8cba7f82dc6b05c030f7ed8be9bbdf08223df77b2b8dfa7ea769520b81c4fcdd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

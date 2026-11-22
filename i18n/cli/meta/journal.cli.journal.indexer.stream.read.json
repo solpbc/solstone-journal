@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer stream read.",
+  "context": "Journal command-line text for indexer stream read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c6199023331d95da81070205d2ebd84e83188074991c276754ab7d840dc6d117",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

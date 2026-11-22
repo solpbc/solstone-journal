@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive target io retain admitted archive output parent.",
+  "context": "Journal command-line text for archive target io retain admitted archive output parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6d9a3a6e9f84f956ecc5e4f0be8ebe56e1f46778c895710fb05b8f7879b6c3ae",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

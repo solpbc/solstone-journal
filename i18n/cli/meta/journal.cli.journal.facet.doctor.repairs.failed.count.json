@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for facet doctor repairs failed count.",
+  "context": "Journal command-line text for facet doctor repairs failed count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "repaired",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "failed_orphans",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "534b099b7264ab375d1e1657bafff62f1bf152ba5328b1c32662d62250ca09e1",
+  "max_length": 712,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "repaired",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "rescan_command",
+      "kind": "command",
+      "value": "solstone journal indexer --rescan-full"
+    }
+  ]
+}

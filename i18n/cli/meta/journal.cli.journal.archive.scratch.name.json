@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive scratch name.",
+  "context": "Journal command-line text for archive scratch name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59cf98240a467af7eb1398b7dc89f9b1576218073175fdcdaad899bba76eb315",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive publish publish.",
+  "context": "Journal command-line text for archive publish publish.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "549236b83bc2bb242dcd45d19ae985c33fc7d5060f7d0fffefd3ba4a52bd1fe8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

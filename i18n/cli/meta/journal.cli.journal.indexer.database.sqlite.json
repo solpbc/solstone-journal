@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer database sqlite.",
+  "context": "Journal command-line text for indexer database sqlite.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ca032a96a116be39f06ba176e2c683594845f8a2d4b532f73e77c0146974cd7f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "sqlite",
+      "kind": "accepted-input",
+      "value": "SQLite"
+    }
+  ]
+}

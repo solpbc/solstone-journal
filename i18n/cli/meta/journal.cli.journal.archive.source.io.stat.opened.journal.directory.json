@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source io stat opened journal directory.",
+  "context": "Journal command-line text for archive source io stat opened journal directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7709b14ee33dced59879075598e0d032846febe5ed8b129f855b16d0a5d66957",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

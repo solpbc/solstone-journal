@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet record id exhausted.",
+  "context": "Journal command-line text for facet record id exhausted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fc6964513122b5b9b9e6285f112fa173fcd560af130ab729002b3a670c039df9",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

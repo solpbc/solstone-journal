@@ -90,30 +90,76 @@ impl HiddenNames {
 
 /// Read a facet's hidden names without changing the file.
 pub fn read_hidden_names(journal: &Path, facet: &str) -> HiddenNames {
-    let rel = hidden_names_rel(facet);
-    let path = match solstone_core_journal_io::contained_path(journal, &rel) {
-        Ok(path) => path,
-        Err(error) => {
-            return HiddenNames::Damaged {
-                path: journal.join(&rel),
-                detail: error.to_string(),
-            };
+    match read_hidden_names_detailed(journal, facet) {
+        Ok(Some(names)) => HiddenNames::Present(names),
+        Ok(None) => HiddenNames::Absent,
+        Err((path, detail)) => HiddenNames::Damaged {
+            path,
+            detail: detail.to_string(),
+        },
+    }
+}
+
+#[derive(Debug)]
+pub enum HiddenRecordError {
+    Path(solstone_core_journal_io::PathError),
+    External(String),
+    NotObject,
+    UnknownField(String),
+    MissingList,
+    Row { index: usize, issue: HiddenRowError },
+}
+
+#[derive(Debug)]
+pub enum HiddenRowError {
+    NotObject,
+    UnknownField(String),
+    NotText(&'static str),
+    EmptyName,
+}
+
+impl fmt::Display for HiddenRowError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotObject => f.write_str("not an object"),
+            Self::UnknownField(key) => write!(f, "unknown field {key:?}"),
+            Self::NotText(key) => write!(f, "{key} is not text"),
+            Self::EmptyName => f.write_str("name is empty"),
         }
-    };
+    }
+}
+
+impl fmt::Display for HiddenRecordError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Path(error) => error.fmt(f),
+            Self::External(detail) => f.write_str(detail),
+            Self::NotObject => f.write_str("not a JSON object"),
+            Self::UnknownField(key) => write!(f, "unknown field {key:?}"),
+            Self::MissingList => f.write_str("names is not a list"),
+            Self::Row { index, issue } => write!(f, "name {index}: {issue}"),
+        }
+    }
+}
+
+pub fn read_hidden_names_detailed(
+    journal: &Path,
+    facet: &str,
+) -> Result<Option<Vec<HiddenName>>, (PathBuf, HiddenRecordError)> {
+    let rel = hidden_names_rel(facet);
+    let path = solstone_core_journal_io::contained_path(journal, &rel)
+        .map_err(|error| (journal.join(&rel), HiddenRecordError::Path(error)))?;
     match observe_json_durable::<Value>(ArtifactId::FacetHiddenNames, &path) {
-        DurableObservation::Absent => HiddenNames::Absent,
-        DurableObservation::Present(value) => match names_from_value(&value) {
-            Ok(names) => HiddenNames::Present(names),
-            Err(detail) => HiddenNames::Damaged { path, detail },
-        },
-        DurableObservation::Malformed { path, source } => HiddenNames::Damaged {
-            path,
-            detail: source.to_string(),
-        },
-        DurableObservation::Unreadable { path, source } => HiddenNames::Damaged {
-            path,
-            detail: source.to_string(),
-        },
+        DurableObservation::Absent => Ok(None),
+        DurableObservation::Present(value) => names_from_value(&value)
+            .map(Some)
+            .map_err(|error| (path, error)),
+        DurableObservation::Malformed { path, source } => {
+            Err((path, HiddenRecordError::External(source.to_string())))
+        }
+        DurableObservation::Unreadable { path, source } => {
+            Err((path, HiddenRecordError::External(source.to_string())))
+        }
     }
 }
 
@@ -124,7 +170,7 @@ pub fn decode_hidden_names(bytes: &[u8]) -> Result<Vec<HiddenName>, String> {
         return Ok(Vec::new());
     }
     let value: Value = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
-    names_from_value(&value)
+    names_from_value(&value).map_err(|error| error.to_string())
 }
 
 /// Encode names as the file's bytes, in the order given.
@@ -139,40 +185,40 @@ pub fn encode_hidden_names(names: &[HiddenName]) -> Vec<u8> {
     bytes
 }
 
-fn names_from_value(value: &Value) -> Result<Vec<HiddenName>, String> {
-    let root = value.as_object().ok_or("not a JSON object")?;
+fn names_from_value(value: &Value) -> Result<Vec<HiddenName>, HiddenRecordError> {
+    let root = value.as_object().ok_or(HiddenRecordError::NotObject)?;
     if let Some(key) = root.keys().find(|key| key.as_str() != "names") {
-        return Err(format!("unknown field {key:?}"));
+        return Err(HiddenRecordError::UnknownField(key.clone()));
     }
     let rows = root
         .get("names")
         .and_then(Value::as_array)
-        .ok_or("names is not a list")?;
+        .ok_or(HiddenRecordError::MissingList)?;
     rows.iter()
         .enumerate()
         .map(|(index, row)| {
-            name_from_value(row).map_err(|detail| format!("name {index}: {detail}"))
+            name_from_value(row).map_err(|issue| HiddenRecordError::Row { index, issue })
         })
         .collect()
 }
 
-fn name_from_value(value: &Value) -> Result<HiddenName, String> {
-    let row = value.as_object().ok_or("not an object")?;
+fn name_from_value(value: &Value) -> Result<HiddenName, HiddenRowError> {
+    let row = value.as_object().ok_or(HiddenRowError::NotObject)?;
     if let Some(key) = row
         .keys()
         .find(|key| !matches!(key.as_str(), "name" | "hidden_at"))
     {
-        return Err(format!("unknown field {key:?}"));
+        return Err(HiddenRowError::UnknownField(key.clone()));
     }
-    let text = |key: &str| {
+    let text = |key: &'static str| {
         row.get(key)
             .and_then(Value::as_str)
             .map(str::to_owned)
-            .ok_or_else(|| format!("{key} is not text"))
+            .ok_or(HiddenRowError::NotText(key))
     };
     let name = text("name")?;
     if name.trim().is_empty() {
-        return Err("name is empty".to_owned());
+        return Err(HiddenRowError::EmptyName);
     }
     Ok(HiddenName {
         name,

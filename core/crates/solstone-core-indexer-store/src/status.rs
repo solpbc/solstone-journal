@@ -25,8 +25,7 @@ use crate::db::{
     read_chunk_classification_backfill, read_index_build_state,
 };
 use crate::generation::{
-    INDEX_GENERATION, IndexStamp, ScanReceipt, WRITER_VERSION, has_sqlite_header, read_last_scan,
-    read_stamp,
+    INDEX_GENERATION, IndexStamp, ScanReceipt, WRITER_VERSION, has_sqlite_header, read_stamp,
 };
 use crate::scan::{file_mtime_secs, is_memory_note, load_file_mtimes, memory_file_mtime_secs};
 
@@ -185,69 +184,208 @@ impl IndexStatus {
 
     #[must_use]
     pub fn format_human(&self) -> String {
+        self.format_human_in(solstone_core_cli_copy::ENGLISH)
+    }
+
+    #[must_use]
+    pub fn format_human_in(&self, locale: &str) -> String {
         let mut out = String::new();
         match &self.database {
-            IndexDatabase::Absent => out.push_str("index: absent\n"),
-            IndexDatabase::Unreadable(reason) => {
-                out.push_str(&format!("index: unreadable ({reason})\n"));
-            }
-            IndexDatabase::Present => out.push_str("index: present\n"),
+            IndexDatabase::Absent => out.push_str(&format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.indexer.database.absent",
+                    &[]
+                )
+            )),
+            IndexDatabase::Present => out.push_str(&format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.indexer.database.present",
+                    &[]
+                )
+            )),
+            IndexDatabase::Unreadable(reason) => out.push_str(&format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.journal.indexer.database.unreadable",
+                    [("reason", &(reason))]
+                )
+            )),
         }
         if let Some(stamp) = &self.stamp {
-            out.push_str(&format!(
-                "generation: {} (this version reads up to {}; writable: {})\n",
-                stamp.effective_generation(),
-                INDEX_GENERATION,
-                if stamp.writable() { "yes" } else { "no" }
-            ));
+            let line = if stamp.writable() {
+                format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.journal.indexer.generation.writable",
+                        [
+                            ("generation", &(stamp.effective_generation())),
+                            ("known", &(INDEX_GENERATION))
+                        ]
+                    )
+                )
+            } else {
+                format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.journal.indexer.generation.locked",
+                        [
+                            ("generation", &(stamp.effective_generation())),
+                            ("known", &(INDEX_GENERATION))
+                        ]
+                    )
+                )
+            };
+            out.push_str(&line);
         }
         out.push_str(&format!(
-            "files: {} on disk, {} indexed, {} current, {} stale, {} missing, {} failed, {} orphaned, {} kept until a full rescan, {} no longer indexable but still in search, {} unreadable, {} not indexable\n",
-            self.discovered,
-            self.indexed,
-            self.current,
-            self.stale.len(),
-            self.missing.len(),
-            self.failed.len(),
-            self.orphaned.len(),
-            self.retained.len(),
-            self.ineligible_rows,
-            self.unreadable.len(),
-            self.ineligible
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.indexer.database.files",
+                [
+                    ("discovered", &(self.discovered)),
+                    ("indexed", &(self.indexed)),
+                    ("current", &(self.current)),
+                    ("stale", &(self.stale.len())),
+                    ("missing", &(self.missing.len())),
+                    ("failed", &(self.failed.len())),
+                    ("orphaned", &(self.orphaned.len())),
+                    ("retained", &(self.retained.len())),
+                    ("ineligible_rows", &(self.ineligible_rows)),
+                    ("unreadable", &(self.unreadable.len())),
+                    ("ineligible", &(self.ineligible))
+                ]
+            )
         ));
-        let build = match self.build {
-            Some(IndexBuildLifecycle::Building) => "building",
-            Some(IndexBuildLifecycle::Complete) => "complete",
-            None => "unknown",
-        };
-        out.push_str(&format!("build: {build}\n"));
-        let classification = match &self.classification {
-            ClassificationProgress::Absent => "absent".to_owned(),
-            ClassificationProgress::Complete => "complete".to_owned(),
-            ClassificationProgress::Incomplete => "incomplete".to_owned(),
-            ClassificationProgress::Stalled { path } => {
-                format!("stalled at {}", path.as_deref().unwrap_or("unknown path"))
-            }
-        };
-        out.push_str(&format!("classification: {classification}\n"));
-        match &self.last_scan {
-            Some(scan) => match &scan.error {
-                Some(error) => out.push_str(&format!(
-                    "last scan: {} at {} ms stopped: {error}\n",
-                    if scan.full { "full" } else { "light" },
-                    scan.finished_at_ms,
-                )),
-                None => out.push_str(&format!(
-                    "last scan: {} at {} ms, indexed {}, removed {}, failed {}\n",
-                    if scan.full { "full" } else { "light" },
-                    scan.finished_at_ms,
-                    scan.indexed,
-                    scan.removed,
-                    scan.failed
-                )),
+        out.push_str(&match self.build {
+            Some(IndexBuildLifecycle::Building) => format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.indexer.build.building",
+                    &[]
+                )
+            ),
+            Some(IndexBuildLifecycle::Complete) => format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.indexer.build.complete",
+                    &[]
+                )
+            ),
+            None => format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.indexer.build.unknown",
+                    &[]
+                )
+            ),
+        });
+        out.push_str(&match &self.classification {
+            ClassificationProgress::Absent => format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.indexer.progress.absent",
+                    &[]
+                )
+            ),
+            ClassificationProgress::Complete => format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.indexer.progress.complete",
+                    &[]
+                )
+            ),
+            ClassificationProgress::Incomplete => format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.indexer.progress.incomplete",
+                    &[]
+                )
+            ),
+            ClassificationProgress::Stalled { path: None } => format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.indexer.progress.unknown",
+                    &[]
+                )
+            ),
+            ClassificationProgress::Stalled { path: Some(path) } => format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.journal.indexer.progress.stalled",
+                    [("path", &(path))]
+                )
+            ),
+        });
+        out.push_str(&match &self.last_scan {
+            Some(scan) => match (scan.full, &scan.error) {
+                (true, Some(error)) => format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.journal.indexer.receipt.full.stopped",
+                        [("time", &(scan.finished_at_ms)), ("error", &(error))]
+                    )
+                ),
+                (true, None) => format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.journal.indexer.receipt.full.finished",
+                        [
+                            ("time", &(scan.finished_at_ms)),
+                            ("indexed", &(scan.indexed)),
+                            ("removed", &(scan.removed)),
+                            ("failed", &(scan.failed))
+                        ]
+                    )
+                ),
+                (false, Some(error)) => format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.journal.indexer.receipt.light.stopped",
+                        [("time", &(scan.finished_at_ms)), ("error", &(error))]
+                    )
+                ),
+                (false, None) => format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.journal.indexer.receipt.light.finished",
+                        [
+                            ("time", &(scan.finished_at_ms)),
+                            ("indexed", &(scan.indexed)),
+                            ("removed", &(scan.removed)),
+                            ("failed", &(scan.failed))
+                        ]
+                    )
+                ),
             },
-            None => out.push_str("last scan: not recorded\n"),
-        }
+            None => format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.indexer.receipt.absent",
+                    &[]
+                )
+            ),
+        });
         out
     }
 }
@@ -262,6 +400,10 @@ fn sample(paths: &BTreeSet<String>) -> Vec<&str> {
 
 /// Measure the index against the disk without changing either.
 pub fn inspect_index(journal: &Path) -> Result<IndexStatus, StoreError> {
+    inspect_index_in(journal, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn inspect_index_in(journal: &Path, locale: &str) -> Result<IndexStatus, StoreError> {
     let files = discover_index_status_files(journal)?;
     let mut status = IndexStatus {
         database: IndexDatabase::Absent,
@@ -290,16 +432,20 @@ pub fn inspect_index(journal: &Path) -> Result<IndexStatus, StoreError> {
     let stored = if path.is_file() && !has_sqlite_header(&path) {
         // Opening a file that is not a database, even read-only, can leave
         // sidecars beside it; a status never does.
-        status.database = IndexDatabase::Unreadable("not a SQLite database".to_owned());
+        status.database = IndexDatabase::Unreadable(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.journal.indexer.database.sqlite",
+            &[],
+        ));
         BTreeMap::new()
     } else if path.is_file() {
-        match read_index(&path, &mut status) {
+        match read_index(&path, &mut status, locale) {
             Ok(stored) => {
                 status.database = IndexDatabase::Present;
                 stored
             }
             Err(error) => {
-                status.database = IndexDatabase::Unreadable(error.to_string());
+                status.database = IndexDatabase::Unreadable(error.cli_detail(locale));
                 BTreeMap::new()
             }
         }
@@ -399,7 +545,11 @@ pub(crate) fn eligible(path: &Path, rel: &str) -> bool {
     true
 }
 
-fn read_index(path: &Path, status: &mut IndexStatus) -> Result<BTreeMap<String, i64>, StoreError> {
+fn read_index(
+    path: &Path,
+    status: &mut IndexStatus,
+    locale: &str,
+) -> Result<BTreeMap<String, i64>, StoreError> {
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=5000;")?;
     // A stamp that cannot be read refuses every write, but search and the
@@ -410,7 +560,7 @@ fn read_index(path: &Path, status: &mut IndexStatus) -> Result<BTreeMap<String, 
     }
     status.build = read_index_build_state(&conn)?.map(|build| build.state);
     // The receipt lives in the same metadata table as the stamp.
-    status.last_scan = read_last_scan(&conn).unwrap_or(None);
+    status.last_scan = crate::generation::read_last_scan_in(&conn, locale).unwrap_or(None);
     status.memberships_missing = classification_facets_missing(&conn)?;
     status.path_lookup_ready = chunk_path_lookup_ready(&conn)?;
     status.classification = match read_chunk_classification_backfill(&conn)? {

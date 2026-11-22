@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer error reset.",
+  "context": "Journal command-line text for indexer error reset.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3d2ba9ed756fb0ba66d3ed502a7f560f3b195c2b5c61e57bf48fdce9f2c4da3b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

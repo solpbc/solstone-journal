@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet record retired conflict.",
+  "context": "Journal command-line text for facet record retired conflict.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0e509d6f5775fdd21ab94e6ea8c5b017024295aaafcae1db04abe91ba31014df",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

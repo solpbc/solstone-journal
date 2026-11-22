@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for archive import name.",
+  "context": "Journal command-line text for archive import name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a54ab53be81ed82f4ba62e45309c46cdc97d655f24725695da7c0ffe5d20904f",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_utf_8",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

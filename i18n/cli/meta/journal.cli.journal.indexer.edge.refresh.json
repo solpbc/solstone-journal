@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer edge refresh.",
+  "context": "Journal command-line text for indexer edge refresh.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9f6a8d08424c71c3e2b4b8d4e0d05d226c3851981176b4bc022d2e367cc6443c",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

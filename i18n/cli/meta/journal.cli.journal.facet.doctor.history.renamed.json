@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for facet doctor history renamed.",
+  "context": "Journal command-line text for facet doctor history renamed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "destination",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "baa7cb3aba2235a80286d83f17ac6fbebaf72335527d2a911371d5d51d705eaf",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

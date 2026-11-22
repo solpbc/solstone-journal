@@ -79,7 +79,7 @@ pub struct ScanReport {
     pub edge_rows_inserted: usize,
     pub merge_steps_spent: usize,
     pub failed: usize,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<solstone_core_cli_copy::MessageDetail>,
     /// Expected, non-blocking skips (e.g. a discovered file type this index
     /// does not classify). Never gates `mark_index_build_complete`; neither
     /// do `warnings`. A failed file or a retained row does.
@@ -120,7 +120,7 @@ impl ScanReport {
     /// A file indexed with nothing because what hides part of it can't be
     /// read. It is named, not counted: the build can still complete, and the
     /// next scan tries it again.
-    fn undecided(&mut self, path: &str, mtime: i64, cause: String) {
+    fn undecided(&mut self, path: &str, mtime: i64, cause: solstone_core_cli_copy::MessageDetail) {
         log::warn!(target: "solstone::indexer", "{cause}");
         self.skipped += 1;
         self.failures.push(ScanFailure {
@@ -139,7 +139,7 @@ pub struct EdgeRebuildReport {
     pub drops: usize,
     pub failed: usize,
     pub skipped: usize,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<solstone_core_cli_copy::MessageDetail>,
     /// Edge files a change of entities, speakers, timezone or extractor marked stale.
     pub marked: usize,
     /// Stale edge files left for a later pass.
@@ -154,7 +154,7 @@ struct EdgeScanReport {
     /// Edge rows kept for a day where discovery found no edge source.
     retained: usize,
     failures: Vec<ScanFailure>,
-    warnings: Vec<String>,
+    warnings: Vec<solstone_core_cli_copy::MessageDetail>,
     drops: usize,
     /// Files skipped for an invalid segment key.
     skipped: usize,
@@ -190,15 +190,22 @@ fn removal_candidates(
     (removed, retained_days)
 }
 
-fn retained_day_warning(day: &str, count: usize) -> String {
-    format!(
-        "light scan retained {count} stale row(s) for day {day}: discovery produced no files for that day; rerun with --rescan-full to remove them"
+fn retained_day_warning(day: &str, count: usize) -> solstone_core_cli_copy::MessageDetail {
+    solstone_core_cli_copy::MessageDetail::cardinal(
+        "journal.cli.journal.indexer.scan.retained",
+        [("count", i64::try_from(count).unwrap_or(i64::MAX))],
+        format!(
+            "light scan retained {count} stale row(s) for day {day}: discovery produced no files for that day; rerun with --rescan-full to remove them"
+        ),
+        [("day", &(day))],
     )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RescanFileStatus {
-    Indexed { warnings: Vec<String> },
+    Indexed {
+        warnings: Vec<solstone_core_cli_copy::MessageDetail>,
+    },
     Declined,
 }
 
@@ -574,7 +581,7 @@ fn record_failed_scan(
         .and_then(|mut conn| {
             conn.execute_batch("PRAGMA busy_timeout=5000;")?;
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            record_scan(&tx, &receipt)?;
+            crate::generation::record_scan_with_detail(&tx, &receipt, Some(&error.diagnostic()))?;
             if let Err(cause) = checkpoint() {
                 drop(tx);
                 return Err(StoreError::WriterAdmission {
@@ -666,7 +673,10 @@ fn scan_journal_pass(
                 report.skipped += 1;
                 report
                     .warnings
-                    .push(format!("mtime read failed for {rel}: {error}"));
+                    .push(solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.journal.indexer.scan.mtime",
+                        [("rel", &(rel)), ("error", &(error))],
+                    ));
                 if memory_note {
                     to_index.push((rel.clone(), path.clone(), 0));
                 } else if !is_not_found(&error) {
@@ -739,10 +749,13 @@ fn scan_journal_pass(
                 Err(result @ OriginalRead::Unavailable { .. }) => {
                     report.skipped += 1;
                     report.fail(Some(rel), Some(*mtime));
-                    report.warnings.push(format!(
-                        "memory original could not be checked for {rel}; cached index retained: {}",
-                        original_read_label(&result)
-                    ));
+                    report
+                        .warnings
+                        .push(original_read_label(&result).context_slot(
+                            "journal.cli.journal.indexer.original.retained",
+                            "state",
+                            [("rel", &rel)],
+                        ));
                     continue;
                 }
                 Err(result) => {
@@ -764,10 +777,13 @@ fn scan_journal_pass(
                     report.skipped += 1;
                     if matches!(result, OriginalRead::Corrupt) {
                         report.fail(Some(rel), Some(*mtime));
-                        report.warnings.push(format!(
-                            "memory original is incomplete for {rel}: {}",
-                            original_read_label(&result)
-                        ));
+                        report
+                            .warnings
+                            .push(original_read_label(&result).context_slot(
+                                "journal.cli.journal.indexer.original.incomplete",
+                                "state",
+                                [("rel", &rel)],
+                            ));
                     } else {
                         report.benign_skips.push(format!(
                             "memory original is not ready for {rel}: {}",
@@ -827,7 +843,7 @@ fn scan_journal_pass(
                 crate::recovery::report_if_damage_text(journal, &error.to_string());
                 report.skipped += 1;
                 report.fail(Some(rel), Some(*mtime));
-                report.warnings.push(error.to_string());
+                report.warnings.push(crate::cli_detail::io_message(&error));
                 continue;
             }
             Err(error) => return Err(error),
@@ -1134,7 +1150,7 @@ fn migrate_chunk_classifications(
     conn: &mut Connection,
     journal: &Path,
     checkpoint: &dyn Fn() -> Result<(), String>,
-) -> Result<Vec<String>, StoreError> {
+) -> Result<Vec<solstone_core_cli_copy::MessageDetail>, StoreError> {
     let existing = read_chunk_classification_backfill(conn)?;
     if let Some(ref state) = existing
         && state.completed
@@ -1147,9 +1163,14 @@ fn migrate_chunk_classifications(
             checkpoint,
         )?;
         if status.coverage_mismatch {
-            return Ok(vec![format!(
-                "chunk classification coverage mismatch: {} missing rows",
-                status.missing
+            return Ok(vec![solstone_core_cli_copy::MessageDetail::cardinal(
+                "journal.cli.journal.indexer.classification.missing",
+                [("missing", i64::try_from(status.missing).unwrap_or(i64::MAX))],
+                format!(
+                    "chunk classification coverage mismatch: {} missing rows",
+                    status.missing
+                ),
+                [],
             )]);
         }
         return Ok(Vec::new());
@@ -1173,15 +1194,21 @@ fn migrate_chunk_classifications(
             let err = status
                 .stalled_error
                 .unwrap_or_else(|| "facet directory read failed".to_string());
-            return Ok(vec![format!(
-                "chunk classification backfill stalled: {err}"
+            return Ok(vec![solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.classification.stall",
+                [("err", &(err))],
             )]);
         }
         if status.completed || status.coverage_mismatch {
             if status.coverage_mismatch {
-                return Ok(vec![format!(
-                    "chunk classification coverage mismatch: {} missing rows",
-                    status.missing
+                return Ok(vec![solstone_core_cli_copy::MessageDetail::cardinal(
+                    "journal.cli.journal.indexer.classification.missing",
+                    [("missing", i64::try_from(status.missing).unwrap_or(i64::MAX))],
+                    format!(
+                        "chunk classification coverage mismatch: {} missing rows",
+                        status.missing
+                    ),
+                    [],
                 )]);
             }
             break;
@@ -1194,14 +1221,15 @@ fn migrate_chunk_classifications(
 fn run_bounded_merge(
     conn: &mut Connection,
     checkpoint: &dyn Fn() -> Result<(), String>,
-) -> Result<(usize, Option<String>), StoreError> {
+) -> Result<(usize, Option<solstone_core_cli_copy::MessageDetail>), StoreError> {
     let tx = match conn.transaction_with_behavior(TransactionBehavior::Immediate) {
         Ok(tx) => tx,
         Err(error) => {
             return Ok((
                 0,
-                Some(format!(
-                    "index is correct and merely uncompacted: could not start FTS5 merge transaction: {error}"
+                Some(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.merge.start",
+                    [("error", &(error))],
                 )),
             ));
         }
@@ -1215,8 +1243,9 @@ fn run_bounded_merge(
         ) {
             return Ok((
                 steps_spent,
-                Some(format!(
-                    "index is correct and merely uncompacted: FTS5 merge failed: {error}"
+                Some(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.merge.failed",
+                    [("error", &(error))],
                 )),
             ));
         }
@@ -1236,8 +1265,9 @@ fn run_bounded_merge(
         Ok(()) => Ok((steps_spent, None)),
         Err(error) => Ok((
             steps_spent,
-            Some(format!(
-                "index is correct and merely uncompacted: could not commit FTS5 merge: {error}"
+            Some(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.merge.commit",
+                [("error", &(error))],
             )),
         )),
     }
@@ -1487,7 +1517,9 @@ pub(crate) fn rescan_file_admitted(
         let result = replace_edge_file_edges(&tx, journal, &rel, &path, mtime, &mut edge_resolver)?;
         warnings.extend(result.warnings);
         if result.failed {
-            return Err(StoreError::EdgeFileFailed(warnings.join("; ")));
+            return Err(StoreError::EdgeFileFailed(
+                solstone_core_cli_copy::MessageDetail::joined(warnings, "; "),
+            ));
         }
     }
     tx.commit()?;
@@ -1544,7 +1576,9 @@ fn refresh_edges_with(
     let mut report = EdgeRebuildReport::default();
     if let Err(error) = resolver.preflight_owner_timezone() {
         report.failed = 1;
-        report.warnings.push(error.to_string());
+        report
+            .warnings
+            .push(crate::cli_detail::edge_message(&error));
         return Ok(report);
     }
     let refresh = crate::edge_refresh::refresh_stale_edges(
@@ -1636,7 +1670,7 @@ pub(crate) struct EdgeProcessResult {
     pub(crate) drops: usize,
     pub(crate) failed: bool,
     pub(crate) invalid_segment: bool,
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Vec<solstone_core_cli_copy::MessageDetail>,
 }
 
 #[cfg(test)]
@@ -1690,7 +1724,9 @@ fn reconcile_edges_handing_off(
     let mut report = EdgeScanReport::default();
     if let Err(error) = resolver.preflight_owner_timezone() {
         report.failures.push(ScanFailure::default());
-        report.warnings.push(error.to_string());
+        report
+            .warnings
+            .push(crate::cli_detail::edge_message(&error));
         return Ok(report);
     }
     // Mark what entity, speaker, timezone or extractor changes reach before
@@ -1701,8 +1737,10 @@ fn reconcile_edges_handing_off(
         Err(error @ StoreError::WriterAdmission { .. }) => return Err(error),
         // Saying so only in a warning would leave a damaged file unnoticed.
         Err(error) if error.is_corruption() => return Err(error),
-        Err(error) => report.warnings.push(format!(
-            "connections not checked against entity changes: {error}"
+        Err(error) => report.warnings.push(error.diagnostic().context_slot(
+            "journal.cli.journal.indexer.scan.connections.failed",
+            "error",
+            [],
         )),
     }
 
@@ -1805,9 +1843,11 @@ fn reconcile_edges_handing_off(
                     path: Some(rel.clone()),
                     mtime: Some(*mtime),
                 });
-                report
-                    .warnings
-                    .push(format!("Skipping edge extraction for {rel}: {error}"));
+                report.warnings.push(error.diagnostic().context_slot(
+                    "journal.cli.journal.indexer.scan.edge.skip",
+                    "error",
+                    [("rel", &rel)],
+                ));
                 continue;
             }
         };
@@ -1848,9 +1888,11 @@ fn reconcile_edges_handing_off(
             }
             Err(error) => {
                 tx.rollback()?;
-                report
-                    .warnings
-                    .push(format!("calendar invites not linked yet: {error}"));
+                report.warnings.push(error.diagnostic().context_slot(
+                    "journal.cli.journal.indexer.scan.calendar.invites",
+                    "error",
+                    [],
+                ));
             }
         }
     }
@@ -2224,7 +2266,11 @@ fn process_edge_file(
             return Ok(EdgeProcessResult {
                 drops,
                 failed: true,
-                warnings: vec![format!("Skipping edge extraction for {rel}: {error}")],
+                warnings: vec![crate::cli_detail::edge_message(&error).context_slot(
+                    "journal.cli.journal.indexer.scan.edge.skip",
+                    "error",
+                    [("rel", &rel)],
+                )],
                 ..EdgeProcessResult::default()
             });
         }
@@ -2232,8 +2278,9 @@ fn process_edge_file(
     let (rows, warnings, invalid_segment) = match &extracted.invalid_segment {
         Some(segment) => (
             &[][..],
-            vec![format!(
-                "Skipping edge extraction for {rel}: invalid segment key {segment}"
+            vec![solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.scan.invalid.segment",
+                [("rel", &(rel)), ("segment", &(segment))],
             )],
             true,
         ),
@@ -2249,7 +2296,11 @@ fn process_edge_file(
                 return Ok(EdgeProcessResult {
                     drops,
                     failed: true,
-                    warnings: vec![format!("Skipping edge extraction for {rel}: {error}")],
+                    warnings: vec![error.diagnostic().context_slot(
+                        "journal.cli.journal.indexer.scan.edge.skip",
+                        "error",
+                        [("rel", &rel)],
+                    )],
                     ..EdgeProcessResult::default()
                 });
             }
@@ -2439,8 +2490,8 @@ pub(crate) fn load_file_mtimes(conn: &Connection) -> Result<BTreeMap<String, i64
 }
 
 enum SegmentMigrationOutcome {
-    Complete(Vec<String>),
-    Blocked(String),
+    Complete(Vec<solstone_core_cli_copy::MessageDetail>),
+    Blocked(solstone_core_cli_copy::MessageDetail),
 }
 
 /// Retire legacy aggregate rows without ever making a live segment invisible.
@@ -2450,7 +2501,7 @@ fn migrate_segment_aggregates(
     conn: &mut Connection,
     journal: &Path,
     checkpoint: &dyn Fn() -> Result<(), String>,
-) -> Result<Vec<String>, StoreError> {
+) -> Result<Vec<solstone_core_cli_copy::MessageDetail>, StoreError> {
     let mut state = read_segment_aggregate_migration(conn)?.unwrap_or_else(|| {
         crate::db::SegmentAggregateMigration {
             cursor: String::new(),
@@ -2543,9 +2594,13 @@ fn migrate_segment_aggregate(
         Ok(files) => files,
         Err(error) => {
             tx.rollback()?;
-            return Ok(SegmentMigrationOutcome::Blocked(format!(
-                "segment aggregate migration retained {rel_segment}: talent discovery failed: {error}"
-            )));
+            return Ok(SegmentMigrationOutcome::Blocked(
+                StoreError::Discovery(error).diagnostic().context_slot(
+                    "journal.cli.journal.indexer.migration.discovery",
+                    "error",
+                    [("rel_segment", &rel_segment)],
+                ),
+            ));
         }
     };
     let mut warnings = Vec::new();
@@ -2555,9 +2610,16 @@ fn migrate_segment_aggregate(
             Ok(mtime) => mtime,
             Err(error) => {
                 tx.rollback()?;
-                return Ok(SegmentMigrationOutcome::Blocked(format!(
-                    "segment aggregate migration retained {rel_segment}: mtime read failed for {rel}: {error}"
-                )));
+                return Ok(SegmentMigrationOutcome::Blocked(
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.journal.indexer.migration.mtime",
+                        [
+                            ("rel_segment", &(rel_segment)),
+                            ("rel", &(rel)),
+                            ("error", &(error)),
+                        ],
+                    ),
+                ));
             }
         };
         let family = match classify(&rel) {
@@ -2565,9 +2627,12 @@ fn migrate_segment_aggregate(
             ContentResolution::Indexed(Family::ScreenText) => Family::ScreenText,
             _ => {
                 tx.rollback()?;
-                return Ok(SegmentMigrationOutcome::Blocked(format!(
-                    "segment aggregate migration retained {rel_segment}: unclassified talent Markdown {rel}"
-                )));
+                return Ok(SegmentMigrationOutcome::Blocked(
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.journal.indexer.migration.unclassified",
+                        [("rel_segment", &(rel_segment)), ("rel", &(rel))],
+                    ),
+                ));
             }
         };
         match ensure_file_current(
@@ -2584,9 +2649,13 @@ fn migrate_segment_aggregate(
             Ok(mut outcome) => warnings.append(&mut outcome.warnings),
             Err(StoreError::Io(error)) => {
                 tx.rollback()?;
-                return Ok(SegmentMigrationOutcome::Blocked(format!(
-                    "segment aggregate migration retained {rel}: {error}"
-                )));
+                return Ok(SegmentMigrationOutcome::Blocked(
+                    crate::cli_detail::io_message(&error).context_slot(
+                        "journal.cli.journal.indexer.migration.retained",
+                        "error",
+                        [("rel", &rel)],
+                    ),
+                ));
             }
             Err(error) => return Err(error),
         }
@@ -2597,9 +2666,12 @@ fn migrate_segment_aggregate(
             .optional()?;
         if stored_mtime != Some(mtime) {
             tx.rollback()?;
-            return Ok(SegmentMigrationOutcome::Blocked(format!(
-                "segment aggregate migration retained {rel_segment}: child file is not current: {rel}"
-            )));
+            return Ok(SegmentMigrationOutcome::Blocked(
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.migration.child",
+                    [("rel_segment", &(rel_segment)), ("rel", &(rel))],
+                ),
+            ));
         }
     }
     let segment_rowids = {
@@ -2962,11 +3034,11 @@ const UNDECIDED_MTIME: i64 = -1;
 #[derive(Debug, Default)]
 struct FileOutcome {
     display_stamp: Option<String>,
-    warnings: Vec<String>,
+    warnings: Vec<solstone_core_cli_copy::MessageDetail>,
     /// The file was left not current, with no rows or only the rows a hide
     /// could decide, because what hides part of it couldn't be read. Says what
     /// couldn't be read.
-    undecidable: Option<String>,
+    undecidable: Option<solstone_core_cli_copy::MessageDetail>,
 }
 
 fn index_file(
@@ -2977,23 +3049,39 @@ fn index_file(
     family: Family,
     memory_original: Option<&ReadyMemoryOriginal>,
     hides: &mut HideCache,
-) -> Result<FileOutcome, String> {
+) -> Result<FileOutcome, solstone_core_cli_copy::MessageDetail> {
     let hide = hides.decide(journal, rel);
     if let FileHide::Undecidable(cause) = hide {
         return Ok(FileOutcome {
             warnings: Vec::new(),
             display_stamp: None,
-            undecidable: Some(format!("{rel} is left out of search for now: {cause}")),
+            undecidable: Some(cause.context_slot(
+                "journal.cli.journal.indexer.files.hidden",
+                "cause",
+                [("rel", &rel)],
+            )),
         });
     }
     let text = if family == Family::AgentMemory {
-        let original = memory_original
-            .ok_or_else(|| format!("validated memory original missing for {rel}"))?;
-        String::from_utf8(original.bytes.clone())
-            .map_err(|error| format!("memory original is not UTF-8 for {rel}: {error}"))?
+        let original = memory_original.ok_or_else(|| {
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.files.memory.missing",
+                [("rel", &(rel))],
+            )
+        })?;
+        String::from_utf8(original.bytes.clone()).map_err(|error| {
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.files.memory.utf",
+                [("rel", &(rel)), ("error", &(error))],
+            )
+        })?
     } else {
-        fs::read_to_string(path)
-            .map_err(|error| format!("content read failed for {rel}: {error}"))?
+        fs::read_to_string(path).map_err(|error| {
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.files.content.read",
+                [("rel", &(rel)), ("error", &(error))],
+            )
+        })?
     };
     let activity_digest = (family == Family::Activity).then(|| digest_bytes(text.as_bytes()));
     let produced = produce_chunks(family, rel, &text);
@@ -3006,8 +3094,13 @@ fn index_file(
         .to_lowercase();
     let stream_lookup = extract_stream(journal, rel);
     let stream = stream_lookup.stream;
-    let declarations = FacetDeclarationSet::from_journal(journal)
-        .map_err(|error| format!("facet declaration scan failed for {rel}: {error}"))?;
+    let declarations = FacetDeclarationSet::from_journal(journal).map_err(|error| {
+        error.diagnostic().context_slot(
+            "journal.cli.journal.indexer.files.facet",
+            "error",
+            [("rel", &rel)],
+        )
+    })?;
     let classification = classify_source(journal, rel, stream.as_deref(), &declarations);
     let bucket = time_bucket(rel);
     let mut warnings = produced.warnings;
@@ -3032,26 +3125,49 @@ fn index_file(
                 bucket,
             ],
         )
-        .map_err(|error| format!("chunk insert failed for {rel}: {error}"))?;
+        .map_err(|error| solstone_core_cli_copy::MessageDetail::message("journal.cli.journal.indexer.files.chunk.insert", [("rel", &(rel)), ("error", &(error))]))?;
         let rowid = conn.last_insert_rowid();
-        record_activity_membership(conn, rowid, family == Family::Activity)
-            .map_err(|error| format!("activity membership insert failed for {rel}: {error}"))?;
+        record_activity_membership(conn, rowid, family == Family::Activity).map_err(|error| {
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.files.activity.membership.insert",
+                [("rel", &(rel)), ("error", &(error))],
+            )
+        })?;
         if let Some(digest) = activity_digest {
             record_activity_provenance(conn, rowid, &digest, hidden_flag(chunk.source.as_ref()))
-                .map_err(|error| format!("activity provenance insert failed for {rel}: {error}"))?;
+                .map_err(|error| {
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.journal.indexer.files.activity.provenance.insert",
+                        [("rel", &(rel)), ("error", &(error))],
+                    )
+                })?;
         }
         if let Some(offset_ms) = chunk.group_offset_ms {
             conn.execute(
                 "INSERT INTO chunk_group_offset(path, idx, offset_ms) VALUES (?, ?, ?)",
                 params![rel, idx as i64, offset_ms],
             )
-            .map_err(|error| format!("chunk group offset insert failed for {rel}: {error}"))?;
+            .map_err(|error| {
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.files.chunk.group.offset.insert",
+                    [("rel", &(rel)), ("error", &(error))],
+                )
+            })?;
         }
-        record_chunk_source(conn, Some(rowid), Some(rel), stream.as_deref())
-            .map_err(|error| format!("chunk source mapping failed for {rel}: {error}"))?;
+        record_chunk_source(conn, Some(rowid), Some(rel), stream.as_deref()).map_err(|error| {
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.files.chunk.source.mapping",
+                [("rel", &(rel)), ("error", &(error))],
+            )
+        })?;
     }
-    replace_chunk_classification(conn, &classification)
-        .map_err(|error| format!("classification insert failed for {rel}: {error}"))?;
+    replace_chunk_classification(conn, &classification).map_err(|error| {
+        error.diagnostic().context_slot(
+            "journal.cli.journal.indexer.files.classification.insert",
+            "error",
+            [("rel", &rel)],
+        )
+    })?;
     if family == Family::ScreenText {
         let digest = digest_bytes(text.as_bytes());
         let hash_hex = hex_encode(&digest);
@@ -3064,13 +3180,26 @@ fn index_file(
             "REPLACE INTO screen_text_source(path, sha256, bytes, indexed_ms) VALUES (?, ?, ?, ?)",
             params![rel, hash_hex, byte_len, now_ms],
         )
-        .map_err(|error| format!("screen text source insert failed for {rel}: {error}"))?;
+        .map_err(|error| {
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.files.screen.text.source.insert",
+                [("rel", &(rel)), ("error", &(error))],
+            )
+        })?;
     }
     if let Some(original) = memory_original {
-        let origin_json = serde_json::to_string(&original.origin)
-            .map_err(|error| format!("memory origin serialization failed for {rel}: {error}"))?;
-        let chain_json = serde_json::to_string(&original.ready.chain)
-            .map_err(|error| format!("memory chain serialization failed for {rel}: {error}"))?;
+        let origin_json = serde_json::to_string(&original.origin).map_err(|error| {
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.files.memory.origin.serialization",
+                [("rel", &(rel)), ("error", &(error))],
+            )
+        })?;
+        let chain_json = serde_json::to_string(&original.ready.chain).map_err(|error| {
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.files.memory.chain.serialization",
+                [("rel", &(rel)), ("error", &(error))],
+            )
+        })?;
         conn.execute(
             "INSERT INTO memory_originals(path, day, stream, segment, source_key, bytes, origin_json, digest, byte_count, created_at, creation_label, chain_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
@@ -3088,17 +3217,20 @@ fn index_file(
                 chain_json,
             ],
         )
-        .map_err(|error| format!("memory original insert failed for {rel}: {error}"))?;
+        .map_err(|error| solstone_core_cli_copy::MessageDetail::message("journal.cli.journal.indexer.files.memory.original.insert", [("rel", &(rel)), ("error", &(error))]))?;
     }
     // Kept rows stay; a row that couldn't be decided is tried again on the
     // next scan. A file with no such row is current.
     let held_back = produced.chunks.iter().any(|chunk| {
         solstone_core_format::content::indexed(family, chunk) && !hide.keeps(family, chunk)
     });
-    let undecidable = hide
-        .retry()
-        .filter(|_| held_back)
-        .map(|cause| format!("{rel} is partly left out of search for now: {cause}"));
+    let undecidable = hide.retry().filter(|_| held_back).map(|cause| {
+        cause.clone().context_slot(
+            "journal.cli.journal.indexer.files.partial",
+            "cause",
+            [("rel", &rel)],
+        )
+    });
     Ok(FileOutcome {
         display_stamp: solstone_core_format::stored_markdown::index_stamp(journal, path, &text),
         warnings,
@@ -3114,13 +3246,25 @@ fn index_calendar_source(
     rel: &str,
     path: &Path,
     mut identities: BTreeSet<Identity>,
-) -> Result<(Vec<String>, Option<Relisted>), String> {
-    let text = fs::read_to_string(path)
-        .map_err(|error| format!("content read failed for {rel}: {error}"))?;
+) -> Result<
+    (Vec<solstone_core_cli_copy::MessageDetail>, Option<Relisted>),
+    solstone_core_cli_copy::MessageDetail,
+> {
+    let text = fs::read_to_string(path).map_err(|error| {
+        solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.files.content.read",
+            [("rel", &(rel)), ("error", &(error))],
+        )
+    })?;
     let metadata = extract_path_metadata(rel);
     let stream_lookup = extract_stream(journal, rel);
-    let declarations = FacetDeclarationSet::from_journal(journal)
-        .map_err(|error| format!("facet declaration scan failed for {rel}: {error}"))?;
+    let declarations = FacetDeclarationSet::from_journal(journal).map_err(|error| {
+        error.diagnostic().context_slot(
+            "journal.cli.journal.indexer.files.facet",
+            "error",
+            [("rel", &rel)],
+        )
+    })?;
     let classification =
         classify_source(journal, rel, stream_lookup.stream.as_deref(), &declarations);
     let (indexed, mut warnings) = index_calendar_file(
@@ -3132,13 +3276,29 @@ fn index_calendar_source(
         stream_lookup.stream.as_deref(),
         &time_bucket(rel),
     )
-    .map_err(|error| format!("calendar note insert failed for {rel}: {error}"))?;
+    .map_err(|error| {
+        error.diagnostic().context_slot(
+            "journal.cli.journal.indexer.files.calendar.note.insert",
+            "error",
+            [("rel", &rel)],
+        )
+    })?;
     warnings.extend(stream_lookup.warning);
     identities.extend(indexed);
-    replace_chunk_classification(conn, &classification)
-        .map_err(|error| format!("classification insert failed for {rel}: {error}"))?;
-    let mut relisted = relist(conn, journal, &identities)
-        .map_err(|error| format!("calendar listing failed for {rel}: {error}"))?;
+    replace_chunk_classification(conn, &classification).map_err(|error| {
+        error.diagnostic().context_slot(
+            "journal.cli.journal.indexer.files.classification.insert",
+            "error",
+            [("rel", &rel)],
+        )
+    })?;
+    let mut relisted = relist(conn, journal, &identities).map_err(|error| {
+        error.diagnostic().context_slot(
+            "journal.cli.journal.indexer.files.calendar.listing",
+            "error",
+            [("rel", &rel)],
+        )
+    })?;
     warnings.append(&mut relisted.warnings);
     Ok((warnings, Some(relisted)))
 }
@@ -3215,15 +3375,36 @@ pub(crate) fn memory_file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
     Ok(newest.unwrap_or_default())
 }
 
-fn original_read_label(read: &OriginalRead) -> String {
+fn original_read_label(read: &OriginalRead) -> solstone_core_cli_copy::MessageDetail {
     match read {
-        OriginalRead::Absent => "absent".into(),
-        OriginalRead::Unready => "unready".into(),
-        OriginalRead::Deleted => "deleted".into(),
-        OriginalRead::Staged => "staged".into(),
-        OriginalRead::Corrupt => "corrupt".into(),
-        OriginalRead::Unavailable { detail } => format!("unavailable ({detail})"),
-        OriginalRead::Ready { .. } => "ready".into(),
+        OriginalRead::Absent => solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.original.state.absent",
+            [],
+        ),
+        OriginalRead::Unready => solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.original.state.unready",
+            [],
+        ),
+        OriginalRead::Deleted => solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.original.state.deleted",
+            [],
+        ),
+        OriginalRead::Staged => solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.original.state.staged",
+            [],
+        ),
+        OriginalRead::Corrupt => solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.original.state.corrupt",
+            [],
+        ),
+        OriginalRead::Unavailable { detail } => solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.original.state.unavailable",
+            [("detail", &(detail))],
+        ),
+        OriginalRead::Ready { .. } => solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.original.state.ready",
+            [],
+        ),
     }
 }
 
@@ -3977,7 +4158,9 @@ mod tests {
         );
         assert_eq!(report.warnings.len(), 1);
         assert!(
-            report.warnings[0].starts_with("content read failed for"),
+            report.warnings[0]
+                .to_string()
+                .starts_with("content read failed for"),
             "unexpected warning: {}",
             report.warnings[0]
         );
@@ -4107,7 +4290,7 @@ mod tests {
             report
                 .warnings
                 .iter()
-                .any(|warning| warning.starts_with("light scan retained")),
+                .any(|warning| warning.to_string().starts_with("light scan retained")),
             "expected a retained-day warning: {:?}",
             report.warnings
         );
@@ -4146,7 +4329,7 @@ mod tests {
             report
                 .warnings
                 .iter()
-                .any(|warning| warning.starts_with("stream marker JSON failed")),
+                .any(|warning| warning.to_string().starts_with("stream marker JSON failed")),
             "expected a stream marker warning: {:?}",
             report.warnings
         );
@@ -4322,7 +4505,7 @@ mod tests {
             report
                 .warnings
                 .iter()
-                .any(|warning| { warning == expected_warning })
+                .any(|warning| { warning.to_string() == expected_warning })
         );
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(count(&conn, "SELECT count(*) FROM edges"), 0);
@@ -4344,7 +4527,7 @@ mod tests {
             retry
                 .warnings
                 .iter()
-                .any(|warning| warning == expected_warning)
+                .any(|warning| warning.to_string() == expected_warning)
         );
         let conn = Connection::open(db_path(&root)).expect("open db after retry");
         assert_eq!(count(&conn, "SELECT count(*) FROM edges"), 0);
@@ -4462,7 +4645,9 @@ mod tests {
         assert_eq!(report.edge_rows_inserted, 1);
         assert_eq!(report.failed, 1);
         assert!(report.warnings.iter().any(|warning| {
-            warning.starts_with("Skipping edge extraction for facets/work/entities/20260230.jsonl")
+            warning
+                .to_string()
+                .starts_with("Skipping edge extraction for facets/work/entities/20260230.jsonl")
         }));
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(
@@ -4534,8 +4719,10 @@ mod tests {
         assert_eq!(report.edge_rows_inserted, 0);
         assert_eq!(report.failed, 1);
         assert!(report.warnings.iter().any(|warning| {
-            warning.starts_with("Skipping edge extraction for facets/work/entities/20260304.jsonl")
-                && warning.contains("candidate load failed")
+            warning
+                .to_string()
+                .starts_with("Skipping edge extraction for facets/work/entities/20260304.jsonl")
+                && warning.to_string().contains("candidate load failed")
         }));
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(
@@ -4590,9 +4777,14 @@ mod tests {
         let report = scan_journal(&root, true).expect("scan invalid segment");
         assert_eq!(report.edges_indexed, 1);
         assert_eq!(report.edge_rows_inserted, 0);
-        assert!(report.warnings.iter().any(|warning| warning.starts_with(
-            "Skipping edge extraction for facets/999999_300/entities/20260304.jsonl"
-        )));
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.to_string().starts_with(
+                    "Skipping edge extraction for facets/999999_300/entities/20260304.jsonl"
+                ))
+        );
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(count(&conn, "SELECT count(*) FROM edges"), 0);
         assert_eq!(
@@ -4636,14 +4828,18 @@ mod tests {
         assert_eq!(report.skipped, 3);
         assert_eq!(report.failed, 1);
         assert!(report.warnings.iter().any(|warning| {
-            warning.starts_with(
+            warning.to_string().starts_with(
                 "Skipping edge extraction for 20260430/default/999999_300/screen.jsonl",
-            ) && warning.contains("invalid segment key 999999_300")
+            ) && warning
+                .to_string()
+                .contains("invalid segment key 999999_300")
         }));
         assert!(report.warnings.iter().any(|warning| {
-            warning.starts_with(
+            warning.to_string().starts_with(
                 "Skipping edge extraction for 20260430/default/090000_300/talents/documents.json",
-            ) && warning.contains("edge source JSON parse failed")
+            ) && warning
+                .to_string()
+                .contains("edge source JSON parse failed")
         }));
         fs::remove_dir_all(root).expect("cleanup edge rebuild counters root");
     }
@@ -4859,8 +5055,10 @@ mod tests {
         assert_eq!(report.edge_rows_inserted, 1);
         assert_eq!(report.failed, 1);
         assert!(report.warnings.iter().any(|warning| {
-            warning.contains("facets/work/entities/20260304.jsonl")
-                && warning.contains("abort_failed_edge_mtime")
+            warning
+                .to_string()
+                .contains("facets/work/entities/20260304.jsonl")
+                && warning.to_string().contains("abort_failed_edge_mtime")
         }));
         let conn = Connection::open(db_path(&root)).expect("open db after failed edge scan");
         let rows = edge_rows(&conn);
@@ -5200,8 +5398,10 @@ mod tests {
         let report = rebuild_edges(&root).expect("rebuild reports trigger failure");
         assert_eq!(report.failed, 1);
         assert!(report.warnings.iter().any(|warning| {
-            warning.contains("facets/work/entities/20260304.jsonl")
-                && warning.contains("abort_rebuild_edge_insert")
+            warning
+                .to_string()
+                .contains("facets/work/entities/20260304.jsonl")
+                && warning.to_string().contains("abort_rebuild_edge_insert")
         }));
         let conn = Connection::open(db_path(&root)).expect("open db after failed rebuild");
         assert_eq!(
@@ -5257,8 +5457,16 @@ mod tests {
         assert_eq!(report.rows, 0);
         assert!(report.failed >= 1);
         assert_eq!(report.warnings.len(), 1);
-        assert!(report.warnings[0].starts_with("your settings file"));
-        assert!(!report.warnings[0].starts_with("Skipping edge extraction for"));
+        assert!(
+            report.warnings[0]
+                .to_string()
+                .starts_with("your settings file")
+        );
+        assert!(
+            !report.warnings[0]
+                .to_string()
+                .starts_with("Skipping edge extraction for")
+        );
         let conn = Connection::open(db_path(&root)).expect("open index after corrupt rebuild");
         assert_eq!(edge_rows(&conn), before_rows);
         assert_eq!(edge_file_mtime(&conn, rel), before_mtime);
@@ -5285,8 +5493,16 @@ mod tests {
         let report = scan_journal(&root, true).expect("corrupt timezone scan is reported");
         assert_eq!(report.failed, 1);
         assert_eq!(report.warnings.len(), 1);
-        assert!(report.warnings[0].starts_with("your settings file"));
-        assert!(!report.warnings[0].contains("Skipping edge extraction for"));
+        assert!(
+            report.warnings[0]
+                .to_string()
+                .starts_with("your settings file")
+        );
+        assert!(
+            !report.warnings[0]
+                .to_string()
+                .contains("Skipping edge extraction for")
+        );
         fs::remove_dir_all(root).expect("cleanup corrupt scan root");
     }
 
@@ -5481,7 +5697,7 @@ mod tests {
             report
                 .warnings
                 .iter()
-                .any(|warning| warning.contains("Collapsed whitespace"))
+                .any(|warning| warning.to_string().contains("Collapsed whitespace"))
         );
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(chunk_content(&conn, rel), "# Flow\n\nleft right");
@@ -5949,7 +6165,11 @@ mod tests {
         let light = scan_journal(&root, false).expect("light scan");
         assert_eq!(light.edges_removed, 0);
         assert_eq!(
-            light.warnings,
+            light
+                .warnings
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
             vec![
                 "light scan retained 1 stale row(s) for day 20240101: discovery produced no files for that day; rerun with --rescan-full to remove them"
             ]
@@ -6102,7 +6322,11 @@ mod tests {
         let light = scan_journal(&root, false).expect("light scan");
         assert_eq!(light.removed, 0);
         assert_eq!(
-            light.warnings,
+            light
+                .warnings
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
             vec![
                 "light scan retained 1 stale row(s) for day 20260717: discovery produced no files for that day; rerun with --rescan-full to remove them"
             ]
@@ -8392,12 +8616,11 @@ not json
         drop(conn);
 
         let report = scan_journal(&root, false).expect("merge failure remains nonfatal");
-        assert!(
-            report
-                .warnings
-                .iter()
-                .any(|warning| warning.contains("correct and merely uncompacted"))
-        );
+        assert!(report.warnings.iter().any(|warning| {
+            warning
+                .to_string()
+                .contains("correct and merely uncompacted")
+        }));
         let conn = Connection::open(db_path(&root)).expect("open after merge failure");
         assert_eq!(
             chunk_content(&conn, "20260717/talents/flow.md"),
@@ -9104,7 +9327,7 @@ not json
             failed
                 .warnings
                 .iter()
-                .any(|warning| warning.contains("legacy edge write refused"))
+                .any(|warning| warning.to_string().contains("legacy edge write refused"))
         );
         assert_eq!(
             count(
@@ -9292,7 +9515,9 @@ not json
         let warnings = migrate_segment_aggregates(&mut conn, &root, &|| Ok(())).expect("migrate");
 
         assert!(
-            warnings.iter().any(|warning| warning.contains("retained")),
+            warnings
+                .iter()
+                .any(|warning| warning.to_string().contains("retained")),
             "{warnings:?}"
         );
         assert!(

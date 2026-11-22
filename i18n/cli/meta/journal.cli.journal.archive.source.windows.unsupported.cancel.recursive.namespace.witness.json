@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source windows unsupported cancel recursive namespace witness.",
+  "context": "Journal command-line text for archive source windows unsupported cancel recursive namespace witness.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "76e365242454341ed0471c454b425eb11217d6411900e4fba4155a8bfedd1f39",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

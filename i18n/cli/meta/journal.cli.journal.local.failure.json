@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for local failure.",
+  "context": "Journal command-line text for local failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "token",
+      "type": "string"
+    },
+    {
+      "name": "message",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9e275d4046877b32a3bcb908e64b99a1ffac89da1f42c2d211f48d429aa25d1f",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "invocation",
+      "kind": "command",
+      "value": "solstone journal"
+    }
+  ]
+}

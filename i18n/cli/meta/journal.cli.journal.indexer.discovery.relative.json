@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for indexer discovery relative.",
+  "context": "Journal command-line text for indexer discovery relative.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3c3340c01df20ebe483f35ecb25e2eac849056eb6760df4d32e49b3d0377c821",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

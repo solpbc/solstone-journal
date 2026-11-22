@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive source windows query retained entry type member.",
+  "context": "Journal command-line text for archive source windows query retained entry type member.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ceaf94cae65ad6d5a965f553c369d57b43638df4344e6146c4d69896859a32e6",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

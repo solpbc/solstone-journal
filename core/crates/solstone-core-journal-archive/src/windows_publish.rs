@@ -124,6 +124,9 @@ fn create_scratch_file(target: &ArchiveOutputTarget) -> std::io::Result<(PathBuf
     }
     Err(std::io::Error::new(
         std::io::ErrorKind::AlreadyExists,
-        "could not allocate an exclusive archive scratch file",
+        solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.archive.scratch.name",
+            [],
+        ),
     ))
 }

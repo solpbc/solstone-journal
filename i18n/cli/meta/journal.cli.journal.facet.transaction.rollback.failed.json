@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for facet transaction rollback failed.",
+  "context": "Journal command-line text for facet transaction rollback failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "primary",
+      "type": "string"
+    },
+    {
+      "name": "rollback_error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8109d1f334083d9aa5d0f5b1ea3b4a7a4c43396c8880f74a7b2aa824569af227",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

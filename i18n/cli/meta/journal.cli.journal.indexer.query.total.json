@@ -1,0 +1,26 @@
+{
+  "description": "Journal command-line text for indexer query total.",
+  "context": "Journal command-line text for indexer query total.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "total",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "bdd6f5fe8e96fa3f1932f24bfaf23956ff287a3d105f942a489316407b246d14",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "total",
+    "type": "cardinal"
+  }
+}

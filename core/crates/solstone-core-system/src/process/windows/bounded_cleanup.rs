@@ -578,6 +578,30 @@ impl BoundedHelperFailure {
     }
 }
 
+impl From<&BoundedHelperFailure> for solstone_core_cli_copy::MessageDetail {
+    fn from(failure: &BoundedHelperFailure) -> Self {
+        let cause = Self::from(failure.cause());
+        match (failure.cleanup(), failure.blockers()) {
+            (None, []) => cause,
+            (Some(cleanup), []) => cause.context_with(
+                "journal.cli.transcribe.error.windows.cleanup",
+                [("cleanup", &format!("{cleanup:?}"))],
+            ),
+            (None, blockers) => cause.context_with(
+                "journal.cli.transcribe.error.windows.blocked",
+                [("blockers", &format!("{blockers:?}"))],
+            ),
+            (Some(cleanup), blockers) => cause.context_with(
+                "journal.cli.transcribe.error.windows.cleanup.blocked",
+                [
+                    ("cleanup", &format!("{cleanup:?}")),
+                    ("blockers", &format!("{blockers:?}")),
+                ],
+            ),
+        }
+    }
+}
+
 impl fmt::Display for BoundedHelperFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.cause)?;

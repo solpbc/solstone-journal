@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive encode write.",
+  "context": "Journal command-line text for archive encode write.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6c6a8e65ade0a172d900ef7c2c6d74b91e1fe089d94c95dcf0c12ac067f7d9c5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

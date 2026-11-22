@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive import hidden target.",
+  "context": "Journal command-line text for archive import hidden target.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "88d1b3ae10551270cb1f3bf4b9bd5635daa065a3046d5b4b2c968ea9b532f019",
+  "max_length": 122,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

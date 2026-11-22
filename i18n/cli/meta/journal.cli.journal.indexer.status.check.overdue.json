@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer status check overdue.",
+  "context": "Journal command-line text for indexer status check overdue.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc094d7c44f51dfd4396535c7d3ce68a7270fd2f5a08b817040fd3bb454232ff",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

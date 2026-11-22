@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer original retained.",
+  "context": "Journal command-line text for indexer original retained.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "state",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9db182c26f75661a58dc03393221251dca5e9d28fde7f00ddd104e664634fb4b",
+  "max_length": 116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

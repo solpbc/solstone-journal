@@ -60,18 +60,23 @@ const JOURNAL_FAMILY_ROOTS: &[&str] = &["chronicle", "entities", "facets", "impo
 const ZIP_LOCAL: [u8; 4] = [b'P', b'K', 3, 4];
 const ZIP_EOCD: [u8; 4] = [b'P', b'K', 5, 6];
 const ZIP_SPAN: [u8; 4] = [b'P', b'K', 7, 8];
+use solstone_core_cli_copy::MessageDetail;
+
 const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
 /// Fuzzy name-match floor for an imported entity, on the matcher's 0-100
 /// similarity scale: the same floor every other entity resolution uses.
 const ENTITY_FUZZY_THRESHOLD: f64 = 90.0;
 /// Why an archive merge stops when this journal's hidden body days can't be
 /// read.
+#[cfg(test)]
 const TARGET_HIDDEN_DAYS_UNREADABLE: &str =
     "this journal can't read which days of body data you hid, so this archive can't be imported";
 /// Why an archive merge stops when the archive's hidden body days can't be
 /// read.
+#[cfg(test)]
 const ARCHIVE_HIDDEN_DAYS_UNREADABLE: &str =
     "this archive's hidden days of body data can't be read, so this archive can't be imported";
+#[cfg(test)]
 const LEGACY_TRANSFER_ARCHIVE: &str = "a .tgz or .tar.gz archive isn't supported. if it's an old transfer archive, export that day again as a .zip from the journal it came from and merge that, or merge this file into a new, empty journal on an earlier 2.x release, export that journal as a .zip, and merge that .zip into your journal";
 
 const GIB: u64 = 1024 * 1024 * 1024;
@@ -82,24 +87,33 @@ const DEFAULT_SPACE_RESERVE: u64 = GIB;
 /// Returns bytes available to the current account on the volume containing `path`,
 /// as the system reports it. `path` must exist: this asks that path's volume and
 /// never falls back to a parent.
-#[cfg(unix)]
 pub fn available_bytes(path: &Path) -> Result<u64, String> {
-    let stat = nix::sys::statvfs::statvfs(path).map_err(|error| error.to_string())?;
+    available_bytes_detail(path).map_err(|detail| detail.to_string())
+}
+
+#[cfg(unix)]
+fn available_bytes_detail(path: &Path) -> Result<u64, MessageDetail> {
+    let stat =
+        nix::sys::statvfs::statvfs(path).map_err(|error| MessageDetail::from(error.to_string()))?;
     // Cast explicitly: `statvfs`'s field widths differ by platform (u64 on Linux,
     // u32 on Darwin), so multiplying them unconverted only compiles on Linux.
     (stat.blocks_available() as u64)
         .checked_mul(stat.fragment_size() as u64)
-        .ok_or_else(|| "available disk space overflow".to_owned())
+        .ok_or_else(|| MessageDetail::message("journal.cli.journal.archive.space.overflow", []))
 }
 
 #[cfg(windows)]
-pub fn available_bytes(path: &Path) -> Result<u64, String> {
-    solstone_core_journal_io::windows_available_disk_bytes(path).map_err(|error| error.to_string())
+fn available_bytes_detail(path: &Path) -> Result<u64, MessageDetail> {
+    solstone_core_journal_io::windows_available_disk_bytes(path)
+        .map_err(|error| MessageDetail::from(error.to_string()))
 }
 
 #[cfg(not(any(unix, windows)))]
-pub fn available_bytes(_path: &Path) -> Result<u64, String> {
-    Err("disk-space inspection is unsupported on this platform".to_owned())
+fn available_bytes_detail(_path: &Path) -> Result<u64, MessageDetail> {
+    Err(MessageDetail::message(
+        "journal.cli.journal.archive.space.platform",
+        [],
+    ))
 }
 
 /// A request sink for the one full reindex requested after a completed merge.
@@ -397,12 +411,12 @@ fn plan_zip_archive(archive_path: &Path) -> Result<(ArchivePlan, bool), ImportSo
         },
         _ => ImportSourcesError::ArchiveInvalid {
             path: archive_path.to_path_buf(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         },
     })?;
     let archive = ZipArchive::new(file).map_err(|error| ImportSourcesError::ArchiveInvalid {
         path: archive_path.to_path_buf(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })?;
     let (mut archive, proved_names) = crate::zip_names::prove_open_zip(archive)
         .map_err(|failure| crate::zip_names::archive_invalid(archive_path, failure))?;
@@ -415,7 +429,7 @@ fn plan_zip_archive(archive_path: &Path) -> Result<(ArchivePlan, bool), ImportSo
                 .by_index(index)
                 .map_err(|error| ImportSourcesError::ArchiveInvalid {
                     path: archive_path.to_path_buf(),
-                    detail: error.to_string(),
+                    detail: archive_detail(&error),
                 })?;
         let name = proved_name.replace('\\', "/");
         let is_dir = entry.is_dir() || name.ends_with('/');
@@ -532,7 +546,7 @@ fn require_zip_archive(path: &Path) -> Result<(), ImportSourcesError> {
         },
         _ => ImportSourcesError::ArchiveInvalid {
             path: path.to_path_buf(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         },
     })?;
     let mut magic = [0_u8; 4];
@@ -540,12 +554,12 @@ fn require_zip_archive(path: &Path) -> Result<(), ImportSourcesError> {
         .read(&mut magic)
         .map_err(|error| ImportSourcesError::ArchiveInvalid {
             path: path.to_path_buf(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         })?;
     if read >= 2 && magic[..2] == GZIP_MAGIC {
         return Err(ImportSourcesError::ArchiveInvalid {
             path: path.to_path_buf(),
-            detail: LEGACY_TRANSFER_ARCHIVE.to_owned(),
+            detail: MessageDetail::message("journal.cli.journal.archive.import.legacy", []),
         });
     }
     if read >= 4 && (magic == ZIP_LOCAL || magic == ZIP_EOCD || magic == ZIP_SPAN) {
@@ -553,7 +567,7 @@ fn require_zip_archive(path: &Path) -> Result<(), ImportSourcesError> {
     }
     Err(ImportSourcesError::ArchiveInvalid {
         path: path.to_path_buf(),
-        detail: "unrecognized archive magic".to_owned(),
+        detail: MessageDetail::message("journal.cli.journal.archive.import.magic", []),
     })
 }
 
@@ -643,7 +657,7 @@ pub fn preview_size(
     require_zip_archive(archive)?;
     let scratch = tempfile::tempdir().map_err(|error| ImportSourcesError::StagingWrite {
         path: std::env::temp_dir(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })?;
     let options = ArchiveMergeOptions {
         working_root: scratch.path().to_path_buf(),
@@ -687,7 +701,10 @@ pub fn preview_size(
             _ => {
                 return Err(ImportSourcesError::SegmentMerge {
                     path: target.join(relative),
-                    detail: "invalid planned recording coordinate".to_owned(),
+                    detail: MessageDetail::message(
+                        "journal.cli.journal.archive.import.coordinate",
+                        [],
+                    ),
                 });
             }
         };
@@ -722,14 +739,14 @@ pub fn merge_journal_archive(
             sidecar_path: Box::new(sidecar_path),
             owner_metadata_path: Box::new(owner_path.clone()),
             owner: read_owner_metadata(&owner_path),
-            remedy: format!(
-                "wait for the holder or inspect/remove only verified-stale owner metadata at {}",
-                owner_path.display()
+            remedy: MessageDetail::message(
+                "journal.cli.journal.archive.import.owner",
+                [("path", &(owner_path.display()))],
             ),
         },
         LockError::Io { .. } => ImportSourcesError::LockFailed {
             path: protected.clone(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         },
     })?;
     write_owner_metadata(&owner_path)?;
@@ -739,7 +756,7 @@ pub fn merge_journal_archive(
         let _ = fs::remove_file(&owner_path);
         return Err(ImportSourcesError::ImportMerge {
             path: target_journal_root.join("imports"),
-            detail,
+            detail: detail.into(),
         });
     }
 
@@ -762,7 +779,10 @@ pub fn merge_journal_archive(
     } else {
         fs::remove_dir_all(&extraction_dir).and_then(|()| {
             if extraction_dir.exists() {
-                Err(io::Error::other("directory remains"))
+                Err(io::Error::other(MessageDetail::message(
+                    "journal.cli.journal.archive.import.directory.remains",
+                    [],
+                )))
             } else {
                 Ok(())
             }
@@ -771,7 +791,10 @@ pub fn merge_journal_archive(
     #[cfg(not(test))]
     let extraction_cleanup = fs::remove_dir_all(&extraction_dir).and_then(|()| {
         if extraction_dir.exists() {
-            Err(io::Error::other("directory remains"))
+            Err(io::Error::other(MessageDetail::message(
+                "journal.cli.journal.archive.import.directory.remains",
+                [],
+            )))
         } else {
             Ok(())
         }
@@ -782,7 +805,7 @@ pub fn merge_journal_archive(
         (Err(error), _) => Err(error),
         (Ok(_), Err(error)) => Err(ImportSourcesError::ExtractionCleanupFailed {
             extraction_dir,
-            detail: error.to_string(),
+            detail: archive_detail(&error),
             mutation: MergeMutationState::MayHaveMutated,
         }),
     }
@@ -804,7 +827,7 @@ fn validate_archive(
         },
         _ => ImportSourcesError::ArchiveInvalid {
             path: path.to_path_buf(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         },
     })?;
     if metadata.len() > options.max_archive_bytes {
@@ -823,11 +846,11 @@ fn validate_zip_archive(
 ) -> Result<ValidatedArchive, ImportSourcesError> {
     let file = File::open(path).map_err(|error| ImportSourcesError::ArchiveInvalid {
         path: path.to_path_buf(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })?;
     let archive = ZipArchive::new(file).map_err(|error| ImportSourcesError::ArchiveInvalid {
         path: path.to_path_buf(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })?;
     let (mut archive, proved_names) = crate::zip_names::prove_open_zip(archive)
         .map_err(|failure| crate::zip_names::archive_invalid(path, failure))?;
@@ -837,7 +860,7 @@ fn validate_zip_archive(
         if !solstone_core_import::work_continues() {
             return Err(ImportSourcesError::ArchiveInvalid {
                 path: path.to_path_buf(),
-                detail: "import stopped".to_owned(),
+                detail: MessageDetail::message("journal.cli.journal.archive.import.stopped", []),
             });
         }
         let entry =
@@ -845,7 +868,7 @@ fn validate_zip_archive(
                 .by_index(index)
                 .map_err(|error| ImportSourcesError::ArchiveInvalid {
                     path: path.to_path_buf(),
-                    detail: error.to_string(),
+                    detail: archive_detail(&error),
                 })?;
         validate_entry(
             name,
@@ -909,14 +932,14 @@ fn validate_entry(
         return Err(ImportSourcesError::ArchiveUnsafeEntry {
             phase,
             entry: name.to_owned(),
-            reason: "absolute or traversal path".to_owned(),
+            reason: MessageDetail::message("journal.cli.journal.archive.import.traversal", []),
         });
     }
     if unix_mode.is_some_and(|mode| mode & 0o170000 == 0o120000) {
         return Err(ImportSourcesError::ArchiveUnsafeEntry {
             phase,
             entry: name.to_owned(),
-            reason: "symbolic link".to_owned(),
+            reason: MessageDetail::message("journal.cli.journal.archive.import.symlink", []),
         });
     }
     Ok(())
@@ -937,7 +960,7 @@ fn archive_root(candidates: &BTreeSet<std::ffi::OsString>) -> Result<PathBuf, Im
     }
     Err(ImportSourcesError::ArchiveInvalid {
         path: PathBuf::new(),
-        detail: "archive has no unambiguous journal root".to_owned(),
+        detail: MessageDetail::message("journal.cli.journal.archive.import.unambiguous", []),
     })
 }
 
@@ -966,7 +989,7 @@ fn extract_zip_archive(
     fs::create_dir_all(run_dir).map_err(|error| ImportSourcesError::ExtractionFailed {
         archive: path.to_path_buf(),
         extraction_dir: run_dir.to_path_buf(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })?;
     #[cfg(test)]
     if EXTRACT_CLEANUP_FAIL.with(|cell| cell.get()) {
@@ -976,13 +999,13 @@ fn extract_zip_archive(
             ImportSourcesError::ExtractionFailed {
                 archive: path.to_path_buf(),
                 extraction_dir: run_dir.to_path_buf(),
-                detail: "injected extract failure".to_owned(),
+                detail: "injected extract failure".to_owned().into(),
             },
         );
     }
     let required = expanded_size.saturating_add(options.free_space_reserve_bytes);
     let available =
-        available_bytes(run_dir).map_err(|detail| ImportSourcesError::ExtractionFailed {
+        available_bytes_detail(run_dir).map_err(|detail| ImportSourcesError::ExtractionFailed {
             archive: path.to_path_buf(),
             extraction_dir: run_dir.to_path_buf(),
             detail,
@@ -1007,7 +1030,7 @@ fn extract_zip_archive(
                 ImportSourcesError::ExtractionFailed {
                     archive: path.to_path_buf(),
                     extraction_dir: run_dir.to_path_buf(),
-                    detail: error.to_string(),
+                    detail: archive_detail(&error),
                 },
             );
         }
@@ -1021,7 +1044,7 @@ fn extract_zip_archive(
                 ImportSourcesError::ExtractionFailed {
                     archive: path.to_path_buf(),
                     extraction_dir: run_dir.to_path_buf(),
-                    detail: error.to_string(),
+                    detail: archive_detail(&error),
                 },
             );
         }
@@ -1045,7 +1068,10 @@ fn extract_zip_archive(
                 ImportSourcesError::ExtractionFailed {
                     archive: path.to_path_buf(),
                     extraction_dir: run_dir.to_path_buf(),
-                    detail: "import stopped".to_owned(),
+                    detail: MessageDetail::message(
+                        "journal.cli.journal.archive.import.stopped",
+                        [],
+                    ),
                 },
             );
         }
@@ -1058,7 +1084,7 @@ fn extract_zip_archive(
                     ImportSourcesError::ExtractionFailed {
                         archive: path.to_path_buf(),
                         extraction_dir: run_dir.to_path_buf(),
-                        detail: error.to_string(),
+                        detail: archive_detail(&error),
                     },
                 );
             }
@@ -1082,7 +1108,7 @@ fn extract_zip_archive(
                     ImportSourcesError::ExtractionFailed {
                         archive: path.to_path_buf(),
                         extraction_dir: run_dir.to_path_buf(),
-                        detail: error.to_string(),
+                        detail: archive_detail(&error),
                     },
                 );
             };
@@ -1097,7 +1123,7 @@ fn extract_zip_archive(
                 ImportSourcesError::ExtractionFailed {
                     archive: path.to_path_buf(),
                     extraction_dir: run_dir.to_path_buf(),
-                    detail: error.to_string(),
+                    detail: archive_detail(&error),
                 },
             );
         }
@@ -1110,7 +1136,7 @@ fn extract_zip_archive(
                     ImportSourcesError::ExtractionFailed {
                         archive: path.to_path_buf(),
                         extraction_dir: run_dir.to_path_buf(),
-                        detail: error.to_string(),
+                        detail: archive_detail(&error),
                     },
                 );
             }
@@ -1126,7 +1152,7 @@ fn extract_zip_archive(
                         ImportSourcesError::ExtractionFailed {
                             archive: path.to_path_buf(),
                             extraction_dir: run_dir.to_path_buf(),
-                            detail: error.to_string(),
+                            detail: archive_detail(&error),
                         },
                     );
                 }
@@ -1152,7 +1178,7 @@ fn extract_zip_archive(
                     ImportSourcesError::ExtractionFailed {
                         archive: path.to_path_buf(),
                         extraction_dir: run_dir.to_path_buf(),
-                        detail: error.to_string(),
+                        detail: archive_detail(&error),
                     },
                 );
             }
@@ -1173,13 +1199,17 @@ fn cleanup_extraction(
             detail: format!(
                 "injected extraction cleanup failure while handling {}",
                 path.display()
-            ),
+            )
+            .into(),
             mutation: MergeMutationState::NotMutated,
         });
     }
     match fs::remove_dir_all(run_dir).and_then(|()| {
         if run_dir.exists() {
-            Err(io::Error::other("directory remains"))
+            Err(io::Error::other(MessageDetail::message(
+                "journal.cli.journal.archive.import.directory.remains",
+                [],
+            )))
         } else {
             Ok(())
         }
@@ -1187,7 +1217,10 @@ fn cleanup_extraction(
         Ok(()) => Err(original),
         Err(error) => Err(ImportSourcesError::ExtractionCleanupFailed {
             extraction_dir: run_dir.to_path_buf(),
-            detail: format!("while handling {}: {error}", path.display()),
+            detail: archive_detail(&error).context_with(
+                "journal.cli.journal.archive.import.handling",
+                [("path", &path.display())],
+            ),
             mutation: MergeMutationState::NotMutated,
         }),
     }
@@ -1201,7 +1234,7 @@ fn write_owner_metadata(path: &Path) -> Result<(), ImportSourcesError> {
     )
     .map_err(|error| ImportSourcesError::LockFailed {
         path: path.to_path_buf(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })
 }
 
@@ -1243,7 +1276,7 @@ fn merge_extracted(
     fs::create_dir_all(&state.staged_publish).map_err(|error| {
         ImportSourcesError::StagingWrite {
             path: state.staged_publish.clone(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         }
     })?;
     log_skipped_extras(source, &mut state)?;
@@ -1351,15 +1384,17 @@ impl PublishedSegment {
         destination: &Path,
         witnesses: &mut AncestorWitnesses,
     ) -> io::Result<Self> {
-        let refusal =
-            |error: solstone_core_journal_io::JournalRootError| io::Error::other(error.to_string());
+        let refusal = io::Error::other;
         let root = solstone_core_journal_io::JournalRoot::open(staging).map_err(refusal)?;
         let parent = solstone_core_journal_io::JournalRoot::open(
             destination.parent().expect("publication has a parent"),
         )
         .map_err(refusal)?;
         if root.canonical_path().parent() != Some(parent.canonical_path()) {
-            return Err(io::Error::other("archive staging parent changed"));
+            return Err(io::Error::other(MessageDetail::message(
+                "journal.cli.journal.archive.import.stage.changed",
+                [],
+            )));
         }
         let ancestors = root
             .canonical_path()
@@ -1378,15 +1413,17 @@ impl PublishedSegment {
     }
 
     fn revalidate(&self, destination: &Path) -> io::Result<()> {
-        let refusal =
-            |error: solstone_core_journal_io::JournalRootError| io::Error::other(error.to_string());
+        let refusal = io::Error::other;
         self.root.revalidate().map_err(refusal)?;
         for ancestor in &self.ancestors {
             ancestor.revalidate_canonical_binding().map_err(refusal)?;
         }
         let named = solstone_core_journal_io::JournalRoot::open(destination).map_err(refusal)?;
         if named.identity() != self.root.identity() || named.canonical_path() != self.live_path {
-            return Err(io::Error::other("published archive segment changed"));
+            return Err(io::Error::other(MessageDetail::message(
+                "journal.cli.journal.archive.import.segment.changed",
+                [],
+            )));
         }
         named.revalidate_canonical_binding().map_err(refusal)
     }
@@ -1515,7 +1552,7 @@ impl MergeState {
     }
     fn decision(&self, state: &str, domain: &str, detail: Value) -> Result<(), ImportSourcesError> {
         append_jsonl(&self.decision_log_path, &json!({"state": state, "domain": domain, "detail": detail, "at": solstone_core_time::utc_rfc3339(Timestamp::now())}))
-            .map_err(|error| ImportSourcesError::DecisionLogWrite { path: self.decision_log_path.clone(), detail: error.to_string() })
+            .map_err(|error| ImportSourcesError::DecisionLogWrite { path: self.decision_log_path.clone(), detail: archive_detail(&error) })
     }
 }
 
@@ -1531,13 +1568,13 @@ fn stage_segments(
     let mut days = Vec::new();
     for day in sorted_dirs(&chronicle).map_err(|error| ImportSourcesError::SegmentMerge {
         path: chronicle.clone(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })? {
         let day_name = file_name(&day)?;
         let segments = iter_segments(source, PathOrDay::Directory(&day)).map_err(|error| {
             ImportSourcesError::SegmentMerge {
                 path: day.clone(),
-                detail: error.to_string(),
+                detail: archive_detail(&error),
             }
         })?;
         days.push((day.clone(), day_name, segments));
@@ -1547,7 +1584,7 @@ fn stage_segments(
     )
     .map_err(|error| ImportSourcesError::SegmentMerge {
         path: chronicle.clone(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })?;
     // Every source segment's own path, so a colliding segment moved to a new
     // key never takes the key another segment of this archive arrives with.
@@ -1566,7 +1603,7 @@ fn stage_segments(
                     .record_identity()
                     .map_err(|error| ImportSourcesError::SegmentMerge {
                         path: segment.path().to_path_buf(),
-                        detail: error.to_string(),
+                        detail: archive_detail(&error),
                     })?;
             // Disposition (c): destination follows StreamLocation + exact UTF-8
             // basename so Named("_default") stays under `_default/` and same-key
@@ -1629,7 +1666,7 @@ fn stage_segments(
             stage_tree(state, segment.path(), &relative, |error| {
                 ImportSourcesError::SegmentMerge {
                     path: destination.clone(),
-                    detail: error.to_string(),
+                    detail: archive_detail(&error),
                 }
             })?;
             state.decision("committed", "segments", json!({"destination": relative}))?;
@@ -1674,7 +1711,7 @@ fn place_colliding_segment(
         Some(rest) => segment_key_candidates(identity.key)
             .map_err(|error| ImportSourcesError::SegmentMerge {
                 path: segment.path().to_path_buf(),
-                detail: error.to_string(),
+                detail: archive_detail(&error),
             })?
             .into_iter()
             .map(|key| format!("{key}{rest}"))
@@ -1714,7 +1751,7 @@ fn stage_entities(
     let source_entities =
         every_journal_entity(source).map_err(|error| ImportSourcesError::EntityMerge {
             entity_id: "source".to_owned(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         })?;
     // One entity per id, in the folder the owner resolves it to: a name
     // match on a collision loser must never write to the winner's folder.
@@ -1724,12 +1761,12 @@ fn stage_entities(
     let mut target_entities =
         live_journal_entities(target).map_err(|error| ImportSourcesError::EntityMerge {
             entity_id: "target".to_owned(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         })?;
     let target_principal =
         read_journal_principal(target).map_err(|error| ImportSourcesError::EntityMerge {
             entity_id: "principal".to_owned(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         })?;
     // Ids this merge creates, so a second archive entity claiming one is an
     // id collision.
@@ -1756,7 +1793,7 @@ fn stage_entities(
         )
         .map_err(|error| ImportSourcesError::EntityMerge {
             entity_id: source_id.clone(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         })?;
         match resolution.outcome {
             EntityResolutionOutcome::Resolved => {
@@ -1894,15 +1931,16 @@ fn stage_entities(
                 if let Some(successor) = solstone_core_entity::merged_away(target, &source_id)
                     .map_err(|detail| ImportSourcesError::EntityMerge {
                         entity_id: source_id.clone(),
-                        detail,
+                        detail: detail.into(),
                     })?
                 {
                     let survivor = solstone_core_entity::live_merge_successor(target, &successor)
                         .unwrap_or(successor);
                     return Err(ImportSourcesError::EntityMerge {
                         entity_id: source_id.clone(),
-                        detail: format!(
-                            "this journal merged '{source_id}' into '{survivor}', and merges can't be undone, so this archive can't be imported"
+                        detail: MessageDetail::message(
+                            "journal.cli.journal.archive.import.redirect.entity",
+                            [("source_id", &(source_id)), ("survivor", &(survivor))],
                         ),
                     });
                 }
@@ -1913,7 +1951,7 @@ fn stage_entities(
                     solstone_core_entity::entity_identity_destination_occupied(target, &source_id)
                         .map_err(|error| ImportSourcesError::EntityMerge {
                             entity_id: source_id.clone(),
-                            detail: error.to_string(),
+                            detail: archive_detail(&error),
                         })?;
                 if occupied
                     || created_ids.contains(&source_id)
@@ -1992,22 +2030,30 @@ fn stage_entities(
 /// The journal-relative path, with `/` separators, of an entity folder's
 /// identity file, as the entity store names it.
 fn identity_relative(target: &Path, entity_dir: &str) -> Result<String, ImportSourcesError> {
-    let error = |detail: String| ImportSourcesError::EntityMerge {
+    let error = |detail: MessageDetail| ImportSourcesError::EntityMerge {
         entity_id: entity_dir.to_owned(),
         detail,
     };
-    let root = realpath_non_strict(target).map_err(|e| error(e.to_string()))?;
+    let root = realpath_non_strict(target).map_err(|e| error(archive_detail(&e)))?;
     let path = solstone_core_entity::entity_identity_path(target, entity_dir)
-        .map_err(|e| error(e.to_string()))?;
-    let relative = path
-        .strip_prefix(&root)
-        .map_err(|_| error(format!("{} is outside the journal", path.display())))?;
+        .map_err(|e| error(archive_detail(&e)))?;
+    let relative = path.strip_prefix(&root).map_err(|_| {
+        error(MessageDetail::message(
+            "journal.cli.journal.archive.import.path.outside",
+            [("path", &(path.display()))],
+        ))
+    })?;
     relative
         .components()
         .map(|component| component.as_os_str().to_str().map(str::to_owned))
         .collect::<Option<Vec<_>>>()
         .map(|parts| parts.join("/"))
-        .ok_or_else(|| error(format!("{} is not UTF-8", path.display())))
+        .ok_or_else(|| {
+            error(MessageDetail::message(
+                "journal.cli.journal.archive.import.path.encoding",
+                [("path", &(path.display()))],
+            ))
+        })
 }
 
 fn merge_entity_fields(target: &mut Value, source: &Value) -> Vec<String> {
@@ -2041,7 +2087,7 @@ fn stage_entity(
 ) -> Result<(), ImportSourcesError> {
     fs::create_dir_all(&state.staging_path).map_err(|error| ImportSourcesError::StagingWrite {
         path: state.staging_path.clone(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })?;
     // Two archive entities can share an id; each keeps its own staged file.
     let mut name = format!("{source_id}.json");
@@ -2050,7 +2096,7 @@ fn stage_entity(
         let path = contained_path(&state.staging_path, &name).map_err(|error| {
             ImportSourcesError::StagingWrite {
                 path: state.staging_path.clone(),
-                detail: error.to_string(),
+                detail: archive_detail(&error),
             }
         })?;
         if !path.exists() {
@@ -2070,7 +2116,7 @@ fn stage_entity(
     )
     .map_err(|error| ImportSourcesError::StagingWrite {
         path: path.clone(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })?;
     state.decision(
         "committed",
@@ -2109,20 +2155,21 @@ fn refuse_retired_facet_names(source: &Path, target: &Path) -> Result<(), Import
         .entries_for_write()
         .map_err(|error| ImportSourcesError::FacetMerge {
             facet: "facets".to_owned(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         })?;
     for facet_path in
         sorted_dirs(&source_facets).map_err(|error| ImportSourcesError::FacetMerge {
             facet: "facets".to_owned(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         })?
     {
         let facet = file_name(&facet_path)?;
         if retired.get(&facet).is_some_and(|entry| entry.redirects()) {
             return Err(ImportSourcesError::FacetMerge {
                 facet: facet.clone(),
-                detail: format!(
-                    "this journal had a facet named '{facet}' that was merged or renamed into another, and that name leads there now, so this archive can't be imported"
+                detail: MessageDetail::message(
+                    "journal.cli.journal.archive.import.redirect.facet",
+                    [("facet", &(facet))],
                 ),
             });
         }
@@ -2142,7 +2189,7 @@ fn stage_facets(
     let source_facet_dirs =
         sorted_dirs(&source_facets).map_err(|error| ImportSourcesError::FacetMerge {
             facet: "facets".to_owned(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         })?;
     // Checked again here, under the lock, in case a name was retired since.
     refuse_retired_facet_names(source, target)?;
@@ -2160,7 +2207,7 @@ fn stage_facets(
             stage_tree(state, &facet_path, &relative, |error| {
                 ImportSourcesError::FacetMerge {
                     facet: facet.clone(),
-                    detail: error.to_string(),
+                    detail: archive_detail(&error),
                 }
             })?;
             // The archive's facet id is kept unless this journal already
@@ -2174,7 +2221,7 @@ fn stage_facets(
             )
             .map_err(|error| ImportSourcesError::FacetMerge {
                 facet: facet.clone(),
-                detail: error.to_string(),
+                detail: archive_detail(&error),
             })?;
             claimed_ids.extend(facet_id.clone());
             stamp_staged_activity_days(state, &facet, facet_id.as_deref())?;
@@ -2220,7 +2267,7 @@ fn merge_facet_relationships(
     state: &mut MergeState,
 ) -> Result<(), ImportSourcesError> {
     use solstone_core_facets::facet_links::{FolderState, LinkDirs, fold_observation_rows};
-    let facet_error = |detail: String| ImportSourcesError::FacetMerge {
+    let facet_error = |detail: MessageDetail| ImportSourcesError::FacetMerge {
         facet: facet.to_owned(),
         detail,
     };
@@ -2232,11 +2279,11 @@ fn merge_facet_relationships(
     let mut planned: std::collections::BTreeMap<String, PlannedLink> =
         std::collections::BTreeMap::new();
     for source_relationship in
-        sorted_dirs(&entities).map_err(|error| facet_error(error.to_string()))?
+        sorted_dirs(&entities).map_err(|error| facet_error(archive_detail(&error)))?
     {
         let entity_dir = file_name(&source_relationship)?;
         let Some(source_link) = read_facet_entity_link(source, facet, &entity_dir)
-            .map_err(|error| facet_error(error.to_string()))?
+            .map_err(|error| facet_error(archive_detail(&error)))?
         else {
             continue;
         };
@@ -2254,7 +2301,7 @@ fn merge_facet_relationships(
         }
         let into = match here
             .find(&linked)
-            .map_err(|error| facet_error(error.to_string()))?
+            .map_err(|error| facet_error(archive_detail(&error)))?
         {
             Some(link) => link.dir,
             None => linked.clone(),
@@ -2270,7 +2317,7 @@ fn merge_facet_relationships(
         if !planned.contains_key(&into) {
             let create = match here
                 .state(&into)
-                .map_err(|error| facet_error(error.to_string()))?
+                .map_err(|error| facet_error(archive_detail(&error)))?
             {
                 FolderState::Link(link) if link.entity_id == linked => None,
                 FolderState::Absent | FolderState::Orphan => {
@@ -2284,14 +2331,14 @@ fn merge_facet_relationships(
                 }
             };
             let receiving = read_facet_entity_observations(target, facet, &into)
-                .map_err(|error| facet_error(error.to_string()))?;
+                .map_err(|error| facet_error(archive_detail(&error)))?;
             let rows = match &receiving {
                 Some(text) => {
                     let path = here
                         .observations_path(&into)
-                        .map_err(|error| facet_error(error.to_string()))?;
+                        .map_err(|error| facet_error(archive_detail(&error)))?;
                     parse_observation_file(text, ObservationParseSource::Path(&path))
-                        .map_err(|error| facet_error(error.to_string()))?
+                        .map_err(|error| facet_error(archive_detail(&error)))?
                         .full_rows
                 }
                 None => Vec::new(),
@@ -2309,15 +2356,15 @@ fn merge_facet_relationships(
         }
         let plan = planned.get_mut(&into).expect("planned above");
         let incoming = read_facet_entity_observations(source, facet, &entity_dir)
-            .map_err(|error| facet_error(error.to_string()))?;
+            .map_err(|error| facet_error(archive_detail(&error)))?;
         let Some(text) = incoming else {
             continue;
         };
         let path = LinkDirs::for_facet(source, facet)
             .observations_path(&entity_dir)
-            .map_err(|error| facet_error(error.to_string()))?;
+            .map_err(|error| facet_error(archive_detail(&error)))?;
         let mut rows = parse_observation_file(&text, ObservationParseSource::Path(&path))
-            .map_err(|error| facet_error(error.to_string()))?
+            .map_err(|error| facet_error(archive_detail(&error)))?
             .full_rows;
         if plan.receiving_existed {
             for row in &mut rows {
@@ -2327,7 +2374,7 @@ fn merge_facet_relationships(
             }
         }
         let (folded, report) = fold_observation_rows(std::mem::take(&mut plan.rows), rows)
-            .map_err(|error| facet_error(error.to_string()))?;
+            .map_err(|error| facet_error(archive_detail(&error)))?;
         plan.rows = folded;
         plan.changed |= report.added > 0 || report.renumbered > 0;
     }
@@ -2402,7 +2449,7 @@ fn link_gate(
     let retired = solstone_core_entity::retired_state(target, entity_id).map_err(|detail| {
         ImportSourcesError::FacetMerge {
             facet: facet.to_owned(),
-            detail,
+            detail: detail.into(),
         }
     })?;
     Ok(if retired.is_none() {
@@ -2444,12 +2491,12 @@ fn gate_staged_facet_links(
     facet: &str,
     state: &mut MergeState,
 ) -> Result<(), ImportSourcesError> {
-    let staging_error = |detail: String| ImportSourcesError::FacetMerge {
+    let staging_error = |detail: MessageDetail| ImportSourcesError::FacetMerge {
         facet: facet.to_owned(),
         detail,
     };
     let entities = join_contained(&state.staged_publish, &format!("facets/{facet}/entities"))
-        .map_err(|error| staging_error(error.to_string()))?;
+        .map_err(|error| staging_error(archive_detail(&error)))?;
     if !entities.is_dir() {
         return Ok(());
     }
@@ -2458,7 +2505,7 @@ fn gate_staged_facet_links(
         &format!("facets/{facet}/entities"),
     )
     .scan()
-    .map_err(|error| staging_error(error.to_string()))?;
+    .map_err(|error| staging_error(archive_detail(&error)))?;
     let mut links = Vec::new();
     for link in scanned {
         let Value::Object(fields) = link.value else {
@@ -2493,7 +2540,7 @@ fn gate_staged_facet_links(
                 // An archive's folder held by another entity's link stays as
                 // it arrived; the doctor can repair it once imported.
                 Err(solstone_core_facets::facet_links::LinkFolderError::NeedsRepair { .. }) => {}
-                Err(error) => return Err(staging_error(error.to_string())),
+                Err(error) => return Err(staging_error(archive_detail(&error))),
             }
         }
         Ok(())
@@ -2518,10 +2565,10 @@ fn gate_staged_facet_links(
                 fs::write(
                     staged
                         .link_path(&name)
-                        .map_err(|error| staging_error(error.to_string()))?,
+                        .map_err(|error| staging_error(archive_detail(&error)))?,
                     serde_json::to_vec_pretty(&Value::Object(link)).expect("Value serializes"),
                 )
-                .map_err(|error| staging_error(error.to_string()))?;
+                .map_err(|error| staging_error(archive_detail(&error)))?;
                 kept.insert(to);
             }
             LinkGate::Remap(to) => {
@@ -2534,7 +2581,7 @@ fn gate_staged_facet_links(
                 ) {
                     Ok(_) => {
                         fs::remove_dir_all(entities.join(&name))
-                            .map_err(|error| staging_error(error.to_string()))?;
+                            .map_err(|error| staging_error(archive_detail(&error)))?;
                         kept.insert(to);
                     }
                     // The folder stays as it arrived, notes and all; the
@@ -2542,12 +2589,12 @@ fn gate_staged_facet_links(
                     Err(solstone_core_facets::facet_links::LinkFolderError::NeedsRepair {
                         ..
                     }) => {}
-                    Err(error) => return Err(staging_error(error.to_string())),
+                    Err(error) => return Err(staging_error(archive_detail(&error))),
                 }
             }
             LinkGate::Skip => {
                 fs::remove_dir_all(entities.join(&name))
-                    .map_err(|error| staging_error(error.to_string()))?;
+                    .map_err(|error| staging_error(archive_detail(&error)))?;
                 skip_link(state, facet, &name)?;
             }
         }
@@ -2585,7 +2632,7 @@ fn merge_facet_content(
             }
             .map_err(|error| ImportSourcesError::FacetMerge {
                 facet: facet.to_owned(),
-                detail: error.to_string(),
+                detail: archive_detail(&error),
             })?
             .unwrap_or_default();
             let source_contents = if relative == "activities" && is_activity_day(&relative_file) {
@@ -2607,7 +2654,7 @@ fn merge_facet_content(
             }
             .map_err(|error| ImportSourcesError::FacetMerge {
                 facet: facet.to_owned(),
-                detail: error.to_string(),
+                detail: archive_detail(&error),
             })?;
             let merged = match (relative, target_contents.as_deref()) {
                 ("news", Some(_)) => continue, // Target markdown is authoritative.
@@ -2649,12 +2696,12 @@ fn target_facet_id(target: &Path, facet: &str) -> Result<Option<String>, ImportS
         Ok(DestinationObservation::Ready { id, .. }) => Ok(Some(id)),
         Ok(DestinationObservation::Unreadable(detail)) => Err(ImportSourcesError::FacetMerge {
             facet: facet.to_owned(),
-            detail,
+            detail: detail.into(),
         }),
         Ok(_) => Ok(None),
         Err(error) => Err(ImportSourcesError::FacetMerge {
             facet: facet.to_owned(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         }),
     }
 }
@@ -2705,29 +2752,31 @@ fn stamp_staged_activity_days(
     facet: &str,
     facet_id: Option<&str>,
 ) -> Result<(), ImportSourcesError> {
-    let staging_error = |detail: String| ImportSourcesError::FacetMerge {
+    let staging_error = |detail: MessageDetail| ImportSourcesError::FacetMerge {
         facet: facet.to_owned(),
         detail,
     };
     let activities = join_contained(&state.staged_publish, &format!("facets/{facet}/activities"))
-        .map_err(|error| staging_error(error.to_string()))?;
+        .map_err(|error| staging_error(archive_detail(&error)))?;
     if !activities.is_dir() {
         return Ok(());
     }
-    for entry in fs::read_dir(&activities).map_err(|error| staging_error(error.to_string()))? {
-        let entry = entry.map_err(|error| staging_error(error.to_string()))?;
+    for entry in fs::read_dir(&activities).map_err(|error| staging_error(archive_detail(&error)))? {
+        let entry = entry.map_err(|error| staging_error(archive_detail(&error)))?;
         let name = entry.file_name().to_string_lossy().into_owned();
         if !entry.file_type().is_ok_and(|kind| kind.is_file()) || !is_activity_day(&name) {
             continue;
         }
-        let bytes = fs::read(entry.path()).map_err(|error| staging_error(error.to_string()))?;
+        let bytes =
+            fs::read(entry.path()).map_err(|error| staging_error(archive_detail(&error)))?;
         // Bytes that aren't text are copied as they came.
         let Ok(text) = String::from_utf8(bytes) else {
             continue;
         };
         let stamped = stamp_activity_rows(&text, facet_id);
         if stamped != text {
-            fs::write(entry.path(), stamped).map_err(|error| staging_error(error.to_string()))?;
+            fs::write(entry.path(), stamped)
+                .map_err(|error| staging_error(archive_detail(&error)))?;
         }
     }
     Ok(())
@@ -2744,7 +2793,7 @@ fn stage_imports(
     }
     for source_import in sorted_dirs(&imports).map_err(|error| ImportSourcesError::ImportMerge {
         path: imports.clone(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })? {
         let name = file_name(&source_import)?;
         // Another journal's unfinished run means nothing here.
@@ -2764,7 +2813,7 @@ fn stage_imports(
         stage_tree(state, &source_import, &relative, |error| {
             ImportSourcesError::ImportMerge {
                 path: destination.clone(),
-                detail: error.to_string(),
+                detail: archive_detail(&error),
             }
         })?;
         state.decision("committed", "imports", json!({"destination": relative}))?;
@@ -2803,7 +2852,7 @@ fn stage_body_zones(
         }
         let import_error = |path: PathBuf, error: io::Error| ImportSourcesError::ImportMerge {
             path,
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         };
         let bytes =
             fs::read(&source_file).map_err(|error| import_error(source_file.clone(), error))?;
@@ -2969,18 +3018,18 @@ fn stage_bytes(state: &MergeState, relative: &str, bytes: &[u8]) -> Result<(), I
     let path = join_contained(&state.staged_publish, relative).map_err(|error| {
         ImportSourcesError::StagingWrite {
             path: state.staged_publish.clone(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         }
     })?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| ImportSourcesError::StagingWrite {
             path: path.clone(),
-            detail: error.to_string(),
+            detail: archive_detail(&error),
         })?;
     }
     fs::write(&path, bytes).map_err(|error| ImportSourcesError::StagingWrite {
         path: path.clone(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })
 }
 
@@ -2989,7 +3038,7 @@ fn stage_bytes(state: &MergeState, relative: &str, bytes: &[u8]) -> Result<(), I
 fn archive_hidden_days(source: &Path) -> Result<BTreeSet<String>, ImportSourcesError> {
     let refuse = || ImportSourcesError::ImportMerge {
         path: PathBuf::from(HIDDEN_DAYS_RELATIVE_PATH),
-        detail: ARCHIVE_HIDDEN_DAYS_UNREADABLE.to_owned(),
+        detail: MessageDetail::message("journal.cli.journal.archive.import.hidden.archive", []),
     };
     let path = source.join(HIDDEN_DAYS_RELATIVE_PATH);
     match fs::symlink_metadata(&path) {
@@ -3004,7 +3053,7 @@ fn archive_hidden_days(source: &Path) -> Result<BTreeSet<String>, ImportSourcesE
 fn target_hidden_days_refusal(target: &Path) -> ImportSourcesError {
     ImportSourcesError::ImportMerge {
         path: hidden_days_path(target),
-        detail: TARGET_HIDDEN_DAYS_UNREADABLE.to_owned(),
+        detail: MessageDetail::message("journal.cli.journal.archive.import.hidden.target", []),
     }
 }
 
@@ -3026,7 +3075,7 @@ fn hide_archive_days(
             BodyHiddenError::Unreadable => target_hidden_days_refusal(target),
             error => ImportSourcesError::ImportMerge {
                 path: hidden_days_path(target),
-                detail: error.to_string(),
+                detail: archive_detail(&error),
             },
         })?;
     if added == 0 {
@@ -3040,15 +3089,19 @@ fn hide_archive_days(
 }
 
 /// What a merge that failed after hiding the archive's days says of them.
-fn days_left_hidden_words(days: usize) -> String {
-    if days == 1 {
-        "1 day of body data was hidden in the archive, so it's hidden in this journal too; you can unhide it on the body page."
-            .to_owned()
-    } else {
-        format!(
-            "{days} days of body data were hidden in the archive, so they're hidden in this journal too; you can unhide them on the body page."
-        )
-    }
+fn days_left_hidden_words(days: usize) -> MessageDetail {
+    MessageDetail::cardinal(
+        "journal.cli.journal.archive.import.hidden.warning",
+        [("days", i64::try_from(days).unwrap_or(i64::MAX))],
+        if days == 1 {
+            "1 day of body data was hidden in the archive, so it's hidden in this journal too; you can unhide it on the body page.".to_owned()
+        } else {
+            format!(
+                "{days} days of body data were hidden in the archive, so they're hidden in this journal too; you can unhide them on the body page."
+            )
+        },
+        [],
+    )
 }
 
 /// `error`, saying how many of the archive's days this merge hid stay hidden.
@@ -3059,10 +3112,16 @@ fn note_days_left_hidden(error: ImportSourcesError, days: usize) -> ImportSource
     }
     let detail = match error {
         ImportSourcesError::MergePublishFailed { detail, .. } => detail,
-        error => error.to_string(),
+        error => error.message(),
     };
     ImportSourcesError::MergePublishFailed {
-        detail: format!("{detail}; {}", days_left_hidden_words(days)),
+        detail: MessageDetail::with_details(
+            "journal.cli.journal.archive.import.hidden.details",
+            [
+                ("detail", detail),
+                ("warning", days_left_hidden_words(days)),
+            ],
+        ),
         mutation: MergeMutationState::MayHaveMutated,
     }
 }
@@ -3098,14 +3157,14 @@ fn stage_and_publish(
     let _admission =
         solstone_core_journal_io::hold_daily_location_admission(target).map_err(|error| {
             ImportSourcesError::MergePublishFailed {
-                detail: error.to_string(),
+                detail: archive_detail(&error),
                 mutation: MergeMutationState::NotMutated,
             }
         })?;
     let chronicle_units = state.chronicle_units.clone();
     let import_units = state.import_units.clone();
     let not_mutated = |error: io::Error| ImportSourcesError::MergePublishFailed {
-        detail: error.to_string(),
+        detail: archive_detail(&error),
         mutation: MergeMutationState::NotMutated,
     };
     let reserve = undo_reserve_size(target, state).map_err(not_mutated)?;
@@ -3139,7 +3198,7 @@ fn publish_staged(
             Err(error) => {
                 let error = ImportSourcesError::FacetMerge {
                     facet: "lock".to_owned(),
-                    detail: error.to_string(),
+                    detail: archive_detail(&error),
                 };
                 return Err(abandon(target, state, error));
             }
@@ -3174,17 +3233,18 @@ fn touch_stream_markers(target: &Path, state: &MergeState) -> Result<(), ImportS
     let marker_failures = published_days
         .into_iter()
         .filter_map(|day| {
-            touch_stream_health_marker(target, &day)
-                .err()
-                .map(|error| format!("{day}: {error}"))
+            touch_stream_health_marker(target, &day).err().map(|error| {
+                solstone_core_journal_io::cli_diagnostics::atomic_message(&error).context_with(
+                    "journal.cli.journal.archive.import.marker.day",
+                    [("day", &(day))],
+                )
+            })
         })
         .collect::<Vec<_>>();
     if !marker_failures.is_empty() {
         return Err(ImportSourcesError::MergePublishFailed {
-            detail: format!(
-                "stream marker update failed after archive content was published: {}; published content was not rolled back",
-                marker_failures.join("; ")
-            ),
+            detail: MessageDetail::joined(marker_failures, "; ")
+                .context_with("journal.cli.journal.archive.import.marker", []),
             mutation: MergeMutationState::MayHaveMutated,
         });
     }
@@ -3201,7 +3261,7 @@ fn publish_owned_files(target: &Path, state: &mut MergeState) -> Result<(), Impo
     if state.published_entity_json {
         rewrite_identity_map_cache(target).map_err(|error| {
             ImportSourcesError::MergePublishFailed {
-                detail: error.to_string(),
+                detail: archive_detail(&error),
                 mutation: MergeMutationState::MayHaveMutated,
             }
         })?;
@@ -3224,7 +3284,7 @@ fn abandon(target: &Path, state: &mut MergeState, error: ImportSourcesError) -> 
         return error;
     }
     ImportSourcesError::MergePublishFailed {
-        detail: format!("{error}; undo incomplete: {}", undo_failures.join("; ")),
+        detail: undo_error(error, undo_failures),
         mutation: MergeMutationState::MayHaveMutated,
     }
 }
@@ -3232,7 +3292,7 @@ fn abandon(target: &Path, state: &mut MergeState, error: ImportSourcesError) -> 
 fn create_publish_undo(state: &MergeState) -> Result<(), ImportSourcesError> {
     fs::create_dir_all(&state.publish_undo).map_err(|error| ImportSourcesError::StagingWrite {
         path: state.publish_undo.clone(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })
 }
 
@@ -3249,9 +3309,9 @@ fn abort_publish(
     };
     let undo_failures = undo_publish(target, state, release_owned);
     let detail = if undo_failures.is_empty() {
-        error.to_string()
+        error.message()
     } else {
-        format!("{error}; undo incomplete: {}", undo_failures.join("; "))
+        undo_error(error, undo_failures)
     };
     ImportSourcesError::MergePublishFailed { detail, mutation }
 }
@@ -3287,13 +3347,13 @@ fn publish_one(
     }
     let destination = join_contained(target, &relative).map_err(|error| {
         ImportSourcesError::MergePublishFailed {
-            detail: error.to_string(),
+            detail: archive_detail(&error),
             mutation,
         }
     })?;
     let staged = join_contained(&state.staged_publish, &relative).map_err(|error| {
         ImportSourcesError::MergePublishFailed {
-            detail: error.to_string(),
+            detail: archive_detail(&error),
             mutation,
         }
     })?;
@@ -3302,14 +3362,17 @@ fn publish_one(
             if state.chronicle_units.contains_key(&relative) {
                 reclaim_removed_key(&destination).map_err(|error| {
                     ImportSourcesError::MergePublishFailed {
-                        detail: error.to_string(),
+                        detail: archive_detail(&error),
                         mutation,
                     }
                 })?;
             }
             if fs::symlink_metadata(&destination).is_ok() {
                 return Err(ImportSourcesError::MergePublishFailed {
-                    detail: format!("{relative} appeared while the import was running"),
+                    detail: MessageDetail::message(
+                        "journal.cli.journal.archive.import.appeared",
+                        [("relative", &(relative))],
+                    ),
                     mutation,
                 });
             }
@@ -3339,9 +3402,10 @@ fn publish_one(
                         )?,
                     );
                     if fs::symlink_metadata(&destination).is_ok() {
-                        return Err(io::Error::other(
-                            "segment appeared before archive publication",
-                        ));
+                        return Err(io::Error::other(MessageDetail::message(
+                            "journal.cli.journal.archive.import.segment.appeared",
+                            [],
+                        )));
                     }
                     // No processor can enter the absent live directory. The
                     // private staging claims must close before Windows rename.
@@ -3350,7 +3414,7 @@ fn publish_one(
                 Ok(())
             })
             .map_err(|error| ImportSourcesError::MergePublishFailed {
-                detail: error.to_string(),
+                detail: archive_detail(&error),
                 mutation,
             })?;
             state.published.push(UndoRecord {
@@ -3369,7 +3433,7 @@ fn publish_one(
                 });
                 binding.revalidate(&destination).map_err(|error| {
                     ImportSourcesError::MergePublishFailed {
-                        detail: error.to_string(),
+                        detail: archive_detail(&error),
                         mutation: MergeMutationState::MayHaveMutated,
                     }
                 })?;
@@ -3381,7 +3445,10 @@ fn publish_one(
         PublishUnit::NewFile => {
             if fs::symlink_metadata(&destination).is_ok() {
                 return Err(ImportSourcesError::MergePublishFailed {
-                    detail: format!("{relative} appeared while the import was running"),
+                    detail: MessageDetail::message(
+                        "journal.cli.journal.archive.import.appeared",
+                        [("relative", &(relative))],
+                    ),
                     mutation,
                 });
             }
@@ -3404,7 +3471,7 @@ fn publish_file(
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             let bytes =
                 fs::read(staged).map_err(|error| ImportSourcesError::MergePublishFailed {
-                    detail: error.to_string(),
+                    detail: archive_detail(&error),
                     mutation,
                 })?;
             write_bytes_exclusive(
@@ -3413,7 +3480,7 @@ fn publish_file(
                 AtomicWriteOptions { mode: Some(0o600) },
             )
             .map_err(|error| ImportSourcesError::MergePublishFailed {
-                detail: error.to_string(),
+                detail: archive_detail(&error),
                 mutation,
             })?;
             state.published.push(UndoRecord {
@@ -3425,27 +3492,27 @@ fn publish_file(
         Ok(metadata) if metadata.is_file() => {
             let undo = join_contained(&state.publish_undo, &relative).map_err(|error| {
                 ImportSourcesError::MergePublishFailed {
-                    detail: error.to_string(),
+                    detail: archive_detail(&error),
                     mutation,
                 }
             })?;
             if let Some(parent) = undo.parent() {
                 fs::create_dir_all(parent).map_err(|error| {
                     ImportSourcesError::MergePublishFailed {
-                        detail: error.to_string(),
+                        detail: archive_detail(&error),
                         mutation,
                     }
                 })?;
             }
             fs::copy(destination, &undo).map_err(|error| {
                 ImportSourcesError::MergePublishFailed {
-                    detail: error.to_string(),
+                    detail: archive_detail(&error),
                     mutation,
                 }
             })?;
             let bytes =
                 fs::read(staged).map_err(|error| ImportSourcesError::MergePublishFailed {
-                    detail: error.to_string(),
+                    detail: archive_detail(&error),
                     mutation,
                 })?;
             atomic_replace(
@@ -3454,7 +3521,7 @@ fn publish_file(
                 AtomicWriteOptions { mode: Some(0o600) },
             )
             .map_err(|error| ImportSourcesError::MergePublishFailed {
-                detail: error.to_string(),
+                detail: archive_detail(&error),
                 mutation,
             })?;
             state.published.push(UndoRecord {
@@ -3465,13 +3532,16 @@ fn publish_file(
         }
         Ok(_) => {
             return Err(ImportSourcesError::MergePublishFailed {
-                detail: format!("kind mismatch at {relative}"),
+                detail: MessageDetail::message(
+                    "journal.cli.journal.archive.import.kind",
+                    [("relative", &(relative))],
+                ),
                 mutation,
             });
         }
         Err(error) => {
             return Err(ImportSourcesError::MergePublishFailed {
-                detail: error.to_string(),
+                detail: archive_detail(&error),
                 mutation,
             });
         }
@@ -3498,20 +3568,20 @@ fn publish_pending_ambiguities(
         Ok(metadata) if metadata.is_file() => {
             let undo = join_contained(&state.publish_undo, relative).map_err(|error| {
                 ImportSourcesError::MergePublishFailed {
-                    detail: error.to_string(),
+                    detail: archive_detail(&error),
                     mutation,
                 }
             })?;
             if let Some(parent) = undo.parent() {
                 fs::create_dir_all(parent).map_err(|error| {
                     ImportSourcesError::MergePublishFailed {
-                        detail: error.to_string(),
+                        detail: archive_detail(&error),
                         mutation,
                     }
                 })?;
             }
             fs::copy(&live, &undo).map_err(|error| ImportSourcesError::MergePublishFailed {
-                detail: error.to_string(),
+                detail: archive_detail(&error),
                 mutation,
             })?;
             state.published.push(UndoRecord {
@@ -3529,13 +3599,16 @@ fn publish_pending_ambiguities(
         }
         Ok(_) => {
             return Err(ImportSourcesError::MergePublishFailed {
-                detail: "kind mismatch at entities/ambiguities.jsonl".to_owned(),
+                detail: MessageDetail::message(
+                    "journal.cli.journal.archive.import.ambiguities",
+                    [],
+                ),
                 mutation,
             });
         }
         Err(error) => {
             return Err(ImportSourcesError::MergePublishFailed {
-                detail: error.to_string(),
+                detail: archive_detail(&error),
                 mutation,
             });
         }
@@ -3544,18 +3617,28 @@ fn publish_pending_ambiguities(
     // observation made a large archive's publication quadratic.
     record_ambiguity_observations(target, &state.pending_ambiguities).map_err(|error| {
         ImportSourcesError::MergePublishFailed {
-            detail: error.to_string(),
+            detail: archive_detail(&error),
             mutation,
         }
     })?;
     Ok(())
 }
 
+fn undo_error(error: ImportSourcesError, failures: Vec<MessageDetail>) -> MessageDetail {
+    MessageDetail::with_details(
+        "journal.cli.journal.archive.import.undo",
+        [
+            ("detail", error.message()),
+            ("failures", MessageDetail::joined(failures, "; ")),
+        ],
+    )
+}
+
 fn undo_publish(
     target: &Path,
     state: &mut MergeState,
     release_owned: impl FnOnce(),
-) -> Vec<String> {
+) -> Vec<MessageDetail> {
     #[cfg(test)]
     maybe_drop_undo_preimages(state);
     state.undo_reserve = UndoReserve::default();
@@ -3569,7 +3652,10 @@ fn undo_publish(
             if state.published_entity_json
                 && let Err(error) = rewrite_identity_map_cache(target)
             {
-                failures.push(format!("rewrite identity map: {error}"));
+                failures.push(
+                    archive_detail(&error)
+                        .context_with("journal.cli.journal.archive.import.undo.rewrite", []),
+                );
             }
             release_owned.take().unwrap()();
             #[cfg(all(test, feature = "full-tests"))]
@@ -3587,14 +3673,20 @@ fn undo_publish(
             let destination = match join_contained(target, &record.relative) {
                 Ok(destination) => destination,
                 Err(error) => {
-                    failures.push(format!("coordinate {}: {error}", record.relative));
+                    failures.push(archive_detail(&error).context_with(
+                        "journal.cli.journal.archive.import.undo.coordinate",
+                        [("relative", &record.relative)],
+                    ));
                     continue;
                 }
             };
             if let Some(binding) = &record.segment_binding
                 && let Err(error) = binding.revalidate(&destination)
             {
-                failures.push(format!("coordinate {}: {error}", record.relative));
+                failures.push(archive_detail(&error).context_with(
+                    "journal.cli.journal.archive.import.undo.coordinate",
+                    [("relative", &record.relative)],
+                ));
                 continue;
             }
             // Only chronicle trees are segment publications; entity/facet/import
@@ -3607,7 +3699,10 @@ fn undo_publish(
                     ) {
                         Ok(claims) => Some(claims),
                         Err(error) => {
-                            failures.push(format!("coordinate {}: {error}", record.relative));
+                            failures.push(archive_detail(&error).context_with(
+                                "journal.cli.journal.archive.import.undo.coordinate",
+                                [("relative", &record.relative)],
+                            ));
                             continue;
                         }
                     }
@@ -3620,7 +3715,10 @@ fn undo_publish(
             {
                 Ok(commit) => commit,
                 Err(error) => {
-                    failures.push(format!("coordinate {}: {error}", record.relative));
+                    failures.push(archive_detail(&error).context_with(
+                        "journal.cli.journal.archive.import.undo.coordinate",
+                        [("relative", &record.relative)],
+                    ));
                     continue;
                 }
             };
@@ -3635,13 +3733,19 @@ fn undo_publish(
             if let Some(mutation) = &mutation
                 && let Err(error) = mutation.revalidate()
             {
-                failures.push(format!("coordinate {}: {error}", record.relative));
+                failures.push(archive_detail(&error).context_with(
+                    "journal.cli.journal.archive.import.undo.coordinate",
+                    [("relative", &record.relative)],
+                ));
                 continue;
             }
             if let Some(binding) = &record.segment_binding
                 && let Err(error) = binding.revalidate(&destination)
             {
-                failures.push(format!("coordinate {}: {error}", record.relative));
+                failures.push(archive_detail(&error).context_with(
+                    "journal.cli.journal.archive.import.undo.coordinate",
+                    [("relative", &record.relative)],
+                ));
                 continue;
             }
             match record.kind {
@@ -3652,14 +3756,20 @@ fn undo_publish(
                         fs::remove_file(&destination)
                     };
                     if let Err(error) = result {
-                        failures.push(format!("unlink {}: {error}", record.relative));
+                        failures.push(archive_detail(&error).context_with(
+                            "journal.cli.journal.archive.import.undo.unlink",
+                            [("relative", &record.relative)],
+                        ));
                     }
                     remove_empty_parents(target, &record.relative);
                 }
                 UndoKind::Restore => {
                     let undo = state.publish_undo.join(&record.relative);
                     if let Err(error) = fs::rename(&undo, &destination) {
-                        failures.push(format!("restore {}: {error}", record.relative));
+                        failures.push(archive_detail(&error).context_with(
+                            "journal.cli.journal.archive.import.undo.restore",
+                            [("relative", &record.relative)],
+                        ));
                     }
                 }
             }
@@ -3710,10 +3820,36 @@ fn remove_empty_parents(target: &Path, relative: &str) {
     }
 }
 
+fn archive_detail<E: std::fmt::Display + std::any::Any>(error: &E) -> MessageDetail {
+    let cause = error as &dyn std::any::Any;
+    if let Some(error) = cause.downcast_ref::<ImportSourcesError>() {
+        return error.message();
+    }
+    if let Some(error) = cause.downcast_ref::<io::Error>() {
+        if let Some(archive) = error
+            .get_ref()
+            .and_then(|cause| cause.downcast_ref::<ImportSourcesError>())
+        {
+            return archive.message();
+        }
+        return solstone_core_segment::output_attempt::claim_detail(error);
+    }
+    if let Some(error) = cause.downcast_ref::<solstone_core_journal_io::AtomicWriteError>() {
+        return solstone_core_journal_io::cli_diagnostics::atomic_message(error);
+    }
+    if let Some(error) = cause.downcast_ref::<solstone_core_journal_io::PathError>() {
+        return solstone_core_journal_io::cli_diagnostics::path_message(error);
+    }
+    if let Some(error) = cause.downcast_ref::<LockError>() {
+        return solstone_core_journal_io::cli_diagnostics::lock_message(error);
+    }
+    error.to_string().into()
+}
+
 fn join_contained(root: &Path, relative: &str) -> Result<PathBuf, ImportSourcesError> {
     contained_path(root, relative).map_err(|error| ImportSourcesError::StagingWrite {
         path: root.to_path_buf(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })
 }
 
@@ -3734,12 +3870,12 @@ enum KeyState {
 }
 
 fn key_state(path: &Path) -> Result<KeyState, ImportSourcesError> {
-    let io = |detail: String| ImportSourcesError::SegmentMerge {
+    let io = |detail: MessageDetail| ImportSourcesError::SegmentMerge {
         path: path.to_path_buf(),
         detail,
     };
     match solstone_core_segment::owner_deletion_state(path)
-        .map_err(|error| io(error.to_string()))?
+        .map_err(|error| io(archive_detail(&error)))?
     {
         solstone_core_segment::OwnerDeletionState::Live => {
             Ok(if fs::symlink_metadata(path).is_ok() {
@@ -3749,10 +3885,13 @@ fn key_state(path: &Path) -> Result<KeyState, ImportSourcesError> {
             })
         }
         solstone_core_segment::OwnerDeletionState::Deleted => {
-            let mut entries = fs::read_dir(path).map_err(|error| io(error.to_string()))?;
+            let mut entries = fs::read_dir(path).map_err(|error| io(archive_detail(&error)))?;
             let only_tombstone = match (entries.next(), entries.next()) {
                 (Some(entry), None) => {
-                    entry.map_err(|error| io(error.to_string()))?.file_name() == "tombstone.json"
+                    entry
+                        .map_err(|error| io(archive_detail(&error)))?
+                        .file_name()
+                        == "tombstone.json"
                 }
                 _ => false,
             };
@@ -3916,7 +4055,7 @@ fn maybe_fail_publish(count: usize) -> Result<(), ImportSourcesError> {
                 MergeMutationState::MayHaveMutated
             };
             return Err(ImportSourcesError::MergePublishFailed {
-                detail: "injected publish failure".to_owned(),
+                detail: "injected publish failure".to_owned().into(),
                 mutation,
             });
         }
@@ -3989,7 +4128,7 @@ fn file_name(path: &Path) -> Result<String, ImportSourcesError> {
         .map(str::to_owned)
         .ok_or_else(|| ImportSourcesError::ArchiveInvalid {
             path: path.to_path_buf(),
-            detail: "non-UTF-8 or missing path name".to_owned(),
+            detail: MessageDetail::message("journal.cli.journal.archive.import.name", []),
         })
 }
 fn sorted_dirs(path: &Path) -> io::Result<Vec<PathBuf>> {
@@ -4025,7 +4164,7 @@ fn sorted_files_recursive(path: &Path) -> Result<Vec<PathBuf>, ImportSourcesErro
     }
     visit(path, &mut output).map_err(|error| ImportSourcesError::FacetMerge {
         facet: path.display().to_string(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })?;
     output.sort();
     Ok(output)
@@ -4074,7 +4213,10 @@ fn segment_contains(source: &Path, destination: &Path) -> Result<bool, ImportSou
             Err(error) => return Err(error),
         };
         if source_meta.is_symlink() || destination_meta.is_symlink() {
-            return Err(io::Error::other("symbolic link in segment"));
+            return Err(io::Error::other(MessageDetail::message(
+                "journal.cli.journal.archive.import.segment.symlink",
+                [],
+            )));
         }
         if source_meta.is_dir() {
             if !destination_meta.is_dir() {
@@ -4097,7 +4239,7 @@ fn segment_contains(source: &Path, destination: &Path) -> Result<bool, ImportSou
 
     contains(source, destination).map_err(|error| ImportSourcesError::SegmentMerge {
         path: destination.to_path_buf(),
-        detail: error.to_string(),
+        detail: archive_detail(&error),
     })
 }
 
@@ -4376,7 +4518,7 @@ mod tests {
         let error = plan_journal_archive(&gzip).unwrap_err();
         match error {
             ImportSourcesError::ArchiveInvalid { detail, .. } => {
-                assert_eq!(detail, LEGACY_TRANSFER_ARCHIVE);
+                assert_eq!(detail.to_string(), LEGACY_TRANSFER_ARCHIVE);
             }
             other => panic!("unexpected error: {other:?}"),
         }
@@ -4407,7 +4549,7 @@ mod tests {
                     ..
                 },
             ) => {
-                assert_eq!(plan_detail, LEGACY_TRANSFER_ARCHIVE);
+                assert_eq!(plan_detail.to_string(), LEGACY_TRANSFER_ARCHIVE);
                 assert_eq!(apply_detail, plan_detail);
             }
             other => panic!("unexpected errors: {other:?}"),
@@ -5804,11 +5946,13 @@ mod tests {
         match error {
             ImportSourcesError::MergePublishFailed { detail, .. } => {
                 assert!(
-                    detail.contains("undo incomplete"),
+                    detail.to_string().contains("undo incomplete"),
                     "expected nested undo failures in {detail}"
                 );
                 assert!(
-                    detail.contains("restore entities/person/entity.json"),
+                    detail
+                        .to_string()
+                        .contains("restore entities/person/entity.json"),
                     "{detail}"
                 );
             }
@@ -6538,7 +6682,7 @@ mod tests {
         let error =
             merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
         assert!(
-            matches!(&error, ImportSourcesError::ImportMerge { detail, .. } if detail == ARCHIVE_HIDDEN_DAYS_UNREADABLE),
+            matches!(&error, ImportSourcesError::ImportMerge { detail, .. } if detail.to_string() == ARCHIVE_HIDDEN_DAYS_UNREADABLE),
             "{error}"
         );
         assert_eq!(error.mutation_state(), MergeMutationState::NotMutated);
@@ -6562,7 +6706,7 @@ mod tests {
             let error =
                 merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
             assert!(
-                matches!(&error, ImportSourcesError::ImportMerge { detail, .. } if detail == TARGET_HIDDEN_DAYS_UNREADABLE),
+                matches!(&error, ImportSourcesError::ImportMerge { detail, .. } if detail.to_string() == TARGET_HIDDEN_DAYS_UNREADABLE),
                 "{error}"
             );
             assert_eq!(journal_family_snapshot(&target), before);
@@ -6619,7 +6763,9 @@ mod tests {
             assert_eq!(seen.borrow().clone(), Some(hidden.clone()), "case {case}");
             assert_eq!(hidden_here(&target), hidden, "case {case}");
             assert!(
-                error.to_string().contains(&days_left_hidden_words(2)),
+                error
+                    .to_string()
+                    .contains(&days_left_hidden_words(2).to_string()),
                 "case {case}: {error}"
             );
             assert_eq!(
@@ -6658,7 +6804,9 @@ mod tests {
             merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
         assert_eq!(hidden_here(&target), HiddenDays::Days(days(&["20260102"])));
         assert!(
-            error.to_string().contains(&days_left_hidden_words(1)),
+            error
+                .to_string()
+                .contains(&days_left_hidden_words(1).to_string()),
             "{error}"
         );
         assert!(!target.join("chronicle/20260102/120000_60").exists());

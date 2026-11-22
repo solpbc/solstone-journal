@@ -403,7 +403,7 @@ fn prepare_segment_localized(
                     let four_part_rel = format!("{day}/{stream}/{key}/{name}");
                     let produced = produce_chunks(Family::DesktopActivity, &four_part_rel, &text);
                     for message in produced.warnings {
-                        warnings.push(warning("desktop_activity", path, message, now));
+                        warnings.push(warning("desktop_activity", path, message.to_string(), now));
                     }
                     for chunk in produced.chunks {
                         let timestamp = chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0);

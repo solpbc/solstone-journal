@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation occurrence cannot be read as a date or time.",
+  "context": "Journal command-line text for indexer calendar validation occurrence cannot be read as a date or time.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6bfec4b61d0dc4a1529d5bf9ed816e382d2275da785e283b2d948036fe571aed",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "occurrence_field",
+      "kind": "accepted-input",
+      "value": "occurrence"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet link conflict.",
+  "context": "Journal command-line text for facet link conflict.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d24c768a371dc1f21e79c7f638507b138ee126940b59e186a19745a9a1a461f8",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

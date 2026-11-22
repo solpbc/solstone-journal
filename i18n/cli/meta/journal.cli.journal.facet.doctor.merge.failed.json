@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for facet doctor merge failed.",
+  "context": "Journal command-line text for facet doctor merge failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "destination",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e2c18a0afdbd7ae4e6556845bb123519f093546db7a6c4f707fe9748cbe29100",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

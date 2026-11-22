@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive import owner.",
+  "context": "Journal command-line text for archive import owner.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ca57ace5fb3141ec21de5530efd9148540af00e1052dafe98c6a53ad58397121",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

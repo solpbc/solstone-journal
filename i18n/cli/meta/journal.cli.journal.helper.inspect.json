@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for helper inspect.",
+  "context": "Journal command-line text for helper inspect.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dbcdfd1933ba3a2f717b35a3beb68661ccee8b0d411ba2ef4ef11728da91772b",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code",
+      "kind": "accepted-input",
+      "value": "native-helper-current-exe"
+    }
+  ]
+}

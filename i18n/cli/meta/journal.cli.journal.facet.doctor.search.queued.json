@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor search queued.",
+  "context": "Journal command-line text for facet doctor search queued.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "08972cee80a7974e1e2d52c4f244bf4ced454e6cb082ff3b15cf0a307d1aa479",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

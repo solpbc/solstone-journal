@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer files activity provenance insert.",
+  "context": "Journal command-line text for indexer files activity provenance insert.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c654a17ca56c1fe30f22254c94eccb908e095b927028898130e5327c0028b35f",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

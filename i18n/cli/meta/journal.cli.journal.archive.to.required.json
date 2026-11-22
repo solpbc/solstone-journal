@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for archive to required.",
+  "context": "Journal command-line text for archive to required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1d1b1d3f812c8ce524bd898f9c9a1e7d220c76425eb45184b8dbb6f1a0593c82",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_yyyymmdd",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    },
+    {
+      "name": "to_flag",
+      "kind": "flag",
+      "value": "--to"
+    }
+  ]
+}

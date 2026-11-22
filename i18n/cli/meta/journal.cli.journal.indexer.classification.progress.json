@@ -1,0 +1,37 @@
+{
+  "description": "Journal command-line text for indexer classification progress.",
+  "context": "Journal command-line text for indexer classification progress.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "cursor",
+      "type": "string"
+    },
+    {
+      "name": "processed",
+      "type": "string"
+    },
+    {
+      "name": "remaining",
+      "type": "string"
+    },
+    {
+      "name": "missing",
+      "type": "string"
+    },
+    {
+      "name": "unclassified",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b9e177e50c538104d28b611ced440a6a990ffac414da8e30a85582743d32a5d2",
+  "max_length": 191,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

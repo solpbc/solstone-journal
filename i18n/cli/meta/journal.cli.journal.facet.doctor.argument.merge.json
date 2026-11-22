@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet doctor argument merge.",
+  "context": "Journal command-line text for facet doctor argument merge.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8848d4b9f995e1d78adaf516ebe0f1551d9e8ca31a172f9ac0c1b9be849359c2",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "merge_flag",
+      "kind": "flag",
+      "value": "--merge"
+    },
+    {
+      "name": "adopt_flag",
+      "kind": "flag",
+      "value": "--adopt"
+    }
+  ]
+}

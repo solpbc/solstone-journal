@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source windows reverify retained relative directory identity.",
+  "context": "Journal command-line text for archive source windows reverify retained relative directory identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "13f23dae8dd37db71b20f79a896d908a0a6e346503d745438f9db595b704c938",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

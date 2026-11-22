@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact socket.",
+  "context": "Journal command-line text for archive fact socket.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c7dd70e1db1517debd85f4d21c342fe8721726d9ba550461a632b39b0f360138",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

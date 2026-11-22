@@ -98,58 +98,101 @@ impl ClassificationStatus {
 
     #[must_use]
     pub fn format_human(&self) -> String {
+        self.format_human_in(solstone_core_cli_copy::ENGLISH)
+    }
+
+    #[must_use]
+    pub fn format_human_in(&self, locale: &str) -> String {
         match self.initialization {
-            ClassificationInitialization::Absent => {
-                "classifications: database absent\n".to_string()
-            }
-            ClassificationInitialization::Unready => {
-                format!(
-                    "classifications: unready at cursor '{}' (run 'solstone-core indexer path-lookup --apply')\n",
-                    self.cursor
+            ClassificationInitialization::Absent => format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.indexer.classification.absent",
+                    &[]
                 )
-            }
-            ClassificationInitialization::Incomplete => format!(
-                "classifications: incomplete sidecar at cursor '{}' (run '{}')\n",
-                self.cursor,
-                self.repair
-                    .as_deref()
-                    .unwrap_or("solstone-core indexer classifications --apply")
             ),
-            ClassificationInitialization::Ready => {
-                if self.stalled {
-                    format!(
-                        "classifications: stalled at '{}' (processed {}, remaining {}, missing {}, unclassified {})\n",
-                        self.stalled_path.as_deref().unwrap_or(&self.cursor),
-                        self.processed,
-                        self.remaining,
-                        self.missing,
-                        self.unclassified
-                    )
-                } else if self.coverage_mismatch {
-                    format!(
-                        "classifications: coverage mismatch at cursor '{}' (processed {}, remaining {}, missing {}, unclassified {})\n",
-                        self.cursor,
-                        self.processed,
-                        self.remaining,
-                        self.missing,
-                        self.unclassified
-                    )
-                } else if self.completed {
-                    format!(
-                        "classifications: complete (processed {}, unclassified {})\n",
-                        self.processed, self.unclassified
-                    )
-                } else {
-                    format!(
-                        "classifications: in progress at cursor '{}' (processed {}, remaining {}, missing {}, unclassified {})\n",
-                        self.cursor,
-                        self.processed,
-                        self.remaining,
-                        self.missing,
-                        self.unclassified
-                    )
-                }
-            }
+            ClassificationInitialization::Unready => format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.journal.indexer.classification.unready",
+                    [("cursor", &(self.cursor))]
+                )
+            ),
+            ClassificationInitialization::Incomplete => format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.journal.indexer.classification.incomplete",
+                    [
+                        ("cursor", &(self.cursor)),
+                        (
+                            "repair",
+                            &(self
+                                .repair
+                                .as_deref()
+                                .unwrap_or("solstone-core indexer classifications --apply"))
+                        )
+                    ]
+                )
+            ),
+            ClassificationInitialization::Ready if self.stalled => format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.journal.indexer.classification.stalled",
+                    [
+                        (
+                            "path",
+                            &(self.stalled_path.as_deref().unwrap_or(&self.cursor))
+                        ),
+                        ("processed", &(self.processed)),
+                        ("remaining", &(self.remaining)),
+                        ("missing", &(self.missing)),
+                        ("unclassified", &(self.unclassified))
+                    ]
+                )
+            ),
+            ClassificationInitialization::Ready if self.coverage_mismatch => format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.journal.indexer.classification.mismatch",
+                    [
+                        ("cursor", &(self.cursor)),
+                        ("processed", &(self.processed)),
+                        ("remaining", &(self.remaining)),
+                        ("missing", &(self.missing)),
+                        ("unclassified", &(self.unclassified))
+                    ]
+                )
+            ),
+            ClassificationInitialization::Ready if self.completed => format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.journal.indexer.classification.complete",
+                    [
+                        ("processed", &(self.processed)),
+                        ("unclassified", &(self.unclassified))
+                    ]
+                )
+            ),
+            ClassificationInitialization::Ready => format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.journal.indexer.classification.progress",
+                    [
+                        ("cursor", &(self.cursor)),
+                        ("processed", &(self.processed)),
+                        ("remaining", &(self.remaining)),
+                        ("missing", &(self.missing)),
+                        ("unclassified", &(self.unclassified))
+                    ]
+                )
+            ),
         }
     }
 }

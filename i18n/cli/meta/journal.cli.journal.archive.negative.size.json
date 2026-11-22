@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive negative size.",
+  "context": "Journal command-line text for archive negative size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9db5b953e46c688f1095f6072e4709583fb22aa0f1cb2e909e7889c47be33edc",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

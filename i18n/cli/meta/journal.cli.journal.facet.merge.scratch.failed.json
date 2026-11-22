@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for facet merge scratch failed.",
+  "context": "Journal command-line text for facet merge scratch failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "400b88fdc3277d5e96007580f29fb1c5754c3a1023d5511b197fa139f0f0387a",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

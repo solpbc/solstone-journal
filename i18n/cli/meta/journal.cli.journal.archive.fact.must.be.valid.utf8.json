@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for archive fact must be valid utf8.",
+  "context": "Journal command-line text for archive fact must be valid utf8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2704125942c64b7fa335ed13e19caffdfad9fb65641836f1b40fc8203391d66b",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_utf_8",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

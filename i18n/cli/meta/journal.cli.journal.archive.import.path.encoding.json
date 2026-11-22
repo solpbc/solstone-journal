@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for archive import path encoding.",
+  "context": "Journal command-line text for archive import path encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7b09862ce8c3122acef18193666addd9a65b0b9656644b78486a523e98fcbe14",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_utf_8",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

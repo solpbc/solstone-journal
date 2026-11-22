@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet merge source retired.",
+  "context": "Journal command-line text for facet merge source retired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "81270ea9ad9bac59fc8c5f24eb2b6b807ff76f3954c5bac9ccb4ba03d0c10444",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer calendar line repeat.",
+  "context": "Journal command-line text for indexer calendar line repeat.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "line",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9a544db2206d6ba1ce094b7596ac9f0cc1d42293773bb5d9541d49038ce87340",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

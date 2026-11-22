@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive publish syncdirectory.",
+  "context": "Journal command-line text for archive publish syncdirectory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a80fd972a4f86726ac896842bda2958ebdd423924125974f3a87fa596450c36b",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

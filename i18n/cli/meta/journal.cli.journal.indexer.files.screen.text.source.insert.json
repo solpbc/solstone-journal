@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer files screen text source insert.",
+  "context": "Journal command-line text for indexer files screen text source insert.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4ab4ccbb591bc76deb5e078e1155fc083665f0e29616f2c1e750eed0114b0c1c",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer hidden week.",
+  "context": "Journal command-line text for indexer hidden week.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "88dca1bf73192ebfc24b5c682083051017b78c062bd9643261e6e8c2f24634a3",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

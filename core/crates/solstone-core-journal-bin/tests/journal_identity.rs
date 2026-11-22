@@ -273,7 +273,7 @@ fn journal_indexer_writes_real_index_with_interpreters_poisoned() {
     assert_sentinel_untouched(&sentinel);
     let stdout = String::from_utf8_lossy(&query.stdout);
     assert!(
-        stdout.contains("Total: 1 chunks"),
+        stdout.lines().any(|line| line == "Total: 1 chunk"),
         "unexpected query output: {stdout}"
     );
     assert!(
@@ -439,7 +439,7 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
     assert_eq!(doctor.status.code(), Some(0));
     assert_eq!(
         doctor.stdout,
-        b"Orphan facets:\n- field-notes\n1 orphan facet(s) found. Run with --adopt to register them.\n"
+        b"Orphan facets:\n- field-notes\n1 orphan facet found. Run with --adopt to register it.\n"
     );
     assert!(!orphan.join("facet.json").exists());
 
@@ -456,7 +456,7 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
     let fix = run_journal_with_journal(&["facet", "doctor", "--fix"], Some(&path), &journal);
     assert_eq!(fix.status.code(), Some(0));
     assert!(
-        String::from_utf8_lossy(&fix.stdout).contains("Run with --adopt to register them."),
+        String::from_utf8_lossy(&fix.stdout).contains("Run with --adopt to register it."),
         "{}",
         String::from_utf8_lossy(&fix.stdout)
     );
@@ -568,7 +568,7 @@ fn journal_facet_doctor_adopt_registers_lone_folders_and_leaves_variants_and_twi
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(
         String::from_utf8(output.stdout).expect("stdout"),
-        "Repaired orphan facets:\n- solo\n1 orphan facet(s) repaired. search is catching up.\n\nName-variant groups:\n- field-notes, field.notes, field_notes -> field-notes\nThese were not registered. Run with --adopt --merge to collapse them into one.\n\nFolders named like a facet you have:\n- blue_sky -> bluesky\nThese are never registered beside it. Run with --adopt --merge to fold them into it; a merge is permanent, and a file both have keeps the facet's copy.\nTo see what one would bring first: solstone journal facet merge blue_sky --into bluesky --dry-run\n\nFolders left as they are:\n- led_ger: named like ledger, whose facet.json needs repair first\n"
+        "Repaired orphan facets:\n- solo\n1 orphan facet repaired. search is catching up.\n\nName-variant groups:\n- field-notes, field.notes, field_notes -> field-notes\nThese were not registered. Run with --adopt --merge to collapse them into one.\n\nFolders named like a facet you have:\n- blue_sky -> bluesky\nThese are never registered beside it. Run with --adopt --merge to fold them into it; a merge is permanent, and a file both have keeps the facet's copy.\nTo see what one would bring first: solstone journal facet merge blue_sky --into bluesky --dry-run\n\nFolders left as they are:\n- led_ger: named like ledger, whose facet.json needs repair first\n"
     );
     assert_eq!(output.stderr, b"");
     assert!(solo.join("facet.json").is_file());
@@ -771,7 +771,7 @@ fn journal_facet_doctor_merges_variants_deterministically_and_isolates_failures(
     let merge_failure_stdout = String::from_utf8(merge_failure_output.stdout).expect("stdout");
     assert!(merge_failure_stdout.contains("Adopted orphan facets:\n- bad-notes\n- solo\n"));
     assert!(merge_failure_stdout.contains("Failed orphan facets:\n- bad_notes -> bad-notes (merge failed before commit: solstone journal facet merge: unsafe facet entry:"));
-    assert!(merge_failure_stdout.contains("2 orphan facet(s) repaired; 1 orphan facet(s) failed."));
+    assert!(merge_failure_stdout.contains("2 orphan facet(s) repaired; 1 orphan facet failed."));
     assert_eq!(
         merge_failure_output.stderr,
         b"solstone journal facet doctor: one or more orphan facet repairs failed\n"
@@ -818,10 +818,8 @@ fn journal_facet_doctor_merges_variants_deterministically_and_isolates_failures(
         adoption_failure_stdout
             .contains("Failed orphan facets:\n- blocked-notes (adoption failed:")
     );
-    assert!(adoption_failure_stdout.contains("blocked_notes were not merged)"));
-    assert!(
-        adoption_failure_stdout.contains("1 orphan facet(s) repaired; 2 orphan facet(s) failed.")
-    );
+    assert!(adoption_failure_stdout.contains("blocked_notes was not merged)"));
+    assert!(adoption_failure_stdout.contains("1 orphan facet repaired; 2 orphan facet(s) failed."));
     assert_eq!(
         adoption_failure_output.stderr,
         b"solstone journal facet doctor: one or more orphan facet repairs failed\n"

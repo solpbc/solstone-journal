@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet doctor empty.",
+  "context": "Journal command-line text for facet doctor empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8a36d25fa6e66fd865143d67894bc32fdcf95600e94ce41cce1dea707858cab9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

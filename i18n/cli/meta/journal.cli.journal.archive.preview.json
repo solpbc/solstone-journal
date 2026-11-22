@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive preview.",
+  "context": "Journal command-line text for archive preview.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "skipped",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "730c3705adede70f99960bedcb80986e26689a9c407855c0114abb211d73e58c",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

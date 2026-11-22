@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet json object.",
+  "context": "Journal command-line text for facet json object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f5bbe2471f18c27c49e488d8603b173c222804ee3dd2729ddc22f03e92a50fc2",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "json_format",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

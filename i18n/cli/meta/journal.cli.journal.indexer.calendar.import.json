@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer calendar import.",
+  "context": "Journal command-line text for indexer calendar import.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a13b4950d0615358322dd1b3a35e926762a3eaf0fa7bff038abdcfb6799e3d3d",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

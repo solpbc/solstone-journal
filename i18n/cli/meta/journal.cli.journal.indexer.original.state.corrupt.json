@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer original state corrupt.",
+  "context": "Journal command-line text for indexer original state corrupt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "092224d5e543ad88fa75873b0b1bc840bfffc755b94bb4acbabe941e3cb96f8c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

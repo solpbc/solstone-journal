@@ -157,9 +157,9 @@ pub use relationship_scans::{
 };
 pub use retired::{
     RETIRED_FACETS_FILE, RetiredFacet, RetiredFacetState, RetiredFacets, RetiredFilesSnapshot,
-    facet_name_is_free, first_free_facet_name, parse_retired_facets, read_retired_facets,
-    record_retired_facet, restore_retired_files, retired_facet_entry, retired_facets_path,
-    snapshot_retired_files,
+    RetiredRecordError, facet_name_is_free, first_free_facet_name, parse_retired_facets,
+    read_retired_facets, record_retired_facet, restore_retired_files, retired_facet_entry,
+    retired_facets_path, snapshot_retired_files,
 };
 pub use review_candidates::{
     FacetReviewCandidateError, accept_candidate, dismiss_candidate, facet_slug,

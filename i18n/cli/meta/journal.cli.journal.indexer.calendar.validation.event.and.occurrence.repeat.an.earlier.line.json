@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation event and occurrence repeat an earlier line.",
+  "context": "Journal command-line text for indexer calendar validation event and occurrence repeat an earlier line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6b21ea28a3711033c43cbccc323b54fe9606dcd8ccb27562cdbfb8887189c98",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "event_field",
+      "kind": "accepted-input",
+      "value": "event"
+    }
+  ]
+}

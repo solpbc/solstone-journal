@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact archive output has no parent.",
+  "context": "Journal command-line text for archive fact archive output has no parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "210fee52bf47e5dda5c7833a73f35f9c26f4ed016782af67bc27f799aa90180a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

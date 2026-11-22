@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer speaker missing.",
+  "context": "Journal command-line text for indexer speaker missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "composite_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "97f69b4effb75c41569cddd3bfda38c9303e71ca4b8bd1fb04e631f3395de5a5",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

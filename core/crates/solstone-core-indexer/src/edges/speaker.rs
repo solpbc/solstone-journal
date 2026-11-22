@@ -41,7 +41,7 @@ pub(super) struct SpeakerEntityIndex {
 
 pub(super) struct SpeakerExtraction {
     pub rows: Vec<EdgeRow>,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<solstone_core_cli_copy::MessageDetail>,
 }
 
 #[derive(Clone)]
@@ -103,8 +103,9 @@ pub(crate) fn extract_speaker_edges(
     let Some(transcript_texts) =
         load_transcript_texts(&segment_dir, &transcript_stem, &composite_id, &mut warnings)?
     else {
-        warnings.push(format!(
-            "speaker edge transcript missing for {composite_id}"
+        warnings.push(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.speaker.missing",
+            [("composite_id", &(composite_id))],
         ));
         return Ok(SpeakerExtraction { rows, warnings });
     };
@@ -292,7 +293,7 @@ fn spoke_with_rows(
 fn select_transcript_stem(
     segment_dir: &Path,
     composite_id: &str,
-    warnings: &mut Vec<String>,
+    warnings: &mut Vec<solstone_core_cli_copy::MessageDetail>,
 ) -> Result<Option<String>, EdgeError> {
     let mut npz_stems = Vec::new();
     let mut jsonl_stems = Vec::new();
@@ -358,8 +359,9 @@ fn select_transcript_stem(
     if jsonl_stems.len() == 1 {
         return Ok(jsonl_stems.first().cloned());
     }
-    warnings.push(format!(
-        "speaker edge transcript unresolved for {composite_id}"
+    warnings.push(solstone_core_cli_copy::MessageDetail::message(
+        "journal.cli.journal.indexer.speaker.unresolved",
+        [("composite_id", &(composite_id))],
     ));
     Ok(None)
 }
@@ -368,7 +370,7 @@ fn load_transcript_texts(
     segment_dir: &Path,
     stem: &str,
     composite_id: &str,
-    warnings: &mut Vec<String>,
+    warnings: &mut Vec<solstone_core_cli_copy::MessageDetail>,
 ) -> Result<Option<BTreeMap<i64, String>>, EdgeError> {
     let transcript_path = segment_dir.join(format!("{stem}.jsonl"));
     if !transcript_path.exists() {
@@ -395,9 +397,12 @@ fn load_transcript_texts(
         if !text.is_empty() {
             // Persisted sentence IDs can collide; preserve document order by keeping the last.
             if texts.contains_key(&row.sentence_id) {
-                warnings.push(format!(
-                    "speaker edge transcript duplicate sentence_id {} for {composite_id}",
-                    row.sentence_id
+                warnings.push(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.speaker.duplicate",
+                    [
+                        ("sentence", &(row.sentence_id)),
+                        ("composite_id", &(composite_id)),
+                    ],
                 ));
             }
             texts.insert(row.sentence_id, text.clone());
@@ -974,7 +979,13 @@ mod tests {
                 .unwrap()
                 .unwrap();
         fs::remove_dir_all(root).unwrap();
-        (texts, warnings)
+        (
+            texts,
+            warnings
+                .into_iter()
+                .map(|warning| warning.to_string())
+                .collect(),
+        )
     }
 
     #[test]
@@ -1169,7 +1180,11 @@ mod tests {
                 .unwrap();
 
         assert_eq!(
-            extracted.warnings,
+            extracted
+                .warnings
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
             vec!["speaker edge transcript duplicate sentence_id 3 for 20260808/default/120000_300"]
         );
         fs::remove_dir_all(root).unwrap();

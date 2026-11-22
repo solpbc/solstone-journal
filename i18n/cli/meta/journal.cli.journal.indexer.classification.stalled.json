@@ -1,0 +1,37 @@
+{
+  "description": "Journal command-line text for indexer classification stalled.",
+  "context": "Journal command-line text for indexer classification stalled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "processed",
+      "type": "string"
+    },
+    {
+      "name": "remaining",
+      "type": "string"
+    },
+    {
+      "name": "missing",
+      "type": "string"
+    },
+    {
+      "name": "unclassified",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6f900f9afb27693a71f48ed89ed20646dc424c413d5110d9ccafe13d168b4ce6",
+  "max_length": 178,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact could not stat writer.",
+  "context": "Journal command-line text for archive fact could not stat writer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4ea65ee08485b718501f4e56256f89d1fd46d875c1824a9c2daa5f3eb615d7e6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

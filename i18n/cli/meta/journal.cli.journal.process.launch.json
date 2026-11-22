@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for process launch.",
+  "context": "Journal command-line text for process launch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4dbca0a4265b9e2869196582d0e8cc1e575efcac25821bcacdf45baa07934bf1",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

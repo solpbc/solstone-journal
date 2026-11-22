@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer database present.",
+  "context": "Journal command-line text for indexer database present.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bbf2b20cea6c76e573d01b473e6050692ef8cc6c5fc9270e155756966e4394cc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive fact must name one normal file leaf.",
+  "context": "Journal command-line text for archive fact must name one normal file leaf.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bbdf0d15285e1d79fb1faffb5065ae457d0f9c631ddc5cf64bb10b0371aa8e3f",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for indexer migration mtime.",
+  "context": "Journal command-line text for indexer migration mtime.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel_segment",
+      "type": "string"
+    },
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "213e9fa2d0c7ee1325f581ab962fa87699f19d249cf1e0c3a93a6e46f3dc97be",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

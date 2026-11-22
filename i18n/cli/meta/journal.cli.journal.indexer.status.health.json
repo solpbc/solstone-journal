@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer status health.",
+  "context": "Journal command-line text for indexer status health.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "state",
+      "type": "string"
+    },
+    {
+      "name": "description",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "013c4332b019c271606a8217f937f9a8128b176c629bf9cac1acf09a984008da",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

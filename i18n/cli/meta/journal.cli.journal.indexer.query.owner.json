@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer query owner.",
+  "context": "Journal command-line text for indexer query owner.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "174443861647908857d669b10c52eb4b7519b2c20b7315823f450b7c50e42ff9",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

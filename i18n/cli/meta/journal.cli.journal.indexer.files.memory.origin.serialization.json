@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer files memory origin serialization.",
+  "context": "Journal command-line text for indexer files memory origin serialization.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f0d3019c0f5d6fc45612e5893ac3c45cc8fb58e4604b01fc2cc4a9746267eb44",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

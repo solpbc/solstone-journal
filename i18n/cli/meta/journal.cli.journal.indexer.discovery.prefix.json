@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer discovery prefix.",
+  "context": "Journal command-line text for indexer discovery prefix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "root",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fff6160868778d272c3b4095f67d56ea5ad7c55b0d9976e719671e988cec90fc",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

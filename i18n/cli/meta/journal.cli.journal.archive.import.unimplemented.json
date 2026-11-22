@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive import unimplemented.",
+  "context": "Journal command-line text for archive import unimplemented.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "module",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dbe160605c8eb997bb1bd41569a9b6d6843aeda5a39796fecfb91f02bf75fc81",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

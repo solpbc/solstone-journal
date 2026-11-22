@@ -4,6 +4,7 @@
 use std::ffi::{OsStr, OsString};
 use std::process::ExitCode;
 
+mod facet_copy;
 #[cfg(not(target_os = "ios"))]
 mod facet_names;
 pub mod help;
@@ -20,6 +21,27 @@ mod runner;
 mod test_support;
 
 pub use runner::{NativeExecutableError, sibling_native_in_dir};
+
+fn terminal_language() -> &'static str {
+    solstone_core_cli_copy::terminal_locale().unwrap_or(solstone_core_cli_copy::ENGLISH)
+}
+
+fn process_language(args: &[OsString]) -> &'static str {
+    if args
+        .iter()
+        .take_while(|arg| arg.as_os_str() != "--")
+        .any(|arg| {
+            matches!(
+                arg.to_str(),
+                Some("--json" | "--jsonl" | "--raw" | "--windows-service")
+            ) || arg.to_string_lossy().starts_with("--installation-")
+        })
+    {
+        solstone_core_cli_copy::ENGLISH
+    } else {
+        terminal_language()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JournalCommand {
@@ -222,7 +244,14 @@ pub fn run(args: Vec<OsString>) -> ExitCode {
                 .map_err(std::io::Error::other)
             });
         if let Err(error) = result {
-            eprintln!("journal process admission failed: {error}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    solstone_core_cli_copy::ENGLISH,
+                    "journal.cli.journal.process.admission",
+                    [("detail", &error)]
+                )
+            );
             return ExitCode::from(70);
         }
     }
@@ -230,7 +259,12 @@ pub fn run(args: Vec<OsString>) -> ExitCode {
     let admitted = match solstone_core_system::process::receive_windows_launch() {
         Ok(admitted) => admitted,
         Err(error) => {
-            eprintln!("journal process admission failed: {error}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::MessageDetail::from(error)
+                    .context("journal.cli.journal.process.admission")
+                    .render(process_language(&args))
+            );
             return ExitCode::from(70);
         }
     };
@@ -238,7 +272,14 @@ pub fn run(args: Vec<OsString>) -> ExitCode {
     let installed = match runner::installed_task_request(&args, admitted.as_ref()) {
         Ok(installed) => installed,
         Err(error) => {
-            eprintln!("journal process admission failed: {error}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    solstone_core_cli_copy::ENGLISH,
+                    "journal.cli.journal.process.admission",
+                    [("detail", &error)]
+                )
+            );
             return ExitCode::from(70);
         }
     };
@@ -274,7 +315,14 @@ pub fn run(args: Vec<OsString>) -> ExitCode {
             ExitCode::from(exit)
         }
         Outcome::Rejected => {
-            eprint!("{JOURNAL_USAGE}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    process_language(&args),
+                    "journal.cli.journal.help.usage",
+                    &[]
+                )
+            );
             ExitCode::from(64)
         }
     }
@@ -358,7 +406,7 @@ pub fn evaluate_args(args: &[OsString]) -> JournalCommand {
 #[must_use]
 pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcome {
     match command {
-        JournalCommand::Help => Outcome::Help(help::render_help()),
+        JournalCommand::Help => Outcome::Help(help::render_help_for(terminal_language())),
         JournalCommand::Version => Outcome::Version(help::version_line()),
         JournalCommand::Known {
             token,
@@ -368,7 +416,14 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
             Some(manifest::Primitive::Path) => {
                 if host::is_help_only(&rest) {
                     Outcome::LocalSuccess {
-                        stdout: host::PATH_HELP.to_owned(),
+                        stdout: format!(
+                            "{}\n",
+                            solstone_core_cli_copy::render_for(
+                                crate::terminal_language(),
+                                "journal.cli.journal.help.path",
+                                &[]
+                            )
+                        ),
                         stderr: String::new(),
                     }
                 } else {
@@ -378,7 +433,14 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
             Some(manifest::Primitive::Status) => {
                 if host::is_help_only(&rest) {
                     Outcome::LocalSuccess {
-                        stdout: host::STATUS_HELP.to_owned(),
+                        stdout: format!(
+                            "{}\n",
+                            solstone_core_cli_copy::render_for(
+                                crate::terminal_language(),
+                                "journal.cli.journal.help.status",
+                                &[]
+                            )
+                        ),
                         stderr: String::new(),
                     }
                 } else {
@@ -388,7 +450,14 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
             Some(manifest::Primitive::Root) => {
                 if host::is_help_only(&rest) {
                     Outcome::LocalSuccess {
-                        stdout: host::ROOT_HELP.to_owned(),
+                        stdout: format!(
+                            "{}\n",
+                            solstone_core_cli_copy::render_for(
+                                crate::terminal_language(),
+                                "journal.cli.journal.help.root",
+                                &[]
+                            )
+                        ),
                         stderr: String::new(),
                     }
                 } else {
@@ -401,7 +470,11 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
                 let usage = || {
                     format!(
                         "{}\n",
-                        solstone_core_cli_copy::text("journal.cli.about.usage.journal")
+                        solstone_core_cli_copy::render_for(
+                            process_language(&rest),
+                            "journal.cli.about.usage.journal",
+                            &[]
+                        )
                     )
                 };
                 if host::is_help_only(&rest) {
@@ -443,7 +516,14 @@ fn dispatch_hidden_native(owner_argv: &[OsString], spawner: &dyn ProcessSpawner)
         Ok(executable) => executable,
         Err(error) => {
             return Outcome::ProcessFailure {
-                stderr: format!("native journal process launch failed: {error}\n"),
+                stderr: format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        solstone_core_cli_copy::ENGLISH,
+                        "journal.cli.journal.process.launch",
+                        [("error", &error)]
+                    )
+                ),
                 exit: 70,
             };
         }
@@ -451,7 +531,14 @@ fn dispatch_hidden_native(owner_argv: &[OsString], spawner: &dyn ProcessSpawner)
     match spawner.spawn(executable.as_os_str(), owner_argv) {
         Ok(()) => Outcome::ProcessLaunched,
         Err(error) => Outcome::ProcessFailure {
-            stderr: format!("native journal process launch failed: {error}\n"),
+            stderr: format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    solstone_core_cli_copy::ENGLISH,
+                    "journal.cli.journal.process.launch",
+                    [("error", &error)]
+                )
+            ),
             exit: 70,
         },
     }
@@ -467,7 +554,14 @@ fn dispatch_process(
 ) -> Outcome {
     let Some(native) = processes::native_process_spec_for(token) else {
         return Outcome::ProcessFailure {
-            stderr: format!("native journal process launch failed: no native body for {token}\n"),
+            stderr: format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    process_language(owner_argv),
+                    "journal.cli.journal.process.body",
+                    [("token", &token)]
+                )
+            ),
             exit: 70,
         };
     };
@@ -480,7 +574,14 @@ fn dispatch_process(
                 runner::NativeExecutableError::CurrentExe(_) => 70,
             };
             return Outcome::ProcessFailure {
-                stderr: format!("native journal process launch failed: {error}\n"),
+                stderr: format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        process_language(owner_argv),
+                        "journal.cli.journal.process.launch",
+                        [("error", &error.render(process_language(owner_argv)))]
+                    )
+                ),
                 exit,
             };
         }
@@ -498,7 +599,17 @@ fn dispatch_native_process(
     match spawner.spawn(executable.as_os_str(), &args) {
         Ok(()) => Outcome::ProcessLaunched,
         Err(error) => Outcome::ProcessFailure {
-            stderr: format!("native journal process launch failed: {error}\n"),
+            stderr: format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    process_language(owner_argv),
+                    "journal.cli.journal.process.launch",
+                    [(
+                        "error",
+                        &runner::spawn_failure(&error, process_language(owner_argv))
+                    )]
+                )
+            ),
             exit: 70,
         },
     }
@@ -509,7 +620,14 @@ pub const SETUP_COPY_USAGE: &str = "usage: solstone journal setup-copy [-h] [--j
 pub fn run_setup_copy(rest: &[OsString]) -> Outcome {
     if host::is_help_only(rest) {
         Outcome::LocalSuccess {
-            stdout: SETUP_COPY_USAGE.into(),
+            stdout: format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.help.setup.copy",
+                    &[]
+                )
+            ),
             stderr: String::new(),
         }
     } else if rest.len() == 1 && rest[0] == "--json" {
@@ -529,7 +647,14 @@ pub fn run_setup_copy(rest: &[OsString]) -> Outcome {
     } else {
         Outcome::LocalFailure {
             stdout: String::new(),
-            stderr: SETUP_COPY_USAGE.into(),
+            stderr: format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    process_language(rest),
+                    "journal.cli.journal.help.setup.copy",
+                    &[]
+                )
+            ),
             exit: 2,
         }
     }

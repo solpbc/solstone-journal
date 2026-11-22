@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive import facet.",
+  "context": "Journal command-line text for archive import facet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8d885e1a1649b807aaab541596c4e409b03477f0d0d7f3a014237099b5a247fe",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

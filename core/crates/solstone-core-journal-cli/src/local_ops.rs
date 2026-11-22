@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::facet_copy;
+use solstone_core_cli_copy as cli_copy;
 use std::collections::BTreeMap;
 #[cfg(not(target_os = "ios"))]
 use std::collections::BTreeSet;
@@ -68,7 +70,15 @@ pub(crate) fn dispatch(token: &str, args: &[OsString]) -> Outcome {
         "archive merge" => archive_merge(args),
         "facet doctor" => facet_doctor(args),
         "facet merge" => facet_merge(args),
-        _ => failure(token, "unknown local operation", EXIT_USAGE),
+        _ => failure(
+            token,
+            &solstone_core_cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.local.unknown",
+                &[],
+            ),
+            EXIT_USAGE,
+        ),
     }
 }
 
@@ -99,14 +109,55 @@ impl IndexerQuery {
     }
 }
 
+fn indexer_output(args: &[OsString]) -> Option<&'static str> {
+    if let Some((verb, options)) = args.split_first()
+        && matches!(
+            verb.to_str(),
+            Some("status" | "path-lookup" | "classifications" | "drain")
+        )
+    {
+        let mut options = options.iter();
+        while let Some(option) = options.next() {
+            if verb == "drain" && option == "--budget-seconds" {
+                options.next();
+            } else if option == "--json" {
+                return None;
+            }
+        }
+    }
+    solstone_core_cli_copy::terminal_locale()
+}
+
 #[cfg(target_os = "ios")]
-fn indexer(_args: &[OsString]) -> Outcome {
-    failure("indexer", "unavailable on iOS", EXIT_UNAVAILABLE)
+fn indexer(args: &[OsString]) -> Outcome {
+    let requested = indexer_output(args);
+    let locale = requested.unwrap_or(solstone_core_cli_copy::ENGLISH);
+    failure_for(
+        "indexer",
+        &solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.journal.indexer.argument.ios",
+            &[],
+        ),
+        EXIT_UNAVAILABLE,
+        requested,
+    )
 }
 
 #[cfg(not(target_os = "ios"))]
 fn indexer(args: &[OsString]) -> Outcome {
-    const HELP: &str = "Usage: solstone journal indexer [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH] [-q [QUERY]] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--limit N] [--offset N] [--top N]\n       solstone journal indexer drain [--force] [--budget-seconds N] [--json]\n       solstone journal indexer status [--json]\n       solstone journal indexer path-lookup [--apply] [--json]\n       solstone journal indexer classifications [--json] [--apply] [--drain]\n";
+    let requested = indexer_output(args);
+    let locale = requested.unwrap_or(solstone_core_cli_copy::ENGLISH);
+    let help = || {
+        format!(
+            "{}\n",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.indexer.help.main",
+                &[]
+            )
+        )
+    };
 
     if let Some((verb, rest)) = args.split_first()
         && verb == OsStr::new("drain")
@@ -119,16 +170,48 @@ fn indexer(args: &[OsString]) -> Outcome {
                 Some("--force") => options.force = true,
                 Some("--json") => json = true,
                 Some("--budget-seconds") => {
-                    let Some(seconds) = args.next().and_then(|a| a.to_str()).and_then(|a| a.parse::<u64>().ok()).filter(|s| *s > 0) else {
-                        return usage("indexer drain", "--budget-seconds needs a positive number");
+                    let Some(seconds) = args
+                        .next()
+                        .and_then(|a| a.to_str())
+                        .and_then(|a| a.parse::<u64>().ok())
+                        .filter(|s| *s > 0)
+                    else {
+                        return usage_for(
+                            "indexer drain",
+                            &solstone_core_cli_copy::render_for(
+                                locale,
+                                "journal.cli.journal.indexer.argument.budget",
+                                &[],
+                            ),
+                            requested,
+                        );
                     };
                     options.budget = std::time::Duration::from_secs(seconds);
                 }
-                Some("--help" | "-h") => return success("Usage: solstone journal indexer drain [--force] [--budget-seconds N] [--json]\napply queued search updates. --force includes delayed retries.\n--budget-seconds stops the drain after N seconds. a whole-journal update does not start with under 300 seconds left and stays queued.\n".into()),
-                _ => return usage("indexer drain", "unexpected argument"),
+                Some("--help" | "-h") => {
+                    return success(format!(
+                        "{}\n",
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.help.drain",
+                            &[]
+                        )
+                    ));
+                }
+                _ => {
+                    return usage_for(
+                        "indexer drain",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.argument.argument",
+                            &[],
+                        ),
+                        requested,
+                    );
+                }
             }
         }
-        let journal = match journal_root("indexer") {
+        let journal = match journal_root_for("indexer", requested) {
             Ok(path) => path,
             Err(outcome) => return outcome,
         };
@@ -141,10 +224,28 @@ fn indexer(args: &[OsString]) -> Outcome {
                     )
                 } else {
                     format!(
-                        "applied {} search updates; {} failed; {} remain queued.\n",
-                        report.processed,
-                        report.failed,
-                        report.remaining.keys.len()
+                        "{}\n",
+                        solstone_core_cli_copy::MessageDetail::cardinal(
+                            "journal.cli.journal.indexer.drain.result",
+                            [
+                                (
+                                    "processed",
+                                    i64::try_from(report.processed).unwrap_or(i64::MAX)
+                                ),
+                                (
+                                    "remaining",
+                                    i64::try_from(report.remaining.keys.len()).unwrap_or(i64::MAX)
+                                )
+                            ],
+                            format!(
+                                "applied {} search updates; {} failed; {} remain queued.",
+                                report.processed,
+                                report.failed,
+                                report.remaining.keys.len()
+                            ),
+                            [("failed", &(report.failed))]
+                        )
+                        .render_for_output(requested)
                     )
                 };
                 if report.timed_out || report.failed > 0 {
@@ -157,20 +258,25 @@ fn indexer(args: &[OsString]) -> Outcome {
                     success(text)
                 }
             }
-            Err(error) => failure("indexer drain", &error.to_string(), EXIT_IO),
+            Err(error) => failure_for(
+                "indexer drain",
+                &error.cli_detail(locale),
+                EXIT_IO,
+                requested,
+            ),
         };
     }
 
     if let Some((verb, rest)) = args.split_first()
         && verb == OsStr::new("status")
     {
-        return indexer_status(rest);
+        return indexer_status(rest, requested);
     }
 
     if let Some((verb, rest)) = args.split_first()
         && verb == OsStr::new("path-lookup")
     {
-        return indexer_path_lookup(rest);
+        return indexer_path_lookup(rest, requested);
     }
 
     if args
@@ -195,14 +301,32 @@ fn indexer(args: &[OsString]) -> Outcome {
                     json = true;
                     index += 1;
                 }
-                Some("--help" | "-h") if args.len() == 2 => return success(HELP.to_owned()),
-                _ => return usage("indexer", "unexpected or duplicate argument"),
+                Some("--help" | "-h") if args.len() == 2 => return success(help()),
+                _ => {
+                    return usage_for(
+                        "indexer",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.argument.duplicate",
+                            &[],
+                        ),
+                        requested,
+                    );
+                }
             }
         }
         if drain && !apply {
-            return usage("indexer", "--drain requires --apply");
+            return usage_for(
+                "indexer",
+                &solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.indexer.argument.drain",
+                    &[],
+                ),
+                requested,
+            );
         }
-        let journal = match journal_root("indexer") {
+        let journal = match journal_root_for("indexer", requested) {
             Ok(path) => path,
             Err(outcome) => return outcome,
         };
@@ -221,10 +345,10 @@ fn indexer(args: &[OsString]) -> Outcome {
                         serde_json::to_string(&status.to_json_value()).expect("serialize json")
                     ))
                 } else {
-                    success(status.format_human())
+                    success(status.format_human_in(locale))
                 }
             }
-            Err(error) => failure("indexer", &error.to_string(), EXIT_IO),
+            Err(error) => failure_for("indexer", &error.cli_detail(locale), EXIT_IO, requested),
         };
     }
 
@@ -255,7 +379,15 @@ fn indexer(args: &[OsString]) -> Outcome {
             }
             Some("--rescan-file") if rescan_file_path.is_none() => {
                 let Some(path) = args.get(index + 1) else {
-                    return usage("indexer", "--rescan-file requires PATH");
+                    return usage_for(
+                        "indexer",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.argument.file",
+                            &[],
+                        ),
+                        requested,
+                    );
                 };
                 rescan_file_path = Some(PathBuf::from(path));
                 index += 2;
@@ -278,76 +410,163 @@ fn indexer(args: &[OsString]) -> Outcome {
             }
             Some("--day") if query.day.is_none() => {
                 let Some(value) = utf8_value(args, index + 1) else {
-                    return usage("indexer", "--day requires DAY");
+                    return usage_for(
+                        "indexer",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.argument.missing.day",
+                            &[],
+                        ),
+                        requested,
+                    );
                 };
                 query.day = Some(value.to_owned());
                 index += 2;
             }
             Some("--day-from") if query.day_from.is_none() => {
                 let Some(value) = utf8_value(args, index + 1) else {
-                    return usage("indexer", "--day-from requires DAY");
+                    return usage_for(
+                        "indexer",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.argument.missing.day.from",
+                            &[],
+                        ),
+                        requested,
+                    );
                 };
                 query.day_from = Some(value.to_owned());
                 index += 2;
             }
             Some("--day-to") if query.day_to.is_none() => {
                 let Some(value) = utf8_value(args, index + 1) else {
-                    return usage("indexer", "--day-to requires DAY");
+                    return usage_for(
+                        "indexer",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.argument.missing.day.to",
+                            &[],
+                        ),
+                        requested,
+                    );
                 };
                 query.day_to = Some(value.to_owned());
                 index += 2;
             }
             Some("--facet") if query.facet.is_none() => {
                 let Some(value) = utf8_value(args, index + 1) else {
-                    return usage("indexer", "--facet requires FACET");
+                    return usage_for(
+                        "indexer",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.argument.missing.facet",
+                            &[],
+                        ),
+                        requested,
+                    );
                 };
                 query.facet = Some(value.to_owned());
                 index += 2;
             }
             Some("--agent" | "-a") if query.agent.is_none() => {
                 let Some(value) = utf8_value(args, index + 1) else {
-                    return usage("indexer", "--agent requires AGENT");
+                    return usage_for(
+                        "indexer",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.argument.missing.agent",
+                            &[],
+                        ),
+                        requested,
+                    );
                 };
                 query.agent = Some(value.to_owned());
                 index += 2;
             }
             Some("--stream") if query.stream.is_none() => {
                 let Some(value) = utf8_value(args, index + 1) else {
-                    return usage("indexer", "--stream requires STREAM");
+                    return usage_for(
+                        "indexer",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.argument.missing.stream",
+                            &[],
+                        ),
+                        requested,
+                    );
                 };
                 query.stream = Some(value.to_owned());
                 index += 2;
             }
             Some("--limit") => {
                 let Some(value) = usize_value(args, index + 1) else {
-                    return usage("indexer", "--limit requires a non-negative integer");
+                    return usage_for(
+                        "indexer",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.argument.missing.limit",
+                            &[],
+                        ),
+                        requested,
+                    );
                 };
                 query.limit = value;
                 index += 2;
             }
             Some("--offset") => {
                 let Some(value) = usize_value(args, index + 1) else {
-                    return usage("indexer", "--offset requires a non-negative integer");
+                    return usage_for(
+                        "indexer",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.argument.missing.offset",
+                            &[],
+                        ),
+                        requested,
+                    );
                 };
                 query.offset = value;
                 index += 2;
             }
             Some("--top") => {
                 let Some(value) = usize_value(args, index + 1) else {
-                    return usage("indexer", "--top requires a non-negative integer");
+                    return usage_for(
+                        "indexer",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.argument.missing.top",
+                            &[],
+                        ),
+                        requested,
+                    );
                 };
                 query.top = value;
                 index += 2;
             }
-            Some("--help" | "-h") if args.len() == 1 => return success(HELP.to_owned()),
-            _ => return usage("indexer", "unexpected or duplicate argument"),
+            Some("--help" | "-h") if args.len() == 1 => return success(help()),
+            _ => {
+                return usage_for(
+                    "indexer",
+                    &solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.journal.indexer.argument.duplicate",
+                        &[],
+                    ),
+                    requested,
+                );
+            }
         }
     }
 
     if rescan_file_path.is_some() && (rescan || rescan_full) {
-        return usage(
+        return usage_for(
             "indexer",
-            "--rescan-file cannot be combined with --rescan or --rescan-full",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.indexer.argument.rescan.conflict",
+                &[],
+            ),
+            requested,
         );
     }
     if !reset
@@ -357,10 +576,10 @@ fn indexer(args: &[OsString]) -> Outcome {
         && rescan_file_path.is_none()
         && !query.requested
     {
-        return success(HELP.to_owned());
+        return success(help());
     }
 
-    let journal = match journal_root("indexer") {
+    let journal = match journal_root_for("indexer", requested) {
         Ok(path) => path,
         Err(outcome) => return outcome,
     };
@@ -369,14 +588,30 @@ fn indexer(args: &[OsString]) -> Outcome {
     let mut full_rescan_failed = 0;
 
     if reset && let Err(error) = reset_index(&journal) {
-        return failure("indexer", &format!("reset failed: {error}"), EXIT_IO);
+        return failure_for(
+            "indexer",
+            &solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.indexer.error.reset",
+                [("detail", &(error.cli_detail(locale)))],
+            ),
+            EXIT_IO,
+            requested,
+        );
     }
 
     if rebuild {
         match rebuild_edges(&journal) {
             Ok(report) => {
                 for warning in report.warnings {
-                    stderr.push_str(&format!("warning: {warning}\n"));
+                    stderr.push_str(&format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.journal.indexer.warning",
+                            [("warning", &warning.render_for_output(requested))]
+                        )
+                    ));
                 }
                 if report.failed > 0 {
                     return Outcome::LocalFailure {
@@ -387,7 +622,16 @@ fn indexer(args: &[OsString]) -> Outcome {
                 }
             }
             Err(error) => {
-                return failure("indexer", &format!("edge rebuild failed: {error}"), EXIT_IO);
+                return failure_for(
+                    "indexer",
+                    &solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.journal.indexer.error.rebuild",
+                        [("detail", &(error.cli_detail(locale)))],
+                    ),
+                    EXIT_IO,
+                    requested,
+                );
             }
         }
     }
@@ -396,37 +640,109 @@ fn indexer(args: &[OsString]) -> Outcome {
         match rescan_file(&journal, &path) {
             Ok(RescanFileStatus::Indexed { warnings }) => {
                 for warning in warnings {
-                    stderr.push_str(&format!("warning: {warning}\n"));
+                    stderr.push_str(&format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.journal.indexer.warning",
+                            [("warning", &warning.render_for_output(requested))]
+                        )
+                    ));
                 }
             }
             Ok(RescanFileStatus::Declined) => {
-                return failure("indexer", "unsupported file", EXIT_UNAVAILABLE);
+                return failure_for(
+                    "indexer",
+                    &solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.journal.indexer.argument.unsupported",
+                        &[],
+                    ),
+                    EXIT_UNAVAILABLE,
+                    requested,
+                );
             }
             Err(error) => {
-                return failure("indexer", &format!("rescan-file failed: {error}"), EXIT_IO);
+                return failure_for(
+                    "indexer",
+                    &solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.journal.indexer.error.file",
+                        [("detail", &(error.cli_detail(locale)))],
+                    ),
+                    EXIT_IO,
+                    requested,
+                );
             }
         }
     } else if rescan || rescan_full {
         match scan_journal(&journal, rescan_full) {
             Ok(report) => {
                 for warning in report.warnings {
-                    stderr.push_str(&format!("warning: {warning}\n"));
-                }
-                let failed = if report.failed > 0 {
-                    format!(", failed {}", report.failed)
-                } else {
-                    String::new()
-                };
-                if report.deferred_to_full {
-                    stdout.push_str(solstone_core_indexer_store::scan::FULL_PASS_RUNNING);
-                } else {
-                    stdout.push_str(&format!(
-                        "Indexed {} file(s), removed {}, skipped {}{failed}\n",
-                        report.indexed, report.removed, report.skipped
+                    stderr.push_str(&format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.journal.indexer.warning",
+                            [("warning", &warning.render_for_output(requested))]
+                        )
                     ));
                 }
+                if report.deferred_to_full {
+                    writeln!(
+                        stdout,
+                        "{}",
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.scan.deferred",
+                            &[]
+                        )
+                    )
+                    .expect("write string");
+                } else {
+                    let summary = if report.failed > 0 {
+                        solstone_core_cli_copy::MessageDetail::cardinal(
+                            "journal.cli.journal.indexer.scan.failed",
+                            [("indexed", i64::try_from(report.indexed).unwrap_or(i64::MAX))],
+                            format!(
+                                "Indexed {} file(s), removed {}, skipped {}, failed {}",
+                                report.indexed, report.removed, report.skipped, report.failed
+                            ),
+                            [
+                                ("removed", &(report.removed)),
+                                ("skipped", &(report.skipped)),
+                                ("failed", &(report.failed)),
+                            ],
+                        )
+                        .render_for_output(requested)
+                    } else {
+                        solstone_core_cli_copy::MessageDetail::cardinal(
+                            "journal.cli.journal.indexer.scan.summary",
+                            [("indexed", i64::try_from(report.indexed).unwrap_or(i64::MAX))],
+                            format!(
+                                "Indexed {} file(s), removed {}, skipped {}",
+                                report.indexed, report.removed, report.skipped
+                            ),
+                            [
+                                ("removed", &(report.removed)),
+                                ("skipped", &(report.skipped)),
+                            ],
+                        )
+                        .render_for_output(requested)
+                    };
+                    writeln!(stdout, "{summary}").expect("write string");
+                }
                 if rescan_full && !reset && !rebuild && report.edge_rows_inserted == 0 {
-                    stdout.push_str("No new connections were added in this rescan. Run solstone journal indexer --rebuild-edges to bring any still waiting up to date now.\n");
+                    writeln!(
+                        stdout,
+                        "{}",
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.scan.connections",
+                            &[]
+                        )
+                    )
+                    .expect("write string");
                 }
                 // A full rescan is an operator's repair, so it says when files failed.
                 // A light rescan keeps exit 0: the nightly processing runs it, and a
@@ -436,7 +752,16 @@ fn indexer(args: &[OsString]) -> Outcome {
                 }
             }
             Err(error) => {
-                return failure("indexer", &format!("scan failed: {error}"), EXIT_IO);
+                return failure_for(
+                    "indexer",
+                    &solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.journal.indexer.error.scan",
+                        [("detail", &(error.cli_detail(locale)))],
+                    ),
+                    EXIT_IO,
+                    requested,
+                );
             }
         }
     }
@@ -452,13 +777,20 @@ fn indexer(args: &[OsString]) -> Outcome {
                 stderr.clear();
             }
             if let Err((message, exit)) = run_interactive_indexer_query(&journal, &query) {
-                return failure("indexer", &message, exit);
+                return failure_for("indexer", &message, exit, requested);
             }
         } else {
             match run_one_indexer_query(&journal, &query.text, &query) {
                 Ok(output) => stdout.push_str(&output),
                 Err((message, exit)) => {
-                    stderr.push_str(&format!("indexer: {message}\n"));
+                    stderr.push_str(&format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.journal.indexer.query.error",
+                            [("detail", &(message))]
+                        )
+                    ));
                     return Outcome::LocalFailure {
                         stdout,
                         stderr,
@@ -470,9 +802,7 @@ fn indexer(args: &[OsString]) -> Outcome {
     }
 
     if full_rescan_failed > 0 {
-        stderr.push_str(&format!(
-            "solstone journal indexer: {full_rescan_failed} update(s) couldn't be indexed; see the warnings above\n"
-        ));
+        writeln!(stderr, "{}", solstone_core_cli_copy::MessageDetail::cardinal("journal.cli.journal.indexer.scan.failure", [("failed", i64::try_from(full_rescan_failed).unwrap_or(i64::MAX))], format!("solstone journal indexer: {full_rescan_failed} update(s) couldn't be indexed; see the warnings above"), []).render_for_output(requested)).expect("write string");
         return Outcome::LocalFailure {
             stdout,
             stderr,
@@ -485,36 +815,50 @@ fn indexer(args: &[OsString]) -> Outcome {
 
 /// Read-only: measures the index against the journal and changes neither.
 #[cfg(not(target_os = "ios"))]
-fn indexer_status(args: &[OsString]) -> Outcome {
-    const HELP: &str = "Usage: solstone journal indexer status [--json]\n";
+fn indexer_status(args: &[OsString], requested: Option<&str>) -> Outcome {
+    let locale = requested.unwrap_or(solstone_core_cli_copy::ENGLISH);
+    let help = || {
+        format!(
+            "{}\n",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.indexer.help.status",
+                &[]
+            )
+        )
+    };
     if args.len() == 1 && matches!(args[0].to_str(), Some("--help" | "-h")) {
-        return success(HELP.to_owned());
+        return success(help());
     }
     let mut json_output = false;
     for arg in args {
         match arg.to_str() {
             Some("--json") if !json_output => json_output = true,
-            _ => return usage("indexer status", "unexpected or duplicate argument"),
+            _ => {
+                return usage_for(
+                    "indexer status",
+                    &solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.journal.indexer.argument.duplicate",
+                        &[],
+                    ),
+                    requested,
+                );
+            }
         }
     }
-    let journal = match journal_root("indexer status") {
+    let journal = match journal_root_for("indexer status", requested) {
         Ok(journal) => journal,
         Err(outcome) => return outcome,
     };
     match indexer_status_report(&journal, json_output) {
         Ok(report) => success(report),
-        Err(error) => failure("indexer status", &error.to_string(), EXIT_IO),
-    }
-}
-
-/// A wait as an owner reads it: seconds, then minutes, hours and days.
-#[cfg(not(target_os = "ios"))]
-fn waiting_for(seconds: u64) -> String {
-    match seconds {
-        0..60 => format!("{seconds} s"),
-        60..3_600 => format!("{} min", seconds / 60),
-        3_600..86_400 => format!("{} h {} min", seconds / 3_600, seconds % 3_600 / 60),
-        _ => format!("{} d {} h", seconds / 86_400, seconds % 86_400 / 3_600),
+        Err(error) => failure_for(
+            "indexer status",
+            &error.cli_detail(locale),
+            EXIT_IO,
+            requested,
+        ),
     }
 }
 
@@ -523,53 +867,162 @@ fn indexer_status_report(
     journal: &Path,
     json_output: bool,
 ) -> Result<String, solstone_core_indexer_store::StoreError> {
-    let status = solstone_core_indexer_store::status::inspect_index(journal)?;
+    let requested = if json_output {
+        None
+    } else {
+        solstone_core_cli_copy::terminal_locale()
+    };
+    let locale = requested.unwrap_or(solstone_core_cli_copy::ENGLISH);
+    let status = solstone_core_indexer_store::status::inspect_index_in(journal, locale)?;
     let observations =
         solstone_core_system_health::read_indexing_observations(journal, jiff::Timestamp::now());
-    let health =
-        solstone_core_system_health::evaluate_index_health_of(journal, &status, &observations);
+    let health = solstone_core_system_health::evaluate_index_health_of_in(
+        journal,
+        &status,
+        &observations,
+        locale,
+    );
     if json_output {
         let mut value = status.to_json_value();
         value["health"] = serde_json::to_value(&health).expect("serialize index health");
         return Ok(format!("{value}\n"));
     }
-    let mut report = format!("health: {} ({})\n", health.state.as_str(), health.text);
+    let mut report = format!(
+        "{}\n",
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.journal.indexer.status.health",
+            [
+                ("state", &(health.state.as_str())),
+                ("description", &(health.text))
+            ]
+        )
+    );
     if let Some(failure) = health.failure {
         let failure = serde_json::to_value(failure).expect("serialize index failure");
-        report.push_str(&format!(
-            "failure: {}\n",
-            failure.as_str().expect("index failures are strings")
-        ));
+        writeln!(
+            report,
+            "{}",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.indexer.status.failure",
+                [(
+                    "reason",
+                    &(failure.as_str().expect("index failures are strings"))
+                )]
+            )
+        )
+        .expect("write string");
     }
-    report.push_str(&format!(
-        "queued: {}\nremovals still waiting: {}\n",
-        health.queued, health.failed_deletions
-    ));
+    writeln!(
+        report,
+        "{}",
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.journal.indexer.status.queued",
+            [("queued", &(health.queued))]
+        )
+    )
+    .expect("write string");
+    writeln!(
+        report,
+        "{}",
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.journal.indexer.status.removals",
+            [("removals", &(health.failed_deletions))]
+        )
+    )
+    .expect("write string");
     if let Some(age_ms) = health.oldest_queued_age_ms {
-        report.push_str(&format!(
-            "oldest queued: waiting {}\n",
-            waiting_for(age_ms / 1000)
-        ));
+        let seconds = age_ms / 1000;
+        let waiting = match seconds {
+            0..60 => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.indexer.status.wait.seconds",
+                [("seconds", &(seconds))],
+            ),
+            60..3_600 => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.indexer.status.wait.minutes",
+                [("minutes", &(seconds / 60))],
+            ),
+            3_600..86_400 => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.indexer.status.wait.hours",
+                [
+                    ("hours", &(seconds / 3_600)),
+                    ("minutes", &(seconds % 3_600 / 60)),
+                ],
+            ),
+            _ => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.indexer.status.wait.days",
+                [
+                    ("days", &(seconds / 86_400)),
+                    ("hours", &(seconds % 86_400 / 3_600)),
+                ],
+            ),
+        };
+        writeln!(report, "{waiting}").expect("write string");
     }
     match health.last_finished_check_at_ms {
-        Some(at_ms) => report.push_str(&format!(
-            "last search check: at {at_ms} ms, indexed {}, removed {}\n",
-            health.check_indexed, health.check_removed
-        )),
-        None => report.push_str("last search check: not recorded\n"),
+        Some(at_ms) => writeln!(
+            report,
+            "{}",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.indexer.status.check",
+                [
+                    ("time", &(at_ms)),
+                    ("indexed", &(health.check_indexed)),
+                    ("removed", &(health.check_removed))
+                ]
+            )
+        )
+        .expect("write string"),
+        None => writeln!(
+            report,
+            "{}",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.indexer.status.check.absent",
+                &[]
+            )
+        )
+        .expect("write string"),
     }
     if health.check_overdue {
-        report.push_str("last search check: overdue, it has run since then without finishing\n");
+        writeln!(
+            report,
+            "{}",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.indexer.status.check.overdue",
+                &[]
+            )
+        )
+        .expect("write string");
     }
-    report.push_str(&status.format_human());
+    report.push_str(&status.format_human_in(locale));
     Ok(report)
 }
 
 #[cfg(not(target_os = "ios"))]
-fn indexer_path_lookup(args: &[OsString]) -> Outcome {
-    const HELP: &str = "Usage: solstone journal indexer path-lookup [--apply] [--json]\n";
+fn indexer_path_lookup(args: &[OsString], requested: Option<&str>) -> Outcome {
+    let locale = requested.unwrap_or(solstone_core_cli_copy::ENGLISH);
+    let help = || {
+        format!(
+            "{}\n",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.indexer.help.path",
+                &[]
+            )
+        )
+    };
     if args.len() == 1 && matches!(args[0].to_str(), Some("--help" | "-h")) {
-        return success(HELP.to_owned());
+        return success(help());
     }
     let mut apply = false;
     let mut json_output = false;
@@ -577,10 +1030,20 @@ fn indexer_path_lookup(args: &[OsString]) -> Outcome {
         match arg.to_str() {
             Some("--apply") if !apply => apply = true,
             Some("--json") if !json_output => json_output = true,
-            _ => return usage("indexer path-lookup", "unexpected or duplicate argument"),
+            _ => {
+                return usage_for(
+                    "indexer path-lookup",
+                    &solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.journal.indexer.argument.duplicate",
+                        &[],
+                    ),
+                    requested,
+                );
+            }
         }
     }
-    let journal = match journal_root("indexer path-lookup") {
+    let journal = match journal_root_for("indexer path-lookup", requested) {
         Ok(journal) => journal,
         Err(outcome) => return outcome,
     };
@@ -595,13 +1058,30 @@ fn indexer_path_lookup(args: &[OsString]) -> Outcome {
                 format!("{}\n", json!({ "ready": status.ready }))
             } else {
                 format!(
-                    "path lookup: {}\n",
-                    if status.ready { "ready" } else { "unready" }
+                    "{}\n",
+                    if status.ready {
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.path.ready",
+                            &[],
+                        )
+                    } else {
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.indexer.path.unready",
+                            &[],
+                        )
+                    }
                 )
             };
             success(stdout)
         }
-        Err(error) => failure("indexer path-lookup", &error.to_string(), EXIT_TEMPFAIL),
+        Err(error) => failure_for(
+            "indexer path-lookup",
+            &error.cli_detail(locale),
+            EXIT_TEMPFAIL,
+            requested,
+        ),
     }
 }
 
@@ -620,23 +1100,53 @@ fn run_interactive_indexer_query(
     journal: &Path,
     options: &IndexerQuery,
 ) -> Result<(), (String, u8)> {
+    let locale =
+        solstone_core_cli_copy::terminal_locale().unwrap_or(solstone_core_cli_copy::ENGLISH);
     loop {
-        print!("search> ");
-        io::stdout()
-            .flush()
-            .map_err(|error| (format!("stdout write failed: {error}"), EXIT_IO))?;
+        print!(
+            "{} ",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.indexer.query.prompt",
+                &[]
+            )
+        );
+        io::stdout().flush().map_err(|error| {
+            (
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.journal.indexer.query.output",
+                    [("error", &(error))],
+                ),
+                EXIT_IO,
+            )
+        })?;
         let mut query = String::new();
-        let read = io::stdin()
-            .read_line(&mut query)
-            .map_err(|error| (format!("stdin read failed: {error}"), EXIT_IO))?;
+        let read = io::stdin().read_line(&mut query).map_err(|error| {
+            (
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.journal.indexer.query.input",
+                    [("error", &(error))],
+                ),
+                EXIT_IO,
+            )
+        })?;
         if read == 0 || query.trim().is_empty() {
             return Ok(());
         }
         let output = run_one_indexer_query(journal, query.trim(), options)?;
         print!("{output}");
-        io::stdout()
-            .flush()
-            .map_err(|error| (format!("stdout write failed: {error}"), EXIT_IO))?;
+        io::stdout().flush().map_err(|error| {
+            (
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.journal.indexer.query.output",
+                    [("error", &(error))],
+                ),
+                EXIT_IO,
+            )
+        })?;
     }
 }
 
@@ -672,12 +1182,41 @@ fn run_one_indexer_query(
 
 #[cfg(not(target_os = "ios"))]
 fn index_query_error(error: IndexAccessError) -> (String, u8) {
+    let locale =
+        solstone_core_cli_copy::terminal_locale().unwrap_or(solstone_core_cli_copy::ENGLISH);
     let exit = if error.reason() == "index_locked" {
         EXIT_TEMPFAIL
     } else {
         EXIT_UNAVAILABLE
     };
-    (error.to_string(), exit)
+    let message = match error {
+        IndexAccessError::Absent { path } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.journal.indexer.query.absent",
+            [("path", &(path.display()))],
+        ),
+        IndexAccessError::Locked { path, detail } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.journal.indexer.query.locked",
+            [("path", &(path.display())), ("detail", &(detail))],
+        ),
+        IndexAccessError::Unreadable { path, detail } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.journal.indexer.query.unreadable",
+            [("path", &(path.display())), ("detail", &(detail))],
+        ),
+        IndexAccessError::Empty { path } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.journal.indexer.query.empty",
+            [("path", &(path.display()))],
+        ),
+        IndexAccessError::ConnectionCorpusRefusal(_) => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.journal.indexer.query.owner",
+            &[],
+        ),
+    };
+    (message, exit)
 }
 
 #[cfg(not(target_os = "ios"))]
@@ -687,12 +1226,44 @@ fn format_indexer_query(
     offset: usize,
     top: usize,
 ) -> String {
+    let locale =
+        solstone_core_cli_copy::terminal_locale().unwrap_or(solstone_core_cli_copy::ENGLISH);
     let facets = top_count_column(&counts.facets, top);
     let agents = top_count_column(&counts.agents, top);
     let days = top_day_column(&counts.days, top);
     let mut output = String::new();
-    writeln!(output, "Total: {} chunks\n", counts.total).expect("write string");
-    writeln!(output, "{:<20} {:<20} {:<20}", "Facet", "Agent", "Day").expect("write string");
+    writeln!(
+        output,
+        "{}\n",
+        solstone_core_cli_copy::MessageDetail::cardinal(
+            "journal.cli.journal.indexer.query.total",
+            [("total", i64::try_from(counts.total).unwrap_or(i64::MAX))],
+            format!("Total: {} chunks", counts.total),
+            []
+        )
+        .render_for_output(solstone_core_cli_copy::terminal_locale())
+    )
+    .expect("write string");
+    writeln!(
+        output,
+        "{:<20} {:<20} {:<20}",
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.journal.indexer.query.column.facet",
+            &[]
+        ),
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.journal.indexer.query.column.agent",
+            &[]
+        ),
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.journal.indexer.query.column.day",
+            &[]
+        )
+    )
+    .expect("write string");
     writeln!(output, "{}", "-".repeat(60)).expect("write string");
     for index in 0..facets.len().max(agents.len()).max(days.len()) {
         writeln!(
@@ -707,15 +1278,36 @@ fn format_indexer_query(
     output.push('\n');
 
     if counts.total == 0 || results.is_empty() {
-        output.push_str("No results found\n");
+        writeln!(
+            output,
+            "{}",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.indexer.query.none",
+                &[]
+            )
+        )
+        .expect("write string");
         return output;
     }
     writeln!(
         output,
-        "Showing {}-{} of {} results\n",
-        offset + 1,
-        offset + results.len(),
-        counts.total
+        "{}\n",
+        solstone_core_cli_copy::MessageDetail::cardinal(
+            "journal.cli.journal.indexer.query.showing",
+            [("total", i64::try_from(counts.total).unwrap_or(i64::MAX))],
+            format!(
+                "Showing {}-{} of {} results",
+                offset + 1,
+                offset + results.len(),
+                counts.total
+            ),
+            [
+                ("first", &(offset + 1)),
+                ("last", &(offset + results.len()))
+            ]
+        )
+        .render_for_output(solstone_core_cli_copy::terminal_locale())
     )
     .expect("write string");
     for (index, hit) in results.iter().enumerate() {
@@ -759,18 +1351,27 @@ fn top_day_column(values: &BTreeMap<String, u64>, top: usize) -> Vec<String> {
 
 #[cfg(not(target_os = "ios"))]
 fn format_count_column(entries: Vec<(&String, &u64)>, total: usize, top: usize) -> Vec<String> {
+    let locale =
+        solstone_core_cli_copy::terminal_locale().unwrap_or(solstone_core_cli_copy::ENGLISH);
     let mut lines = entries
         .into_iter()
         .take(top)
         .map(|(name, count)| format!("{name} ({count})"))
         .collect::<Vec<_>>();
     if total > top {
-        lines.push(format!("... +{} more", total - top));
+        lines.push(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.journal.indexer.query.more",
+            [("remaining", &(total - top))],
+        ));
     }
     lines
 }
 
+mod archive_copy;
+
 fn archive_export(args: &[OsString]) -> Outcome {
+    let locale = crate::terminal_language();
     let mut output: Option<PathBuf> = None;
     let mut quiet = false;
     let mut day: Option<String> = None;
@@ -781,7 +1382,14 @@ fn archive_export(args: &[OsString]) -> Outcome {
         match args[index].to_str() {
             Some("--out") if output.is_none() => {
                 let Some(value) = args.get(index + 1) else {
-                    return usage("archive export", "--out requires PATH");
+                    return usage(
+                        "archive export",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.archive.out.required",
+                            &[],
+                        ),
+                    );
                 };
                 output = Some(PathBuf::from(value));
                 index += 2;
@@ -792,12 +1400,23 @@ fn archive_export(args: &[OsString]) -> Outcome {
             }
             Some("--day") if day.is_none() => {
                 let Some(value) = args.get(index + 1).and_then(|value| value.to_str()) else {
-                    return usage("archive export", "--day requires YYYYMMDD");
+                    return usage(
+                        "archive export",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.archive.day.required",
+                            &[],
+                        ),
+                    );
                 };
                 if !valid_day(value) {
                     return failure(
                         "archive export",
-                        "DAY must be a real YYYYMMDD date",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.archive.day.invalid",
+                            &[],
+                        ),
                         EXIT_DATA,
                     );
                 }
@@ -806,12 +1425,23 @@ fn archive_export(args: &[OsString]) -> Outcome {
             }
             Some("--from") if from.is_none() => {
                 let Some(value) = args.get(index + 1).and_then(|value| value.to_str()) else {
-                    return usage("archive export", "--from requires YYYYMMDD");
+                    return usage(
+                        "archive export",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.archive.from.required",
+                            &[],
+                        ),
+                    );
                 };
                 if !valid_day(value) {
                     return failure(
                         "archive export",
-                        "FROM must be a real YYYYMMDD date",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.archive.from.invalid",
+                            &[],
+                        ),
                         EXIT_DATA,
                     );
                 }
@@ -820,12 +1450,23 @@ fn archive_export(args: &[OsString]) -> Outcome {
             }
             Some("--to") if to.is_none() => {
                 let Some(value) = args.get(index + 1).and_then(|value| value.to_str()) else {
-                    return usage("archive export", "--to requires YYYYMMDD");
+                    return usage(
+                        "archive export",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.archive.to.required",
+                            &[],
+                        ),
+                    );
                 };
                 if !valid_day(value) {
                     return failure(
                         "archive export",
-                        "TO must be a real YYYYMMDD date",
+                        &solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.journal.archive.to.invalid",
+                            &[],
+                        ),
                         EXIT_DATA,
                     );
                 }
@@ -833,23 +1474,44 @@ fn archive_export(args: &[OsString]) -> Outcome {
                 index += 2;
             }
             Some("--help" | "-h") if args.len() == 1 => {
-                return success(
-                    "Usage: solstone journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n\ncreate a ZIP of your journal, including settings and credentials.\nprocessing logs, rebuildable indexes and caches, locks and temporary files are left out.\nwith a date filter, only the selected days are included.\n".to_owned(),
+                return success(format!(
+                    "{}\n",
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.journal.archive.export.help",
+                        &[]
+                    )
+                ));
+            }
+            _ => {
+                return usage(
+                    "archive export",
+                    &solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.journal.archive.argument",
+                        &[],
+                    ),
                 );
             }
-            _ => return usage("archive export", "unexpected argument"),
         }
     }
     if day.is_some() && (from.is_some() || to.is_some()) {
         return usage(
             "archive export",
-            "--day cannot be combined with --from or --to",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.archive.day.exclusive",
+                &[],
+            ),
         );
     }
     if let (Some(from_day), Some(to_day)) = (&from, &to)
         && from_day > to_day
     {
-        return usage("archive export", "--from must not be after --to");
+        return usage(
+            "archive export",
+            &solstone_core_cli_copy::render_for(locale, "journal.cli.journal.archive.range", &[]),
+        );
     }
     let day_window = if day.is_some() || from.is_some() || to.is_some() {
         Some(DayWindow {
@@ -866,13 +1528,13 @@ fn archive_export(args: &[OsString]) -> Outcome {
     };
     let source = match ArchiveSource::open(&journal) {
         Ok(source) => source,
-        Err(error) => return archive_error("archive export", &error.to_string()),
+        Err(error) => return archive_error(&error, archive_copy::source(locale, &error)),
     };
     let exported_at =
         solstone_core_time::utc_z(jiff::Timestamp::now(), solstone_core_time::Precision::Secs);
     let output = match output {
         Some(path) => path,
-        None => match default_export_path(source.canonical_source(), &exported_at) {
+        None => match default_export_path(locale, source.canonical_source(), &exported_at) {
             Ok(path) => path,
             Err(error) => return failure("archive export", &error, EXIT_IO),
         },
@@ -881,14 +1543,19 @@ fn archive_export(args: &[OsString]) -> Outcome {
         Ok(cwd) => cwd,
         Err(error) => return failure("archive export", &error.to_string(), EXIT_IO),
     };
-    if let Err(error) = reject_export_tree_output(source.canonical_source(), &output, &cwd) {
+    if let Err(error) = reject_export_tree_output(locale, source.canonical_source(), &output, &cwd)
+    {
         return failure("archive export", &error, EXIT_DATA);
     }
     let target =
         match acquire_explicit_output_target(&ExplicitArchiveOutputRequest::new(output, cwd)) {
             Ok(target) => target,
             Err(error) => {
-                return failure("archive export", &error.to_string(), target_exit(&error));
+                return failure(
+                    "archive export",
+                    &archive_copy::target(locale, &error),
+                    target_exit(&error),
+                );
             }
         };
     let final_path = target.final_path().to_owned();
@@ -899,7 +1566,7 @@ fn archive_export(args: &[OsString]) -> Outcome {
         day_window,
     };
     if let Err(error) = publish_archive(&target, &request) {
-        return archive_error("archive export", &error.to_string());
+        return archive_error(&error, archive_copy::publication(locale, &error));
     }
     let mut stderr = String::new();
     if !quiet && !source.inventory().skipped_root_names().is_empty() {
@@ -910,7 +1577,14 @@ fn archive_export(args: &[OsString]) -> Outcome {
             .map(|name| name.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        stderr = format!("solstone journal archive export: skipped top-level entries: {skipped}\n");
+        stderr = format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.archive.skipped",
+                [("skipped", &(skipped))]
+            )
+        );
     }
     Outcome::LocalSuccess {
         stdout: if quiet {
@@ -924,7 +1598,12 @@ fn archive_export(args: &[OsString]) -> Outcome {
 
 #[cfg(target_os = "ios")]
 fn archive_merge(_args: &[OsString]) -> Outcome {
-    failure("archive merge", "unavailable on iOS", EXIT_UNAVAILABLE)
+    let locale = crate::terminal_language();
+    failure(
+        "archive merge",
+        &solstone_core_cli_copy::render_for(locale, "journal.cli.journal.archive.ios", &[]),
+        EXIT_UNAVAILABLE,
+    )
 }
 
 #[cfg(not(target_os = "ios"))]
@@ -946,16 +1625,42 @@ impl FullReindexRequester for LocalScanReindex {
 
 #[cfg(not(target_os = "ios"))]
 fn archive_merge(args: &[OsString]) -> Outcome {
+    let requested = if args.iter().skip(1).any(|arg| arg == OsStr::new("--json")) {
+        None
+    } else {
+        solstone_core_cli_copy::terminal_locale()
+    };
+    let locale = requested.unwrap_or(solstone_core_cli_copy::ENGLISH);
     let Some(source_arg) = args.first() else {
-        return usage("archive merge", "SOURCE is required");
+        return usage(
+            "archive merge",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.archive.source.required",
+                &[],
+            ),
+        );
     };
     if source_arg == OsStr::new("--help") || source_arg == OsStr::new("-h") {
         return if args.len() == 1 {
-            success(
-                "Usage: solstone journal archive merge SOURCE [--dry-run] [--json]\n".to_owned(),
-            )
+            success(format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.archive.merge.help",
+                    &[]
+                )
+            ))
         } else {
-            usage("archive merge", "unexpected argument")
+            usage_for(
+                "archive merge",
+                &solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.journal.archive.argument",
+                    &[],
+                ),
+                requested,
+            )
         };
     }
     let source = PathBuf::from(source_arg);
@@ -965,19 +1670,29 @@ fn archive_merge(args: &[OsString]) -> Outcome {
         match arg.to_str() {
             Some("--dry-run") if !dry_run => dry_run = true,
             Some("--json") if !json_output => json_output = true,
-            _ => return usage("archive merge", "unexpected argument"),
+            _ => {
+                return usage_for(
+                    "archive merge",
+                    &solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.journal.archive.argument",
+                        &[],
+                    ),
+                    requested,
+                );
+            }
         }
     }
-    let journal = match journal_root("archive merge") {
+    let journal = match journal_root_for("archive merge", requested) {
         Ok(path) => path,
         Err(outcome) => return outcome,
     };
-    let source = match regular_archive_file(&source) {
+    let source = match regular_archive_file(locale, &source) {
         Ok(path) => path,
-        Err(error) => return failure("archive merge", &error, EXIT_DATA),
+        Err(error) => return failure_for("archive merge", &error, EXIT_DATA, requested),
     };
     if dry_run {
-        return archive_merge_preview(&source, &journal, json_output);
+        return archive_merge_preview(locale, &source, &journal, json_output);
     }
     let options = ArchiveMergeOptions {
         working_root: solstone_core_import_sources::archive::archive_merge_working_root(&journal),
@@ -987,6 +1702,7 @@ fn archive_merge(args: &[OsString]) -> Outcome {
         journal: journal.clone(),
     };
     archive_merge_json(
+        locale,
         merge_journal_archive(&source, &journal, &options, Some(&reindexer)),
         &source,
         false,
@@ -995,21 +1711,30 @@ fn archive_merge(args: &[OsString]) -> Outcome {
 }
 
 #[cfg(not(target_os = "ios"))]
-fn regular_archive_file(source: &Path) -> Result<PathBuf, String> {
+fn regular_archive_file(locale: &str, source: &Path) -> Result<PathBuf, String> {
     let metadata = fs::symlink_metadata(source).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
-            format!("SOURCE does not exist: {}", source.display())
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.archive.source.missing",
+                [("path", &(source.display()))],
+            )
         } else {
             error.to_string()
         }
     })?;
     if !metadata.file_type().is_file() {
-        return Err("SOURCE must be a regular file".to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.journal.archive.source.regular",
+            &[],
+        ));
     }
     fs::canonicalize(source).map_err(|error| error.to_string())
 }
 
 fn facet_doctor(args: &[OsString]) -> Outcome {
+    solstone_core_cli_copy::begin_terminal_output();
     if args
         .first()
         .is_some_and(|arg| arg == OsStr::new("--retire"))
@@ -1025,15 +1750,36 @@ fn facet_doctor(args: &[OsString]) -> Outcome {
             Some("--adopt") => adopt = true,
             Some("--merge") => merge = true,
             Some("--help" | "-h") if args.len() == 1 => {
-                return success(
-                    "Usage: solstone journal facet doctor [--fix] [--adopt [--merge]]\n       solstone journal facet doctor --retire NAME (--into FACET | --deleted)\n".to_owned(),
+                return success(format!(
+                    "{}\n",
+                    cli_copy::render_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.doctor.help",
+                        &[]
+                    )
+                ));
+            }
+            _ => {
+                return usage(
+                    "facet doctor",
+                    &cli_copy::render_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.argument.unexpected",
+                        &[],
+                    ),
                 );
             }
-            _ => return usage("facet doctor", "unexpected argument"),
         }
     }
     if merge && !adopt {
-        return usage("facet doctor", "--merge requires --adopt");
+        return usage(
+            "facet doctor",
+            &cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.argument.merge",
+                &[],
+            ),
+        );
     }
     let journal = match journal_root("facet doctor") {
         Ok(path) => path,
@@ -1044,11 +1790,22 @@ fn facet_doctor(args: &[OsString]) -> Outcome {
         if fix {
             return failure(
                 "facet doctor",
-                "--fix is unavailable on iOS",
+                &cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.fix.ios",
+                    &[],
+                ),
                 EXIT_UNAVAILABLE,
             );
         }
-        return facet_doctor_orphans(&journal, adopt, merge, &Default::default());
+        return match facet_doctor_orphans(&journal, adopt, merge, &Default::default()) {
+            Outcome::LocalFailure {
+                stdout,
+                stderr,
+                exit,
+            } => facet_doctor_failure(stdout, stderr.trim_end(), exit),
+            outcome => outcome,
+        };
     }
     #[cfg(not(target_os = "ios"))]
     {
@@ -1077,22 +1834,34 @@ fn facet_doctor_all(journal: &Path, fix: bool, adopt: bool, merge: bool) -> Outc
                     Ok(None) => {}
                     Err(error) => {
                         retired_readable = false;
-                        failures.push(format!(
-                            "retired facet names could not be repaired: {error}"
+                        failures.push(cli_copy::display_for(
+                            crate::terminal_language(),
+                            "journal.cli.journal.facet.doctor.repair.failed",
+                            [("error", &(error))],
                         ));
                     }
                 }
             } else {
                 retired_readable = false;
                 stdout.push_str(&format!(
-                    "facets/retired.json does not parse ({detail}). Run with --fix to rebuild it; no name it reserves is freed.\n"
+                    "{}\n",
+                    cli_copy::display_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.doctor.retired.malformed",
+                        [("detail", &facet_copy::retired(&detail))]
+                    )
                 ));
             }
         }
         RetiredFacets::Unreadable(detail) => {
             retired_readable = false;
             stdout.push_str(&format!(
-                "facets/retired.json could not be read ({detail}). Check its permissions; it was left as it is.\n"
+                "{}\n",
+                cli_copy::display_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.retired.unreadable",
+                    [("detail", &facet_copy::retired(&detail))]
+                )
             ));
         }
         RetiredFacets::Absent | RetiredFacets::Loaded(_) => {}
@@ -1109,10 +1878,24 @@ fn facet_doctor_all(journal: &Path, fix: bool, adopt: bool, merge: bool) -> Outc
                     held.extend(scan.proposals.iter().map(|proposal| proposal.name.clone()));
                 }
                 if !scan.proposals.is_empty() {
-                    stdout.push_str(if fix {
-                        "\nRecorded retired facet names from the action logs:\n"
+                    stdout.push_str(&if fix {
+                        format!(
+                            "\n{}\n",
+                            cli_copy::render_for(
+                                crate::terminal_language(),
+                                "journal.cli.journal.facet.doctor.history.recorded",
+                                &[]
+                            )
+                        )
                     } else {
-                        "\nFacet names the action logs show were retired but aren't recorded (run with --fix to record them):\n"
+                        format!(
+                            "\n{}\n",
+                            cli_copy::render_for(
+                                crate::terminal_language(),
+                                "journal.cli.journal.facet.doctor.history.unrecorded",
+                                &[]
+                            )
+                        )
                     });
                     for proposal in &scan.proposals {
                         if fix
@@ -1122,7 +1905,11 @@ fn facet_doctor_all(journal: &Path, fix: bool, adopt: bool, merge: bool) -> Outc
                                 proposal.entry.clone(),
                             )
                         {
-                            failures.push(format!("{}: {error}", proposal.name));
+                            failures.push(format!(
+                                "{}: {}",
+                                proposal.name,
+                                facet_copy::write(&error)
+                            ));
                             continue;
                         }
                         stdout.push_str(&format!("- {}\n", proposal.evidence));
@@ -1130,30 +1917,72 @@ fn facet_doctor_all(journal: &Path, fix: bool, adopt: bool, merge: bool) -> Outc
                 }
                 if !scan.reused.is_empty() {
                     stdout.push_str(&format!(
-                        "\nThese facets were renamed or merged away earlier and their names later given to a new facet, so older material that names them can't be told apart. Nothing was changed: {}\n",
-                        scan.reused.join(", ")
+                        "\n{}\n",
+                        cli_copy::display_for(
+                            crate::terminal_language(),
+                            "journal.cli.journal.facet.doctor.history.reused",
+                            [("names", &(scan.reused.join(", ")))]
+                        )
                     ));
                 }
                 if !scan.unrecoverable.is_empty() {
                     stdout.push_str(&format!(
-                        "\nThe action logs mention these names but not where they went: {}. If material still names one, record it with --retire NAME --into FACET or --deleted.\n",
-                        scan.unrecoverable.join(", ")
+                        "\n{}\n",
+                        cli_copy::display_for(
+                            crate::terminal_language(),
+                            "journal.cli.journal.facet.doctor.history.unknown",
+                            [("names", &(scan.unrecoverable.join(", ")))]
+                        )
                     ));
                 }
             }
-            Err(error) => failures.push(format!("action log scan failed: {error}")),
+            Err(error) => failures.push(cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.history.failed",
+                [("error", &(error))],
+            )),
         }
         let retired = solstone_core_facets::read_retired_facets(journal).entries();
         match facet_names::scan_unresolved_references(journal, &retired) {
             Ok(found) if !found.is_empty() => {
-                stdout.push_str("\nSegments name these facets, which don't exist and aren't recorded as retired. Agents limited to chosen facets can't see that material; everything else can:\n");
+                stdout.push_str(&format!(
+                    "\n{}\n",
+                    cli_copy::render_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.doctor.references.missing",
+                        &[]
+                    )
+                ));
                 for (name, (count, first, last)) in &found {
-                    stdout.push_str(&format!("- {name}: {count} ({first} to {last})\n"));
+                    stdout.push_str(&format!(
+                        "{}\n",
+                        cli_copy::display_for(
+                            crate::terminal_language(),
+                            "journal.cli.journal.facet.doctor.reference",
+                            [
+                                ("name", &(name)),
+                                ("count", &(count)),
+                                ("first", &(first)),
+                                ("last", &(last))
+                            ]
+                        )
+                    ));
                 }
-                stdout.push_str("To make one reachable again, run: solstone journal facet doctor --retire NAME --into FACET\n");
+                stdout.push_str(&format!(
+                    "{}\n",
+                    cli_copy::render_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.doctor.references.command",
+                        &[]
+                    )
+                ));
             }
             Ok(_) => {}
-            Err(error) => failures.push(format!("reference scan failed: {error}")),
+            Err(error) => failures.push(cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.references.failed",
+                [("error", &(error))],
+            )),
         }
     }
 
@@ -1166,12 +1995,7 @@ fn facet_doctor_all(journal: &Path, fix: bool, adopt: bool, merge: bool) -> Outc
             ..
         } => {
             stdout.push_str(&text);
-            failures.push(
-                stderr
-                    .trim()
-                    .trim_start_matches("solstone journal facet doctor: ")
-                    .to_owned(),
-            );
+            failures.push(stderr.trim_end().to_owned());
         }
         other => return other,
     }
@@ -1182,20 +2006,34 @@ fn facet_doctor_all(journal: &Path, fix: bool, adopt: bool, merge: bool) -> Outc
     // through one of them.
     let trust = hold_facet_trust_lock(journal);
     if let Err(error) = &trust {
-        failures.push(format!("the facet lock wasn't taken: {error}"));
+        failures.push(cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.lock.failed",
+            [("error", &facet_copy::trust(error))],
+        ));
     }
     let (leftovers, hidden) = facet_names::scan_dot_directories(journal);
     match facet_names::sort_merge_leftovers(journal, leftovers) {
         Ok((copies, kept)) => {
             if !copies.is_empty() {
                 stdout.push_str(&format!(
-                    "\nLeftover folders from an interrupted facet merge, safe to delete once no merge is running: {}\n",
-                    copies.join(", ")
+                    "\n{}\n",
+                    cli_copy::display_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.doctor.leftovers.safe",
+                        [("folders", &(copies.join(", ")))]
+                    )
                 ));
             }
             if !kept.is_empty() && fix && trust.is_ok() {
-                let index = solstone_core_indexer_store::RetentionIndex::new(journal);
-                let drops = solstone_core_facets::facet_trash::FacetDrops::new(&index);
+                let index = solstone_core_indexer_store::RetentionIndex::with_locale(
+                    journal,
+                    crate::terminal_language(),
+                );
+                let drops = solstone_core_facets::facet_trash::FacetDrops::with_locale(
+                    &index,
+                    crate::terminal_language(),
+                );
                 let mut moved = Vec::new();
                 for folder in &kept {
                     match drops.trash(
@@ -1207,29 +2045,47 @@ fn facet_doctor_all(journal: &Path, fix: bool, adopt: bool, merge: bool) -> Outc
                         Ok(_) | Err(solstone_core_trash::TrashError::Unfinished(_)) => {
                             moved.push(folder.clone());
                         }
-                        Err(error) => failures.push(format!("{folder}: {error}")),
+                        Err(error) => {
+                            failures.push(format!("{folder}: {}", facet_copy::trash(&error)))
+                        }
                     }
                 }
                 if !moved.is_empty() {
                     stdout.push_str(&format!(
-                        "\nMoved leftover folders from a facet merge to the trash, as they were: {}\n",
-                        moved.join(", ")
+                        "\n{}\n",
+                        cli_copy::display_for(
+                            crate::terminal_language(),
+                            "journal.cli.journal.facet.doctor.leftovers.moved",
+                            [("folders", &(moved.join(", ")))]
+                        )
                     ));
                 }
             } else if !kept.is_empty() {
                 stdout.push_str(&format!(
-                    "\nLeftover folders from a facet merge that may hold the only copy of some files. Don't delete them; run with --fix to move them to the trash: {}\n",
-                    kept.join(", ")
+                    "\n{}\n",
+                    cli_copy::display_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.doctor.leftovers.kept",
+                        [("folders", &(kept.join(", ")))]
+                    )
                 ));
             }
         }
-        Err(error) => failures.push(format!("merge leftovers couldn't be read: {error}")),
+        Err(error) => failures.push(cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.leftovers.failed",
+            [("error", &(error))],
+        )),
     }
     drop(trust);
     if !hidden.is_empty() {
         stdout.push_str(&format!(
-            "\nFolders whose names start with a dot are never facets, so these facet declarations are ignored: {}\n",
-            hidden.join(", ")
+            "\n{}\n",
+            cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.folders.hidden",
+                [("folders", &(hidden.join(", ")))]
+            )
         ));
     }
 
@@ -1239,27 +2095,46 @@ fn facet_doctor_all(journal: &Path, fix: bool, adopt: bool, merge: bool) -> Outc
     if (fix || adopt) && solstone_core_indexer_store::db::db_path(journal).exists() {
         if retired_readable {
             match facet_names::enqueue_facet_classifications(journal) {
-                Ok(()) => stdout.push_str("\nsearch is catching up with the facet changes.\n"),
-                Err(error) => failures.push(format!("search update could not be queued: {error}")),
+                Ok(()) => stdout.push_str(&format!(
+                    "\n{}\n",
+                    cli_copy::render_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.doctor.search.queued",
+                        &[]
+                    )
+                )),
+                Err(error) => failures.push(cli_copy::display_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.search.failed",
+                    [("error", &(error))],
+                )),
             }
         } else {
-            stdout.push_str(
-                "\nSearch was not updated, because facets/retired.json can't be used yet.\n",
-            );
+            stdout.push_str(&format!(
+                "\n{}\n",
+                cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.search.skipped",
+                    &[]
+                )
+            ));
         }
     }
 
     if stdout.is_empty() {
-        stdout.push_str("Nothing to report.\n");
+        stdout.push_str(&format!(
+            "{}\n",
+            cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.empty",
+                &[]
+            )
+        ));
     }
     if failures.is_empty() {
         success(stdout)
     } else {
-        Outcome::LocalFailure {
-            stdout,
-            stderr: format!("solstone journal facet doctor: {}\n", failures.join("; ")),
-            exit: EXIT_IO,
-        }
+        facet_doctor_failure(stdout, &failures.join("; "), EXIT_IO)
     }
 }
 
@@ -1271,15 +2146,33 @@ fn facet_doctor_retire(args: &[OsString]) -> Outcome {
         _ => {
             return usage(
                 "facet doctor",
-                "--retire needs NAME and then --into FACET or --deleted",
+                &cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.retire.argument",
+                    &[],
+                ),
             );
         }
     };
     let (Some(name), into) = (name.to_str(), into.map(|target| target.to_str())) else {
-        return usage("facet doctor", "names must be UTF-8");
+        return usage(
+            "facet doctor",
+            &cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.retire.encoding",
+                &[],
+            ),
+        );
     };
     if into.is_some_and(|target| target.is_none()) {
-        return usage("facet doctor", "names must be UTF-8");
+        return usage(
+            "facet doctor",
+            &cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.retire.encoding",
+                &[],
+            ),
+        );
     }
     let journal = match journal_root("facet doctor") {
         Ok(path) => path,
@@ -1293,7 +2186,38 @@ fn facet_doctor_retire(args: &[OsString]) -> Outcome {
 
 #[cfg(target_os = "ios")]
 fn facet_doctor_retire(_args: &[OsString]) -> Outcome {
-    failure("facet doctor", "unavailable on iOS", EXIT_UNAVAILABLE)
+    failure(
+        "facet doctor",
+        &cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.argument.ios",
+            &[],
+        ),
+        EXIT_UNAVAILABLE,
+    )
+}
+
+fn facet_doctor_failure(stdout: String, message: &str, exit: u8) -> Outcome {
+    Outcome::LocalFailure {
+        stdout,
+        stderr: format!(
+            "{}\n",
+            cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.local.failure",
+                [("token", &"facet doctor"), ("message", &message)]
+            )
+        ),
+        exit,
+    }
+}
+
+fn orphan_failure(message: &str, exit: u8) -> Outcome {
+    Outcome::LocalFailure {
+        stdout: String::new(),
+        stderr: format!("{message}\n"),
+        exit,
+    }
 }
 
 /// Find facet folders with content but no declaration and, with `adopt`,
@@ -1308,31 +2232,48 @@ fn facet_doctor_orphans(
     let journal = journal.to_path_buf();
     let (orphans, retired_orphans) = match adoptable_orphan_facets(&journal) {
         Ok(found) => found,
-        Err(error) => return failure("facet doctor", &error, EXIT_DATA),
+        Err(error) => return orphan_failure(&error, EXIT_DATA),
     };
     let mut retired_note = if retired_orphans.is_empty() {
         String::new()
     } else {
         format!(
-            "These folders have content under facet names that were merged or renamed into another facet, so they are not registered as facets; their files are left in place: {}\n",
-            retired_orphans.join(", ")
+            "{}\n",
+            cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.orphans.retired",
+                [("folders", &(retired_orphans.join(", ")))]
+            )
         )
     };
     let (held_orphans, orphans): (Vec<_>, Vec<_>) =
         orphans.into_iter().partition(|slug| held.contains(slug));
     if !held_orphans.is_empty() {
         retired_note.push_str(&format!(
-            "The action logs show these facet names were retired, so their folders are not registered; run with --fix to record them: {}\n",
-            held_orphans.join(", ")
+            "{}\n",
+            cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.orphans.held",
+                [("folders", &(held_orphans.join(", ")))]
+            )
         ));
     }
     if orphans.is_empty() {
-        return success(format!("No orphan facets found.\n{retired_note}"));
+        return success(
+            format!(
+                "{}\n",
+                cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.orphans.none",
+                    &[]
+                )
+            ) + &retired_note,
+        );
     }
     if !adopt {
         let groups = match orphan_groups(&journal, &orphans) {
             Ok(groups) => groups,
-            Err(error) => return failure("facet doctor", &error, EXIT_DATA),
+            Err(error) => return orphan_failure(&error, EXIT_DATA),
         };
         let lone = groups
             .iter()
@@ -1341,13 +2282,24 @@ fn facet_doctor_orphans(
             .collect::<Vec<_>>();
         let mut stdout = String::new();
         if !lone.is_empty() {
-            stdout.push_str("Orphan facets:\n");
+            stdout.push_str(&format!(
+                "{}\n",
+                cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.orphans.heading",
+                    &[]
+                )
+            ));
             for slug in &lone {
                 stdout.push_str(&format!("- {slug}\n"));
             }
             stdout.push_str(&format!(
-                "{} orphan facet(s) found. Run with --adopt to register them.\n",
-                lone.len()
+                "{}\n",
+                cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.orphans.count",
+                    &[("count", cli_copy::Value::Cardinal((lone.len()) as i64))]
+                )
             ));
         }
         append_orphan_groups_left(&mut stdout, &groups, true);
@@ -1356,7 +2308,7 @@ fn facet_doctor_orphans(
     }
     let _lock = match hold_facet_trust_lock(&journal) {
         Ok(lock) => lock,
-        Err(error) => return failure("facet doctor", &error.to_string(), EXIT_IO),
+        Err(error) => return orphan_failure(&facet_copy::trust(&error), EXIT_IO),
     };
     let groups = match adoptable_orphan_facets(&journal).and_then(|(orphans, _)| {
         let orphans = orphans
@@ -1366,10 +2318,19 @@ fn facet_doctor_orphans(
         orphan_groups(&journal, &orphans)
     }) {
         Ok(groups) => groups,
-        Err(error) => return failure("facet doctor", &error, EXIT_DATA),
+        Err(error) => return orphan_failure(&error, EXIT_DATA),
     };
     if groups.is_empty() {
-        return success(format!("No orphan facets found.\n{retired_note}"));
+        return success(
+            format!(
+                "{}\n",
+                cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.orphans.none",
+                    &[]
+                )
+            ) + &retired_note,
+        );
     }
     if merge {
         #[cfg(not(target_os = "ios"))]
@@ -1391,15 +2352,25 @@ fn facet_doctor_orphans(
         }
         #[cfg(target_os = "ios")]
         {
-            return failure(
-                "facet doctor",
-                "facet merging unavailable on iOS",
+            return orphan_failure(
+                &cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.merge.ios",
+                    &[],
+                ),
                 EXIT_UNAVAILABLE,
             );
         }
     }
     let transaction = transaction_id();
-    let mut stdout = String::from("Repaired orphan facets:\n");
+    let mut stdout = format!(
+        "{}\n",
+        cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.repaired.heading",
+            &[]
+        )
+    );
     let mut record_failures = Vec::new();
     let mut repaired = 0;
     for group in groups.iter().filter(|group| group.adopts_alone()) {
@@ -1407,16 +2378,28 @@ fn facet_doctor_orphans(
         match adopt_orphan_facet(&journal, slug, &transaction) {
             Ok(None) => {}
             Ok(Some(error)) => record_failures.push(error),
-            Err(error) => return failure("facet doctor", &error, EXIT_IO),
+            Err(error) => return orphan_failure(&error, EXIT_IO),
         }
         stdout.push_str(&format!("- {slug}\n"));
         repaired += 1;
     }
     if repaired == 0 {
-        stdout = String::from("No orphan facet was registered.\n");
+        stdout = format!(
+            "{}\n",
+            cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.registered.none",
+                &[]
+            )
+        );
     } else {
         stdout.push_str(&format!(
-            "{repaired} orphan facet(s) repaired. search is catching up.\n"
+            "{}\n",
+            cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.repaired.count",
+                &[("repaired", cli_copy::Value::Cardinal((repaired) as i64))]
+            )
         ));
     }
     if repaired > 0
@@ -1433,10 +2416,7 @@ fn facet_doctor_orphans(
     }
     Outcome::LocalFailure {
         stdout,
-        stderr: format!(
-            "solstone journal facet doctor: {}\n",
-            record_failures.join("; ")
-        ),
+        stderr: record_failures.join("; ") + "\n",
         exit: EXIT_IO,
     }
 }
@@ -1459,7 +2439,7 @@ impl OrphanGroup {
 
 fn orphan_groups(journal: &Path, orphans: &[String]) -> Result<Vec<OrphanGroup>, String> {
     let inventory = solstone_core_facets::observe_declared_facet_inventory(journal)
-        .map_err(|error| error.to_string())?;
+        .map_err(|e| facet_copy::store(&e))?;
     let named_like = |names: Vec<&String>, key: &str| {
         names
             .into_iter()
@@ -1501,12 +2481,33 @@ fn append_orphan_groups_left(stdout: &mut String, groups: &[OrphanGroup], before
         if !stdout.is_empty() {
             stdout.push('\n');
         }
-        stdout.push_str("Name-variant groups:\n");
+        stdout.push_str(&format!(
+            "{}\n",
+            cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.variants.heading",
+                &[]
+            )
+        ));
         stdout.push_str(&variants);
-        stdout.push_str(if before {
-            "Run with --adopt --merge to collapse name variants before registering them.\n"
+        stdout.push_str(&if before {
+            format!(
+                "{}\n",
+                cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.variants.register",
+                    &[]
+                )
+            )
         } else {
-            "These were not registered. Run with --adopt --merge to collapse them into one.\n"
+            format!(
+                "{}\n",
+                cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.variants.merge",
+                    &[]
+                )
+            )
         });
     }
     let twins = groups
@@ -1517,7 +2518,14 @@ fn append_orphan_groups_left(stdout: &mut String, groups: &[OrphanGroup], before
         if !stdout.is_empty() {
             stdout.push('\n');
         }
-        stdout.push_str("Folders named like a facet you have:\n");
+        stdout.push_str(&format!(
+            "{}\n",
+            cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.twins.heading",
+                &[]
+            )
+        ));
         for group in &twins {
             stdout.push_str(&format!(
                 "- {} -> {}\n",
@@ -1525,19 +2533,37 @@ fn append_orphan_groups_left(stdout: &mut String, groups: &[OrphanGroup], before
                 group.declared[0]
             ));
         }
-        stdout.push_str(
-            "These are never registered beside it. Run with --adopt --merge to fold them into it; a merge is permanent, and a file both have keeps the facet's copy.\n",
-        );
+        stdout.push_str(&format!(
+            "{}\n",
+            cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.twins.merge",
+                &[]
+            )
+        ));
         let first = twins[0];
         stdout.push_str(&format!(
-            "To see what one would bring first: solstone journal facet merge {} --into {} --dry-run\n",
-            first.members[0], first.declared[0]
+            "{}\n",
+            cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.twins.preview",
+                [
+                    ("source", &(first.members[0])),
+                    ("destination", &(first.declared[0]))
+                ]
+            )
         ));
     }
-    append_facet_doctor_section(stdout, UNCLEAR_HEADING, &unclear_orphan_groups(groups));
+    append_facet_doctor_section(
+        stdout,
+        &cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.unclear.heading",
+            &[],
+        ),
+        &unclear_orphan_groups(groups),
+    );
 }
-
-const UNCLEAR_HEADING: &str = "Folders left as they are";
 
 /// Groups no command here can place: named like more than one facet, or like
 /// a facet whose declaration needs repair first. Each line says what to do.
@@ -1547,14 +2573,22 @@ fn unclear_orphan_groups(groups: &[OrphanGroup]) -> Vec<String> {
         .filter_map(|group| {
             let members = group.members.join(", ");
             if !group.damaged.is_empty() {
-                Some(format!(
-                    "{members}: named like {}, whose facet.json needs repair first",
-                    group.damaged.join(", ")
+                Some(cli_copy::display_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.group.damaged",
+                    [
+                        ("facets", &(group.damaged.join(", "))),
+                        ("members", &(members)),
+                    ],
                 ))
             } else if group.declared.len() > 1 {
-                Some(format!(
-                    "{members}: named like {}; rename the folder to match one, then run with --adopt --merge",
-                    group.declared.join(", ")
+                Some(cli_copy::display_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.group.ambiguous",
+                    [
+                        ("facets", &(group.declared.join(", "))),
+                        ("members", &(members)),
+                    ],
                 ))
             } else {
                 None
@@ -1574,7 +2608,7 @@ fn adopt_orphan_facet(
     // An adopted facet gets a stable id like any other, so agents can be
     // granted it and merged names can resolve to it.
     solstone_core_facets::create_facet(journal, slug, &title, "", "#667eea", "📦", None)
-        .map_err(|error| error.to_string())?;
+        .map_err(|e| facet_copy::write(&e))?;
     let audit = journal.join("logs/facet-heals.jsonl");
     Ok(append_jsonl(
         &audit,
@@ -1586,7 +2620,13 @@ fn adopt_orphan_facet(
         }),
     )
     .err()
-    .map(|error| format!("registered {slug}, but its record could not be written: {error}")))
+    .map(|error| {
+        cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.registration.failed",
+            [("slug", &(slug)), ("error", &(error))],
+        )
+    }))
 }
 
 fn normalized_orphan_slug(slug: &str) -> String {
@@ -1635,10 +2675,24 @@ fn facet_doctor_adopt_merge(journal: &Path, groups: &[OrphanGroup]) -> (Outcome,
                 Err(error) => {
                     let unmerged = members[1..].join(", ");
                     let detail = if unmerged.is_empty() {
-                        format!("{destination} (adoption failed: {error})")
+                        cli_copy::display_for(
+                            crate::terminal_language(),
+                            "journal.cli.journal.facet.doctor.adoption.failed",
+                            [("destination", &(destination)), ("error", &(error))],
+                        )
                     } else {
-                        format!(
-                            "{destination} (adoption failed: {error}; {unmerged} were not merged)"
+                        cli_copy::render_for(
+                            crate::terminal_language(),
+                            "journal.cli.journal.facet.doctor.adoption.unmerged",
+                            &[
+                                (
+                                    "folders_remaining",
+                                    cli_copy::Value::Cardinal(sources.len() as i64),
+                                ),
+                                ("destination", cli_copy::Value::String(destination)),
+                                ("error", cli_copy::Value::String(&error)),
+                                ("unmerged", cli_copy::Value::String(&unmerged)),
+                            ],
                         )
                     };
                     failed.push(detail);
@@ -1662,9 +2716,14 @@ fn facet_doctor_adopt_merge(journal: &Path, groups: &[OrphanGroup]) -> (Outcome,
                 FacetMergeMode::DoctorOrphan,
             ) {
                 Err(outcome) => {
-                    failed.push(format!(
-                        "{source} -> {destination} (merge failed before commit: {})",
-                        outcome_diagnostic(&outcome)
+                    failed.push(cli_copy::display_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.doctor.merge.failed",
+                        [
+                            ("error", &(outcome_diagnostic(&outcome))),
+                            ("source", &(source)),
+                            ("destination", &(destination)),
+                        ],
                     ));
                     failed_orphans += 1;
                 }
@@ -1674,9 +2733,15 @@ fn facet_doctor_adopt_merge(journal: &Path, groups: &[OrphanGroup]) -> (Outcome,
                             .get(path)
                             .cloned()
                             .unwrap_or_else(|| destination.clone());
-                        collisions.push(format!(
-                            "{source} -> {destination}: {} (kept {retained})",
-                            path.display()
+                        collisions.push(cli_copy::display_for(
+                            crate::terminal_language(),
+                            "journal.cli.journal.facet.doctor.merge.collision",
+                            [
+                                ("path", &(path.display())),
+                                ("source", &(source)),
+                                ("destination", &(destination)),
+                                ("retained", &(retained)),
+                            ],
                         ));
                     }
                     for path in commit.report.copied_regular_files {
@@ -1695,14 +2760,58 @@ fn facet_doctor_adopt_merge(journal: &Path, groups: &[OrphanGroup]) -> (Outcome,
     }
 
     let mut stdout = String::new();
-    append_facet_doctor_section(&mut stdout, "Merged orphan facets", &merged);
-    append_facet_doctor_section(&mut stdout, "Regular-file collisions", &collisions);
-    append_facet_doctor_section(&mut stdout, "Adopted orphan facets", &adopted);
-    append_facet_doctor_section(&mut stdout, "Failed orphan facets", &failed);
-    append_facet_doctor_section(&mut stdout, UNCLEAR_HEADING, &left);
     append_facet_doctor_section(
         &mut stdout,
-        "Committed merge maintenance failures",
+        &cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.merged.heading",
+            &[],
+        ),
+        &merged,
+    );
+    append_facet_doctor_section(
+        &mut stdout,
+        &cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.collision.heading",
+            &[],
+        ),
+        &collisions,
+    );
+    append_facet_doctor_section(
+        &mut stdout,
+        &cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.adopted.heading",
+            &[],
+        ),
+        &adopted,
+    );
+    append_facet_doctor_section(
+        &mut stdout,
+        &cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.failed.heading",
+            &[],
+        ),
+        &failed,
+    );
+    append_facet_doctor_section(
+        &mut stdout,
+        &cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.unclear.heading",
+            &[],
+        ),
+        &left,
+    );
+    append_facet_doctor_section(
+        &mut stdout,
+        &cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.maintenance.heading",
+            &[],
+        ),
         &committed_failures,
     );
     if !stdout.is_empty() {
@@ -1711,37 +2820,82 @@ fn facet_doctor_adopt_merge(journal: &Path, groups: &[OrphanGroup]) -> (Outcome,
     let repaired = adopted.len() + merged.len();
     if failed_orphans == 0 && committed_failures.is_empty() {
         if repaired == 0 {
-            stdout.push_str("No orphan facet was registered or merged.\n");
+            stdout.push_str(&format!(
+                "{}\n",
+                cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.merged.none",
+                    &[]
+                )
+            ));
         } else {
             stdout.push_str(&format!(
-                "{repaired} orphan facet(s) repaired. search is catching up.\n"
+                "{}\n",
+                cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.repaired.count",
+                    &[("repaired", cli_copy::Value::Cardinal((repaired) as i64))]
+                )
             ));
         }
         return (success(stdout), merged.len());
     }
     if failed_orphans == 0 {
         stdout.push_str(&format!(
-            "{repaired} orphan facet(s) repaired; {} merge(s) committed but reported a maintenance failure after commit. See 'Committed merge maintenance failures' above. Run 'solstone journal indexer --rescan-full' to refresh the index.\n",
-            committed_failures.len()
+            "{}\n",
+            cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.repairs.maintenance.count",
+                &[
+                    ("repaired", cli_copy::Value::Cardinal(repaired as i64)),
+                    (
+                        "merges",
+                        cli_copy::Value::Cardinal(committed_failures.len() as i64)
+                    )
+                ]
+            )
         ));
         return (
             Outcome::LocalFailure {
                 stdout,
-                stderr: "solstone journal facet doctor: one or more orphan facet merges committed with maintenance failures\n"
-                    .to_owned(),
+                stderr: format!(
+                    "{}\n",
+                    cli_copy::render_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.doctor.merges.incomplete",
+                        &[]
+                    )
+                ),
                 exit: EXIT_IO,
             },
             merged.len(),
         );
     }
     stdout.push_str(&format!(
-        "{repaired} orphan facet(s) repaired; {failed_orphans} orphan facet(s) failed. Run 'solstone journal indexer --rescan-full' to refresh the index.\n"
+        "{}\n",
+        cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.repairs.failed.count",
+            &[
+                ("repaired", cli_copy::Value::Cardinal(repaired as i64)),
+                (
+                    "failed_orphans",
+                    cli_copy::Value::Cardinal(failed_orphans as i64)
+                )
+            ]
+        )
     ));
     (
         Outcome::LocalFailure {
             stdout,
-            stderr: "solstone journal facet doctor: one or more orphan facet repairs failed\n"
-                .to_owned(),
+            stderr: format!(
+                "{}\n",
+                cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.repairs.failed",
+                    &[]
+                )
+            ),
             exit: EXIT_IO,
         },
         merged.len(),
@@ -1758,9 +2912,21 @@ fn facet_doctor_index_failure(outcome: Outcome, error: &str) -> Outcome {
         } => (stdout, stderr, exit),
         _ => unreachable!("facet doctor merge returns a local result"),
     };
-    stderr.push_str(&format!(
-        "solstone journal facet doctor: the repair finished, but its search update could not be queued: {error}\n"
-    ));
+    let detail = cli_copy::display_for(
+        crate::terminal_language(),
+        "journal.cli.journal.facet.doctor.queue.failed",
+        [("error", &error)],
+    );
+    if stderr.is_empty() {
+        stderr.push_str(&detail);
+    } else {
+        stderr.push_str(&cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.local.failure",
+            [("token", &"facet doctor"), ("message", &detail)],
+        ));
+    }
+    stderr.push('\n');
     Outcome::LocalFailure {
         stdout,
         stderr,
@@ -1772,7 +2938,7 @@ fn facet_doctor_index_failure(outcome: Outcome, error: &str) -> Outcome {
 /// breaks that, and with `fix` repair what needs no judgment call.
 #[cfg(not(target_os = "ios"))]
 fn entity_link_section(journal: &Path, fix: bool, stdout: &mut String, failures: &mut Vec<String>) {
-    use solstone_core_facets::facet_links::{check_journal_links, repair_journal_links};
+    use solstone_core_facets::facet_links::{check_journal_links, repair_journal_links_with_notes};
     let list = |stdout: &mut String, heading: &str, issues: &[_], repaired: bool| {
         if issues.is_empty() {
             return;
@@ -1786,33 +2952,69 @@ fn entity_link_section(journal: &Path, fix: bool, stdout: &mut String, failures:
         }
     };
     if fix {
-        match repair_journal_links(journal) {
+        match repair_journal_links_with_notes(journal, facet_copy::repair_note) {
             Ok((repaired, left)) => {
-                list(stdout, "Entity links repaired:", &repaired, true);
+                list(
+                    stdout,
+                    &cli_copy::render_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.doctor.links.repaired",
+                        &[],
+                    ),
+                    &repaired,
+                    true,
+                );
                 if !repaired.is_empty() {
-                    stdout.push_str(
-                        "Run 'solstone journal indexer --rescan-full' to refresh the index.\n",
-                    );
+                    stdout.push_str(&format!(
+                        "{}\n",
+                        cli_copy::render_for(
+                            crate::terminal_language(),
+                            "journal.cli.journal.facet.doctor.links.rescan",
+                            &[]
+                        )
+                    ));
                 }
-                list(stdout, "Entity links left as they are:", &left, false);
+                list(
+                    stdout,
+                    &cli_copy::render_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.doctor.links.left",
+                        &[],
+                    ),
+                    &left,
+                    false,
+                );
                 for issue in left.iter().filter(|issue| issue.failed) {
-                    failures.push(format!(
-                        "entity link repair failed: {}",
-                        describe_link_issue(issue, false, true)
+                    failures.push(cli_copy::display_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.doctor.links.repair.failed",
+                        [("error", &(describe_link_issue(issue, false, true)))],
                     ));
                 }
             }
-            Err(error) => failures.push(format!("entity link repair failed: {error}")),
+            Err(error) => failures.push(cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.links.repair.failed",
+                [("error", &facet_copy::link(&error))],
+            )),
         }
     } else {
         match check_journal_links(journal) {
             Ok(issues) => list(
                 stdout,
-                "Entity links to repair (run with --fix to repair the ones that can be):",
+                &cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.doctor.links.check",
+                    &[],
+                ),
                 &issues,
                 false,
             ),
-            Err(error) => failures.push(format!("entity link check failed: {error}")),
+            Err(error) => failures.push(cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.doctor.links.check.failed",
+                [("error", &facet_copy::link(&error))],
+            )),
         }
     }
 }
@@ -1832,37 +3034,73 @@ fn describe_link_issue(
         .join(", ");
     let facet = &issue.facet;
     let id = &issue.entity_id;
-    let (is, links) = if repaired {
-        ("was", "linked")
-    } else {
-        ("is", "still links")
-    };
-    let left_alone = if fix {
-        ""
-    } else {
-        "; --fix leaves it as it is"
-    };
-    let needs_decision =
-        fix && issue.note.is_none() && matches!(issue.kind, LinkIssueKind::Unreadable);
-    let described = match &issue.kind {
-        LinkIssueKind::Duplicate => {
-            format!("{facet}: '{id}' {is} linked from more than one folder ({folders})")
-        }
-        LinkIssueKind::Misnamed => {
-            format!("{facet}: '{id}' {is} linked from folder {folders}, not a folder named '{id}'")
-        }
-        LinkIssueKind::Merged { successor } => format!(
-            "{facet}: '{id}' was merged into '{successor}', and folder {folders} {links} it"
+    let described = match (&issue.kind, repaired, fix) {
+        (LinkIssueKind::Duplicate, true, _) => cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.link.duplicate.repaired",
+            [("facet", &(facet)), ("id", &(id)), ("folders", &(folders))],
         ),
-        LinkIssueKind::Unreadable => {
-            format!("{facet}: folder {folders} has a link that can't be read or used{left_alone}")
-        }
+        (LinkIssueKind::Duplicate, false, _) => cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.link.duplicate.open",
+            [("facet", &(facet)), ("id", &(id)), ("folders", &(folders))],
+        ),
+        (LinkIssueKind::Misnamed, true, _) => cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.link.misnamed.repaired",
+            [("facet", &(facet)), ("id", &(id)), ("folders", &(folders))],
+        ),
+        (LinkIssueKind::Misnamed, false, _) => cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.link.misnamed.open",
+            [("facet", &(facet)), ("id", &(id)), ("folders", &(folders))],
+        ),
+        (LinkIssueKind::Merged { successor }, true, _) => cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.link.merged.repaired",
+            &[
+                (
+                    "folder_count",
+                    cli_copy::Value::Cardinal(issue.folders.len() as i64),
+                ),
+                ("facet", cli_copy::Value::String(facet)),
+                ("id", cli_copy::Value::String(id)),
+                ("folders", cli_copy::Value::String(&folders)),
+                ("successor", cli_copy::Value::String(successor)),
+            ],
+        ),
+        (LinkIssueKind::Merged { successor }, false, _) => cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.link.merged.open",
+            &[
+                (
+                    "folder_count",
+                    cli_copy::Value::Cardinal(issue.folders.len() as i64),
+                ),
+                ("facet", cli_copy::Value::String(facet)),
+                ("id", cli_copy::Value::String(id)),
+                ("folders", cli_copy::Value::String(&folders)),
+                ("successor", cli_copy::Value::String(successor)),
+            ],
+        ),
+        (LinkIssueKind::Unreadable, _, false) => cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.link.unreadable.check",
+            [("facet", &(facet)), ("folders", &(folders))],
+        ),
+        (LinkIssueKind::Unreadable, _, true) if issue.note.is_none() => cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.link.unreadable.undecided",
+            [("facet", &(facet)), ("folders", &(folders))],
+        ),
+        (LinkIssueKind::Unreadable, _, true) => cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.doctor.link.unreadable",
+            [("facet", &(facet)), ("folders", &(folders))],
+        ),
     };
     match &issue.note {
         Some(note) => format!("{described} ({note})"),
-        None if needs_decision => {
-            format!("{described} (--fix can't tell which entity it links, so it leaves it)")
-        }
         None => described,
     }
 }
@@ -1887,28 +3125,59 @@ fn outcome_diagnostic(outcome: &Outcome) -> String {
         Outcome::LocalFailure { stderr, .. } | Outcome::ProcessFailure { stderr, .. } => {
             stderr.trim().to_owned()
         }
-        _ => "facet merge failed".to_owned(),
+        _ => cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.merge.failed",
+            &[],
+        ),
     }
 }
 
 #[cfg(target_os = "ios")]
 fn facet_merge(_args: &[OsString]) -> Outcome {
-    failure("facet merge", "unavailable on iOS", EXIT_UNAVAILABLE)
+    failure(
+        "facet merge",
+        &cli_copy::render_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.argument.ios",
+            &[],
+        ),
+        EXIT_UNAVAILABLE,
+    )
 }
 
 #[cfg(not(target_os = "ios"))]
 fn facet_merge(args: &[OsString]) -> Outcome {
+    solstone_core_cli_copy::begin_terminal_output();
     let Some(source) = args.first().and_then(|arg| arg.to_str()) else {
-        return usage("facet merge", "SOURCE is required");
+        return usage(
+            "facet merge",
+            &cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.argument.source",
+                &[],
+            ),
+        );
     };
     if source == "--help" || source == "-h" {
         return if args.len() == 1 {
-            success(
-                "Usage: solstone journal facet merge SOURCE --into DEST (--dry-run | --yes) [--consent]\n"
-                    .to_owned(),
-            )
+            success(format!(
+                "{}\n",
+                cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.merge.help",
+                    &[]
+                )
+            ))
         } else {
-            usage("facet merge", "unexpected argument")
+            usage(
+                "facet merge",
+                &cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.argument.unexpected",
+                    &[],
+                ),
+            )
         };
     }
     let mut destination: Option<&str> = None;
@@ -1921,7 +3190,14 @@ fn facet_merge(args: &[OsString]) -> Outcome {
             Some("--into") if destination.is_none() => {
                 destination = args.get(index + 1).and_then(|arg| arg.to_str());
                 if destination.is_none() {
-                    return usage("facet merge", "--into requires DEST");
+                    return usage(
+                        "facet merge",
+                        &cli_copy::render_for(
+                            crate::terminal_language(),
+                            "journal.cli.journal.facet.merge.argument.dest",
+                            &[],
+                        ),
+                    );
                 }
                 index += 2;
             }
@@ -1937,14 +3213,38 @@ fn facet_merge(args: &[OsString]) -> Outcome {
                 yes = true;
                 index += 1;
             }
-            _ => return usage("facet merge", "unexpected argument"),
+            _ => {
+                return usage(
+                    "facet merge",
+                    &cli_copy::render_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.argument.unexpected",
+                        &[],
+                    ),
+                );
+            }
         }
     }
     let Some(destination) = destination else {
-        return usage("facet merge", "--into DEST is required");
+        return usage(
+            "facet merge",
+            &cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.argument.into",
+                &[],
+            ),
+        );
     };
     if !safe_component(source) || !safe_component(destination) || source == destination {
-        return failure("facet merge", "invalid SOURCE or DEST", EXIT_DATA);
+        return failure(
+            "facet merge",
+            &cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.argument.invalid",
+                &[],
+            ),
+            EXIT_DATA,
+        );
     }
     let journal = match journal_root("facet merge") {
         Ok(path) => path,
@@ -1956,7 +3256,11 @@ fn facet_merge(args: &[OsString]) -> Outcome {
     if !yes {
         return usage(
             "facet merge",
-            "a merge is permanent and can't be undone; review it with --dry-run, then run it again with --yes",
+            &cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.argument.confirm",
+                &[],
+            ),
         );
     }
     facet_merge_in_journal(&journal, source, destination, consent)
@@ -1975,7 +3279,7 @@ fn facet_merge_preview_in_journal(journal: &Path, source: &str, destination: &st
     }
     let _lock = match hold_facet_trust_lock(journal) {
         Ok(lock) => lock,
-        Err(error) => return failure("facet merge", &error.to_string(), EXIT_IO),
+        Err(error) => return failure("facet merge", &facet_copy::trust(&error), EXIT_IO),
     };
     for path in [&source_path, &destination_path] {
         if let Err(error) = require_real_directory(path) {
@@ -1992,9 +3296,10 @@ fn facet_merge_preview_in_journal(journal: &Path, source: &str, destination: &st
     if let Err(error) = fs::remove_dir_all(&stage) {
         return failure(
             "facet merge",
-            &format!(
-                "dry run could not remove its scratch copy {}: {error}; nothing else was changed, and that folder can be deleted",
-                stage.display()
+            &cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.scratch.failed",
+                [("path", &(stage.display())), ("error", &(error))],
             ),
             EXIT_IO,
         );
@@ -2019,12 +3324,22 @@ fn facet_merge_preview_text(
     settings_dropped: bool,
 ) -> String {
     let mut text = format!(
-        "Dry run, nothing was changed. Merging '{source}' into '{destination}' would lose:\n"
+        "{}\n",
+        cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.merge.preview.heading",
+            [("source", &(source)), ("destination", &(destination))]
+        )
     );
     let before = text.len();
     if !report.regular_file_collisions.is_empty() {
         text.push_str(&format!(
-            "Files both facets have that can't be combined. '{destination}' would keep its own copy, and the copy in '{source}' would go to the trash:\n"
+            "{}\n",
+            cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.preview.files",
+                [("destination", &(destination)), ("source", &(source))]
+            )
         ));
         for path in &report.regular_file_collisions {
             text.push_str(&format!("  {}\n", path.display()));
@@ -2032,7 +3347,12 @@ fn facet_merge_preview_text(
     }
     if !report.jsonl_records_dropped.is_empty() {
         text.push_str(&format!(
-            "Records that would be dropped because a different record with the same id is kept (the first record with each id is kept, reading '{destination}' first):\n"
+            "{}\n",
+            cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.preview.records",
+                [("destination", &(destination))]
+            )
         ));
         for (path, count) in &report.jsonl_records_dropped {
             text.push_str(&format!("  {}: {count}\n", path.display()));
@@ -2040,7 +3360,12 @@ fn facet_merge_preview_text(
     }
     if !report.entity_fields_superseded.is_empty() {
         text.push_str(&format!(
-            "Entity fields where '{destination}' would keep its own, different value:\n"
+            "{}\n",
+            cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.preview.fields",
+                [("destination", &(destination))]
+            )
         ));
         for (path, count) in &report.entity_fields_superseded {
             text.push_str(&format!("  {}: {count}\n", path.display()));
@@ -2048,30 +3373,52 @@ fn facet_merge_preview_text(
     }
     if settings_dropped {
         text.push_str(&format!(
-            "The settings in the facet.json of '{source}', which would not be carried over.\n"
+            "{}\n",
+            cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.preview.settings",
+                [("source", &(source))]
+            )
         ));
     }
     if text.len() == before {
-        text.push_str("Nothing.\n");
+        text.push_str(&format!(
+            "{}\n",
+            cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.preview.empty",
+                &[]
+            )
+        ));
     }
     if report.links_combined > 0 || report.link_notes_renumbered > 0 {
         text.push('\n');
     }
-    match report.links_combined {
-        0 => {}
-        1 => text.push_str(
-            "1 entity is linked in both facets; it would end up with one link, keeping every note.\n",
-        ),
-        count => text.push_str(&format!(
-            "{count} entities are linked in both facets; each would end up with one link, keeping every note.\n"
-        )),
+    if report.links_combined > 0 {
+        text.push_str(&format!(
+            "{}\n",
+            cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.preview.entities",
+                &[(
+                    "count",
+                    cli_copy::Value::Cardinal((report.links_combined) as i64)
+                )]
+            )
+        ));
     }
-    match report.link_notes_renumbered {
-        0 => {}
-        1 => text.push_str("1 note would get a new number, after the notes already there.\n"),
-        count => text.push_str(&format!(
-            "{count} notes would get a new number, after the notes already there.\n"
-        )),
+    if report.link_notes_renumbered > 0 {
+        text.push_str(&format!(
+            "{}\n",
+            cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.preview.notes",
+                &[(
+                    "count",
+                    cli_copy::Value::Cardinal((report.link_notes_renumbered) as i64)
+                )]
+            )
+        ));
     }
     text
 }
@@ -2101,9 +3448,16 @@ fn facet_merge_in_journal(
     // carry over are reported either way.
     let collisions = facet_merge_collision_notice(source, destination, &report, source_removed);
     match post_commit_failure {
-        None => success(format!(
-            "Merged '{source}' into '{destination}'. Index rebuild completed.\n{collisions}"
-        )),
+        None => success(
+            format!(
+                "{}\n",
+                cli_copy::display_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.merge.complete",
+                    [("source", &(source)), ("destination", &(destination))]
+                )
+            ) + &collisions,
+        ),
         Some(Outcome::LocalFailure {
             stdout,
             stderr,
@@ -2127,14 +3481,25 @@ fn facet_merge_collision_notice(
     if report.regular_file_collisions.is_empty() {
         return String::new();
     }
-    let fate = if source_removed {
-        "is in the trash"
+    let mut notice = if source_removed {
+        format!(
+            "{}\n",
+            cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.collisions.trashed",
+                [("source", &(source)), ("destination", &(destination))]
+            )
+        )
     } else {
-        "was kept, and 'solstone journal facet doctor --fix' moves it to the trash"
+        format!(
+            "{}\n",
+            cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.merge.collisions.kept",
+                [("source", &(source)), ("destination", &(destination))]
+            )
+        )
     };
-    let mut notice = format!(
-        "Both facets had these files. '{destination}' kept its own copy; the copy in '{source}' {fate}:\n"
-    );
     for path in &report.regular_file_collisions {
         notice.push_str(&format!("  {}\n", path.display()));
     }
@@ -2230,18 +3595,34 @@ fn facet_merge_transaction_in_journal(
             source_removed,
             post_commit_failure: Some(failure(
                 "facet merge",
-                &format!("the repair finished, but its search update could not be queued: {error}"),
+                &cli_copy::display_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.merge.queue.failed",
+                    [("error", &(error))],
+                ),
                 EXIT_FAILED,
             )),
         });
     }
     let post_commit_failure = crate::facet_names::enqueue_facet_classifications(journal)
         .err()
-        .or_else(|| (!detections_queued).then(|| "its detections were not queued".to_owned()))
+        .or_else(|| {
+            (!detections_queued).then(|| {
+                cli_copy::render_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.merge.detections.failed",
+                    &[],
+                )
+            })
+        })
         .map(|error| {
             failure(
                 "facet merge",
-                &format!("the repair finished, but its search update could not be queued: {error}"),
+                &cli_copy::display_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.merge.queue.failed",
+                    [("error", &(error))],
+                ),
                 EXIT_FAILED,
             )
         });
@@ -2270,7 +3651,7 @@ fn facet_merge_commit_locked(
     }
     let _lock = match hold_facet_trust_lock(journal) {
         Ok(lock) => lock,
-        Err(error) => return Err(failure("facet merge", &error.to_string(), EXIT_IO)),
+        Err(error) => return Err(failure("facet merge", &facet_copy::trust(&error), EXIT_IO)),
     };
     if let Err(error) = require_real_directory(&source_path) {
         return Err(failure("facet merge", &error, EXIT_DATA));
@@ -2289,7 +3670,11 @@ fn facet_merge_commit_locked(
     // either side would be lost or misread, so the merge refuses.
     for facet in [source, destination] {
         if let Err(error) = solstone_core_facets::check_hidden_names_readable(journal, facet) {
-            return Err(failure("facet merge", &error.to_string(), EXIT_DATA));
+            return Err(failure(
+                "facet merge",
+                &facet_copy::hidden(&error),
+                EXIT_DATA,
+            ));
         }
     }
     let transaction = transaction_id();
@@ -2306,7 +3691,7 @@ fn facet_merge_commit_locked(
         solstone_core_facets::merge_hidden_names_locked(journal, source, &stage_name)
     {
         let _ = fs::remove_dir_all(&stage);
-        return Err(failure("facet merge", &error.to_string(), EXIT_IO));
+        return Err(failure("facet merge", &facet_copy::hidden(&error), EXIT_IO));
     }
     if let Err(error) = fs::rename(&destination_path, &backup) {
         let _ = fs::remove_dir_all(&stage);
@@ -2330,7 +3715,7 @@ fn facet_merge_commit_locked(
                 rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup);
             return Err(transaction_failure(
                 "facet merge",
-                &error.to_string(),
+                &facet_copy::write(&error),
                 rollback,
             ));
         }
@@ -2343,7 +3728,7 @@ fn facet_merge_commit_locked(
             rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup);
         return Err(transaction_failure(
             "facet merge",
-            &error.to_string(),
+            &facet_copy::write(&error),
             rollback,
         ));
     }
@@ -2361,7 +3746,7 @@ fn facet_merge_commit_locked(
             rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup)
                 .and_then(|()| {
                     solstone_core_facets::restore_retired_files(journal, &retired_before)
-                        .map_err(|error| error.to_string())
+                        .map_err(|e| facet_copy::write(&e))
                 });
         return Err(transaction_failure(
             "facet merge",
@@ -2385,8 +3770,10 @@ fn facet_merge_commit_locked(
             source_removed: false,
             post_commit_failure: Some(failure(
                 "facet merge",
-                &format!(
-                    "the merge finished, but the files it replaced couldn't be moved to the trash: {error}; they're kept, and 'solstone journal facet doctor --fix' moves them there"
+                &cli_copy::display_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.merge.trash.failed",
+                    [("error", &(error))],
                 ),
                 EXIT_IO,
             )),
@@ -2398,8 +3785,10 @@ fn facet_merge_commit_locked(
             source_removed: false,
             post_commit_failure: Some(failure(
                 "facet merge",
-                &format!(
-                    "the merge finished, but its leftover folders couldn't be removed: {error}; run 'solstone journal facet doctor --fix' to tidy them"
+                &cli_copy::display_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.merge.cleanup.failed",
+                    [("error", &(error))],
                 ),
                 EXIT_IO,
             )),
@@ -2433,11 +3822,20 @@ fn trash_dropped_files(
         .map(|path| {
             path.components()
                 .map(|part| match part {
-                    std::path::Component::Normal(part) => part
-                        .to_str()
-                        .map(str::to_owned)
-                        .ok_or_else(|| format!("{} isn't UTF-8", path.display())),
-                    _ => Err(format!("{} isn't a plain path", path.display())),
+                    std::path::Component::Normal(part) => {
+                        part.to_str().map(str::to_owned).ok_or_else(|| {
+                            cli_copy::display_for(
+                                crate::terminal_language(),
+                                "journal.cli.journal.facet.path.encoding",
+                                [("path", &(path.display()))],
+                            )
+                        })
+                    }
+                    _ => Err(cli_copy::display_for(
+                        crate::terminal_language(),
+                        "journal.cli.journal.facet.path.plain",
+                        [("path", &(path.display()))],
+                    )),
                 })
                 .collect::<Result<Vec<_>, _>>()
                 .map(|parts| parts.join("/"))
@@ -2456,7 +3854,7 @@ fn trash_dropped_files(
         &bytes,
         AtomicWriteOptions { mode: Some(0o600) },
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| facet_copy::publication(&error))?;
     for rel in &files {
         let from = source_backup.join(rel);
         let to = staging.join(DROPPED_FILES).join(rel);
@@ -2465,8 +3863,11 @@ fn trash_dropped_files(
         }
         fs::rename(&from, &to).map_err(|error| format!("{rel}: {error}"))?;
     }
-    let index = solstone_core_indexer_store::RetentionIndex::new(journal);
-    match FacetDrops::new(&index).trash(
+    let index = solstone_core_indexer_store::RetentionIndex::with_locale(
+        journal,
+        crate::terminal_language(),
+    );
+    match FacetDrops::with_locale(&index, crate::terminal_language()).trash(
         journal,
         folder,
         solstone_core_removals::Action::FacetMerge,
@@ -2474,7 +3875,7 @@ fn trash_dropped_files(
     ) {
         // In the trash, finishing on the next sweep.
         Ok(_) | Err(solstone_core_trash::TrashError::Unfinished(_)) => Ok(()),
-        Err(error) => Err(error.to_string()),
+        Err(error) => Err(facet_copy::trash(&error)),
     }
 }
 
@@ -2521,8 +3922,14 @@ fn remove_tree_pair(journal: &Path, first: &Path, second: &Path) -> Result<(), S
             clippy::disallowed_methods,
             reason = "system internal: a committed facet merge's own scratch trees; the files only the source held are in the trash first"
         )]
-        solstone_core_journal_io::removal::remove_contained_tree(journal, tree)
-            .map_err(|error| error.to_string())?;
+        solstone_core_journal_io::removal::remove_contained_tree(journal, tree).map_err(
+            |error| {
+                solstone_core_journal_io::cli_diagnostics::path_detail(
+                    crate::terminal_language(),
+                    &error,
+                )
+            },
+        )?;
     }
     Ok(())
 }
@@ -2532,12 +3939,23 @@ fn transaction_failure(token: &str, primary: &str, rollback: Result<(), String>)
     match rollback {
         Ok(()) => failure(
             token,
-            &format!("transaction failed and was rolled back: {primary}"),
+            &cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.transaction.rollback",
+                [("primary", &(primary))],
+            ),
             EXIT_IO,
         ),
         Err(rollback_error) => failure(
             token,
-            &format!("transaction failed ({primary}); rollback also failed ({rollback_error})"),
+            &cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.transaction.rollback.failed",
+                [
+                    ("primary", &(primary)),
+                    ("rollback_error", &(rollback_error)),
+                ],
+            ),
             EXIT_IO,
         ),
     }
@@ -3563,7 +4981,7 @@ mod orphan_facet_tests {
 fn adoptable_orphan_facets(journal: &Path) -> Result<(Vec<String>, Vec<String>), String> {
     let retired = solstone_core_facets::read_retired_facets(journal)
         .entries_for_write()
-        .map_err(|error| error.to_string())?;
+        .map_err(|e| facet_copy::write(&e))?;
     let (retired_orphans, orphans) = orphan_facets(journal)?
         .into_iter()
         .partition(|slug| retired.get(slug).is_some_and(|entry| entry.redirects()));
@@ -3585,16 +5003,26 @@ fn orphan_facets(journal: &Path) -> Result<Vec<String>, String> {
             continue;
         }
         let Some(slug) = entry.file_name().to_str().map(str::to_owned) else {
-            return Err("facet name is not UTF-8".to_owned());
+            return Err(cli_copy::render_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.name.encoding",
+                &[],
+            ));
         };
         if !safe_component(&slug) {
             continue;
         }
         match solstone_core_facets::facet_declaration_entry(journal, &slug)
-            .map_err(|error| error.to_string())?
+            .map_err(|error| facet_copy::store(&error))?
         {
             Some(DirEntryKind::File) => continue,
-            Some(_) => return Err(format!("unsafe facet declaration for {slug}")),
+            Some(_) => {
+                return Err(cli_copy::display_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.name.unsafe",
+                    [("slug", &(slug))],
+                ));
+            }
             None => {}
         }
         for content in ["entities", "activities", "news", "logs"] {
@@ -3627,7 +5055,11 @@ fn contains_content(path: &Path) -> Result<bool, String> {
                 return Ok(true);
             }
         } else {
-            return Err(format!("unsafe facet content: {}", entry.path().display()));
+            return Err(cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.content.unsafe",
+                [("path", &(entry.path().display()))],
+            ));
         }
     }
     Ok(false)
@@ -3674,10 +5106,14 @@ fn copy_tree_into(
         } else if kind.is_file() {
             let bytes = fs::read(entry.path()).map_err(|error| error.to_string())?;
             write_bytes_exclusive(&target, &bytes, AtomicWriteOptions { mode: Some(0o600) })
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| facet_copy::publication(&error))?;
             copied_regular_files.push(child_relative);
         } else {
-            return Err(format!("unsafe facet entry: {}", entry.path().display()));
+            return Err(cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.entry.unsafe",
+                [("path", &(entry.path().display()))],
+            ));
         }
     }
     Ok(())
@@ -3777,14 +5213,20 @@ fn merge_tree_entry(
                     .copied_regular_files
                     .extend(copied.into_iter().map(|path| child_relative.join(path)));
             }
-            Some(_) => return Err(format!("unsafe facet entry: {}", target.display())),
+            Some(_) => {
+                return Err(cli_copy::display_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.entry.unsafe",
+                    [("path", &(target.display()))],
+                ));
+            }
         }
     } else if kind.is_file() {
         match existing_path_kind(target)? {
             None => {
                 let bytes = fs::read(entry.path()).map_err(|error| error.to_string())?;
                 write_bytes_exclusive(target, &bytes, AtomicWriteOptions { mode: Some(0o600) })
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| facet_copy::publication(&error))?;
                 report.copied_regular_files.push(child_relative);
             }
             Some(ExistingPathKind::RegularFile)
@@ -3808,10 +5250,20 @@ fn merge_tree_entry(
             Some(ExistingPathKind::RegularFile) => {
                 report.regular_file_collisions.push(child_relative);
             }
-            Some(_) => return Err(format!("unsafe facet entry: {}", target.display())),
+            Some(_) => {
+                return Err(cli_copy::display_for(
+                    crate::terminal_language(),
+                    "journal.cli.journal.facet.entry.unsafe",
+                    [("path", &(target.display()))],
+                ));
+            }
         }
     } else {
-        return Err(format!("unsafe facet entry: {}", entry.path().display()));
+        return Err(cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.entry.unsafe",
+            [("path", &(entry.path().display()))],
+        ));
     }
     Ok(())
 }
@@ -3846,7 +5298,7 @@ fn merge_entity_links(
             .is_dir();
         let name = entry.file_name();
         let link = match name.to_str() {
-            Some(dir) if is_dir => match incoming.state(dir).map_err(|error| error.to_string())? {
+            Some(dir) if is_dir => match incoming.state(dir).map_err(|e| facet_copy::link(&e))? {
                 // A link whose id can't name a folder overlays as it always has.
                 FolderState::Link(link)
                     if solstone_core_facets::facet_links::is_folder_name(&link.entity_id) =>
@@ -3866,7 +5318,7 @@ fn merge_entity_links(
         let joined = !brought.contains(&link.entity_id)
             && staged
                 .find(&link.entity_id)
-                .map_err(|error| error.to_string())?
+                .map_err(|e| facet_copy::link(&e))?
                 .is_some();
         brought.insert(link.entity_id.clone());
         let (into, rows) = staged
@@ -3877,7 +5329,7 @@ fn merge_entity_links(
                 LinkFieldPolicy::Merge,
                 &mut |_| Ok(()),
             )
-            .map_err(|error| error.to_string())?;
+            .map_err(|e| facet_copy::link(&e))?;
         if joined {
             report.links_combined += 1;
         }
@@ -3898,9 +5350,9 @@ fn merge_entity_links(
             .map_err(|error| error.to_string())?
             .is_dir()
             && let Some(dir) = name.to_str()
-            && incoming.state(dir).map_err(|error| error.to_string())? == FolderState::Orphan
+            && incoming.state(dir).map_err(|e| facet_copy::link(&e))? == FolderState::Orphan
             && matches!(
-                staged.state(dir).map_err(|error| error.to_string())?,
+                staged.state(dir).map_err(|e| facet_copy::link(&e))?,
                 FolderState::Link(_)
             )
         {
@@ -3912,7 +5364,7 @@ fn merge_entity_links(
                     LinkFieldPolicy::TargetWins,
                     &mut |_| Ok(()),
                 )
-                .map_err(|error| error.to_string())?;
+                .map_err(|e| facet_copy::link(&e))?;
             report.link_notes_added += rows.added;
             report.link_notes_renumbered += rows.renumbered;
             continue;
@@ -3967,7 +5419,7 @@ fn merge_jsonl(destination: &Path, source: &Path) -> Result<usize, String> {
         merged.as_bytes(),
         AtomicWriteOptions { mode: Some(0o600) },
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| facet_copy::publication(&error))?;
     Ok(dropped)
 }
 
@@ -3982,10 +5434,20 @@ fn merge_json_object(destination: &Path, source: &Path) -> Result<usize, String>
             .map_err(|error| error.to_string())?;
     let mut merged = match source_value {
         Value::Object(map) => map,
-        _ => return Err(format!("{} is not a JSON object", source.display())),
+        _ => {
+            return Err(cli_copy::display_for(
+                crate::terminal_language(),
+                "journal.cli.journal.facet.json.object",
+                [("path", &(source.display()))],
+            ));
+        }
     };
     let Value::Object(destination_map) = destination_value else {
-        return Err(format!("{} is not a JSON object", destination.display()));
+        return Err(cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.json.object",
+            [("path", &(destination.display()))],
+        ));
     };
     let superseded = destination_map
         .iter()
@@ -4000,17 +5462,17 @@ fn merge_json_object(destination: &Path, source: &Path) -> Result<usize, String>
         &bytes,
         AtomicWriteOptions { mode: Some(0o600) },
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| facet_copy::publication(&error))?;
     Ok(superseded)
 }
 
-fn default_export_path(journal: &Path, exported_at: &str) -> Result<PathBuf, String> {
-    let parent = journal
-        .parent()
-        .ok_or_else(|| "journal root has no parent".to_owned())?;
-    let name = journal
-        .file_name()
-        .ok_or_else(|| "journal root has no file name".to_owned())?;
+fn default_export_path(locale: &str, journal: &Path, exported_at: &str) -> Result<PathBuf, String> {
+    let parent = journal.parent().ok_or_else(|| {
+        solstone_core_cli_copy::render_for(locale, "journal.cli.journal.archive.root.parent", &[])
+    })?;
+    let name = journal.file_name().ok_or_else(|| {
+        solstone_core_cli_copy::render_for(locale, "journal.cli.journal.archive.root.name", &[])
+    })?;
     let mut exports_name = name.to_os_string();
     exports_name.push(".exports");
     let exports = parent.join(exports_name);
@@ -4020,7 +5482,13 @@ fn default_export_path(journal: &Path, exported_at: &str) -> Result<PathBuf, Str
             fs::set_permissions(&exports, fs::Permissions::from_mode(0o700))
                 .map_err(|error| error.to_string())?;
         }
-        Ok(_) => return Err(format!("unsafe exports directory: {}", exports.display())),
+        Ok(_) => {
+            return Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.archive.exports.unsafe",
+                [("path", &(exports.display()))],
+            ));
+        }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             create_private_dir(&exports).map_err(|error| error.to_string())?;
         }
@@ -4030,22 +5498,31 @@ fn default_export_path(journal: &Path, exported_at: &str) -> Result<PathBuf, Str
     Ok(exports.join(format!("{filename}.zip")))
 }
 
-fn reject_export_tree_output(journal: &Path, output: &Path, cwd: &Path) -> Result<(), String> {
+fn reject_export_tree_output(
+    locale: &str,
+    journal: &Path,
+    output: &Path,
+    cwd: &Path,
+) -> Result<(), String> {
     let absolute = if output.is_absolute() {
         output.to_owned()
     } else {
         cwd.join(output)
     };
-    let parent = absolute
-        .parent()
-        .ok_or_else(|| "archive output has no parent".to_owned())?;
+    let parent = absolute.parent().ok_or_else(|| {
+        solstone_core_cli_copy::render_for(locale, "journal.cli.journal.archive.output.parent", &[])
+    })?;
     let canonical_parent = fs::canonicalize(parent).map_err(|error| error.to_string())?;
     for family in ["chronicle", "entities", "facets", "imports"] {
         let root = journal.join(family);
         if let Ok(root) = fs::canonicalize(root)
             && canonical_parent.starts_with(root)
         {
-            return Err(format!("output is inside exported {family} tree"));
+            return Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.archive.output.tree",
+                [("family", &(family))],
+            ));
         }
     }
     Ok(())
@@ -4082,28 +5559,35 @@ fn valid_day(value: &str) -> bool {
 }
 
 fn journal_root(token: &str) -> Result<PathBuf, Outcome> {
-    let resolved = resolve_current_journal().map_err(|error| {
-        failure(
-            token,
-            &format!("journal resolution failed: {error}"),
-            EXIT_IO,
-        )
-    })?;
-    canonical_directory(&resolved.path).map_err(|error| failure(token, &error, EXIT_IO))
+    journal_root_for(token, solstone_core_cli_copy::terminal_locale())
 }
 
-fn canonical_directory(path: &Path) -> Result<PathBuf, String> {
-    let canonical = fs::canonicalize(path).map_err(|error| error.to_string())?;
-    require_real_directory(&canonical)?;
+fn journal_root_for(token: &str, requested: Option<&str>) -> Result<PathBuf, Outcome> {
+    let locale = requested.unwrap_or(solstone_core_cli_copy::ENGLISH);
+    let resolved = resolve_current_journal()
+        .map_err(|error| failure_for(token, &error.local_message(locale), EXIT_IO, requested))?;
+    let canonical = fs::canonicalize(&resolved.path)
+        .map_err(|error| failure_for(token, &error.to_string(), EXIT_IO, requested))?;
+    require_real_directory_for(&canonical, locale)
+        .map_err(|error| failure_for(token, &error, EXIT_IO, requested))?;
     Ok(canonical)
 }
 
+#[cfg(not(target_os = "ios"))]
 fn require_real_directory(path: &Path) -> Result<(), String> {
+    require_real_directory_for(path, crate::terminal_language())
+}
+
+fn require_real_directory_for(path: &Path, locale: &str) -> Result<(), String> {
     let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
     if metadata.file_type().is_dir() {
         Ok(())
     } else {
-        Err(format!("not a real directory: {}", path.display()))
+        Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.journal.local.directory",
+            [("path", &(path.display()))],
+        ))
     }
 }
 
@@ -4111,9 +5595,10 @@ fn require_real_directory(path: &Path) -> Result<(), String> {
 fn require_missing(path: &Path) -> Result<(), String> {
     match fs::symlink_metadata(path) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Ok(_) => Err(format!(
-            "transaction path already exists: {}",
-            path.display()
+        Ok(_) => Err(cli_copy::display_for(
+            crate::terminal_language(),
+            "journal.cli.journal.facet.transaction.exists",
+            [("path", &(path.display()))],
         )),
         Err(error) => Err(error.to_string()),
     }
@@ -4163,29 +5648,37 @@ fn target_exit(error: &solstone_core_journal_archive::ExplicitTargetError) -> u8
     }
 }
 
-fn archive_error(token: &str, message: &str) -> Outcome {
+fn archive_error(source: &impl std::fmt::Display, detail: String) -> Outcome {
+    // The original exit code also depends on verbatim paths in the source diagnostic.
+    let message = source.to_string();
     let exit = if message.contains("unsafe") || message.contains("invalid archive") {
         EXIT_DATA
     } else {
         EXIT_IO
     };
-    failure(token, message, exit)
+    failure("archive export", &detail, exit)
 }
 
 #[cfg(not(target_os = "ios"))]
-fn archive_merge_preview(source: &Path, journal: &Path, json_output: bool) -> Outcome {
+fn archive_merge_preview(
+    locale: &str,
+    source: &Path,
+    journal: &Path,
+    json_output: bool,
+) -> Outcome {
     let plan = match plan_journal_archive(source) {
         Ok(plan) => plan,
-        Err(error) => return archive_merge_json(Err(error), source, true, json_output),
+        Err(error) => return archive_merge_json(locale, Err(error), source, true, json_output),
     };
     match preview_size(source, journal) {
-        Ok(size) => archive_merge_plan(&plan, source, size.skipped, json_output),
-        Err(error) => archive_merge_json(Err(error), source, true, json_output),
+        Ok(size) => archive_merge_plan(locale, &plan, source, size.skipped, json_output),
+        Err(error) => archive_merge_json(locale, Err(error), source, true, json_output),
     }
 }
 
 #[cfg(not(target_os = "ios"))]
 fn archive_merge_plan(
+    locale: &str,
     plan: &ArchivePlan,
     source: &Path,
     skipped: usize,
@@ -4193,12 +5686,16 @@ fn archive_merge_plan(
 ) -> Outcome {
     if !json_output {
         return success(format!(
-            "Archive merge (days: {}): 0 committed, {} skipped, 0 failed.\n",
-            plan.days.join(", "),
-            skipped,
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.archive.preview",
+                [("days", &(plan.days.join(", "))), ("skipped", &(skipped))]
+            )
         ));
     }
     emit_merge_json(
+        locale,
         true,
         "ok",
         source,
@@ -4217,6 +5714,7 @@ fn archive_merge_plan(
 
 #[cfg(not(target_os = "ios"))]
 fn archive_merge_json(
+    locale: &str,
     result: Result<ArchiveMergeResult, ImportSourcesError>,
     source: &Path,
     dry_run: bool,
@@ -4249,6 +5747,7 @@ fn archive_merge_json(
                 ReindexStatus::NotRequested => "not-requested",
             };
             emit_merge_json(
+                locale,
                 ok,
                 code,
                 source,
@@ -4277,6 +5776,7 @@ fn archive_merge_json(
             };
             if json_output {
                 emit_merge_json(
+                    locale,
                     false,
                     code,
                     source,
@@ -4292,7 +5792,7 @@ fn archive_merge_json(
                     exit,
                 )
             } else {
-                failure("archive merge", &error.to_string(), exit)
+                failure("archive merge", &error.terminal_message(locale), exit)
             }
         }
     }
@@ -4301,6 +5801,7 @@ fn archive_merge_json(
 #[cfg(not(target_os = "ios"))]
 #[allow(clippy::too_many_arguments)] // JSON line keys are independently specified by the local-ops census.
 fn emit_merge_json(
+    locale: &str,
     ok: bool,
     code: &str,
     source: &Path,
@@ -4343,12 +5844,29 @@ fn emit_merge_json(
     }
     if ok {
         success(format!(
-            "Archive merge: {committed} committed, {skipped} skipped, {failed} failed.\n"
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.archive.summary",
+                [
+                    ("committed", &(committed)),
+                    ("skipped", &(skipped)),
+                    ("failed", &(failed))
+                ]
+            )
         ))
     } else {
         failure(
             "archive merge",
-            &format!("{committed} committed, {skipped} skipped, {failed} failed"),
+            &solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.journal.archive.incomplete",
+                [
+                    ("committed", &(committed)),
+                    ("skipped", &(skipped)),
+                    ("failed", &(failed)),
+                ],
+            ),
             exit,
         )
     }
@@ -4362,13 +5880,33 @@ fn success(stdout: String) -> Outcome {
 }
 
 fn usage(token: &str, message: &str) -> Outcome {
-    failure(token, message, EXIT_USAGE)
+    usage_for(token, message, solstone_core_cli_copy::terminal_locale())
+}
+
+fn usage_for(token: &str, message: &str, requested: Option<&str>) -> Outcome {
+    failure_for(token, message, EXIT_USAGE, requested)
 }
 
 fn failure(token: &str, message: &str, exit: u8) -> Outcome {
+    failure_for(
+        token,
+        message,
+        exit,
+        solstone_core_cli_copy::terminal_locale(),
+    )
+}
+
+fn failure_for(token: &str, message: &str, exit: u8, requested: Option<&str>) -> Outcome {
     Outcome::LocalFailure {
         stdout: String::new(),
-        stderr: format!("solstone journal {token}: {message}\n"),
+        stderr: format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                requested.unwrap_or(solstone_core_cli_copy::ENGLISH),
+                "journal.cli.journal.local.failure",
+                [("token", &(token)), ("message", &(message))]
+            )
+        ),
         exit,
     }
 }
@@ -4380,7 +5918,7 @@ mod archive_merge_source_kind_tests {
     #[test]
     fn missing_source_names_the_absent_path() {
         let path = PathBuf::from("/no/such/solstone-archive-source.zip");
-        let error = regular_archive_file(&path).unwrap_err();
+        let error = regular_archive_file(solstone_core_cli_copy::ENGLISH, &path).unwrap_err();
         assert!(error.contains("SOURCE does not exist"), "{error}");
         assert!(error.contains("solstone-archive-source.zip"), "{error}");
         assert!(!error.contains("must be a regular file"), "{error}");
@@ -4397,7 +5935,7 @@ mod archive_merge_source_kind_tests {
                 .as_nanos()
         ));
         fs::create_dir(&dir).unwrap();
-        let error = regular_archive_file(&dir).unwrap_err();
+        let error = regular_archive_file(solstone_core_cli_copy::ENGLISH, &dir).unwrap_err();
         let _ = fs::remove_dir(&dir);
         assert_eq!(error, "SOURCE must be a regular file");
     }
@@ -4443,7 +5981,7 @@ mod tests {
 
         let assert_preview = |skipped: usize| {
             let Outcome::LocalSuccess { stdout, .. } =
-                archive_merge_preview(&archive, &target, true)
+                archive_merge_preview(solstone_core_cli_copy::ENGLISH, &archive, &target, true)
             else {
                 panic!("archive preview failed")
             };

@@ -278,8 +278,16 @@ pub struct ScanReceipt {
 pub const RECEIPT_FAILED_PATHS: usize = 1000;
 
 pub(crate) fn record_scan(conn: &Connection, receipt: &ScanReceipt) -> Result<(), StoreError> {
+    record_scan_with_detail(conn, receipt, None)
+}
+
+pub(crate) fn record_scan_with_detail(
+    conn: &Connection,
+    receipt: &ScanReceipt,
+    detail: Option<&solstone_core_cli_copy::MessageDetail>,
+) -> Result<(), StoreError> {
     conn.execute(CREATE_INDEX_META, [])?;
-    let value = serde_json::json!({
+    let mut value = serde_json::json!({
         "finished_at_ms": receipt.finished_at_ms,
         "full": receipt.full,
         "indexed": receipt.indexed,
@@ -301,6 +309,14 @@ pub(crate) fn record_scan(conn: &Connection, receipt: &ScanReceipt) -> Result<()
         "error": receipt.error,
         "writer_version": receipt.writer_version,
     });
+    if let Some((code, args)) =
+        detail.and_then(solstone_core_cli_copy::MessageDetail::catalog_fields)
+    {
+        value["error_copy"] = serde_json::json!({
+            "code": code,
+            "args": args.iter().map(|(k, v)| (*k, v.as_str())).collect::<std::collections::BTreeMap<_, _>>(),
+        });
+    }
     conn.execute(
         "REPLACE INTO index_meta(key, value) VALUES (?, ?)",
         params![META_LAST_SCAN, value.to_string()],
@@ -316,15 +332,72 @@ pub(crate) fn record_scan(conn: &Connection, receipt: &ScanReceipt) -> Result<()
 
 /// Read the last scan receipt, if a stamping writer recorded one.
 pub fn read_last_scan(conn: &Connection) -> Result<Option<ScanReceipt>, StoreError> {
-    read_receipt(conn, META_LAST_SCAN)
+    read_receipt(conn, META_LAST_SCAN, None)
 }
 
 /// The latest light pass that finished, preserved when a later pass stops.
 pub fn read_last_finished_check(conn: &Connection) -> Result<Option<ScanReceipt>, StoreError> {
-    read_receipt(conn, "last_finished_check")
+    read_receipt(conn, "last_finished_check", None)
 }
 
-fn read_receipt(conn: &Connection, key: &str) -> Result<Option<ScanReceipt>, StoreError> {
+pub(crate) fn read_last_scan_in(
+    conn: &Connection,
+    locale: &str,
+) -> Result<Option<ScanReceipt>, StoreError> {
+    read_receipt(conn, META_LAST_SCAN, Some(locale))
+}
+
+fn receipt_error(value: &serde_json::Value, locale: Option<&str>) -> Option<String> {
+    let english = value.get("error")?.as_str()?;
+    let render = || {
+        let locale = locale.filter(|locale| *locale != solstone_core_cli_copy::ENGLISH)?;
+        let stored = value.get("error_copy")?;
+        let code = stored.get("code")?.as_str()?;
+        let fields = stored.get("args")?.as_object()?;
+        if code == "journal.window.facets.awareness.response.detail.unreadable.settings" {
+            if fields.len() != 1 {
+                return None;
+            }
+            let message = solstone_core_cli_copy::MessageDetail::window(
+                "journal.window.facets.awareness.response.detail.unreadable.settings",
+                [("settings_path", &fields.get("settings_path")?.as_str()?)],
+            );
+            return (message.to_string() == english).then(|| message.render(locale));
+        }
+        let group = code
+            .strip_prefix("journal.cli.journal.indexer.")?
+            .split('.')
+            .next()?;
+        if !matches!(
+            group,
+            "store" | "discovery" | "rel" | "edge" | "files" | "migration"
+        ) {
+            return None;
+        }
+        let args: Vec<_> = fields
+            .iter()
+            .map(|(key, value)| {
+                Some((
+                    key.as_str(),
+                    solstone_core_cli_copy::Value::String(value.as_str()?),
+                ))
+            })
+            .collect::<Option<_>>()?;
+        if solstone_core_cli_copy::try_render_for(solstone_core_cli_copy::ENGLISH, code, &args)?
+            != english
+        {
+            return None;
+        }
+        solstone_core_cli_copy::try_render_for(locale, code, &args)
+    };
+    Some(render().unwrap_or_else(|| english.to_owned()))
+}
+
+fn read_receipt(
+    conn: &Connection,
+    key: &str,
+    locale: Option<&str>,
+) -> Result<Option<ScanReceipt>, StoreError> {
     if !sqlite_table_exists(conn, "index_meta")? {
         return Ok(None);
     }
@@ -360,7 +433,7 @@ fn read_receipt(conn: &Connection, key: &str) -> Result<Option<ScanReceipt>, Sto
                     .collect()
             })
             .unwrap_or_default(),
-        error: value["error"].as_str().map(str::to_owned),
+        error: receipt_error(&value, locale),
         writer_version: value["writer_version"].as_str().unwrap_or("").to_owned(),
     }))
 }

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for indexer receipt absent.",
+  "context": "Journal command-line text for indexer receipt absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d1c05db4632341c24f8ad325aaba4d57b6cc9d4447f23b97c6f6d01cbcb04bc1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet hidden row empty.",
+  "context": "Journal command-line text for facet hidden row empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8866fa272e3cc91ea535c8238a9e3623595ae96bb37d42f88b66138ebab4e79b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

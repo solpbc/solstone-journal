@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for facet link repair named.",
+  "context": "Journal command-line text for facet link repair named.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4e6cb7b06ce8c0145da926d91a4fd7a7ca891e130e3433d8a2ef497c79466fd7",
+  "max_length": 196,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "doctor_command",
+      "kind": "command",
+      "value": "solstone journal facet doctor"
+    }
+  ]
+}

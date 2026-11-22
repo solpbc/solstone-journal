@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for archive fact utf8 member path exceeds zip u16 byte limit.",
+  "context": "Journal command-line text for archive fact utf8 member path exceeds zip u16 byte limit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "26767853ae534f20fc82d4d1a8657bb89030b9a5d2c556b874ab5b2ed7a337bb",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_utf_8",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    },
+    {
+      "name": "token_zip",
+      "kind": "accepted-input",
+      "value": "ZIP"
+    },
+    {
+      "name": "token_u16",
+      "kind": "accepted-input",
+      "value": "u16"
+    }
+  ]
+}

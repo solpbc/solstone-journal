@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive import missing.",
+  "context": "Journal command-line text for archive import missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7d9782c8c9a2f5c8ecc5926b37929e22c6b990ba4f5bd742bc5a08444f7abf37",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

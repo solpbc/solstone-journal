@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source io open journal directory for listing.",
+  "context": "Journal command-line text for archive source io open journal directory for listing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cb650d968e41891fe53f147807f3fc15f74d5b09732d6095dfc86c007b0b3eb5",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

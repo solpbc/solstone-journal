@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer scan invalid segment.",
+  "context": "Journal command-line text for indexer scan invalid segment.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5274c16551e3d2eacd1f3381aa3054761d7b7a02f628083cabdbda6f787633e8",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

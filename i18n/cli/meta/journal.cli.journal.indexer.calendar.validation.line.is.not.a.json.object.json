@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for indexer calendar validation line is not a json object.",
+  "context": "Journal command-line text for indexer calendar validation line is not a json object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0aa9b7324f31200f7841d23e270ccd063ff50eb9234e10049ef0a30cdbe53b96",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "json_key",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

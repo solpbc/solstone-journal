@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive target unsafe.",
+  "context": "Journal command-line text for archive target unsafe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ad04ab8c8b0478d97200839ef975767ac1339e0598d2673b57a44462788b8802",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

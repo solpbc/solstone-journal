@@ -191,25 +191,35 @@ impl CalendarNote {
 pub struct CalendarFileError {
     /// The 1-based line, or `None` for the file as a whole.
     pub line: Option<usize>,
-    pub reason: String,
+    pub reason: solstone_core_cli_copy::MessageDetail,
 }
 
 impl fmt::Display for CalendarFileError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.line {
             Some(line) => write!(formatter, "line {line}: {}", self.reason),
-            None => formatter.write_str(&self.reason),
+            None => write!(formatter, "{}", self.reason),
+        }
+    }
+}
+
+impl CalendarFileError {
+    pub fn into_detail(self) -> solstone_core_cli_copy::MessageDetail {
+        match self.line {
+            Some(line) => self.reason.context_slot(
+                "journal.cli.journal.indexer.calendar.at",
+                "reason",
+                [("line", &line)],
+            ),
+            None => self.reason,
         }
     }
 }
 
 impl std::error::Error for CalendarFileError {}
 
-fn whole_file(reason: impl Into<String>) -> CalendarFileError {
-    CalendarFileError {
-        line: None,
-        reason: reason.into(),
-    }
+fn whole_file(reason: solstone_core_cli_copy::MessageDetail) -> CalendarFileError {
+    CalendarFileError { line: None, reason }
 }
 
 /// Check a whole calendar note file against the contract before it is stored.
@@ -225,7 +235,10 @@ pub fn validate_calendar_file(
 ) -> Result<Vec<CalendarNote>, CalendarFileError> {
     check_file_name(name)?;
     let window = segment_window(day, segment).ok_or_else(|| {
-        whole_file("segment must name one 300-second window on the journal's grid")
+        whole_file(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.calendar.validation.segment.grid",
+            [],
+        ))
     })?;
     validate_lines(bytes, window, |_| Ok(()))
 }
@@ -245,13 +258,20 @@ pub fn validate_import_calendar_file(
     segment: &str,
 ) -> Result<Vec<CalendarNote>, CalendarFileError> {
     check_file_name(name)?;
-    let window = segment_span(day, segment)
-        .ok_or_else(|| whole_file("segment must name a span on its day"))?;
+    let window = segment_span(day, segment).ok_or_else(|| {
+        whole_file(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.calendar.validation.segment.must.name.a.span.on.its.day",
+            [],
+        ))
+    })?;
     validate_lines(bytes, window, |note| {
-        import_stamp(&note.record)?;
+        import_stamp_detail(&note.record)?;
         match note.record.get("expanded") {
             None | Some(Value::Bool(true)) => Ok(()),
-            Some(_) => Err("expanded must be true when present".to_owned()),
+            Some(_) => Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.expanded.must.be.true.when.present",
+                [],
+            )),
         }
     })
 }
@@ -259,15 +279,26 @@ pub fn validate_import_calendar_file(
 /// The import a line written by the importer came from, and when that import
 /// happened.
 pub fn import_stamp(record: &Map<String, Value>) -> Result<(String, ZonedDateTime), String> {
+    import_stamp_detail(record).map_err(|detail| detail.to_string())
+}
+
+pub fn import_stamp_detail(
+    record: &Map<String, Value>,
+) -> Result<(String, ZonedDateTime), solstone_core_cli_copy::MessageDetail> {
     let import = match record.get("import") {
         Some(Value::String(import)) if !import.is_empty() => import.clone(),
-        _ => return Err("import must be a non-empty string".to_owned()),
+        _ => {
+            return Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.import.must.be.a.non.empty.string",
+                [],
+            ));
+        }
     };
     let imported_at = record
         .get("imported_at")
         .and_then(Value::as_str)
         .and_then(|text| parse_rfc3339(text).ok())
-        .ok_or_else(|| "imported_at must be a time with an offset".to_owned())?;
+        .ok_or_else(|| solstone_core_cli_copy::MessageDetail::message("journal.cli.journal.indexer.calendar.validation.imported.at.must.be.a.time.with.an.offset", []))?;
     Ok((import, imported_at))
 }
 
@@ -275,47 +306,71 @@ fn check_file_name(name: &str) -> Result<(), CalendarFileError> {
     if is_calendar_file_name(name) {
         Ok(())
     } else {
-        Err(whole_file(
-            "file name must be calendar_ followed by 64 lowercase hex digits and .jsonl",
-        ))
+        Err(whole_file(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.calendar.validation.filename",
+            [],
+        )))
     }
 }
 
 fn validate_lines(
     bytes: &[u8],
     (window_start, window_end): (DateTime, DateTime),
-    extra: impl Fn(&CalendarNote) -> Result<(), String>,
+    extra: impl Fn(&CalendarNote) -> Result<(), solstone_core_cli_copy::MessageDetail>,
 ) -> Result<Vec<CalendarNote>, CalendarFileError> {
     if bytes.len() > MAX_FILE_BYTES {
-        return Err(whole_file("file holds more than 8 MiB"));
+        return Err(whole_file(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.calendar.validation.file.size",
+            [],
+        )));
     }
-    let text = std::str::from_utf8(bytes).map_err(|_| whole_file("file is not UTF-8"))?;
+    let text = std::str::from_utf8(bytes).map_err(|_| {
+        whole_file(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.calendar.validation.file.encoding",
+            [],
+        ))
+    })?;
     if text.lines().count() > MAX_FILE_LINES {
-        return Err(whole_file("file holds more than 5,000 notes"));
+        return Err(whole_file(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.calendar.validation.file.lines",
+            [],
+        )));
     }
     let mut notes = Vec::new();
     let mut identities = BTreeSet::new();
     for (index, line) in text.lines().enumerate() {
-        let at = |reason: String| CalendarFileError {
+        let at = |reason: solstone_core_cli_copy::MessageDetail| CalendarFileError {
             line: Some(index + 1),
             reason,
         };
         if line.trim().is_empty() {
-            return Err(at("line is empty".to_owned()));
+            return Err(at(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.line.is.empty",
+                [],
+            )));
         }
-        let note = parse_calendar_note(line).map_err(at)?;
+        let note = parse_calendar_note_detail(line).map_err(at)?;
         extra(&note).map_err(at)?;
         if !identities.insert((note.event.clone(), note.occurrence.clone())) {
-            return Err(at("event and occurrence repeat an earlier line".to_owned()));
+            return Err(at(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.event.and.occurrence.repeat.an.earlier.line",
+                [],
+            )));
         }
         let local = note.changed_at.datetime();
         if local < window_start || local >= window_end {
-            return Err(at("changed_at falls outside the segment window".to_owned()));
+            return Err(at(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.changed.at.falls.outside.the.segment.window",
+                [],
+            )));
         }
         notes.push(note);
     }
     if notes.is_empty() {
-        return Err(whole_file("file holds no notes"));
+        return Err(whole_file(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.calendar.validation.file.holds.no.notes",
+            [],
+        )));
     }
     Ok(notes)
 }
@@ -325,7 +380,12 @@ fn validate_lines(
 /// Stored files were checked on arrival, so this reads them the same way but
 /// keeps going past a line it cannot use, reporting it as a warning. A later
 /// line repeating an earlier identity is skipped the same way.
-pub fn read_calendar_notes(text: &str) -> (Vec<(usize, CalendarNote)>, Vec<String>) {
+pub fn read_calendar_notes(
+    text: &str,
+) -> (
+    Vec<(usize, CalendarNote)>,
+    Vec<solstone_core_cli_copy::MessageDetail>,
+) {
     let mut notes = Vec::new();
     let mut warnings = Vec::new();
     let mut identities = BTreeSet::new();
@@ -333,18 +393,22 @@ pub fn read_calendar_notes(text: &str) -> (Vec<(usize, CalendarNote)>, Vec<Strin
         if line.trim().is_empty() {
             continue;
         }
-        match parse_calendar_note(line) {
+        match parse_calendar_note_detail(line) {
             Ok(note) => {
                 if identities.insert((note.event.clone(), note.occurrence.clone())) {
                     notes.push((index, note));
                 } else {
-                    warnings.push(format!("calendar note line {} repeats an event", index + 1));
+                    warnings.push(solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.journal.indexer.calendar.line.repeat",
+                        [("line", &(index + 1))],
+                    ));
                 }
             }
             Err(reason) => {
-                warnings.push(format!(
-                    "calendar note line {} skipped: {reason}",
-                    index + 1
+                warnings.push(reason.context_slot(
+                    "journal.cli.journal.indexer.calendar.line.skip",
+                    "reason",
+                    [("line", &(index + 1))],
                 ));
             }
         }
@@ -465,43 +529,74 @@ fn sorted_keys(value: &Value) -> Value {
 
 /// Parse and check one note line against the contract.
 pub fn parse_calendar_note(line: &str) -> Result<CalendarNote, String> {
+    parse_calendar_note_detail(line).map_err(|detail| detail.to_string())
+}
+
+pub fn parse_calendar_note_detail(
+    line: &str,
+) -> Result<CalendarNote, solstone_core_cli_copy::MessageDetail> {
     let Ok(Value::Object(record)) = serde_json::from_str::<Value>(line) else {
-        return Err("line is not a JSON object".to_owned());
+        return Err(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.calendar.validation.line.is.not.a.json.object",
+            [],
+        ));
     };
-    calendar_note_from_record(record)
+    calendar_note_from_record_detail(record)
 }
 
 /// Check one already-parsed note line against the contract.
 pub fn calendar_note_from_record(record: Map<String, Value>) -> Result<CalendarNote, String> {
+    calendar_note_from_record_detail(record).map_err(|detail| detail.to_string())
+}
+
+pub fn calendar_note_from_record_detail(
+    record: Map<String, Value>,
+) -> Result<CalendarNote, solstone_core_cli_copy::MessageDetail> {
     for key in REQUIRED_KEYS {
         if !record.contains_key(key) {
-            return Err(format!("{key} is missing"));
+            return Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.field.missing",
+                [("key", &(key))],
+            ));
         }
     }
     if record.get("v").and_then(Value::as_u64) != Some(1) {
-        return Err("v must be 1".to_owned());
+        return Err(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.calendar.validation.version",
+            [],
+        ));
     }
     let change = match record.get("change").and_then(Value::as_str) {
         Some("added") => Change::Added,
         Some("changed") => Change::Changed,
         Some("removed") => Change::Removed,
-        _ => return Err("change must be added, changed or removed".to_owned()),
+        _ => {
+            return Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.change.must.be.added.changed.or.removed",
+                [],
+            ));
+        }
     };
     let event = match record.get("event") {
         Some(Value::String(event)) if !event.is_empty() => event.clone(),
-        _ => return Err("event must be a non-empty string".to_owned()),
+        _ => {
+            return Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.event.must.be.a.non.empty.string",
+                [],
+            ));
+        }
     };
     let occurrence = match record.get("occurrence") {
         Some(Value::Null) => String::new(),
         Some(Value::String(value)) => normalize_occurrence(value)
-            .ok_or_else(|| "occurrence cannot be read as a date or time".to_owned())?,
-        _ => return Err("occurrence must be a string or null".to_owned()),
+            .ok_or_else(|| solstone_core_cli_copy::MessageDetail::message("journal.cli.journal.indexer.calendar.validation.occurrence.cannot.be.read.as.a.date.or.time", []))?,
+        _ => return Err(solstone_core_cli_copy::MessageDetail::message("journal.cli.journal.indexer.calendar.validation.occurrence.must.be.a.string.or.null", [])),
     };
     let changed_at = record
         .get("changed_at")
         .and_then(Value::as_str)
         .and_then(|text| parse_rfc3339(text).ok())
-        .ok_or_else(|| "changed_at must be a time with an offset".to_owned())?;
+        .ok_or_else(|| solstone_core_cli_copy::MessageDetail::message("journal.cli.journal.indexer.calendar.validation.changed.at.must.be.a.time.with.an.offset", []))?;
     check_display_fields(&record)?;
     let schedule = if change == Change::Removed {
         None
@@ -518,10 +613,15 @@ pub fn calendar_note_from_record(record: Map<String, Value>) -> Result<CalendarN
     })
 }
 
-fn check_display_fields(record: &Map<String, Value>) -> Result<(), String> {
+fn check_display_fields(
+    record: &Map<String, Value>,
+) -> Result<(), solstone_core_cli_copy::MessageDetail> {
     for key in TEXT_FIELDS {
         if !matches!(record.get(key), Some(Value::Null | Value::String(_))) {
-            return Err(format!("{key} must be a string or null"));
+            return Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.field.type",
+                [("key", &(key))],
+            ));
         }
     }
     // A phone that predates the account sends none.
@@ -529,66 +629,100 @@ fn check_display_fields(record: &Map<String, Value>) -> Result<(), String> {
         record.get("account"),
         None | Some(Value::Null | Value::String(_))
     ) {
-        return Err("account must be a string or null".to_owned());
+        return Err(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.calendar.validation.account.must.be.a.string.or.null",
+            [],
+        ));
     }
     match record.get("organizer") {
         Some(Value::Null) => {}
         Some(Value::Object(organizer)) => check_person(organizer, "organizer")?,
-        _ => return Err("organizer must be an object or null".to_owned()),
+        _ => {
+            return Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.organizer.must.be.an.object.or.null",
+                [],
+            ));
+        }
     }
     let Some(Value::Array(attendees)) = record.get("attendees") else {
-        return Err("attendees must be an array".to_owned());
+        return Err(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.calendar.validation.attendees.must.be.an.array",
+            [],
+        ));
     };
     for attendee in attendees {
         let Value::Object(attendee) = attendee else {
-            return Err("each attendee must be an object".to_owned());
+            return Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.each.attendee.must.be.an.object",
+                [],
+            ));
         };
         check_person(attendee, "attendee")?;
         if !matches!(
             attendee.get("status"),
             None | Some(Value::Null | Value::String(_))
         ) {
-            return Err("attendee status must be a string or null".to_owned());
+            return Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.attendee.status.must.be.a.string.or.null",
+                [],
+            ));
         }
         if !matches!(
             attendee.get("you"),
             None | Some(Value::Null | Value::Bool(_))
         ) {
-            return Err("attendee you must be true or false".to_owned());
+            return Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.attendee.you.must.be.true.or.false",
+                [],
+            ));
         }
     }
     Ok(())
 }
 
-fn check_person(person: &Map<String, Value>, what: &str) -> Result<(), String> {
+fn check_person(
+    person: &Map<String, Value>,
+    what: &str,
+) -> Result<(), solstone_core_cli_copy::MessageDetail> {
     for key in ["name", "email"] {
         if !matches!(person.get(key), None | Some(Value::Null | Value::String(_))) {
-            return Err(format!("{what} {key} must be a string or null"));
+            return Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.person.field",
+                [("what", &(what)), ("key", &(key))],
+            ));
         }
     }
     Ok(())
 }
 
-fn parse_schedule(record: &Map<String, Value>) -> Result<Schedule, String> {
+fn parse_schedule(
+    record: &Map<String, Value>,
+) -> Result<Schedule, solstone_core_cli_copy::MessageDetail> {
     let Some(all_day) = record.get("all_day").and_then(Value::as_bool) else {
-        return Err("all_day must be true or false".to_owned());
+        return Err(solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.journal.indexer.calendar.validation.all.day.must.be.true.or.false",
+            [],
+        ));
     };
     let start = match record.get("start") {
         Some(Value::String(text)) => {
-            parse_when(text).ok_or_else(|| "start cannot be read as a date or time".to_owned())?
+            parse_when(text).ok_or_else(|| solstone_core_cli_copy::MessageDetail::message("journal.cli.journal.indexer.calendar.validation.start.cannot.be.read.as.a.date.or.time", []))?
         }
-        _ => return Err("start is missing".to_owned()),
+        _ => return Err(solstone_core_cli_copy::MessageDetail::message("journal.cli.journal.indexer.calendar.validation.start.is.missing", [])),
     };
     let end = match record.get("end") {
         Some(Value::Null) => None,
         Some(Value::String(text)) => Some(
-            parse_when(text).ok_or_else(|| "end cannot be read as a date or time".to_owned())?,
+            parse_when(text).ok_or_else(|| solstone_core_cli_copy::MessageDetail::message("journal.cli.journal.indexer.calendar.validation.end.cannot.be.read.as.a.date.or.time", []))?,
         ),
-        _ => return Err("end must be a string or null".to_owned()),
+        _ => return Err(solstone_core_cli_copy::MessageDetail::message("journal.cli.journal.indexer.calendar.validation.end.must.be.a.string.or.null", [])),
     };
     for when in std::iter::once(&start).chain(end.as_ref()) {
         if all_day != matches!(when, When::Date(_)) {
-            return Err("start and end must be dates exactly when all_day is true".to_owned());
+            return Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.start.and.end.must.be.dates.exactly.when.all.day.is.true",
+                [],
+            ));
         }
     }
     if let Some(end) = &end {
@@ -596,10 +730,18 @@ fn parse_schedule(record: &Map<String, Value>) -> Result<Schedule, String> {
             (When::Zoned(start), When::Zoned(end)) => end < start,
             (When::Floating(start), When::Floating(end)) => end < start,
             (When::Date(start), When::Date(end)) => end < start,
-            _ => return Err("start and end must both carry an offset or both have none".to_owned()),
+            _ => {
+                return Err(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.calendar.validation.start.and.end.must.both.carry.an.offset.or.both.have.none",
+                    [],
+                ));
+            }
         };
         if before {
-            return Err("end is before start".to_owned());
+            return Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.journal.indexer.calendar.validation.end.is.before.start",
+                [],
+            ));
         }
     }
     Ok(Schedule {

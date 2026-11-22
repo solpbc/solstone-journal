@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for facet doctor reference.",
+  "context": "Journal command-line text for facet doctor reference.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "first",
+      "type": "string"
+    },
+    {
+      "name": "last",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8d287a2b5e8440650e049dcff4dfa0f88de6b08c17770758d76f5a0f56c8de8c",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive source io stat opened journal directory member.",
+  "context": "Journal command-line text for archive source io stat opened journal directory member.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "76248c3d13020571c29f3dce24c8a3b96b124636eb761fb74e0c489749e31253",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

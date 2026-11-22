@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for indexer hidden activity.",
+  "context": "Journal command-line text for indexer hidden activity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rel",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "192ca0925924b3e3406228de53e57e74cedc4b4daccb48c81dbb975ad419fa3f",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

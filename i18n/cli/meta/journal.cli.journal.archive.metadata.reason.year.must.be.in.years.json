@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for archive metadata reason year must be in years.",
+  "context": "Journal command-line text for archive metadata reason year must be in years.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ae2e84f08b14a52304eefdaa4e61cd339247dd4f109276a133103b116fc2644b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

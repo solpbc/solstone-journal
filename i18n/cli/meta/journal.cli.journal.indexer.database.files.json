@@ -1,0 +1,61 @@
+{
+  "description": "Journal command-line text for indexer database files.",
+  "context": "Journal command-line text for indexer database files.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "discovered",
+      "type": "string"
+    },
+    {
+      "name": "indexed",
+      "type": "string"
+    },
+    {
+      "name": "current",
+      "type": "string"
+    },
+    {
+      "name": "stale",
+      "type": "string"
+    },
+    {
+      "name": "missing",
+      "type": "string"
+    },
+    {
+      "name": "failed",
+      "type": "string"
+    },
+    {
+      "name": "orphaned",
+      "type": "string"
+    },
+    {
+      "name": "retained",
+      "type": "string"
+    },
+    {
+      "name": "ineligible_rows",
+      "type": "string"
+    },
+    {
+      "name": "unreadable",
+      "type": "string"
+    },
+    {
+      "name": "ineligible",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9c48ddd3780a9a765a33658fad71c3f78cdf48bf93f0ecbf4cd51ece50de939b",
+  "max_length": 351,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

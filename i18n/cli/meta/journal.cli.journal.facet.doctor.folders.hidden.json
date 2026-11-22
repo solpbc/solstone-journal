@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet doctor folders hidden.",
+  "context": "Journal command-line text for facet doctor folders hidden.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "folders",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "19b751de2ea291bd39f9001c66cbbdd196262c2eda12dc73818d3b95e076e50f",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

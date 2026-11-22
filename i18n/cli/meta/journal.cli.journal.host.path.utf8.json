@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for host path utf8.",
+  "context": "Journal command-line text for host path utf8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5d464e8abc2d5cce3ddaa20e79f1dfb28f2419c7ba405437b57683d59bb6c687",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

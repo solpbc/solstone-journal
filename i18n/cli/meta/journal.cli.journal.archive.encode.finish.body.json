@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive encode finish body.",
+  "context": "Journal command-line text for archive encode finish body.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e0a79865e7c366bb52488ec49afecc0c37607631c6f3d30f467172e3edd2c0be",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

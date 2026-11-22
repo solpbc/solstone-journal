@@ -46,6 +46,10 @@ const OBSERVATIONS_FILE: &str = "observations.jsonl";
 /// Why a link-folder operation refused or failed.
 #[derive(Debug)]
 pub enum LinkFolderError {
+    TrustLock(crate::trust_lock::FacetTrustLockError),
+    NotUtf8 {
+        path: PathBuf,
+    },
     Path(PathError),
     Read(ReadError),
     Observations(ObservationStoreError),
@@ -85,6 +89,8 @@ pub enum LinkFolderError {
 impl fmt::Display for LinkFolderError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::TrustLock(error) => error.fmt(formatter),
+            Self::NotUtf8 { path } => write!(formatter, "{} is not UTF-8 text", path.display()),
             Self::Path(error) => error.fmt(formatter),
             Self::Read(error) => error.fmt(formatter),
             Self::Observations(error) => error.fmt(formatter),
@@ -883,9 +889,10 @@ impl LinkDirs {
             _ => {
                 let mut combined: Option<Vec<ObservationRow>> = None;
                 for (path, bytes, incoming) in &notes {
-                    let text = std::str::from_utf8(bytes).map_err(|_| {
-                        LinkFolderError::Resolve(format!("{} is not UTF-8 text", path.display()))
-                    })?;
+                    let text =
+                        std::str::from_utf8(bytes).map_err(|_| LinkFolderError::NotUtf8 {
+                            path: path.to_path_buf(),
+                        })?;
                     let rows =
                         parse_observation_file(text, ObservationParseSource::Path(path))?.full_rows;
                     combined = Some(match combined {
@@ -1288,8 +1295,31 @@ pub fn check_journal_links(journal: &Path) -> Result<Vec<LinkIssue>, LinkFolderE
 pub fn repair_journal_links(
     journal: &Path,
 ) -> Result<(Vec<LinkIssue>, Vec<LinkIssue>), LinkFolderError> {
-    let _trust = crate::trust_lock::hold_facet_trust_lock(journal)
-        .map_err(|error| LinkFolderError::Resolve(error.to_string()))?;
+    repair_journal_links_with_notes(journal, |note| note.to_string())
+}
+
+pub enum RepairNote<'a> {
+    MissingSuccessor,
+    Occupied(&'a str),
+    Error(&'a LinkFolderError),
+}
+
+impl fmt::Display for RepairNote<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingSuccessor => f.write_str("the entity it joined can't be found"),
+            Self::Occupied(id) => write!(f, "folder '{id}' holds another entity or can't be read"),
+            Self::Error(error) => error.fmt(f),
+        }
+    }
+}
+
+pub fn repair_journal_links_with_notes(
+    journal: &Path,
+    render: impl Fn(RepairNote<'_>) -> String,
+) -> Result<(Vec<LinkIssue>, Vec<LinkIssue>), LinkFolderError> {
+    let _trust =
+        crate::trust_lock::hold_facet_trust_lock(journal).map_err(LinkFolderError::TrustLock)?;
     let mut repaired = Vec::new();
     let mut failed: std::collections::BTreeMap<(String, String, Vec<String>), (String, bool)> =
         std::collections::BTreeMap::new();
@@ -1343,24 +1373,15 @@ pub fn repair_journal_links(
                 }
                 Ok(false) => {
                     if let LinkIssueKind::Merged { .. } = issue.kind {
-                        failed.insert(
-                            key,
-                            ("the entity it joined can't be found".to_owned(), false),
-                        );
+                        failed.insert(key, (render(RepairNote::MissingSuccessor), false));
                     }
                 }
                 Err(LinkFolderError::NeedsRepair { entity_id, .. }) => {
-                    failed.insert(
-                        key,
-                        (
-                            format!("folder '{entity_id}' holds another entity or can't be read"),
-                            false,
-                        ),
-                    );
+                    failed.insert(key, (render(RepairNote::Occupied(&entity_id)), false));
                 }
                 // One folder that can't be repaired never stops the rest.
                 Err(error) => {
-                    failed.insert(key, (error.to_string(), true));
+                    failed.insert(key, (render(RepairNote::Error(&error)), true));
                 }
             }
         }

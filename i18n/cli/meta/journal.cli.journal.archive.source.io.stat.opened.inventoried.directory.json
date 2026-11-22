@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for archive source io stat opened inventoried directory.",
+  "context": "Journal command-line text for archive source io stat opened inventoried directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "80f2e3824257195abe01aacff7f375ad86003ebb15949f8eba83bac39f084f3f",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

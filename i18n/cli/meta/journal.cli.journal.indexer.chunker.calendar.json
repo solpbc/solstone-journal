@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for indexer chunker calendar.",
+  "context": "Journal command-line text for indexer chunker calendar.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3e30185aa2a5c9a166895da31b030da08111ae2983318d2896fd650ef086ea43",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

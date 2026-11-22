@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for indexer edge payload.",
+  "context": "Journal command-line text for indexer edge payload.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "value_type",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ca7dfb29b57fc24d7c2a2c68d4059b12d2bf059e6a37fd76cf654da5d6456eac",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

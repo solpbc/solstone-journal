@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet doctor search failed.",
+  "context": "Journal command-line text for facet doctor search failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "11c8ffaef9880eef6c82071d9201d3b63a459bdc9d3b077233d74ec698514778",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

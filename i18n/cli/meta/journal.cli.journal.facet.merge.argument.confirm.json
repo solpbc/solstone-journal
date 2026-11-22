@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for facet merge argument confirm.",
+  "context": "Journal command-line text for facet merge argument confirm.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0964836111f64e0b92763ded11d0de44327dfa3ac28250743711ece0bf929507",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "dry_run_flag",
+      "kind": "flag",
+      "value": "--dry-run"
+    },
+    {
+      "name": "yes_flag",
+      "kind": "flag",
+      "value": "--yes"
+    }
+  ]
+}

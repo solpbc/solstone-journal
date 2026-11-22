@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet record id duplicate.",
+  "context": "Journal command-line text for facet record id duplicate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7635e745ab975375e6912330e0bd6010797f46b632072aa5489a711f0c7b568b",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

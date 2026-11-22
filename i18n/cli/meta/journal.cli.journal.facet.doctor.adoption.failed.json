@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for facet doctor adoption failed.",
+  "context": "Journal command-line text for facet doctor adoption failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "destination",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3e53a84f214c156de586f5471efbf4ea8ca5c241d6daa03f398d57a3a598794c",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for archive source io open retained journal root member.",
+  "context": "Journal command-line text for archive source io open retained journal root member.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "31e6d88f2441dc464d04caa1b230717b1bc361b498c5d9e638422493eb4878fb",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
