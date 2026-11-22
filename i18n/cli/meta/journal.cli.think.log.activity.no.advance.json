@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for log activity no advance.",
+  "context": "Journal command-line text for log activity no advance.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a7c59eb7276fcaede40abb226e6b3c09620843a2d481941f9845e1e00bf3409b",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "think"
+    }
+  ]
+}

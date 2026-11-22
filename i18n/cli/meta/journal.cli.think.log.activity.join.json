@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for log activity join.",
+  "context": "Journal command-line text for log activity join.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dbdf9465846def140b76acfcfd23b5e41a5262f36d5efa91962fea91d4574044",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "think"
+    }
+  ]
+}

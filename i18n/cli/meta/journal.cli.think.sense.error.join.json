@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sense error join.",
+  "context": "Journal command-line text for sense error join.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e4a9801b0690c16b0bd7133a748ded4a7d0ca000fba778c84717b9cfd8649365",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for activity day missing.",
+  "context": "Journal command-line text for activity day missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e7c544524854aae3be7943404771f127c0d6edb58bb06b91d8d923336e00f9f4",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

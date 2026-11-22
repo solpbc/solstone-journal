@@ -1,0 +1,34 @@
+{
+  "description": "Journal command-line text for sense deferred.",
+  "context": "Journal command-line text for sense deferred.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "deferred",
+      "type": "string"
+    },
+    {
+      "name": "ran",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f0c2bef3d88bfa90423943283e37a5261bf1506292f00dca404b1c91273e54af",
+  "max_length": 272,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

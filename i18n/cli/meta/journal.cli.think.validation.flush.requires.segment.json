@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for validation flush requires segment.",
+  "context": "Journal command-line text for validation flush requires segment.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9f0c27b4c937e4dac799310a2f2eec702a757bcf3b1242a97d132f79757b602a",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flush_flag",
+      "kind": "flag",
+      "value": "--flush"
+    },
+    {
+      "name": "segment_flag",
+      "kind": "flag",
+      "value": "--segment"
+    }
+  ]
+}

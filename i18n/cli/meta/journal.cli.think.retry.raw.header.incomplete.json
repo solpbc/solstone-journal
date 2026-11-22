@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry raw header incomplete.",
+  "context": "Journal command-line text for retry raw header incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0b7aa320712bb3917d7bb6e2c3b0f8d4fb79c715e5b8c6d94b57398c8e7a6926",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

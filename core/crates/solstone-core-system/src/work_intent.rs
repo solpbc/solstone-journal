@@ -379,24 +379,30 @@ fn demote(intent: &mut OwnerIntent) {
     intent.restarted = false;
 }
 
-fn run_path(journal: &Path, day: &str) -> Result<PathBuf, String> {
+fn run_path(journal: &Path, day: &str, locale: &str) -> Result<PathBuf, String> {
     if !valid_day(day) {
-        return Err("invalid work day".into());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.reprocess.intent.invalid.day",
+            &[],
+        ));
     }
     Ok(journal
         .join("health")
         .join(format!("from-scratch-{day}.lock")))
 }
 
-fn run_lease(journal: &Path, day: &str) -> Result<FileLock, String> {
+fn run_lease(journal: &Path, day: &str, locale: &str) -> Result<FileLock, String> {
     hold_lock(
-        run_path(journal, day)?,
+        run_path(journal, day, locale)?,
         LockOptions {
             timeout: Duration::ZERO,
             ..LockOptions::default()
         },
     )
-    .map_err(|_| "requested day is owned by another executor".into())
+    .map_err(|_| {
+        solstone_core_cli_copy::render_for(locale, "journal.cli.reprocess.intent.busy", &[])
+    })
 }
 
 /// No destructive work may start unless this write succeeds. A claimed intent
@@ -405,20 +411,36 @@ fn run_lease(journal: &Path, day: &str) -> Result<FileLock, String> {
 /// cancellation releases it, so discovery can hand an abandoned claim back to
 /// ordinary work ([`recover_interrupted`]).
 pub fn claim_from_scratch(journal: &Path, day: &str, id: &str) -> Result<FileLock, String> {
-    let lease = run_lease(journal, day)?;
-    mutate(journal, |days| {
-        let intent = days
-            .get_mut(day)
-            .filter(|intent| {
-                intent.id == id
-                    && intent.from_scratch
-                    && intent.state == IntentState::Queued
-                    && !intent.owner_stopped
-            })
-            .ok_or("destructive request is no longer waiting")?;
-        intent.state = IntentState::Claimed;
-        Ok(())
-    })?;
+    claim_from_scratch_in(journal, day, id, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn claim_from_scratch_in(
+    journal: &Path,
+    day: &str,
+    id: &str,
+    locale: &str,
+) -> Result<FileLock, String> {
+    let lease = run_lease(journal, day, locale)?;
+    mutate_checked_in(
+        journal,
+        &|| Ok(()),
+        |days| {
+            let intent = days
+                .get_mut(day)
+                .filter(|intent| {
+                    intent.id == id
+                        && intent.from_scratch
+                        && intent.state == IntentState::Queued
+                        && !intent.owner_stopped
+                })
+                .ok_or_else(|| {
+                    solstone_core_cli_copy::render_for(locale, "journal.cli.think.intent.gone", &[])
+                })?;
+            intent.state = IntentState::Claimed;
+            Ok(())
+        },
+        locale,
+    )?;
     Ok(lease)
 }
 
@@ -437,8 +459,10 @@ pub fn recover_interrupted(
     cap_reached: bool,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<bool, String> {
-    let (Ok(_run), Ok(_execution)) = (run_lease(journal, day), execution_lease(journal, day))
-    else {
+    let (Ok(_run), Ok(_execution)) = (
+        run_lease(journal, day, solstone_core_cli_copy::ENGLISH),
+        execution_lease(journal, day),
+    ) else {
         return Ok(false);
     };
     mutate_checked(journal, checkpoint, |days| {
@@ -478,27 +502,50 @@ pub fn finish_from_scratch_checked(
     success: bool,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), String> {
-    mutate_checked(journal, checkpoint, |days| {
-        if let Some(intent) = days.get_mut(day).filter(|intent| {
-            intent.id == id
-                && intent.from_scratch
-                && intent.state == IntentState::Claimed
-                && !intent.owner_stopped
-        }) {
-            if success {
-                days.remove(day);
-            } else {
-                // The forced work ran; what it left unfinished is held by its
-                // own retry owners (segment repair, talent and activity retry,
-                // daily units). The day becomes the owner's ordinary
-                // process-now ask, which discovery finishes through those
-                // owners and retires when the day is current. Holding it for
-                // review instead suppressed every one of them for that day.
-                demote(intent);
+    finish_from_scratch_checked_in(
+        journal,
+        day,
+        id,
+        success,
+        checkpoint,
+        solstone_core_cli_copy::ENGLISH,
+    )
+}
+
+pub fn finish_from_scratch_checked_in(
+    journal: &Path,
+    day: &str,
+    id: &str,
+    success: bool,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+    locale: &str,
+) -> Result<(), String> {
+    mutate_checked_in(
+        journal,
+        checkpoint,
+        |days| {
+            if let Some(intent) = days.get_mut(day).filter(|intent| {
+                intent.id == id
+                    && intent.from_scratch
+                    && intent.state == IntentState::Claimed
+                    && !intent.owner_stopped
+            }) {
+                if success {
+                    days.remove(day);
+                } else {
+                    // The forced work ran; what it left unfinished is held by its
+                    // own retry owners (segment repair, talent and activity retry,
+                    // daily units). The day becomes the owner's ordinary
+                    // process-now ask, which discovery finishes through those
+                    // owners and retires when the day is current. Holding it for
+                    // review instead suppressed every one of them for that day.
+                    demote(intent);
+                }
             }
-        }
-        Ok(())
-    })
+            Ok(())
+        },
+        locale,
+    )
 }
 
 /// Called only after the discovery reader has verified current source coverage.

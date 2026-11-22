@@ -3,7 +3,7 @@
 
 use serde_json::{Map, Value};
 use solstone_core_system_health::{FilesystemHealthLogSource, read_completed_since};
-use solstone_core_talent_config::{TalentConfig, TalentFilter, load_talent_configs};
+use solstone_core_talent_config::{TalentConfig, TalentFilter};
 
 use crate::cadence_state::CadenceState;
 use crate::context::{DispatchFailure, ThinkContext};
@@ -17,7 +17,8 @@ use crate::run_log::RunLogWriter;
 /// `thinking.py:2969-2972` needs this separate preflight: lib.rs calls it before
 /// opening the cadence run sidecar, preserving the no-talent no-write branch.
 pub(crate) fn configured(context: &ThinkContext) -> Result<Vec<TalentConfig>, String> {
-    load_talent_configs(
+    solstone_core_talent_config::load_talent_configs_in(
+        context.locale(),
         &context.talent_root,
         &context.apps_root,
         None,
@@ -36,7 +37,7 @@ pub(crate) fn run(
     configs: Vec<TalentConfig>,
     log: &mut RunLogWriter,
     force: bool,
-) -> Result<ModeResult, String> {
+) -> Result<ModeResult, crate::dispatch::RunFailure> {
     let status = Map::from_iter([
         ("mode".to_owned(), Value::String("cadence".to_owned())),
         ("day".to_owned(), Value::String(context.day.clone())),
@@ -45,7 +46,7 @@ pub(crate) fn run(
     ]);
     context.status.update(status.clone());
     let _ = helpers::emit(&context.journal, context.now_ms, "started", status);
-    let mut state = CadenceState::load(&context.journal);
+    let mut state = CadenceState::load(context.locale(), &context.journal);
     let source = FilesystemHealthLogSource::new(&context.journal);
     let runtime = runtime()?;
     let mut result = ModeResult::default();
@@ -75,7 +76,7 @@ pub(crate) fn run(
                 continue;
             }
             let completed = read_completed_since(&source, &context.day, last.unwrap_or(0))
-                .map_err(|error| error.to_string())?
+                .map_err(|error| context.failure(|locale| error.render(locale)))?
                 .value;
             if completed.segments.is_empty() && completed.activities.is_empty() {
                 // Source-derived, not measured: thinking.py:2994-3001 records
@@ -147,7 +148,7 @@ pub(crate) fn run(
                     result.failed += 1;
                     result
                         .failed_names
-                        .push(format!("{} (request_lost)", config.key));
+                        .push(format!("{} (request_lost)", config.key).into());
                     let fields = Map::from_iter([
                         ("mode".to_owned(), Value::String("cadence".to_owned())),
                         ("day".to_owned(), Value::String(context.day.clone())),
@@ -159,7 +160,9 @@ pub(crate) fn run(
                 }
                 Err(DispatchFailure::Unavailable) => {
                     result.failed += 1;
-                    result.failed_names.push(format!("{} (send)", config.key));
+                    result
+                        .failed_names
+                        .push(format!("{} (send)", config.key).into());
                 }
             }
         }

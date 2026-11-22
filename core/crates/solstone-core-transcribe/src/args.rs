@@ -31,15 +31,30 @@ pub struct ParsedArgs {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CliError {
     /// argparse-compatible semantic or syntax rejection.
-    Usage { message: String },
+    Usage {
+        message: String,
+    },
     /// The supervised child must retry without emitting a duplicate parent-facing message.
     SupervisorSpawnedUnavailable,
     /// An interactive invocation needs a concrete instruction.
     SupervisorUnavailable,
     /// The sibling speaker-analysis runtime is missing an executable or model asset.
-    SpeakersInstallation { message: String },
+    SpeakersInstallation {
+        message: String,
+    },
     /// A failed installation check, with its original diagnostic for display in another language.
-    SpeakersPrerequisite { detail: String, message: String },
+    SpeakersPrerequisite {
+        detail: String,
+        message: String,
+    },
+    SpeakersStorageFull {
+        detail: String,
+        message: String,
+    },
+    SpeakersGenerationHeld {
+        diagnostic: solstone_core_cli_copy::Diagnostic,
+        message: String,
+    },
 }
 
 impl CliError {
@@ -49,7 +64,10 @@ impl CliError {
             Self::Usage { .. } => 2,
             Self::SupervisorSpawnedUnavailable => 75,
             Self::SupervisorUnavailable => 1,
-            Self::SpeakersInstallation { .. } | Self::SpeakersPrerequisite { .. } => 78,
+            Self::SpeakersInstallation { .. }
+            | Self::SpeakersPrerequisite { .. }
+            | Self::SpeakersStorageFull { .. }
+            | Self::SpeakersGenerationHeld { .. } => 78,
         }
     }
 
@@ -58,7 +76,9 @@ impl CliError {
         match self {
             Self::Usage { message }
             | Self::SpeakersInstallation { message }
-            | Self::SpeakersPrerequisite { message, .. } => Some(message),
+            | Self::SpeakersPrerequisite { message, .. }
+            | Self::SpeakersStorageFull { message, .. }
+            | Self::SpeakersGenerationHeld { message, .. } => Some(message),
             Self::SupervisorUnavailable => Some(SUPERVISOR_MESSAGE),
             Self::SupervisorSpawnedUnavailable => None,
         }
@@ -432,8 +452,9 @@ where
 {
     let detail = format!("{step}: {error}");
     if is_out_of_space(&error) {
-        CliError::SpeakersInstallation {
-            message: format!("{DISK_FULL_COPY} ({detail}). Repair: {DISK_FULL_REPAIR}."),
+        CliError::SpeakersStorageFull {
+            message: disk_full_message(&detail, solstone_core_cli_copy::ENGLISH),
+            detail,
         }
     } else {
         installation_error(detail)
@@ -460,9 +481,19 @@ fn is_out_of_space(error: &(dyn std::error::Error + 'static)) -> bool {
     false
 }
 
+fn disk_full_message(detail: &str, locale: &str) -> String {
+    solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.think.preflight.disk",
+        [("detail", &(detail))],
+    )
+}
+
 pub fn speakers_installation_detail_in(error: &CliError, locale: &str) -> Option<String> {
     match error {
         CliError::SpeakersPrerequisite { detail, .. } => Some(prerequisite_message(detail, locale)),
+        CliError::SpeakersStorageFull { detail, .. } => Some(disk_full_message(detail, locale)),
+        CliError::SpeakersGenerationHeld { diagnostic, .. } => Some(diagnostic.render(locale)),
         _ => error.message().map(str::to_owned),
     }
 }

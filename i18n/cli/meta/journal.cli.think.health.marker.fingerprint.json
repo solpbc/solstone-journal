@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for health marker fingerprint.",
+  "context": "Journal command-line text for health marker fingerprint.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "593ad3e139b61919d1432908b2de4c2ac81b5fc26f3e56868da26e659cbbdb61",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

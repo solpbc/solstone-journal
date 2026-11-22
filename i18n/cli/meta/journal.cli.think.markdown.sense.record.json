@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for markdown sense record.",
+  "context": "Journal command-line text for markdown sense record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6eb964ea59409610bdeb7d7b173c45a1149f27a296bae7a992152443f88018e9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for log reconciliation.",
+  "context": "Journal command-line text for log reconciliation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8e374e3a5065058556a2e7b1e0a6340ffca11b78d2fe105eca250810c1ce413b",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for priority environment.",
+  "context": "Journal command-line text for priority environment.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "caf2c7ddca01ef8ef022a61dff7e665731e8713aa57ce4bb98eed0385193d49f",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

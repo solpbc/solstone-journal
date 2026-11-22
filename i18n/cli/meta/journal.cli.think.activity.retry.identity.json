@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for activity retry identity.",
+  "context": "Journal command-line text for activity retry identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ed6bdb1bc46b99670e49a5b479112cbe7780f3785dfa8dc740ea882b710ca38a",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

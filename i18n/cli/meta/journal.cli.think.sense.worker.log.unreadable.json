@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sense worker log unreadable.",
+  "context": "Journal command-line text for sense worker log unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "log",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e26bcb135fa91464a1f4d26d8c050f317e6bbc9f1e0943fbd4735b7902c5ecbe",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

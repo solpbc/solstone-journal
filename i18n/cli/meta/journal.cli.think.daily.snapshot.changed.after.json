@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for daily snapshot changed after.",
+  "context": "Journal command-line text for daily snapshot changed after.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9efbba9e9c9c0b4b7f8287b5eb78d1ea7bfc899087f9082e5af599aac0422b7",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

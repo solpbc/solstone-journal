@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for markdown partial counts.",
+  "context": "Journal command-line text for markdown partial counts.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "details",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d3d66b4f9f117a8429283d753e10eb71a3266b9f2d062bd74685ba1d958c71bc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

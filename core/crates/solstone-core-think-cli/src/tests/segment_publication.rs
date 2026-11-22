@@ -105,6 +105,34 @@ fn sense_partial_projections_replace_their_notice_with_the_result() {
             let text = fs::read_to_string(segment.join("talents").join(file)).unwrap();
             assert_eq!(text.contains("Left out:"), partial, "{file}: {text}");
         }
+        let talents = segment.join("talents");
+        let entity_path = talents.join("sense.md");
+        let entity = fs::read_to_string(&entity_path).unwrap();
+        let descriptor = fs::read_to_string(entity_path.with_extension("md.display")).unwrap();
+        assert!(!descriptor.contains("Editor"));
+        let view = solstone_core_format::stored_markdown::project_sense_file(
+            &context.journal,
+            &entity_path,
+            entity.trim(),
+            "en-XA",
+        )
+        .unwrap();
+        assert!(view.starts_with("- Editor"));
+        assert!(!view.contains("role="));
+        assert_eq!(talents.join("activity.md.display").is_file(), partial);
+        if partial {
+            let body = fs::read_to_string(talents.join("activity.md")).unwrap();
+            let shown = solstone_core_format::stored_markdown::project_file(
+                &context.journal,
+                &talents.join("activity.md"),
+                body.trim(),
+                "en-XA",
+                None,
+            )
+            .unwrap();
+            let note = solstone_core_format::stored_markdown::Message::PartialInput.render("en-XA");
+            assert!(shown.starts_with(&format!("kept summary\n\n{note}")));
+        }
         for file in ["sense.json", "density.json"] {
             let saved: Value =
                 serde_json::from_slice(&fs::read(segment.join("talents").join(file)).unwrap())
@@ -164,9 +192,11 @@ fn published_topics_bind_the_exact_text_through_partial_and_empty_results() {
     );
     assert!(partial.text.contains("Left out:"));
     assert_eq!(partial.kinds, mixed.kinds);
+    assert!(segment.join("talents/topics.md.display").is_file());
     let empty = publish(&mut log, &["transcripts"], false, &[]);
     assert!(empty.text.is_empty());
     assert_eq!(empty.kinds, speech.kinds);
+    assert!(!segment.join("talents/topics.md.display").exists());
     // An interrupted write or damaged record must not inherit the narrower set.
     fs::write(segment.join("talents/topics.md"), &mixed.text).unwrap();
     assert_eq!(
@@ -872,6 +902,57 @@ fn topics_happy_path_indexes_topics_md_with_admitted_transcripts_classification(
         }
     );
 
+    let stored = std::fs::read_to_string(segment_dir.join("talents/topics.md")).unwrap();
+    let stamp = solstone_core_format::stored_markdown::index_stamp(
+        &context.journal,
+        &segment_dir.join("talents/topics.md"),
+        &stored,
+    )
+    .unwrap();
+    let database = open_index(&context.journal).unwrap();
+    let saved: String = database
+        .query_row(
+            "SELECT display_stamp FROM files WHERE path=?",
+            [rel_topics],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stamp, saved);
+    let indexed = solstone_core_format::stored_markdown::IndexedDisplay::load(
+        &context.journal,
+        rel_topics,
+        &stamp,
+        "en-XA",
+        solstone_core_format::stored_markdown::DisplayUse::SearchExcerpt,
+    )
+    .unwrap();
+    let (idx, content): (i64, String) = database
+        .query_row(
+            "SELECT idx,content FROM chunks WHERE path=? AND content LIKE '%Alice:%'",
+            [rel_topics],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    let shown = indexed.get(idx, &content).unwrap();
+    assert!(shown.contains("Alice: We decided on the unique_arch_plan_alpha roadmap."));
+    assert!(
+        shown.contains(&solstone_core_format::stored_markdown::Message::Quotes.render("en-XA"))
+    );
+    // Older writers replace the mtime row when they rebuild a file.
+    database
+        .execute(
+            "REPLACE INTO files(path,mtime) SELECT path,mtime FROM files WHERE path=?",
+            [rel_topics],
+        )
+        .unwrap();
+    let after: Option<String> = database
+        .query_row(
+            "SELECT display_stamp FROM files WHERE path=?",
+            [rel_topics],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(after.is_none());
     let topics_content = fs::read_to_string(segment_dir.join("talents/topics.md")).unwrap();
     assert!(
         topics_content.contains("- Alice: We decided on the unique_arch_plan_alpha roadmap.\n")
@@ -1116,6 +1197,43 @@ fn topics_no_prior_file_keyless_and_empty_does_not_create_file() {
         records2
             .iter()
             .any(|r| { r["kept"] == 0 && r["dropped"] == 0 })
+    );
+}
+
+#[test]
+fn a_directory_in_the_optional_display_path_keeps_the_primary_english_publication() {
+    let (_journal, context) = fixture_journal();
+    let segment = context
+        .journal
+        .join("chronicle")
+        .join(DAY)
+        .join("default/124000_60");
+    let companion = segment.join("talents/topics.md.display");
+    fs::create_dir_all(&companion).unwrap();
+    fs::write(companion.join("fixture"), "keep").unwrap();
+    let sense = serde_json::json!({
+        "density":"active", "content_type":"meeting", "activity_summary":"Fixture",
+        "facets":[], "entities":[], "topics":["A recorded topic"], "quotes":[]
+    });
+    let mut log = RunLogWriter::open(&context.journal, DAY, "segment");
+    write_sense_and_change(
+        &context,
+        &mut log,
+        "124000_60",
+        Some("default"),
+        &segment,
+        sense.as_object().unwrap(),
+    )
+    .unwrap();
+    log.finish().unwrap();
+    let stored = fs::read_to_string(segment.join("talents/topics.md")).unwrap();
+    assert!(
+        stored.contains("## Topics") && stored.contains("A recorded topic"),
+        "{stored}"
+    );
+    assert_eq!(
+        fs::read_to_string(companion.join("fixture")).unwrap(),
+        "keep"
     );
 }
 

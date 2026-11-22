@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for validation facet requires activity.",
+  "context": "Journal command-line text for validation facet requires activity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce54ca40a499a2dd288f9c7843910a2070157fe4af64aaf45b25efad213a46fd",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "facet_flag",
+      "kind": "flag",
+      "value": "--facet"
+    },
+    {
+      "name": "activity_flag",
+      "kind": "flag",
+      "value": "--activity"
+    }
+  ]
+}

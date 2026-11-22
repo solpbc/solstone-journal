@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for log activity turn.",
+  "context": "Journal command-line text for log activity turn.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1df21567141b6d84eaf0297fc9a1c4d2a12f51957126619c0d04267457a6a38e",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

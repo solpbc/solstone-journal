@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for phase segment prerequisites.",
+  "context": "Journal command-line text for phase segment prerequisites.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4b4c3f1252016a0125ccac7cf7e72055f440dafc9da2de8ac99e2cc79e054d7f",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

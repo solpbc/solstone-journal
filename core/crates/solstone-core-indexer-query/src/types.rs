@@ -341,6 +341,9 @@ pub struct ConnectionStartAfter {
 /// One FTS row, shaped like the Python journal search result.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SearchHit {
+    /// Writer's display identity captured with the row for a localized owner response.
+    #[serde(skip)]
+    pub display_stamp: Option<String>,
     /// Byte spans in the indexed content matched by SQLite, when an owner
     /// opens a passage from a saved conversation.
     #[serde(skip)]

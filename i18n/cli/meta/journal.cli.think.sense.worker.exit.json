@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sense worker exit.",
+  "context": "Journal command-line text for sense worker exit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2550a608f81f1f846dd052a4a7e63fd6457f3358c1f2209ea1e309d0b575333e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

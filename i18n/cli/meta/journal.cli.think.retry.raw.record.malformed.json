@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry raw record malformed.",
+  "context": "Journal command-line text for retry raw record malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d61c0455516c2d8933339bd00e74d7b19a6e682893aa9e6666c06bcd599a866b",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

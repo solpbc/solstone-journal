@@ -2374,10 +2374,17 @@ fn reconcile_pass_with_roots(
     let offered = candidates.clone();
     queue.replace_discovered(candidates);
     log::info!(
-        "work discovery: pass took {} ms over {} of {} days; ranked {handed} tasks for the queue",
-        pass_started.elapsed().as_millis(),
-        report.days_inspected,
-        report.days_total,
+        "{}",
+        solstone_core_cli_copy::display_for(
+            solstone_core_cli_copy::ENGLISH,
+            "journal.cli.think.log.work.discovery",
+            [
+                ("elapsed", &(pass_started.elapsed().as_millis())),
+                ("inspected", &(report.days_inspected)),
+                ("days", &(report.days_total)),
+                ("handed", &(handed))
+            ]
+        )
     );
     report.as_of_ms = jiff::Timestamp::now().as_millisecond();
     report.next_pass_ms =

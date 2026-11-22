@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for cancelled.",
+  "context": "Journal command-line text for cancelled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8e67d5b8f1df10e31f45b665581d32c261fbb8c413e8f4283406328f830dd10a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

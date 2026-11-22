@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for updated marker.",
+  "context": "Journal command-line text for updated marker.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "171b9bfeefa2091bbc4d6cba7b17822779e89d5812e09fa09721577859d7d8b0",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

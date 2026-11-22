@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for health marker lock.",
+  "context": "Journal command-line text for health marker lock.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fc1ffd5c8e63861ea16cf52cd7e3b787deee6b474221ddd6d6d4623ad468ff6c",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

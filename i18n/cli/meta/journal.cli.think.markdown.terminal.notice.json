@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for markdown terminal notice.",
+  "context": "Journal command-line text for markdown terminal notice.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fcaaa7d77baf243329ded9d3a3ae5b2fe88d472e4e59666cd9c172e9b20860a9",
+  "max_length": 208,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

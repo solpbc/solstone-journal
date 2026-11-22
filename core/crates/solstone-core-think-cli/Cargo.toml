@@ -19,6 +19,7 @@ default = []
 test-hooks = []
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 glob.workspace = true
 jiff.workspace = true
 log.workspace = true

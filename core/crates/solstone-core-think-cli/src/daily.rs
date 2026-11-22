@@ -2,7 +2,9 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Map, Value};
-use solstone_core_talent_config::{TalentFilter, load_talent_configs};
+use solstone_core_talent_config::TalentFilter;
+#[cfg(test)]
+use solstone_core_talent_config::load_talent_configs;
 
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
@@ -20,10 +22,12 @@ pub(crate) fn run(
     from_scratch: bool,
     max_concurrency: i64,
 ) -> Result<ModeResult, String> {
-    let mut configs = load_talent_configs(
+    let mut configs = solstone_core_talent_config::load_talent_configs_in(
+        context.locale(),
         &context.talent_root,
         &context.apps_root,
-        solstone_core_talent_config::read_talent_overrides(&context.journal)?.as_ref(),
+        solstone_core_talent_config::read_talent_overrides_in(context.locale(), &context.journal)?
+            .as_ref(),
         TalentFilter {
             r#type: None,
             schedule: Some("daily"),
@@ -273,7 +277,7 @@ fn record_preparation_failure(
     context: &ThinkContext,
     name: &str,
     facet: Option<&str>,
-    error: &str,
+    error: &crate::dispatch::RunFailure,
     result: &mut ModeResult,
 ) {
     let mut fields = daily_terminal_fields_for(context, name, facet, "preparation_failed");
@@ -281,11 +285,13 @@ fn record_preparation_failure(
         "reason_code".to_owned(),
         Value::String("daily_preparation_failed".to_owned()),
     );
-    fields.insert("detail".to_owned(), Value::String(error.to_owned()));
+    fields.insert("detail".to_owned(), Value::String(error.source.clone()));
     log.log("talent.fail", context.event_now_ms(), fields);
     if name != "daily_schedule" {
         result.failed += 1;
-        result.failed_names.push(label(name, facet, error));
+        result
+            .failed_names
+            .push(error.named(&crate::dispatch::item_label(name, facet)));
     }
 }
 
@@ -302,7 +308,7 @@ fn queue_daily(
     from_scratch: bool,
     pending: &mut Vec<PendingUse>,
     result: &mut ModeResult,
-) -> Result<(), String> {
+) -> Result<(), crate::dispatch::RunFailure> {
     let retry_unit = solstone_core_system::work_retry::Unit::Daily {
         day: context.day.clone(),
         talent: config.key.clone(),
@@ -332,7 +338,7 @@ fn queue_daily(
         let early =
             BEFORE_DAILY_EVIDENCE.with(|slot| slot.borrow_mut().as_mut().map(|hook| hook(context)));
         if let Some(result) = early {
-            return result;
+            return result.map_err(Into::into);
         }
     }
     let evidence =
@@ -526,14 +532,21 @@ fn queue_daily(
                 None => crate::snapshot::prepare_daily_packet(context, config, facet, &extra)?,
             }
         }
-        solstone_core_talent_runtime::daily_location::DailyLocationFreshness::Reuse => {
-            retained.ok_or_else(|| "daily location reuse has no stored packet".to_owned())?
-        }
+        solstone_core_talent_runtime::daily_location::DailyLocationFreshness::Reuse => retained
+            .ok_or_else(|| {
+                crate::dispatch::RunFailure::message(
+                    context.terminal_locale,
+                    "journal.cli.think.daily.location.packet",
+                )
+            })?,
         solstone_core_talent_runtime::daily_location::DailyLocationFreshness::Stale => {
             crate::snapshot::prepare_daily_packet(context, config, facet, &extra)?
         }
         solstone_core_talent_runtime::daily_location::DailyLocationFreshness::Unreadable => {
-            return Err("daily location could not be read".into());
+            return Err(crate::dispatch::RunFailure::message(
+                context.terminal_locale,
+                "journal.cli.think.daily.location.read",
+            ));
         }
     };
     let mut reservation_error = None;
@@ -631,7 +644,7 @@ fn queue_daily(
             }
             result
                 .failed_names
-                .push(label(&config.key, facet, "request_lost"));
+                .push(label(&config.key, facet, "request_lost").into());
         }
         Err(DispatchFailure::Unavailable) => {
             log_daily_failure(
@@ -646,14 +659,16 @@ fn queue_daily(
             if config.key != "daily_schedule" {
                 result.failed += 1;
             }
-            result.failed_names.push(label(&config.key, facet, "send"));
+            result
+                .failed_names
+                .push(label(&config.key, facet, "send").into());
         }
     }
     if conflict_exhausted {
         return Ok(());
     }
     if let Some(error) = reservation_error {
-        return Err(error);
+        return Err(error.into());
     }
     Ok(())
 }

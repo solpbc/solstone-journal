@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry raw kind.",
+  "context": "Journal command-line text for retry raw kind.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81c8cd5daa354b43e1cc44c264c25e4128b6890061341992088f2a4371b168a3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

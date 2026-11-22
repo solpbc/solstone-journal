@@ -30,6 +30,7 @@ solstone-core-time.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 
 [dev-dependencies]
+tempfile = "3.24.0"
 solstone-core-convey-shell.workspace = true
 solstone-core-indexer-query = { workspace = true, features = ["test-hooks"] }
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }

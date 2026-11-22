@@ -171,14 +171,29 @@ fn run_with_phase_process(
     if args.daily_only {
         // A thought segment owed only its publication does not hold the day:
         // publish it here, with no model call, rather than wait for a repair.
-        let unpublished =
-            solstone_core_system_health::day_unpublished_segments(&context.journal, &context.day)?
-                .ok_or("daily work is waiting for its segment prerequisites")?;
+        let unpublished = solstone_core_system_health::day_unpublished_segments_typed(
+            &context.journal,
+            &context.day,
+        )
+        .map_err(|error| error.render(context.locale()))?
+        .ok_or_else(|| {
+            solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.phase.daily.prerequisites",
+                &[],
+            )
+        })?;
         for segment_dir in unpublished {
             segment::publish_saved_outputs(context, &segment_dir)?;
         }
-        if !solstone_core_system_health::day_segments_ready(&context.journal, &context.day)? {
-            return Err("daily work is waiting for its segment prerequisites".into());
+        if !solstone_core_system_health::day_segments_ready_typed(&context.journal, &context.day)
+            .map_err(|error| error.render(context.locale()))?
+        {
+            return Err(solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.phase.daily.prerequisites",
+                &[],
+            ));
         }
     }
     let observed_generation = stream_generation(context)?;
@@ -241,7 +256,7 @@ fn run_with_phase_process(
                 "segment_repair" if args.daily_only => {
                     // Recheck at the phase boundary; a newly arrived segment must
                     // not be processed as part of a lower-priority daily task.
-                    match solstone_core_system_health::day_segments_ready(
+                    match solstone_core_system_health::day_segments_ready_typed(
                         &context.journal,
                         &context.day,
                     ) {
@@ -253,8 +268,16 @@ fn run_with_phase_process(
                             ModeResult::default()
                         }
                         Ok(false) => {
-                            let result =
-                                failed_phase("segment_repair", "segment prerequisites changed");
+                            let result = phase_failure(
+                                "segment_repair",
+                                context.failure(|locale| {
+                                    solstone_core_cli_copy::render_for(
+                                        locale,
+                                        "journal.cli.think.phase.segment.prerequisites",
+                                        &[],
+                                    )
+                                }),
+                            );
                             segment_outcome.replace(SegmentPhaseOutcome {
                                 result: result.clone(),
                                 blockers: None,
@@ -262,7 +285,10 @@ fn run_with_phase_process(
                             result
                         }
                         Err(error) => {
-                            let result = failed_phase("segment_repair", error);
+                            let result = phase_failure(
+                                "segment_repair",
+                                context.failure(|locale| error.render(locale)),
+                            );
                             segment_outcome.replace(SegmentPhaseOutcome {
                                 result: result.clone(),
                                 blockers: None,
@@ -292,19 +318,24 @@ fn run_with_phase_process(
                             solstone_core_sense::dispatch::BatchMarkerPolicy::EnclosedWholeDay,
                         )
                     } else {
-                        solstone_core_sense::batch::run_batch_for_whole_day_with_environment_and_timeout(
-                        &context.journal,
-                        &request,
-                        sense_child_environment,
-                        Some(SENSE_PHASE_TIMEOUT),
-                    )
+                        solstone_core_sense::batch::run_batch_in(
+                            context.terminal_locale,
+                            &context.journal,
+                            &request,
+                            sense_child_environment,
+                            Some(SENSE_PHASE_TIMEOUT),
+                            solstone_core_sense::dispatch::BatchMarkerPolicy::EnclosedWholeDay,
+                        )
                     };
                     match ran {
                         Ok(()) => succeeded_phase("sense_batch"),
                         Err(solstone_core_sense::batch::BatchError::TimedOut { .. }) => {
                             timed_out_phase("sense_batch", None)
                         }
-                        Err(error) => failed_phase("sense_batch", error),
+                        Err(error) => phase_failure(
+                            "sense_batch",
+                            context.failure(|locale| error.render(locale)),
+                        ),
                     }
                 }
                 "segment_repair" => {
@@ -421,7 +452,12 @@ fn run_with_phase_process(
                             ]));
                         }
                         Err(error) => log::warn!(
-                            "could not inspect search work before daily thinking: {error}"
+                            "{}",
+                            solstone_core_cli_copy::display_for(
+                                context.locale(),
+                                "journal.cli.think.log.daily.search",
+                                [("error", &error)]
+                            )
                         ),
                         _ => {}
                     }
@@ -559,7 +595,9 @@ pub(crate) fn rebuild_segment_receipts(
             crate::activity_work::rebuild_receipts(context, &context.day)?,
         );
     }
-    if !solstone_core_system_health::day_segments_ready(&context.journal, &context.day)? {
+    if !solstone_core_system_health::day_segments_ready_typed(&context.journal, &context.day)
+        .map_err(|error| error.render(context.locale()))?
+    {
         return Err("segment publication is not current".into());
     }
     let progress = read_segment_progress(
@@ -931,7 +969,16 @@ fn run_process_phase(
     };
     match runner.run(phase, command, &context.journal, &context.day, timeout) {
         PhaseProcessOutcome::Exited(0) => succeeded_phase(phase),
-        PhaseProcessOutcome::Exited(code) => failed_phase(phase, format!("exit {code}")),
+        PhaseProcessOutcome::Exited(code) => phase_failure(
+            phase,
+            context.failure(|locale| {
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.phase.exit",
+                    [("code", &(code))],
+                )
+            }),
+        ),
         PhaseProcessOutcome::TimedOut { cleanup_error } => {
             timed_out_phase(phase, cleanup_error.as_deref())
         }
@@ -1140,14 +1187,21 @@ fn run_required_phases(
 }
 
 fn stream_generation(context: &ThinkContext) -> Result<u64, String> {
-    match read_health_marker(&context.journal, &context.day, HealthMarkerKind::Stream)
-        .map_err(|error| error.to_string())?
-    {
+    match read_health_marker(&context.journal, &context.day, HealthMarkerKind::Stream).map_err(
+        |error| {
+            solstone_core_journal_io::cli_diagnostics::health_marker_detail(
+                context.locale(),
+                &error,
+            )
+        },
+    )? {
         HealthMarkerState::Versioned { marker, .. } => Ok(marker.generation),
         HealthMarkerState::Absent | HealthMarkerState::LegacyEmpty { .. } => Ok(0),
-        HealthMarkerState::MalformedNonEmpty { .. } => {
-            Err("stream health marker is malformed".to_owned())
-        }
+        HealthMarkerState::MalformedNonEmpty { .. } => Err(solstone_core_cli_copy::render_for(
+            context.locale(),
+            "journal.cli.think.health.marker.stream",
+            &[],
+        )),
     }
 }
 
@@ -1164,11 +1218,11 @@ fn blocked_segments_with_detail(
 ) -> Result<BTreeMap<SegmentIdentity, String>, String> {
     let source = FilesystemSegmentSource;
     let (_, _, segments) = scan_day(&source, &context.journal, &context.day, Timestamp::now())
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.render(context.locale()))?;
     let inputs = segments.into_iter().map(Into::into).collect::<Vec<_>>();
     let health = FilesystemHealthLogSource::new(&context.journal);
-    let progress =
-        read_segment_progress(&health, &context.day).map_err(|error| error.to_string())?;
+    let progress = read_segment_progress(&health, &context.day)
+        .map_err(|error| error.render(context.locale()))?;
     Ok(blocked_segment_details(&inputs, &progress.value))
 }
 
@@ -1180,12 +1234,41 @@ const NAMED_BLOCKERS: usize = 3;
 ///
 /// A blocker that no longer reads as blocked, or a day that cannot be read
 /// again, is still named, just without a reason.
-fn describe_blockers(context: &ThinkContext, blockers: &BTreeSet<SegmentIdentity>) -> String {
+struct BlockerNames {
+    names: Vec<String>,
+    additional: usize,
+}
+
+impl BlockerNames {
+    fn render(&self, locale: &str) -> String {
+        if self.names.is_empty() {
+            return String::new();
+        }
+        if self.additional == 0 {
+            return format!(": {}", self.names.join(", "));
+        }
+        format!(
+            ": {}",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.daily.blockers.more",
+                [
+                    ("names", &(self.names.join(", "))),
+                    ("count", &(self.additional))
+                ]
+            )
+        )
+    }
+}
+fn describe_blockers(context: &ThinkContext, blockers: &BTreeSet<SegmentIdentity>) -> BlockerNames {
     if blockers.is_empty() {
-        return String::new();
+        return BlockerNames {
+            names: Vec::new(),
+            additional: 0,
+        };
     }
     let details = blocked_segments_with_detail(context).unwrap_or_default();
-    let mut named = blockers
+    let named = blockers
         .iter()
         .take(NAMED_BLOCKERS)
         .map(|identity| {
@@ -1199,16 +1282,16 @@ fn describe_blockers(context: &ThinkContext, blockers: &BTreeSet<SegmentIdentity
             }
         })
         .collect::<Vec<_>>();
-    if blockers.len() > NAMED_BLOCKERS {
-        named.push(format!("+{} more", blockers.len() - NAMED_BLOCKERS));
+    BlockerNames {
+        names: named,
+        additional: blockers.len().saturating_sub(NAMED_BLOCKERS),
     }
-    format!(": {}", named.join(", "))
 }
 
 fn all_segments(context: &ThinkContext) -> Result<BTreeSet<SegmentIdentity>, String> {
     let source = FilesystemSegmentSource;
     let (_, _, segments) = scan_day(&source, &context.journal, &context.day, Timestamp::now())
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.render(context.locale()))?;
     Ok(segments
         .into_iter()
         .map(|segment| SegmentIdentity {
@@ -1222,11 +1305,12 @@ fn refresh_daily_terminal_fold(
     context: &ThinkContext,
     result: &mut ModeResult,
 ) -> Result<(), String> {
-    let coverage = solstone_core_system::daily_coverage::read_daily_coverage_with_roots(
+    let coverage = solstone_core_system::daily_coverage::read_daily_coverage_with_roots_in(
         &context.journal,
         &context.day,
         &context.talent_root,
         &context.apps_root,
+        context.locale(),
     )?;
     result.terminal_units.clear();
     result.capped_units.clear();
@@ -1265,10 +1349,18 @@ fn succeeded_phase(phase: &str) -> ModeResult {
     }
 }
 
+fn phase_failure(phase: &str, cause: crate::dispatch::RunFailure) -> ModeResult {
+    ModeResult {
+        failed: 1,
+        failed_names: vec![cause.named(phase)],
+        ..ModeResult::default()
+    }
+}
+
 fn failed_phase(phase: &str, error: impl std::fmt::Display) -> ModeResult {
     ModeResult {
         failed: 1,
-        failed_names: vec![format!("{phase} ({error})")],
+        failed_names: vec![format!("{phase} ({error})").into()],
         ..ModeResult::default()
     }
 }
@@ -1277,10 +1369,14 @@ fn timed_out_phase(phase: &str, cleanup_error: Option<&str>) -> ModeResult {
     ModeResult {
         failed: 1,
         timed_out: true,
-        failed_names: vec![cleanup_error.map_or_else(
-            || format!("{phase} (wall_clock_exceeded)"),
-            |error| format!("{phase} (wall_clock_exceeded; cleanup failed: {error})"),
-        )],
+        failed_names: vec![
+            cleanup_error
+                .map_or_else(
+                    || format!("{phase} (wall_clock_exceeded)"),
+                    |error| format!("{phase} (wall_clock_exceeded; cleanup failed: {error})"),
+                )
+                .into(),
+        ],
         ..ModeResult::default()
     }
 }
@@ -1318,17 +1414,46 @@ fn maybe_finalize_completion(
                 .applicable_units
                 .difference(&daily.terminal_units)
                 .count();
-            merge_mode_result(
-                total,
-                failed_phase(
-                    "daily_incomplete",
-                    format!(
-                        "{nonterminal_daily} daily unit(s) non-terminal; {} segment blocker(s) remain{}",
-                        segment_blockers.len(),
-                        describe_blockers(context, segment_blockers)
-                    ),
-                ),
-            );
+            let details = describe_blockers(context, segment_blockers);
+            let source = {
+                let details = details.render(solstone_core_cli_copy::ENGLISH);
+                solstone_core_cli_copy::display_for(
+                    solstone_core_cli_copy::ENGLISH,
+                    "journal.cli.think.daily.incomplete.record",
+                    [
+                        ("units", &(nonterminal_daily)),
+                        ("blockers", &(segment_blockers.len())),
+                        ("details", &(details)),
+                    ],
+                )
+            };
+            let terminal = context.terminal_locale.map(|locale| {
+                let details = details.render(locale);
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.think.daily.incomplete",
+                    &[
+                        (
+                            "units",
+                            solstone_core_cli_copy::Value::Cardinal((nonterminal_daily) as i64),
+                        ),
+                        (
+                            "blockers",
+                            solstone_core_cli_copy::Value::Cardinal(
+                                (segment_blockers.len()) as i64,
+                            ),
+                        ),
+                        (
+                            "details",
+                            solstone_core_cli_copy::Value::String(&(details).to_string()),
+                        ),
+                    ],
+                )
+            });
+            total.failed += 1;
+            total
+                .failed_names
+                .push(crate::dispatch::RunFailure::projected(source, terminal));
         }
         log_completion_fold(log, context, false, false, daily, segment_blockers);
         return;
@@ -1380,9 +1505,12 @@ fn maybe_finalize_completion(
         Ok(PublishOutcome::InputChanged(_)) => {
             merge_mode_result(
                 total,
-                failed_phase(
+                phase_failure(
                     "daily_input_changed",
-                    "raw input changed during whole-day processing",
+                    crate::dispatch::RunFailure::message(
+                        context.terminal_locale,
+                        "journal.cli.think.daily.inputs.changed",
+                    ),
                 ),
             );
             log_completion_fold(log, context, false, false, daily, segment_blockers);
@@ -2770,7 +2898,7 @@ mod tests {
                 total
                     .failed_names
                     .iter()
-                    .filter(|name| name.as_str() == total.failed_names[0].as_str())
+                    .filter(|name| name.source == total.failed_names[0].source)
                     .count(),
                 1,
                 "{label} retains each failure once"

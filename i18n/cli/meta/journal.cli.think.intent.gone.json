@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for intent gone.",
+  "context": "Journal command-line text for intent gone.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "edeb356ec0a9058b26985ad561a3edb28a07a48a58704a445c3c5964f48e84c5",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

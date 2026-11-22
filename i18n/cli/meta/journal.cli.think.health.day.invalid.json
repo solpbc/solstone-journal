@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for health day invalid.",
+  "context": "Journal command-line text for health day invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "069cd5f7000da4b99e37ee4ded867c7cf9f4dbb2bff6b4518e055f4a30d20f07",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "date_format",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    }
+  ]
+}

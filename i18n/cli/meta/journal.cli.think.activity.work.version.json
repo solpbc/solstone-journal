@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for activity work version.",
+  "context": "Journal command-line text for activity work version.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5823ede2ad1bb02d654a820a921530c29ae94e03ec1d1c7e2f1050016d1c213e",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

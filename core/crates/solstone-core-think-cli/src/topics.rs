@@ -7,16 +7,17 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
+use solstone_core_format::stored_markdown::{Document, Message};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MatchedQuote {
-    pub speaker: Option<String>,
+    speaker: Option<SpeakerLabel>,
     pub span: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct TopicsEvaluation {
-    pub markdown: Option<String>,
+    pub markdown: Option<Document>,
     pub kept_quotes: u64,
     pub dropped_quotes: u64,
     pub unreadable: Vec<(PathBuf, String)>,
@@ -31,13 +32,13 @@ struct TranscriptToken {
     normalized: String,
     /// The normalized word as a small id, so a passage compares as a sequence.
     id: u32,
-    speaker: Option<String>,
+    speaker: Option<SpeakerLabel>,
 }
 
 #[derive(Clone, Debug)]
 struct SpeechRecord {
     words: Vec<String>,
-    speaker: Option<String>,
+    speaker: Option<SpeakerLabel>,
 }
 
 fn is_drop_punct(c: char) -> bool {
@@ -101,10 +102,51 @@ fn display_json_text(v: &Value) -> String {
     }
 }
 
-fn parse_speaker_label(record: &Map<String, Value>) -> Option<String> {
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SpeakerLabel {
+    text: String,
+    number: Option<serde_json::Number>,
+}
+
+impl SpeakerLabel {
+    fn common<'a>(mut values: impl Iterator<Item = Option<&'a Self>>) -> Option<Self> {
+        let mut label = values.next()??.clone();
+        for item in values {
+            let item = item?;
+            if label.text != item.text {
+                return None;
+            }
+            if item.number != label.number {
+                label.number = None
+            }
+        }
+        Some(label)
+    }
+
+    fn append(&self, document: &mut Document) {
+        if let Some(number) = &self.number {
+            document.push_message(Message::Speaker {
+                number: number.clone(),
+            });
+        } else {
+            document.push_str(collapse_crlf(&self.text).trim());
+        }
+    }
+}
+
+fn parse_speaker_label(record: &Map<String, Value>) -> Option<SpeakerLabel> {
     match record.get("speaker") {
-        Some(Value::Number(n)) => Some(format!("Speaker {n}")),
-        Some(Value::String(s)) if !s.trim().is_empty() => Some(s.clone()),
+        Some(Value::Number(number)) => Some(SpeakerLabel {
+            text: Message::Speaker {
+                number: number.clone(),
+            }
+            .render(solstone_core_cli_copy::ENGLISH),
+            number: Some(number.clone()),
+        }),
+        Some(Value::String(text)) if !text.trim().is_empty() => Some(SpeakerLabel {
+            text: text.clone(),
+            number: None,
+        }),
         _ => None,
     }
 }
@@ -199,14 +241,7 @@ fn fuzzy_match_quote(
     }
     let (_, file_idx, start, end) = best?;
     let tokens = &files_tokens[file_idx][start..end];
-    let first_speaker = tokens[0].speaker.as_ref();
-    let speaker = first_speaker
-        .filter(|label| {
-            tokens
-                .iter()
-                .all(|token| token.speaker.as_ref() == Some(*label))
-        })
-        .map(|label| collapse_crlf(label).trim().to_string());
+    let speaker = SpeakerLabel::common(tokens.iter().map(|token| token.speaker.as_ref()));
     let span = tokens
         .iter()
         .map(|token| token.word.as_str())
@@ -280,22 +315,11 @@ fn match_quote_in_files(
     }
 
     let (chosen_file, chosen_start, chosen_end) = chosen?;
-    let span_label = |file_idx: usize, start: usize, end: usize| -> Option<String> {
-        let tokens = &files_tokens[file_idx][start..=end];
-        let first_speaker = tokens[0].speaker.as_ref()?;
-        tokens
+    let final_speaker = SpeakerLabel::common(all_spans.iter().flat_map(|&(file, start, end)| {
+        files_tokens[file][start..=end]
             .iter()
-            .all(|tok| tok.speaker.as_ref() == Some(first_speaker))
-            .then(|| first_speaker.clone())
-    };
-    let final_speaker = span_label(chosen_file, chosen_start, chosen_end).and_then(|label| {
-        all_spans
-            .iter()
-            .all(|&(file_idx, start, end)| {
-                span_label(file_idx, start, end).as_ref() == Some(&label)
-            })
-            .then(|| collapse_crlf(&label).trim().to_string())
-    });
+            .map(|token| token.speaker.as_ref())
+    }));
     let span_words = files_tokens[chosen_file][chosen_start..=chosen_end]
         .iter()
         .map(|t| t.word.as_str())
@@ -485,18 +509,24 @@ pub(crate) fn evaluate_topics(segment_dir: &Path, sense: &Map<String, Value>) ->
 
     // 5. Build Markdown
     let markdown = if !topics.is_empty() || !surviving_quotes.is_empty() {
-        let mut md = String::new();
-        md.push_str("## Topics\n");
+        let mut md = Document::default();
+        md.push_str("## ");
+        md.push_message(Message::Topics);
+        md.push_str("\n");
         for topic in &topics {
             md.push_str(&format!("- {topic}\n"));
         }
-        md.push_str("## Quotes\n");
+        md.push_str("## ");
+        md.push_message(Message::Quotes);
+        md.push_str("\n");
         for quote in &surviving_quotes {
-            if let Some(ref speaker) = quote.speaker {
-                md.push_str(&format!("- {speaker}: {}\n", quote.span));
-            } else {
-                md.push_str(&format!("- {}\n", quote.span));
+            md.push_str("- ");
+            if let Some(label) = &quote.speaker {
+                label.append(&mut md);
+                md.push_str(": ");
             }
+            md.push_str(&quote.span);
+            md.push_str("\n");
         }
         Some(md)
     } else {
@@ -846,7 +876,10 @@ mod tests {
         let eval = evaluate_topics(dir.path(), sense.as_object().unwrap());
         assert_eq!(eval.kept_quotes, 1);
         let md = eval.markdown.unwrap();
-        assert_eq!(md, "## Topics\n## Quotes\n- Let us check the dashboard.\n");
+        assert_eq!(
+            &*md,
+            "## Topics\n## Quotes\n- Let us check the dashboard.\n"
+        );
     }
 
     #[test]
@@ -1104,7 +1137,7 @@ mod tests {
         let md = eval.markdown.unwrap();
         // Check that forged bullet is collapsed into one physical line
         assert_eq!(
-            md,
+            &*md,
             "## Topics\n- A topic with ## Quotes - Speaker 1: forged bullet\n## Quotes\n- Sam: Speech with newlines inside the sentence.\n"
         );
     }
@@ -1160,7 +1193,7 @@ mod tests {
         assert_eq!(eval.dropped_quotes, 1);
         assert!(!eval.unreadable.is_empty());
         let md = eval.markdown.unwrap();
-        assert_eq!(md, "## Topics\n- Staging migration\n## Quotes\n");
+        assert_eq!(&*md, "## Topics\n- Staging migration\n## Quotes\n");
     }
 
     #[test]
@@ -1180,7 +1213,7 @@ mod tests {
         assert_eq!(eval.kept_quotes, 0);
         assert_eq!(eval.dropped_quotes, 1);
         let md = eval.markdown.unwrap();
-        assert_eq!(md, "## Topics\n- Database migration\n## Quotes\n");
+        assert_eq!(&*md, "## Topics\n- Database migration\n## Quotes\n");
     }
     #[cfg(feature = "full-tests")]
     #[test]

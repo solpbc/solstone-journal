@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for markdown sense speakers.",
+  "context": "Journal command-line text for markdown sense speakers.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "34ce4373b75c8b8a0aeee3aebe60c45d0f645eb8b983b925349e2a5455bcd7ef",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

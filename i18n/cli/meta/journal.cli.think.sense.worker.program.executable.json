@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sense worker program executable.",
+  "context": "Journal command-line text for sense worker program executable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cd77bea841a2e90ae595aa322f929ab6bb6abed9bba876a1931c6f6bf2b60c83",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

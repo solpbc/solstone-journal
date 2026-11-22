@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for argument unknown.",
+  "context": "Journal command-line text for argument unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "argument",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "13c4c4349b38a476a9faf7d93e8da03b831d8561883c2e5e3cb8213a2d490d50",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

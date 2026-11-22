@@ -401,7 +401,11 @@ pub(crate) fn check(
             Ok(turn) => Some(turn),
             Err(solstone_core_journal_io::LockError::Timeout(_)) => return Ok(()),
             Err(error) => {
-                errors.push(format!("activity settle state not saved: {error}"));
+                errors.push(solstone_core_cli_copy::display_for(
+                    context.locale(),
+                    "journal.cli.think.settle.save",
+                    [("error", &(error))],
+                ));
                 None
             }
         };

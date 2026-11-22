@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for health progress unreadable.",
+  "context": "Journal command-line text for health progress unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9f2abce8cded79a96d7d2e15002a07ecd4963619264460a894aceec1311c9af",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

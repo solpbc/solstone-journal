@@ -1,0 +1,42 @@
+{
+  "description": "Journal command-line text for plan table facet.",
+  "context": "Journal command-line text for plan table facet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "row",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "40b5b8bf669208a3db6efacea730af441aafec86f163e66988dffaca1b7add97",
+  "max_length": 362,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "row",
+    "type": "string",
+    "enum_values": [
+      "generator_existing",
+      "generator_new",
+      "generator_plain",
+      "agent_existing",
+      "agent_new",
+      "agent_plain"
+    ],
+    "enum_default": "agent_plain"
+  }
+}

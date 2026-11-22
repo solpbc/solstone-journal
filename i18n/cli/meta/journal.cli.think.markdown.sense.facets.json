@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for markdown sense facets.",
+  "context": "Journal command-line text for markdown sense facets.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2be13a72eb91725b8ffa2a95954a7a8fdf9406deffd062cd389a4f4b1cbf46c3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

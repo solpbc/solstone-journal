@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for log cadence read.",
+  "context": "Journal command-line text for log cadence read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "08ca414f24cab3d797a482007444b7eccb57131e9021e06c4c2e04480cfd00ec",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

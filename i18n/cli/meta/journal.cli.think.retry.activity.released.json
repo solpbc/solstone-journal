@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry activity released.",
+  "context": "Journal command-line text for retry activity released.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cc33507db8bc5986a560326ab052757a116b16a8621d9b3df8bb93181c30c84e",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

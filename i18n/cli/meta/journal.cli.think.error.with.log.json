@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error with log.",
+  "context": "Journal command-line text for error with log.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "primary",
+      "type": "string"
+    },
+    {
+      "name": "log",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "094a52988eb6f2ad6d7e34ec40cbcc8ace73c75a4ede3ead3e9e602452b8c71a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

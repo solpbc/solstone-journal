@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for daily location read.",
+  "context": "Journal command-line text for daily location read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8042d2240112228d82e12fa3e8309ad7d6d5057baa40bf76cc01c515899bf815",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

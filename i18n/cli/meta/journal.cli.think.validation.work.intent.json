@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for validation work intent.",
+  "context": "Journal command-line text for validation work intent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3486783ac1b410fe524937c2958e6f63c1a45be0ff7c21de4cb17814758d724a",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "work_intent_flag",
+      "kind": "flag",
+      "value": "--work-intent"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sense error delete.",
+  "context": "Journal command-line text for sense error delete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c7bdf9f5f45ae0151c83206dd3206f8792725bed8690f232a2aecfc9fe0b48bc",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "description": "Journal command-line text for segment ambiguous.",
+  "context": "Journal command-line text for segment ambiguous.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "edbca58c6de5816ee51247a01ea372de16c89c6ae0c2446bebef29e0c35188c1",
+  "max_length": 223,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "count",
+    "type": "cardinal"
+  }
+}

@@ -3,7 +3,7 @@
 
 use serde_json::{Map, Value};
 use solstone_core_cortex_client::{TimedOutUse, UseEndState};
-use solstone_core_talent_config::{TalentFilter, get_output_path, load_talent_configs};
+use solstone_core_talent_config::{TalentFilter, get_output_path};
 
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
@@ -51,7 +51,8 @@ fn run_hooks(
     segment: &str,
     stream: Option<&str>,
 ) -> Result<ModeResult, String> {
-    let configs = load_talent_configs(
+    let configs = solstone_core_talent_config::load_talent_configs_in(
+        context.locale(),
         &context.talent_root,
         &context.apps_root,
         None,
@@ -94,7 +95,7 @@ fn run_hooks(
                 result.failed += 1;
                 result
                     .failed_names
-                    .push(format!("{} (request_lost)", config.key));
+                    .push(format!("{} (request_lost)", config.key).into());
                 log_fail(
                     log,
                     context,
@@ -107,7 +108,9 @@ fn run_hooks(
             }
             Err(DispatchFailure::Unavailable) => {
                 result.failed += 1;
-                result.failed_names.push(format!("{} (send)", config.key));
+                result
+                    .failed_names
+                    .push(format!("{} (send)", config.key).into());
                 log_fail(
                     log,
                     context,
@@ -231,17 +234,18 @@ fn drain(
         .collect::<Vec<_>>();
     let report = match context
         .cortex
-        .wait(runtime, &ids, Some(DEFAULT_THINK_TIMEOUT))
+        .wait_detail(runtime, &ids, Some(DEFAULT_THINK_TIMEOUT))
     {
         Ok(report) => report,
         Err(error) => {
-            let wait_error = format!("wait failed: {error:?}");
+            let wait_error = error.failure(context);
             for item in pending {
                 result.failed += 1;
-                let cause = failure_cause(&context.journal, &item.use_id, &wait_error);
+                let cause =
+                    crate::dispatch::wait_cause(&context.journal, &item.use_id, &wait_error);
                 result
                     .failed_names
-                    .push(named_failure(&item_label(&item.name, None), &cause));
+                    .push(cause.named(&item_label(&item.name, None)));
                 log_fail(
                     log,
                     context,
@@ -249,7 +253,7 @@ fn drain(
                     &item.name,
                     Some(&item.use_id),
                     "unknown",
-                    Some(&cause),
+                    Some(&cause.source),
                 );
             }
             return result;
@@ -264,7 +268,9 @@ fn drain(
         {
             result.failed += 1;
             let cause = failure_cause(&context.journal, &item.use_id, timeout_cause(timeout));
-            result.failed_names.push(named_failure(&label, &cause));
+            result
+                .failed_names
+                .push(named_failure(&label, &cause).into());
             log_fail(
                 log,
                 context,
@@ -292,7 +298,9 @@ fn drain(
                     &item.use_id,
                     completion.end_state.as_str(),
                 );
-                result.failed_names.push(named_failure(&label, &cause));
+                result
+                    .failed_names
+                    .push(named_failure(&label, &cause).into());
                 log_fail(
                     log,
                     context,
@@ -306,7 +314,9 @@ fn drain(
             None => {
                 result.failed += 1;
                 let cause = failure_cause(&context.journal, &item.use_id, "unknown");
-                result.failed_names.push(named_failure(&label, &cause));
+                result
+                    .failed_names
+                    .push(named_failure(&label, &cause).into());
                 log_fail(
                     log,
                     context,

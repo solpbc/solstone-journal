@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry talent skipped.",
+  "context": "Journal command-line text for retry talent skipped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ab901cb56754962fa827134443c914c617128a63df389cc54958961c7680c9d8",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

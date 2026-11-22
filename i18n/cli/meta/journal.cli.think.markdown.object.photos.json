@@ -1,0 +1,30 @@
+{
+  "description": "Journal command-line text for markdown object photos.",
+  "context": "Journal command-line text for markdown object photos.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "photos",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "class",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "895a9e8cec20ac5ffb3d529abf4313e6bd59c656b01e57b35283690f49d82e62",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "photos",
+    "type": "cardinal"
+  }
+}

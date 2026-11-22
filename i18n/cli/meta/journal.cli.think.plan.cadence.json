@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for plan cadence.",
+  "context": "Journal command-line text for plan cadence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "88a6a0eb4452fe1bdd3ff89a274cbd40bf407e6707b17284d9221b62aabcf928",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

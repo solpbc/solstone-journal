@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for activity work pending.",
+  "context": "Journal command-line text for activity work pending.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "failures",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ccf1c7e801b0de3a11977b47cfb1703da63b5e97e567bcd8876529a4477c02a6",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

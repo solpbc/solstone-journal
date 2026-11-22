@@ -1,0 +1,35 @@
+{
+  "description": "Journal command-line text for plan cadence fire.",
+  "context": "Journal command-line text for plan cadence fire.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "segments",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "activities",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "38f04c04ec20bf757fedc696e321c8bf821ebbfde1f6850f8ee6dee1b81ef81f",
+  "max_length": 495,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "segments",
+    "type": "cardinal"
+  }
+}

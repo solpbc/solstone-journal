@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sense error runtime.",
+  "context": "Journal command-line text for sense error runtime.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d8896dfccbce80b836c4b408990b61883643797499af49319d077ee592b3d7f0",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

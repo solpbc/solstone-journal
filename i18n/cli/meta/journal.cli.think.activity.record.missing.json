@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for activity record missing.",
+  "context": "Journal command-line text for activity record missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6f4fb547226bd9518c2fe708be14bdd99dee796252a2bb50e870d9b581befe8c",
+  "max_length": 146,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

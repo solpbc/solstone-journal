@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense priority encoding.",
+  "context": "Journal command-line text for sense priority encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "variable",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "387e0fa7a248e7ec5a0e13d68e0dd7f0b3692a4016ff58e7fd02f27673eefa30",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

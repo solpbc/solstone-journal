@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for health marker atomic.",
+  "context": "Journal command-line text for health marker atomic.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "86319a903d6556edfb0cc257e914c8be61ad4809f0f0a52c2eb5cdd084fb9f7b",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

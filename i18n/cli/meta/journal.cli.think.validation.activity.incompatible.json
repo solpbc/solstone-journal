@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for validation activity incompatible.",
+  "context": "Journal command-line text for validation activity incompatible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fcb39bc744a1fd93742b7a8d0deebaff64af7048b8a2389b4635cdaf73f956ef",
+  "max_length": 130,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "activity_flag",
+      "kind": "flag",
+      "value": "--activity"
+    },
+    {
+      "name": "segment_flag",
+      "kind": "flag",
+      "value": "--segment"
+    },
+    {
+      "name": "segments_flag",
+      "kind": "flag",
+      "value": "--segments"
+    },
+    {
+      "name": "flush_flag",
+      "kind": "flag",
+      "value": "--flush"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for validation multi worker unlimited jobs.",
+  "context": "Journal command-line text for validation multi worker unlimited jobs.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e73965adfe2eb06165a8345559bf268eea3b41c276cd69c6bfbe421219dbb4a",
+  "max_length": 172,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "jobs_flag",
+      "kind": "flag",
+      "value": "--jobs"
+    },
+    {
+      "name": "segments_flag",
+      "kind": "flag",
+      "value": "--segments"
+    },
+    {
+      "name": "segment_workers_flag",
+      "kind": "flag",
+      "value": "--segment-workers"
+    }
+  ]
+}

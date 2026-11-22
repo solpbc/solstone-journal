@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for sense config concurrency.",
+  "context": "Journal command-line text for sense config concurrency.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eb3936f067caf7414bd02322b390ec9b3d01e27b3d6c0177d8590b7e3546591d",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "setting",
+      "kind": "accepted-input",
+      "value": "max_concurrent"
+    }
+  ]
+}

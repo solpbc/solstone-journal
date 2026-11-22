@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for sense day.",
+  "context": "Journal command-line text for sense day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1b6c42d4193e7676461085d60b9329d489728226b6d136bb6bea8dcd34f9642b",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "sense_batch_flag",
+      "kind": "flag",
+      "value": "--sense-batch"
+    },
+    {
+      "name": "day_flag",
+      "kind": "flag",
+      "value": "--day"
+    }
+  ]
+}

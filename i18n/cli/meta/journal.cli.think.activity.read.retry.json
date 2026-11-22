@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for activity read retry.",
+  "context": "Journal command-line text for activity read retry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3759b63c591c77cd3d71d81af292836b320e6039a9895e12be9f0eb7c6909d90",
+  "max_length": 122,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

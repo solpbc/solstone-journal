@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry daily released.",
+  "context": "Journal command-line text for retry daily released.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4f249544249a9fe331690ca593483fa3cca4305d97044bff29adc33ce8172eb9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

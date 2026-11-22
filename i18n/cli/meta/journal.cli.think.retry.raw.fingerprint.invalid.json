@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry raw fingerprint invalid.",
+  "context": "Journal command-line text for retry raw fingerprint invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e1720e5b1cdb6b51571ce0213effd0d077969e7e4f13b3c780bed13c5b992ba9",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

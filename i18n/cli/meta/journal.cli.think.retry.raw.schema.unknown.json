@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry raw schema unknown.",
+  "context": "Journal command-line text for retry raw schema unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c580be9af82870317b611864c5c844c6e111206ab3c36e3801309e24078d73f5",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

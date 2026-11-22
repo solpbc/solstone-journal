@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for activity replaced.",
+  "context": "Journal command-line text for activity replaced.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0527e72ea1ff775f959d9d366de6c081265b44f999759ff28276d2772e6cea19",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

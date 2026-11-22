@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for plan day segment.",
+  "context": "Journal command-line text for plan day segment.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cafa53b2d99f15663c7e98bbd489dec355086efd3eca00d4c4aaba95d087aee1",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

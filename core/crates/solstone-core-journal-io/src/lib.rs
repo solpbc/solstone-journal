@@ -24,6 +24,8 @@ pub mod atomic;
 pub mod bounded_read;
 #[cfg(unix)]
 pub mod claim_remove;
+#[cfg(any(unix, windows))]
+pub mod cli_diagnostics;
 pub mod copy_excludes;
 pub mod cortex_use;
 mod create_only_retry;

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for activity pending.",
+  "context": "Journal command-line text for activity pending.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0960b3c7d10008e8c6e2f6e5d044f2dcb1b1dc08633852b6c8f74da3cec51b20",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

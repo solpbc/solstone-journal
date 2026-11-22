@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for log work discovery.",
+  "context": "Journal command-line text for log work discovery.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "elapsed",
+      "type": "string"
+    },
+    {
+      "name": "inspected",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "handed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2e94d00e81b1ae8027dc097829f59b9bde19d623ec9a2783d095ed39886fc69f",
+  "max_length": 151,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

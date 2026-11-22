@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense worker launch.",
+  "context": "Journal command-line text for sense worker launch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "46b24b9c3a60a5f32a95d39d80e05975015cea1e34fb050688c2d7c77148262d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

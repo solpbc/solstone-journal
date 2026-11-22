@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense worker failed.",
+  "context": "Journal command-line text for sense worker failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fd442c85a979a9450ea57e8d18507abfcd527ccbe149b42a034a07e22007ea16",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

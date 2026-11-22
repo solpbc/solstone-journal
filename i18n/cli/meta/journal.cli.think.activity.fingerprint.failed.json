@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for activity fingerprint failed.",
+  "context": "Journal command-line text for activity fingerprint failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea6ab436774be8de5cf39db051f40598f9904d45ea5a74df0445b67c03654e53",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

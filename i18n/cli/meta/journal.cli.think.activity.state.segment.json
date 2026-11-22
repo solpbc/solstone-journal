@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for activity state segment.",
+  "context": "Journal command-line text for activity state segment.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "segment",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e8a137add2f53f07d69eddaad66d76a28313766333d74fb4089fa045ebe06b58",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

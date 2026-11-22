@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sense worker program nonregular.",
+  "context": "Journal command-line text for sense worker program nonregular.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5c444953b19daaf252e28a77fa9d6bed1ff2a36894e24732208892185692c0ba",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

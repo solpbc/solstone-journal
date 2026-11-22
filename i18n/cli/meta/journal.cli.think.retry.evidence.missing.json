@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry evidence missing.",
+  "context": "Journal command-line text for retry evidence missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8a49a90a7c53bc917eeb56176cdb065def84d2eff8014962b2ef6cb8a691d9ad",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

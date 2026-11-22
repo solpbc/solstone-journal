@@ -18,12 +18,81 @@ use crate::context::{DispatchFailure, ThinkContext};
 /// Daily, weekly, and cadence all use the reference's 610-second batch deadline.
 pub(crate) const DEFAULT_THINK_TIMEOUT: Duration = Duration::from_secs(610);
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RunFailure {
+    pub(crate) source: String,
+    pub(crate) terminal: Option<String>,
+}
+
+impl RunFailure {
+    pub(crate) fn message(locale: Option<&str>, id: &'static str) -> Self {
+        let render = |locale: &str| solstone_core_cli_copy::render_for(locale, id, &[]);
+        Self::projected(
+            render(solstone_core_cli_copy::ENGLISH),
+            locale
+                .filter(|&l| l != solstone_core_cli_copy::ENGLISH)
+                .map(render),
+        )
+    }
+
+    pub(crate) fn projected(source: String, terminal: Option<String>) -> Self {
+        Self { source, terminal }
+    }
+    pub(crate) fn display(&self) -> &str {
+        self.terminal.as_deref().unwrap_or(&self.source)
+    }
+}
+
+#[cfg(test)]
+impl std::ops::Deref for RunFailure {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.source
+    }
+}
+#[cfg(test)]
+impl std::fmt::Display for RunFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.source)
+    }
+}
+impl From<String> for RunFailure {
+    fn from(source: String) -> Self {
+        Self {
+            source,
+            terminal: None,
+        }
+    }
+}
+impl From<&str> for RunFailure {
+    fn from(source: &str) -> Self {
+        Self::from(source.to_owned())
+    }
+}
+impl AsRef<str> for RunFailure {
+    fn as_ref(&self) -> &str {
+        &self.source
+    }
+}
+#[cfg(test)]
+impl PartialEq<&str> for RunFailure {
+    fn eq(&self, other: &&str) -> bool {
+        self.source == *other
+    }
+}
+#[cfg(test)]
+impl PartialEq<String> for RunFailure {
+    fn eq(&self, other: &String) -> bool {
+        self.source == *other
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct ModeResult {
     pub(crate) success: usize,
     pub(crate) failed: usize,
     pub(crate) timed_out: bool,
-    pub(crate) failed_names: Vec<String>,
+    pub(crate) failed_names: Vec<RunFailure>,
     pub(crate) success_names: Vec<String>,
     pub(crate) skipped: usize,
     pub(crate) skipped_names: Vec<String>,
@@ -59,7 +128,9 @@ pub(crate) fn merge_mode_result(into: &mut ModeResult, from: ModeResult) {
 
 pub(crate) fn record_followup_failure(result: &mut ModeResult, label: &str, error: &str) {
     result.failed += 1;
-    result.failed_names.push(format!("{label} ({error})"));
+    result
+        .failed_names
+        .push(format!("{label} ({error})").into());
 }
 
 /// The last terminal `"event":"error"` record in a durable use log, shared by
@@ -169,6 +240,23 @@ pub(crate) fn failure_cause(journal: &Path, use_id: &str, fallback: &str) -> Str
         return error;
     }
     fallback.to_owned()
+}
+
+pub(crate) fn wait_cause(journal: &Path, use_id: &str, fallback: &RunFailure) -> RunFailure {
+    use_log_error(journal, use_id)
+        .map(RunFailure::from)
+        .unwrap_or_else(|| fallback.clone())
+}
+
+impl RunFailure {
+    pub(crate) fn named(&self, label: &str) -> Self {
+        Self::projected(
+            named_failure(label, &self.source),
+            self.terminal
+                .as_ref()
+                .map(|cause| named_failure(label, cause)),
+        )
+    }
 }
 
 pub(crate) fn named_failure(label: &str, cause: &str) -> String {
@@ -575,7 +663,7 @@ pub(crate) fn drain_with_failure_policy(
         .iter()
         .map(|item| item.use_id.clone())
         .collect::<Vec<_>>();
-    match context.cortex.wait(runtime, &use_ids, deadline) {
+    match context.cortex.wait_detail(runtime, &use_ids, deadline) {
         Ok(report) => {
             for item in pending {
                 let label = item_label(&item.name, item.facet.as_deref());
@@ -589,7 +677,9 @@ pub(crate) fn drain_with_failure_policy(
                     if failure_blocks(&item) {
                         result.failed += 1;
                         result.timed_out = true;
-                        result.failed_names.push(named_failure(&label, &cause));
+                        result
+                            .failed_names
+                            .push(named_failure(&label, &cause).into());
                     }
                     observer(&item, DrainOutcome::fail(timeout_cause(timeout), cause));
                     continue;
@@ -608,7 +698,9 @@ pub(crate) fn drain_with_failure_policy(
                         );
                         if failure_blocks(&item) {
                             result.failed += 1;
-                            result.failed_names.push(named_failure(&label, &cause));
+                            result
+                                .failed_names
+                                .push(named_failure(&label, &cause).into());
                         }
                         observer(
                             &item,
@@ -619,7 +711,9 @@ pub(crate) fn drain_with_failure_policy(
                         let cause = failure_cause(&context.journal, &item.use_id, "unknown");
                         if failure_blocks(&item) {
                             result.failed += 1;
-                            result.failed_names.push(named_failure(&label, &cause));
+                            result
+                                .failed_names
+                                .push(named_failure(&label, &cause).into());
                         }
                         observer(&item, DrainOutcome::fail("missing_completion", cause));
                     }
@@ -634,7 +728,7 @@ pub(crate) fn drain_with_failure_policy(
         // consult the same sources the completion arms already use, falling back to the
         // wait error itself rather than a word that says nothing.
         Err(error) => {
-            let wait_error = format!("wait failed: {error:?}");
+            let wait_error = error.failure(context);
             for item in pending {
                 let label = item_label(&item.name, item.facet.as_deref());
                 // Ask each use's own log what happened rather than blaming the wait
@@ -648,12 +742,12 @@ pub(crate) fn drain_with_failure_policy(
                     observer(&item, DrainOutcome::Finish);
                     continue;
                 }
-                let cause = failure_cause(&context.journal, &item.use_id, &wait_error);
+                let cause = wait_cause(&context.journal, &item.use_id, &wait_error);
                 if failure_blocks(&item) {
                     result.failed += 1;
-                    result.failed_names.push(named_failure(&label, &cause));
+                    result.failed_names.push(cause.named(&label));
                 }
-                observer(&item, DrainOutcome::fail("wait_failed", cause));
+                observer(&item, DrainOutcome::fail("wait_failed", cause.source));
             }
         }
     }

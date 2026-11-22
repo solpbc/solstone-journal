@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for markdown entities.",
+  "context": "Journal command-line text for markdown entities.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "efd4bd5fa5fead635cb391b41eba109476512c695ae12a473af09faea56701f8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

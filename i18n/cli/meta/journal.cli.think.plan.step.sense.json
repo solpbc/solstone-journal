@@ -1,0 +1,47 @@
+{
+  "description": "Journal command-line text for plan step sense.",
+  "context": "Journal command-line text for plan step sense.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "presence",
+      "type": "string"
+    },
+    {
+      "name": "step",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "format",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "789e8df42f518689ecb52048139a0e0a22dd590d19d7b9c33b1d78580b52b1ef",
+  "max_length": 276,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "presence",
+    "type": "string",
+    "enum_values": [
+      "existing",
+      "new",
+      "plain"
+    ],
+    "enum_default": "plain"
+  }
+}

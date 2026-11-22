@@ -15,13 +15,12 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
-#[cfg(test)]
-use solstone_core_convey_http::window_catalog::ENGLISH;
-use solstone_core_convey_http::window_catalog::{response_locale, strings, text};
+use solstone_core_convey_http::window_catalog::{ENGLISH, response_locale, strings, text};
 use solstone_core_format::agent_memory::{Coordinate, SourceKey};
+use solstone_core_format::stored_markdown::{DisplayUse, IndexedDisplay, is_display_document};
 use solstone_core_indexer_query::{
     IndexAccessError, IndexedEntry, OwnerBoundary, OwnerIndex, QueryBoundary, SearchRequest,
-    open_owner_index, read_indexed_entry,
+    open_owner_index, read_indexed_entry, read_owner_entry_for_display,
 };
 use solstone_core_indexer_query::{
     memory_row_matches_original, open_own_memory_index, read_own_memory_row,
@@ -210,7 +209,9 @@ fn search_response_with_index_in(
     let page = days.into_iter().skip(offset).take(20).collect::<Vec<_>>();
 
     let page_days: Vec<String> = page.iter().map(|(day, _)| day.clone()).collect();
-    let day_hits_vec = match if owner_view {
+    let day_hits_vec = match if owner_view && locale != ENGLISH {
+        owner_index.fetch_localized_day_hits(&filtered_resolved.plan, &page_days, request.limit)
+    } else if owner_view {
         owner_index.fetch_day_hits_with_passages(&filtered_resolved.plan, &page_days, request.limit)
     } else {
         owner_index.fetch_day_hits(&filtered_resolved.plan, &page_days, request.limit)
@@ -227,6 +228,11 @@ fn search_response_with_index_in(
     };
     let mut day_results = Vec::new();
     let mut source_checks = std::collections::BTreeMap::new();
+    let mut projections = if owner_view && locale != ENGLISH {
+        localized_hit_text(journal_root, &day_hits_vec, locale)
+    } else {
+        BTreeMap::new()
+    };
     let facets = facets(journal_root);
     let has_memory_hits = day_hits_vec.iter().any(|(_, hits)| {
         hits.iter()
@@ -264,10 +270,12 @@ fn search_response_with_index_in(
                 } else {
                     None
                 };
-                let display_text = sense.as_deref().map_or_else(
-                    || search_display_text(&hit.metadata.path, &hit.text),
-                    Cow::Borrowed,
-                );
+                let projected = projections.remove(&hit.row_id);
+                let display_text = if let Some(shown) = &projected {
+                    unescape_display_text(&hit.metadata.path, shown)
+                } else {
+                    sense.as_deref().map_or_else(|| search_display_text(&hit.metadata.path, &hit.text), Cow::Borrowed)
+                };
                 let agent_label = if sense.is_some() {
                     if is_sense_list { text(locale, "journal.window.search.hit.names") } else { String::new() }
                 } else {
@@ -446,6 +454,15 @@ async fn entry_api(
     Query(query): Query<EntryQuery>,
     locale: &'static str,
 ) -> Response {
+    entry_response(journal_root, query, locale, true).await
+}
+
+async fn entry_response(
+    journal_root: PathBuf,
+    query: EntryQuery,
+    locale: &'static str,
+    owner_display: bool,
+) -> Response {
     if query.path.is_empty() || query.path.len() > 4096 || query.idx < 0 || query.entry_id <= 0 {
         return invalid_value(
             locale,
@@ -454,32 +471,64 @@ async fn entry_api(
     }
     let path = query.path.clone();
     let result = tokio::task::spawn_blocking(move || {
-        read_indexed_entry(
-            &journal_root,
-            QueryBoundary::Owner,
-            &query.path,
-            query.idx,
-            query.entry_id,
-            MAX_BYTES,
-        )
+        let display = owner_display
+            && locale != ENGLISH
+            && is_display_document(std::path::Path::new(&query.path));
+        let (entry, stamp) = if display {
+            read_owner_entry_for_display(
+                &journal_root,
+                &query.path,
+                query.idx,
+                query.entry_id,
+                MAX_BYTES,
+            )?
+        } else {
+            (
+                read_indexed_entry(
+                    &journal_root,
+                    QueryBoundary::Owner,
+                    &query.path,
+                    query.idx,
+                    query.entry_id,
+                    MAX_BYTES,
+                )?,
+                None,
+            )
+        };
+        let projected = stamp.and_then(|stamp| {
+            let display = IndexedDisplay::load(
+                &journal_root,
+                &query.path,
+                &stamp,
+                locale,
+                DisplayUse::Record,
+            )?;
+            let text = display.get(query.idx, entry.content()?)?;
+            Some(unescape_display_text(&query.path, text).into_owned())
+        });
+        Ok::<_, IndexAccessError>((entry, projected))
     })
     .await;
     match result {
-        Ok(Ok(IndexedEntry::Found(content))) => {
-            let content = search_display_text(&path, &content);
+        Ok(Ok((IndexedEntry::Found(content), projection))) => {
+            let content = projection
+                .map(Cow::Owned)
+                .unwrap_or_else(|| search_display_text(&path, &content));
             axum::Json(json!({"content": content})).into_response()
         }
         // The file was indexed again after the search. What sits at the same
         // place now is served, marked so it is not taken for the search's text.
-        Ok(Ok(IndexedEntry::Reindexed(content))) => {
-            let content = search_display_text(&path, &content);
+        Ok(Ok((IndexedEntry::Reindexed(content), projection))) => {
+            let content = projection
+                .map(Cow::Owned)
+                .unwrap_or_else(|| search_display_text(&path, &content));
             axum::Json(json!({"content": content, "reindexed_since_search": true})).into_response()
         }
-        Ok(Ok(IndexedEntry::TooLarge)) => invalid_value(
+        Ok(Ok((IndexedEntry::TooLarge, _))) => invalid_value(
             locale,
             text(locale, "journal.window.search.response.entry.large"),
         ),
-        Ok(Ok(IndexedEntry::NotFound)) => file_not_found(
+        Ok(Ok((IndexedEntry::NotFound, _))) => file_not_found(
             locale,
             text(locale, "journal.window.search.response.entry.absent"),
         ),
@@ -526,14 +575,15 @@ async fn read_api(
                 text(locale, "journal.window.search.response.read.entry.fields"),
             );
         };
-        return entry_api(
+        return entry_response(
             journal_root,
-            Query(EntryQuery {
+            EntryQuery {
                 path,
                 idx,
                 entry_id,
-            }),
+            },
             locale,
+            false,
         )
         .await;
     }
@@ -993,7 +1043,13 @@ fn search_display_text<'a>(path: &str, text: &'a str) -> Cow<'a, str> {
             solstone_core_format::content::screen_text::screen_text_with_clock(text, segment)
         })
         .unwrap_or(Cow::Borrowed(text));
-    let text = clocked.as_ref();
+    Cow::Owned(unescape_display_text(path, &clocked).into_owned())
+}
+
+fn unescape_display_text<'a>(path: &str, text: &'a str) -> Cow<'a, str> {
+    if !solstone_core_format::content::screen_text::is_screen_text_path(path) {
+        return Cow::Borrowed(text);
+    }
     let mut visible = String::with_capacity(text.len());
     let mut remaining = text;
     while !remaining.is_empty() {
@@ -1017,6 +1073,36 @@ fn search_display_text<'a>(path: &str, text: &'a str) -> Cow<'a, str> {
         remaining = &remaining[ch.len_utf8()..];
     }
     Cow::Owned(visible)
+}
+
+/// Keep only the requested rows between files; a terminal source can contain many other chunks.
+fn localized_hit_text(
+    root: &std::path::Path,
+    days: &[(String, Vec<solstone_core_indexer_query::SearchHit>)],
+    locale: &str,
+) -> BTreeMap<i64, String> {
+    let mut result = BTreeMap::new();
+    let mut by_file = BTreeMap::new();
+    for hit in days.iter().flat_map(|(_, hits)| hits) {
+        if let Some(stamp) = hit.display_stamp.as_deref() {
+            by_file
+                .entry((hit.metadata.path.as_str(), stamp))
+                .or_insert_with(Vec::new)
+                .push(hit);
+        }
+    }
+    for ((path, stamp), hits) in by_file {
+        if let Some(display) =
+            IndexedDisplay::load(root, path, stamp, locale, DisplayUse::SearchExcerpt)
+        {
+            for hit in hits {
+                if let Some(text) = display.get(hit.metadata.idx, &hit.text) {
+                    result.insert(hit.row_id, text.to_owned());
+                }
+            }
+        }
+    }
+    result
 }
 
 /// Only a live turn whose indexed text still matches gets a passage link. Group by
@@ -1794,6 +1880,141 @@ mod facet_reader_tests {
             r#"["not an object"]"#
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn search_projects_only_the_indexed_writer_document_for_an_owner() {
+        use solstone_core_format::stored_markdown::{Document, Message};
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let rel = "20260202/default/080000_60/talents/topics.md";
+        let path = root.join("chronicle").join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut doc = Document::plain("## ".into());
+        doc.push_message(Message::Topics);
+        doc.push_str("\n- matching synthetic wording and Topics\n");
+        std::fs::write(&path, doc.as_bytes()).unwrap();
+        doc.save_display_receipt(&path).unwrap();
+        solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+        async fn json(response: Response) -> Value {
+            assert_eq!(response.status(), StatusCode::OK);
+            serde_json::from_slice(
+                &axum::body::to_bytes(response.into_body(), 1 << 20)
+                    .await
+                    .unwrap(),
+            )
+            .unwrap()
+        }
+        let search = |owner_view| {
+            search_response_in(
+                root.to_owned(),
+                SearchQuery {
+                    q: Some("matching".into()),
+                    owner_view,
+                    ..Default::default()
+                },
+                "en-XA",
+            )
+        };
+        let response = json(search(true)).await;
+        let hit = &response["days"][0]["results"][0];
+        let query = || EntryQuery {
+            path: hit["path"].as_str().unwrap().into(),
+            idx: hit["idx"].as_i64().unwrap(),
+            entry_id: hit["entry_id"].as_i64().unwrap(),
+        };
+        let text = |v: &Value| v["content"].as_str().unwrap().to_owned();
+        let entry = json(entry_api(root.into(), Query(query()), "en-XA").await).await;
+        let raw = json(
+            read_api(
+                root.into(),
+                Query(ReadQuery {
+                    path: Some(query().path),
+                    idx: Some(query().idx),
+                    entry_id: Some(query().entry_id),
+                    ..Default::default()
+                }),
+                "en-XA",
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(
+            text(&entry),
+            format!(
+                "## {}\n\nmatching synthetic wording and Topics",
+                Message::Topics.render("en-XA")
+            )
+        );
+        assert_eq!(
+            text(&raw),
+            "## Topics\n\nmatching synthetic wording and Topics"
+        );
+        assert_eq!(hit["text"], highlight(&text(&entry), "matching"));
+        assert_eq!(
+            json(search(false)).await["days"][0]["results"][0]["text"],
+            highlight(&text(&raw), "matching")
+        );
+        let mut reindexed = query();
+        reindexed.entry_id += 100;
+        let relocated = json(entry_api(root.into(), Query(reindexed), "en-XA").await).await;
+        assert_eq!(relocated["reindexed_since_search"], true);
+        assert_eq!(text(&relocated), text(&entry));
+        // A concurrent writer can keep the English bytes and move the writer-owned field.
+        // The already-returned hit must keep its first stamp and decline that new projection.
+        let mut index = open_owner_index(root, OwnerBoundary).unwrap();
+        let request = SearchRequest {
+            query: "matching".into(),
+            ..Default::default()
+        };
+        let plan = index.resolve_counts(&request, today(root)).unwrap().plan;
+        let days = ["20260202".into()];
+        let earlier = index.fetch_localized_day_hits(&plan, &days, 5).unwrap();
+        assert_eq!(localized_hit_text(root, &earlier, "en-XA").len(), 1);
+        let mut revised = Document::plain("## Topics\n- matching synthetic wording and ".into());
+        revised.push_message(Message::Topics);
+        revised.push_str("\n");
+        assert_eq!(doc.as_bytes(), revised.as_bytes());
+        revised.save_display_receipt(&path).unwrap();
+        let stamp =
+            solstone_core_format::stored_markdown::index_stamp(root, &path, &revised).unwrap();
+        let db =
+            rusqlite::Connection::open(solstone_core_indexer_store::db::db_path(root)).unwrap();
+        db.execute(
+            "UPDATE files SET display_stamp=? WHERE path=?",
+            rusqlite::params![stamp, rel],
+        )
+        .unwrap();
+        assert!(localized_hit_text(root, &earlier, "en-XA").is_empty());
+        let later = index.fetch_localized_day_hits(&plan, &days, 5).unwrap();
+        assert_eq!(localized_hit_text(root, &later, "en-XA").len(), 1);
+        drop(index);
+        let original = std::fs::read(&path).unwrap();
+        std::fs::write(&path, "## Changed\n- another name\n").unwrap();
+        let stale = json(entry_api(root.into(), Query(query()), "en-XA").await).await;
+        assert_eq!(stale, raw);
+        std::fs::write(&path, original).unwrap();
+        std::fs::remove_file(path.with_extension("md.display")).unwrap();
+        assert_eq!(
+            json(entry_api(root.into(), Query(query()), "en-XA").await).await,
+            raw
+        );
+        assert_eq!(
+            json(search(true)).await["days"][0]["results"][0]["text"],
+            json(search(false)).await["days"][0]["results"][0]["text"]
+        );
+        // The reader can open a pre-stamp database before the writer has upgraded it.
+        doc.save_display_receipt(&path).unwrap();
+        db.execute("ALTER TABLE files DROP COLUMN display_stamp", [])
+            .unwrap();
+        assert_eq!(
+            json(entry_api(root.into(), Query(query()), "en-XA").await).await,
+            raw
+        );
+        assert_eq!(
+            json(search(true)).await["days"][0]["results"][0]["text"],
+            json(search(false)).await["days"][0]["results"][0]["text"]
+        );
     }
 
     #[tokio::test]

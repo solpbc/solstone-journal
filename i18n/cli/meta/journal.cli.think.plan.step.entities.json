@@ -1,0 +1,47 @@
+{
+  "description": "Journal command-line text for plan step entities.",
+  "context": "Journal command-line text for plan step entities.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "presence",
+      "type": "string"
+    },
+    {
+      "name": "step",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "format",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "d16dd96684029f3691969a1d846ce8a8a32c627954f55753355e370086600aea",
+  "max_length": 306,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "presence",
+    "type": "string",
+    "enum_values": [
+      "existing",
+      "new",
+      "plain"
+    ],
+    "enum_default": "plain"
+  }
+}

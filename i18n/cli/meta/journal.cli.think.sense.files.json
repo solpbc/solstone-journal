@@ -1,0 +1,34 @@
+{
+  "description": "Journal command-line text for sense files.",
+  "context": "Journal command-line text for sense files.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "extensions",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "31fa2a142435140a4add7554c8af8d4a4ecc85f5ca10be4bb9062325c35f82d1",
+  "max_length": 202,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

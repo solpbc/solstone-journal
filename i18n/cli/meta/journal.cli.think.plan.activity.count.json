@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for plan activity count.",
+  "context": "Journal command-line text for plan activity count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0fac5cf10887cb8f262f3938dddeb0cf3144905b3398daa2f9b46829a5db9381",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

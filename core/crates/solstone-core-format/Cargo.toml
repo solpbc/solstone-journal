@@ -10,6 +10,7 @@ publish = false
 workspace = true
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 glob.workspace = true
 jiff.workspace = true
 pulldown-cmark.workspace = true

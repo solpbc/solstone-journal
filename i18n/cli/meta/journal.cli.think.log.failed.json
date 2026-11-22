@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for log failed.",
+  "context": "Journal command-line text for log failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "08776d965d7fe6cc453fd69c47cca77fb82738226051468466d2bcab7aa8ed35",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

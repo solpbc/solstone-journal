@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for argument integer.",
+  "context": "Journal command-line text for argument integer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "option",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7f04efa7ee32329533c61a5c4864faeb2142abefb4b4a16e9991fd53fa9d93b3",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

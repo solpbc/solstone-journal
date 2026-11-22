@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for activity missing.",
+  "context": "Journal command-line text for activity missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a51460b2517d25e6f9f8b22c83bd9a3b6989e900792c8f7e7a6e7d84fcf9febf",
+  "max_length": 172,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reactivate_flag",
+      "kind": "flag",
+      "value": "--reactivate"
+    }
+  ]
+}

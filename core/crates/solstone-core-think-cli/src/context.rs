@@ -18,6 +18,35 @@ pub enum DispatchFailure {
     NotClaimed { use_id: String },
 }
 
+#[derive(Debug)]
+pub enum WaitFailure {
+    Host(String),
+    Client(solstone_core_cortex_client::CortexClientError),
+}
+
+impl WaitFailure {
+    fn detail(&self, locale: &str) -> String {
+        match self {
+            Self::Host(raw) => raw.clone(),
+            Self::Client(error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.wait.cortex",
+                [("error", &(format!("{error:?}")))],
+            ),
+        }
+    }
+
+    pub(crate) fn failure(&self, context: &ThinkContext) -> crate::dispatch::RunFailure {
+        context.failure(|locale| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.wait.failed",
+                [("error", &(format!("{:?}", self.detail(locale))))],
+            )
+        })
+    }
+}
+
 pub trait CortexBoundary: Send + Sync {
     fn dispatch(
         &self,
@@ -39,6 +68,15 @@ pub trait CortexBoundary: Send + Sync {
         use_ids: &[String],
         deadline: Option<Duration>,
     ) -> Result<WaitForUsesReport, String>;
+    fn wait_detail(
+        &self,
+        runtime: &tokio::runtime::Runtime,
+        use_ids: &[String],
+        deadline: Option<Duration>,
+    ) -> Result<WaitForUsesReport, WaitFailure> {
+        self.wait(runtime, use_ids, deadline)
+            .map_err(WaitFailure::Host)
+    }
 }
 
 pub trait IndexBoundary: Send + Sync {
@@ -136,14 +174,24 @@ impl CortexBoundary for NativeCortexBoundary {
         use_ids: &[String],
         deadline: Option<Duration>,
     ) -> Result<WaitForUsesReport, String> {
+        self.wait_detail(runtime, use_ids, deadline)
+            .map_err(|e| e.detail(solstone_core_cli_copy::ENGLISH))
+    }
+    fn wait_detail(
+        &self,
+        runtime: &tokio::runtime::Runtime,
+        use_ids: &[String],
+        deadline: Option<Duration>,
+    ) -> Result<WaitForUsesReport, WaitFailure> {
         runtime
             .block_on(self.client.wait_for_uses_with_deadline(use_ids, deadline))
-            .map_err(|error| format!("cortex wait failed: {error:?}"))
+            .map_err(WaitFailure::Client)
     }
 }
 
 #[derive(Clone)]
 pub struct ThinkContext {
+    pub(crate) terminal_locale: Option<&'static str>,
     pub(crate) rebuild_recovery: bool,
     pub(crate) rebuild: Option<Arc<solstone_core_system::work_intent::RebuildLease>>,
     pub(crate) journal: PathBuf,
@@ -167,6 +215,20 @@ pub struct ThinkContext {
 }
 
 impl ThinkContext {
+    pub(crate) fn failure(&self, render: impl Fn(&str) -> String) -> crate::dispatch::RunFailure {
+        let source = render(solstone_core_cli_copy::ENGLISH);
+        let terminal = self
+            .terminal_locale
+            .filter(|locale| *locale != solstone_core_cli_copy::ENGLISH)
+            .map(render);
+        crate::dispatch::RunFailure::projected(source, terminal)
+    }
+
+    pub(crate) fn locale(&self) -> &'static str {
+        self.terminal_locale
+            .unwrap_or(solstone_core_cli_copy::ENGLISH)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn hosted(
         journal: &Path,
@@ -191,6 +253,7 @@ impl ThinkContext {
             cancel_checkpoint: Arc::clone(&cancel_checkpoint),
         });
         Self {
+            terminal_locale: None,
             rebuild_recovery: false,
             rebuild: None,
             journal: journal.to_path_buf(),
@@ -227,8 +290,21 @@ impl ThinkContext {
         now_ms: i64,
         event_clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     ) -> Result<Self, String> {
-        let (talent_root, apps_root) = package_roots()?;
-        Self::new_with_roots(
+        Self::new_for_terminal(None, journal, day, day_dir, now_ms, event_clock)
+    }
+
+    pub(crate) fn new_for_terminal(
+        terminal_locale: Option<&'static str>,
+        journal: &Path,
+        day: String,
+        day_dir: PathBuf,
+        now_ms: i64,
+        event_clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+    ) -> Result<Self, String> {
+        let (talent_root, apps_root) =
+            package_roots_in(terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH))?;
+        Self::with_roots_and_locale(
+            terminal_locale,
             journal,
             day,
             day_dir,
@@ -250,8 +326,32 @@ impl ThinkContext {
         talent_root: PathBuf,
         apps_root: PathBuf,
     ) -> Result<Self, String> {
+        Self::with_roots_and_locale(
+            None,
+            journal,
+            day,
+            day_dir,
+            now_ms,
+            event_clock,
+            talent_root,
+            apps_root,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn with_roots_and_locale(
+        terminal_locale: Option<&'static str>,
+        journal: &Path,
+        day: String,
+        day_dir: PathBuf,
+        now_ms: i64,
+        event_clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+        talent_root: PathBuf,
+        apps_root: PathBuf,
+    ) -> Result<Self, String> {
         let allocator_now = now_ms;
         Ok(Self {
+            terminal_locale,
             rebuild_recovery: false,
             rebuild: None,
             journal: journal.to_path_buf(),
@@ -268,7 +368,9 @@ impl ThinkContext {
                     UseIdAllocator::new(move || Some(allocator_now)),
                 ),
                 priority:
-                    solstone_core_journal_config::work_priority::WorkPriority::from_environment()?,
+                    solstone_core_journal_config::work_priority::WorkPriority::from_environment_in(
+                        terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH),
+                    )?,
             }),
             index: Arc::new(NativeIndexBoundary),
             status: ThinkStatus::default(),
@@ -399,13 +501,13 @@ impl ThinkContext {
     }
 }
 
-fn package_roots() -> Result<(PathBuf, PathBuf), String> {
+fn package_roots_in(locale: &str) -> Result<(PathBuf, PathBuf), String> {
     let executable_dir = std::env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf));
     let directory = executable_dir.as_deref().unwrap_or(Path::new(""));
     package_roots_from_executable_dir(directory)
-        .ok_or_else(|| solstone_core_journal::describe_package_roots_miss(directory))
+        .ok_or_else(|| solstone_core_journal::describe_package_roots_miss_in(directory, locale))
 }
 
 fn package_roots_from_executable_dir(executable_dir: &Path) -> Option<(PathBuf, PathBuf)> {

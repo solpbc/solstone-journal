@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for activity routing.",
+  "context": "Journal command-line text for activity routing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d070a52e7b51ccd131ead2b4b77c8f86746524ae189129e88231f553002fa74d",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for activity body data.",
+  "context": "Journal command-line text for activity body data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e5e826d80d07e30ffd705dfe70504f51f4a3857ee9bc2a805101dd10956dbcd0",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Strava"
+    }
+  ]
+}

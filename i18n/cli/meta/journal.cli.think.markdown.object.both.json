@@ -1,0 +1,35 @@
+{
+  "description": "Journal command-line text for markdown object both.",
+  "context": "Journal command-line text for markdown object both.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "frames",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "photos",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "class",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "353730eee8d1fc66b455388d339b09c31cd270b26f79f43b990ec0b78bc40037",
+  "max_length": 397,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "frames",
+    "type": "cardinal"
+  }
+}

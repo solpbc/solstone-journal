@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for log day format.",
+  "context": "Journal command-line text for log day format.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3428096bd9a7969b26b959c93d4fe4c53c150a57aa96164bafb738954227f026",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "date_format",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    }
+  ]
+}

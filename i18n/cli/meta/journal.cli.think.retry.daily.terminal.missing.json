@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry daily terminal missing.",
+  "context": "Journal command-line text for retry daily terminal missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ebdfe4a277d07a2c55cf60466e4e401779261a5aad9d7add197352219302510",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

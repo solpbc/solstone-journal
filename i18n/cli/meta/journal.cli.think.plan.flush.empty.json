@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for plan flush empty.",
+  "context": "Journal command-line text for plan flush empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ceef9c86d970ebc8738a1bb437d62688e035aaebbf41e929f0c915a9fdb15884",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

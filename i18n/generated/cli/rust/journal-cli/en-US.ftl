@@ -3101,3 +3101,667 @@ m6a6f75726e616c2e636c692e74616c656e742e776f726b2e72656164 = cannot read Work seg
 
 m6a6f75726e616c2e636c692e74616c656e742e776f726b2e756e617661696c61626c65 = Work source segment is unavailable: { $day }/{ $segment }
 
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e626c6f636b6564 = activity blocked
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e626f64792e64617461 = this activity comes from a { "Strava" } workout, which is body data; nothing further runs on it.
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e6461792e6d697373696e67 = activity day file is missing: { $path }
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e66696e6765727072696e742e6661696c6564 = cannot fingerprint activity inputs
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e6d616c666f726d6564 = the facet declaration is malformed. correct it, then retry with { "--reactivate" }.
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e6d697373696e67 = the destination facet is missing. after restoring its declaration, retry with { "--reactivate" }; otherwise reclassify the source segment.
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e6d757465642e626c6f636b6564 = the destination facet is muted. unmute it, then retry the blocked activity with { "--reactivate" }.
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e6d757465642e7265747279 = the destination facet is muted. unmute it to resume unfinished activity processing.
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e6f776e65722e6669656c642e68656c64 = activity output is held by owner
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e70656e64696e67 = activity retry pending
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e726561642e626c6f636b6564 = the facet declaration could not be read. after restoring access, retry the blocked activity with { "--reactivate" }.
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e726561642e7265747279 = the facet declaration could not be read. the unfinished activity will retry automatically.
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e7265636f72642e6d697373696e67 = no activity record exists for this classification. after correcting the declaration, reprocess the source segment.
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e7265706169722e7265717569726564 = requires repair
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e7265706c61636564 = the destination facet was replaced. reclassify the source segment; an old result cannot be applied to the replacement.
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e72657472792e6964656e74697479 = activity work identity mismatch
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e72657472792e6b696e64 = not activity work
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e72657472792e6d75746564 = the activity's facet is muted
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e726f7574696e67 = correct the declaration, then reprocess this source segment.
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e726f772e6d697373696e67 = activity row is missing: { $path }
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e736574746c6564 = { $facet }/{ $activity } settled: this activity comes from a { "Strava" } workout, which is body data; nothing further runs on it.
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e7374617465 = activity state not saved: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e73746174652e7365676d656e74 = { $segment }: activity state not saved: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e776f726b2e6d616c666f726d6564 = malformed activity work: { $path }
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e776f726b2e70656e64696e67 = activity work pending: { $failures }
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e776f726b2e72756e6e696e67 = previous activity input is still running
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e776f726b2e756e7265616461626c65 = cannot read activity work { $path }: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e776f726b2e76657273696f6e = unsupported activity work version
+
+m6a6f75726e616c2e636c692e7468696e6b2e617267756d656e742e696e7465676572 = argument { $option }: invalid int value
+
+m6a6f75726e616c2e636c692e7468696e6b2e617267756d656e742e756e6b6e6f776e = unrecognized arguments: { $argument }
+
+m6a6f75726e616c2e636c692e7468696e6b2e617267756d656e742e76616c7565 = argument { $option }: expected one argument
+
+m6a6f75726e616c2e636c692e7468696e6b2e63616e63656c6c6564 = thinking cancelled
+
+m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e626c6f636b6572732e6d6f7265 = { $names }, +{ $count } more
+
+m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e696e636f6d706c657465 = { $i18nCategory ->
+    [one] { $i18nCategory-blockers ->
+        [one] { "daily_incomplete" } ({ NUMBER($units, useGrouping: 0) } daily unit non-terminal; { NUMBER($blockers, useGrouping: 0) } segment blocker remains{ $details })
+       *[other] { "daily_incomplete" } ({ NUMBER($units, useGrouping: 0) } daily unit non-terminal; { NUMBER($blockers, useGrouping: 0) } segment blocker(s) remain{ $details })
+    }
+   *[other] { $i18nCategory-blockers ->
+        [one] { "daily_incomplete" } ({ NUMBER($units, useGrouping: 0) } daily unit(s) non-terminal; { NUMBER($blockers, useGrouping: 0) } segment blocker remains{ $details })
+       *[other] { "daily_incomplete" } ({ NUMBER($units, useGrouping: 0) } daily unit(s) non-terminal; { NUMBER($blockers, useGrouping: 0) } segment blocker(s) remain{ $details })
+    }
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e696e636f6d706c6574652e7265636f7264 = { "daily_incomplete" } ({ $units } daily unit(s) non-terminal; { $blockers } segment blocker(s) remain{ $details })
+
+m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e696e707574732e6368616e676564 = raw input changed during whole-day processing
+
+m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e6c6f636174696f6e2e7061636b6574 = daily location reuse has no stored packet
+
+m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e6c6f636174696f6e2e72656164 = daily location could not be read
+
+m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e736e617073686f742e6368616e676564 = daily evidence changed before preparation
+
+m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e736e617073686f742e6368616e6765642e6166746572 = daily evidence or contract changed during preparation
+
+m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e736e617073686f742e667265657a65 = daily input preparation: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e736e617073686f742e706172656e74 = talent root has no parent
+
+m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e736e617073686f742e72656d6f766564 = daily talent removed during preparation
+
+m6a6f75726e616c2e636c692e7468696e6b2e6572726f72 = { "solstone journal think" }: { $message }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6572726f722e776974682e6c6f67 = { $primary }; { $log }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6461792e696e76616c6964 = invalid day { $day }; expected { "YYYYMMDD" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6469726563746f7279 = cannot read directory { $path }: { $detail }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b6572 = health marker error: { $detail }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b65722e61746f6d6963 = health marker publication failed: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b65722e66696e6765727072696e74 = health marker fingerprint read failed: { $detail }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b65722e696f = health marker I/O failed at { $path }: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b65722e6c6f636b = health marker lock failed: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b65722e6d616c666f726d6564 = health marker is malformed: { $path }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b65722e73747265616d = stream health marker is malformed
+
+m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d65746164617461 = cannot read file metadata { $path }: { $detail }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e70726f67726573732e756e7265616461626c65 = segment progress contains unreadable records
+
+m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e72656164 = journal I/O error: { $detail }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e736f75726365 = health-log source error: { $detail }
+
+m6a6f75726e616c2e636c692e7468696e6b2e68656c70 = usage: { "solstone journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--reactivate] [--stream STREAM] [--flush] [--settle] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [--sense-batch] [-v] [-d]" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e686f73742e73656e73652e6d697373696e67 = hosted Sense executor is unavailable
+
+m6a6f75726e616c2e636c692e7468696e6b2e696e74656e742e676f6e65 = destructive request is no longer waiting
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e61637469766974792e6a6f696e = { "think" }: late { $day }/{ $segment } joined its open activity
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e61637469766974792e6e6f2e616476616e6365 = { "think" }: { $day }/{ $segment } does not advance live activity state
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e61637469766974792e7265706c6179 = { "think" }: late { $day }/{ $segment } is replayed with its stream's day
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e61637469766974792e7475726e = advancing { $stream } activity state without its turn: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e627564676574 = think outcome exceeds operational log record budget
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e636164656e63652e72656164 = Failed to load cadence state: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e636164656e63652e7365742e6173696465 = Failed to load cadence state: corrupt artifact set aside
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6461696c792e736561726368 = could not inspect search work before daily thinking: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6461792e666f726d6174 = day must be { "YYYYMMDD" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6461792e6c6f63616c = invalid local day
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e646973706c61792e6d65746164617461 = could not save display metadata for { $path }: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6661696c6564 = think run log { $path } failed: { $detail }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6661696c7572652e6c6f636b = think run log failure lock poisoned
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e68656c642e72656c65617365 = could not release held { $name } for { $segment }: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6c6f636b = think run log lock poisoned
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6e616d652e616e7377657273 = name answers: { $answers } changed, { $judged } activities judged again, { $changed } changed, { $waiting } waiting
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e70726f7669646572 = { $i18nCategory ->
+    [one] thinking provider is unavailable; { NUMBER($left, useGrouping: 0) } segment waits for the next run
+   *[other] thinking provider is unavailable; { NUMBER($left, useGrouping: 0) } segments wait for the next run
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e70726f76696465722e7265636f7264 = thinking provider is unavailable; { $left } segments wait for the next run
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e7265636f6e63696c696174696f6e = retry reconciliation failed: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e7365676d656e742e7475726e = thinking { $day }/{ $segment } without its turn: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e776f726b2e646973636f76657279 = work discovery: pass took { $elapsed } ms over { $inspected } of { $days } days; ranked { $handed } tasks for the queue
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e656e746974696573 = Sense Entities
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e656e74697479 = { $kind } — { $name } (role={ $role }, source={ $source }) — { $context }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a6563742e626f7468 = { $i18nCategory ->
+    [one] { $i18nCategory-photos ->
+        [one] { $class }: in { NUMBER($frames, useGrouping: 0) } frame and { NUMBER($photos, useGrouping: 0) } photo
+       *[other] { $class }: in { NUMBER($frames, useGrouping: 0) } frame and { NUMBER($photos, useGrouping: 0) } photos
+    }
+   *[other] { $i18nCategory-photos ->
+        [one] { $class }: in { NUMBER($frames, useGrouping: 0) } frames and { NUMBER($photos, useGrouping: 0) } photo
+       *[other] { $class }: in { NUMBER($frames, useGrouping: 0) } frames and { NUMBER($photos, useGrouping: 0) } photos
+    }
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a6563742e626f74682e6d6178696d756d = { $i18nCategory ->
+    [one] { $i18nCategory-photos ->
+        [one] { $class }: in { NUMBER($frames, useGrouping: 0) } frame and { NUMBER($photos, useGrouping: 0) } photo, up to { $most } at once
+       *[other] { $class }: in { NUMBER($frames, useGrouping: 0) } frame and { NUMBER($photos, useGrouping: 0) } photos, up to { $most } at once
+    }
+   *[other] { $i18nCategory-photos ->
+        [one] { $class }: in { NUMBER($frames, useGrouping: 0) } frames and { NUMBER($photos, useGrouping: 0) } photo, up to { $most } at once
+       *[other] { $class }: in { NUMBER($frames, useGrouping: 0) } frames and { NUMBER($photos, useGrouping: 0) } photos, up to { $most } at once
+    }
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a6563742e6672616d6573 = { $i18nCategory ->
+    [one] { $class }: in { NUMBER($frames, useGrouping: 0) } frame
+   *[other] { $class }: in { NUMBER($frames, useGrouping: 0) } frames
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a6563742e6672616d65732e6d6178696d756d = { $i18nCategory ->
+    [one] { $class }: in { NUMBER($frames, useGrouping: 0) } frame, up to { $most } at once
+   *[other] { $class }: in { NUMBER($frames, useGrouping: 0) } frames, up to { $most } at once
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a6563742e70686f746f73 = { $i18nCategory ->
+    [one] { $class }: in { NUMBER($photos, useGrouping: 0) } photo
+   *[other] { $class }: in { NUMBER($photos, useGrouping: 0) } photos
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a6563742e70686f746f732e6d6178696d756d = { $i18nCategory ->
+    [one] { $class }: in { NUMBER($photos, useGrouping: 0) } photo, up to { $most } at once
+   *[other] { $class }: in { NUMBER($photos, useGrouping: 0) } photos, up to { $most } at once
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a65637473 = Objects
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e7061727469616c2e636f756e7473 = Left out: { $details }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e7061727469616c2e696e707574 = Left out: Some input did not fit. This result was written from part of the input.
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e7061727469616c2e73746f7279 = This story, and anything saved with it, was written from part of the activity, not all of it.
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e71756f746573 = Quotes
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e73656e73652e656e746974696573 = ### Entities
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e73656e73652e666163657473 = ### Facets
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e73656e73652e7265636f7264 = ## Sense: { $kind }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e73656e73652e737065616b657273 = **Speakers:** { $names }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e737065616b6572 = Speaker { $number }
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e7465726d696e616c2e636c6f636b = { $clock } · terminal
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e7465726d696e616c2e6e6f74696365 = text shown in your terminal. this says what was visible, not what you read, typed or did. masking passwords and other secrets is best effort; your redaction rules do not apply.
+
+m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e746f70696373 = Topics
+
+m6a6f75726e616c2e636c692e7468696e6b2e6f7574636f6d652e636f6d706c65746564 = { "solstone journal think" }: { $count } completed
+
+m6a6f75726e616c2e636c692e7468696e6b2e6f7574636f6d652e6661696c6564 = { "solstone journal think" }: { $count } failed
+
+m6a6f75726e616c2e636c692e7468696e6b2e70686173652e6461696c792e70726572657175697369746573 = daily work is waiting for its segment prerequisites
+
+m6a6f75726e616c2e636c692e7468696e6b2e70686173652e65786974 = exit { $code }
+
+m6a6f75726e616c2e636c692e7468696e6b2e70686173652e7365676d656e742e70726572657175697369746573 = segment prerequisites changed
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e61637469766974792e636f756e74 = segments: { $segments }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e61637469766974792e656d707479 = No agents match activity type '{ $kind }'
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e61637469766974792e68656164696e67_v72656672657368 = Day { $day } { "--activity" } { $activity } { "--facet" } { $facet } (refresh)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e61637469766974792e68656164696e67_v6f7264696e617279 = Day { $day } { "--activity" } { $activity } { "--facet" } { $facet }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e61637469766974792e6d697373696e67 = Activity not found: { $activity } in facet '{ $facet }' on { $day }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e61637469766974792e74797065 = type:     { $kind }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e636164656e6365 = Day { $day } — cadence agents
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e636164656e63652e66697265 = { $i18nCategory ->
+    [one] { $i18nCategory-activities ->
+        [one] fire  { $name } — window: { NUMBER($segments, useGrouping: 0) } segment, { NUMBER($activities, useGrouping: 0) } activity
+       *[other] fire  { $name } — window: { NUMBER($segments, useGrouping: 0) } segment, { NUMBER($activities, useGrouping: 0) } activity(ies)
+    }
+   *[other] { $i18nCategory-activities ->
+        [one] fire  { $name } — window: { NUMBER($segments, useGrouping: 0) } segment(s), { NUMBER($activities, useGrouping: 0) } activity
+       *[other] fire  { $name } — window: { NUMBER($segments, useGrouping: 0) } segment(s), { NUMBER($activities, useGrouping: 0) } activity(ies)
+    }
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e636164656e63652e666972652e7265636f7264 = fire  { $name } — window: { $segments } segment(s), { $activities } activity(ies)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e636164656e63652e69646c65 = no-op { $name } — no new work since last cadence run
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e636164656e63652e736b6970 = skip  { $name } — interval not elapsed ({ $seconds }s < { $minutes }m)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e646179 = Day { $day }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e6461792e72656672657368 = Day { $day } (refresh)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e6461792e7365676d656e74 = Day { $day } segment { $segment }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e6461792e7365676d656e742e72656672657368 = Day { $day } segment { $segment } (refresh)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e656d7074792e636164656e6365 = No prompts for schedule: { "cadence" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e656d7074792e7765656b6c79 = No prompts for schedule: { "weekly" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e666c757368 = Day { $day } { "--flush" } segment { $segment }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e666c7573682e656d707479 = No flush-eligible agents
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e666c7573682e74616c656e74_v67656e6572617465 = gen  { $name }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e666c7573682e74616c656e74_v6167656e74 = agent  { $name }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e69646c65 = idle segments: write stubs only (unless { "--refresh" })
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e6f7263686573747261746f72 = Sense orchestrator (linear):
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e706f73742e696e6465786572 = Post-phase: { "solstone journal indexer --rescan" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e706f73742e7374617473 = Post-phase: { "solstone journal journal-stats" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e707265 = Pre-phase:  { "solstone journal sense --day" } { $day } { "-j" } { $jobs }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7072696f72697479 = Priority { $priority }:
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e726570726f63657373 = { $i18nCategory ->
+    [one] Day { $day } — re-process { NUMBER($count, useGrouping: 0) } segment
+   *[other] Day { $day } — re-process { NUMBER($count, useGrouping: 0) } segments
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e726570726f636573732e7265636f7264 = Day { $day } — re-process { $count } segments
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7363686564756c652e656d707479 = No prompts for schedule: { $schedule }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7365676d656e742e726f77 = [{ $index }/{ $total }] { $segment } ({ $start }-{ $end }) stream={ $stream }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e736b6970 = skip { $name } — no activity: { $facets }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7374617465 = activity state machine: updates per segment
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e656e746974696573_v6578697374696e67 = { $step }. { $name } ({ $kind }/{ $format }) (exists) — always for non-idle
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e656e746974696573_v6e6577 = { $step }. { $name } ({ $kind }/{ $format }) (new) — always for non-idle
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e656e746974696573_v706c61696e = { $step }. { $name } ({ $kind }/{ $format }) — always for non-idle
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e706f737369626c65_v6578697374696e67 = { $step }. { $name } ({ $kind }/{ $format }) (exists) — if a speech transcript (never gates the segment)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e706f737369626c65_v6e6577 = { $step }. { $name } ({ $kind }/{ $format }) (new) — if a speech transcript (never gates the segment)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e706f737369626c65_v706c61696e = { $step }. { $name } ({ $kind }/{ $format }) — if a speech transcript (never gates the segment)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e73637265656e_v6578697374696e67 = { $step }. { $name } ({ $kind }/{ $format }) (exists) — if { "recommend.screen_record" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e73637265656e_v6e6577 = { $step }. { $name } ({ $kind }/{ $format }) (new) — if { "recommend.screen_record" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e73637265656e_v706c61696e = { $step }. { $name } ({ $kind }/{ $format }) — if { "recommend.screen_record" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e73656e7365_v6578697374696e67 = { $step }. { $name } ({ $kind }/{ $format }) (exists) — mandatory
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e73656e7365_v6e6577 = { $step }. { $name } ({ $kind }/{ $format }) (new) — mandatory
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e73656e7365_v706c61696e = { $step }. { $name } ({ $kind }/{ $format }) — mandatory
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e737065616b65722e6174747269627574696f6e_v6578697374696e67 = { $step }. { $name } ({ $kind }/{ $format }) (exists) — if audio embeddings (the model layer only if { "recommend.speaker_attribution" })
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e737065616b65722e6174747269627574696f6e_v6e6577 = { $step }. { $name } ({ $kind }/{ $format }) (new) — if audio embeddings (the model layer only if { "recommend.speaker_attribution" })
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e737065616b65722e6174747269627574696f6e_v706c61696e = { $step }. { $name } ({ $kind }/{ $format }) — if audio embeddings (the model layer only if { "recommend.speaker_attribution" })
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e6661636574_v67656e657261746f725f6578697374696e67 = gen  { $name }/{ $facet } (exists)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e6661636574_v67656e657261746f725f6e6577 = gen  { $name }/{ $facet } (new)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e6661636574_v67656e657261746f725f706c61696e = gen  { $name }/{ $facet }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e6661636574_v6167656e745f6578697374696e67 = agent  { $name }/{ $facet } (exists)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e6661636574_v6167656e745f6e6577 = agent  { $name }/{ $facet } (new)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e6661636574_v6167656e745f706c61696e = agent  { $name }/{ $facet }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e74616c656e74_v67656e657261746f725f6578697374696e67 = gen  { $name } (exists)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e74616c656e74_v67656e657261746f725f6e6577 = gen  { $name } (new)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e74616c656e74_v67656e657261746f725f706c61696e = gen  { $name }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e74616c656e74_v6167656e745f6578697374696e67 = agent  { $name } (exists)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e74616c656e74_v6167656e745f6e6577 = agent  { $name } (new)
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e74616c656e74_v6167656e745f706c61696e = agent  { $name }
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e746f74616c = { $i18nCategory ->
+    [one] Total: { NUMBER($total, useGrouping: 0) } agent
+   *[other] Total: { NUMBER($total, useGrouping: 0) } agents
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e746f74616c2e7265636f7264 = Total: { $total } agents
+
+m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7765656b6c79 = Day { $day } — weekly agents
+
+m6a6f75726e616c2e636c692e7468696e6b2e707265666c696768742e6469736b = Your journal has run out of space on its disk ({ $detail }). Repair: free up space on that disk, then start your journal again.
+
+m6a6f75726e616c2e636c692e7468696e6b2e707265666c696768742e68656c64 = { "generation-lease-contended" }: { "owner_role=" }{ $role } { "owner_pid=" }{ $pid } { "owner_started_at=" }{ $started } { "install_generation_id=" }{ $generation } { "owner_age_seconds=" }{ $age }; use the supervised path or stop that process cleanly
+
+m6a6f75726e616c2e636c692e7468696e6b2e707265666c696768742e68656c642e756e617661696c61626c65 = { "generation-lease-contended" }: { "owner_details=unavailable" }; use the supervised path or stop the current process cleanly
+
+m6a6f75726e616c2e636c692e7468696e6b2e7072696f726974792e656e7669726f6e6d656e74 = invalid work priority: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e7072696f726974792e73796e746178 = invalid work priority; expected band 1–6 and a source time
+
+m6a6f75726e616c2e636c692e7468696e6b2e7265706169722e7365676d656e742e6d697373696e67 = missing repair segment
+
+m6a6f75726e616c2e636c692e7468696e6b2e726570726f636573732e7265636f7264 = could not record reprocess outcome: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e61637469766974792e6368616e676564 = activity retry permission changed
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e61637469766974792e72656c6561736564 = activity is no longer set aside
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461696c792e6368616e676564 = daily retry permission changed
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461696c792e6d697373696e67 = missing daily permission
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461696c792e72656c6561736564 = daily unit is no longer held
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461696c792e7465726d696e616c2e6d697373696e67 = missing daily terminal record
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461696c792e756e7265736f6c766564 = daily retry is still unresolved
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461696c792e756e75736564 = daily writer did not consume retry permission
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461792e6d69736d61746368 = retry day does not match
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e65766964656e63652e6d697373696e67 = retry evidence is missing
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7065726d697373696f6e2e6368616e676564 = retry permission changed
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e636f6f7264696e6174652e696e76616c6964 = invalid native retry coordinate
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e636f6f7264696e6174652e75746638 = non-UTF8 retry coordinate
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e66696e6765727072696e742e696e76616c6964 = native failure input fingerprint is malformed
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e68616e646c65722e6d697373696e67 = native failure has no handler
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e6865616465722e696e636f6d706c657465 = native processing header is incomplete
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e6865616465722e6b696e64 = native processing header is not an object
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e6b696e64 = not native analysis
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e706172656e742e6d697373696e67 = native output has no parent
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e7065726d697373696f6e2e756e75736564 = native writer did not consume the retry permission
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e726563656970742e6368616e676564 = native terminal receipt changed
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e726563656970742e6d697373696e67 = native terminal receipt is missing
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e726563656970742e756e7075626c6973686564 = native writer has not published this retry's terminal receipt
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e726563656970742e756e7265616461626c65 = native terminal receipt is unreadable
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e7265636f72642e6d616c666f726d6564 = native processing record is malformed
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e72656c6561736564 = native output is no longer held
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e736368656d612e756e6b6e6f776e = native processing schema is unrecognized
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e736f757263652e696e76616c6964 = native failure has no safe source filename
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e736f757263652e6d69736d61746368 = native failure source does not match its output
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7365676d656e742e6368616e676564 = segment retry permission changed
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e74616c656e742e64697361626c6564 = held talent is no longer enabled
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e74616c656e742e6469737061746368 = held talent could not be dispatched
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e74616c656e742e7365676d656e742e6d697373696e67 = segment no longer exists
+
+m6a6f75726e616c2e636c692e7468696e6b2e72657472792e74616c656e742e736b6970706564 = held talent could not be retried
+
+m6a6f75726e616c2e636c692e7468696e6b2e726f7574696e672e6c6f672e6d616c666f726d6564 = cannot read routing recovery from malformed health logs
+
+m6a6f75726e616c2e636c692e7468696e6b2e726f7574696e672e736f757263652e696e76616c6964 = retained routing source is invalid
+
+m6a6f75726e616c2e636c692e7468696e6b2e7365676d656e742e616d626967756f7573 = { $i18nCategory ->
+    [one] ambiguous segment { $day }/{ $segment }: { NUMBER($count, useGrouping: 0) } stream shares this name
+   *[other] ambiguous segment { $day }/{ $segment }: { NUMBER($count, useGrouping: 0) } streams share this name
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e636f6d706c657465 = Batch processing complete
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e636f6e6669672e636f6e63757272656e6379 = sense: invalid { $handler }.{ "max_concurrent" }; defaulting to 1
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e636f6e6669672e72656164 = sense: journal config unavailable: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e636f6e6669672e72756e74696d65 = sense: invalid { $handler }.{ "max_runtime" }; defaulting to { $seconds }s
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e636f6e666c696374 = { "--sense-batch" } is incompatible with { $options }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e646179 = { "--sense-batch" } requires { "--day" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6461792e6d697373696e67 = Day directory not found: { $path }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6465666572726564 = { $i18nCategory ->
+    [one] Batch processing deferred: { $deferred } of { $ran } handler waiting; unfinished files will retry
+   *[other] Batch processing deferred: { $deferred } of { $ran } handlers waiting; unfinished files will retry
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e64656c657465 = could not delete { $path }: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e64656c657465642e6469727479 = reprocess removed { $path }, but could not durably mark day { $day } dirty: { $detail }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e6661696c6564 = { $failed } failed of { $ran } ran
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e68656c64 = sense batch lease for day { $day } is held by another process
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e6a6f696e = Sense worker did not stop cleanly
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e6c65617365 = sense batch lease error: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e72756e74696d65 = batch callosum runtime unavailable
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e7363616e = could not scan { $path }: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e74696d656f7574 = sense batch timed out after { $duration }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e66696c6573 = { $i18nCategory ->
+    [one] Found { $count } unprocessed file to process ({ $extensions })
+   *[other] Found { $count } unprocessed files to process ({ $extensions })
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e696e7465727275707465642e7772697465 = failed to record { "observe.interrupted" } event to { $path }: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6c656173652e736b6970 = Sense batch lease for day { $day } is held; skipping batch walk
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6e6f7468696e67 = No unprocessed files found in { $path }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e7072696f726974792e656e636f64696e67 = { $variable } contains invalid UTF-8
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e70726f63657373696e672e646179 = { $i18nCategory ->
+    [one] Processing files from day { $day } with { $jobs } concurrent job
+   *[other] Processing files from day { $day } with { $jobs } concurrent jobs
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e70726f63657373696e672e7365676d656e74 = { $i18nCategory ->
+    [one] Processing files from day { $day } (segment: { $segment }) with { $jobs } concurrent job
+   *[other] Processing files from day { $day } (segment: { $segment }) with { $jobs } concurrent jobs
+}
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e72656675736564 = sense batch refused: { $reason }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e72657472792e6368616e676564 = native retry inputs changed
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e72657472792e68616e646c6572 = unknown native retry handler
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e72657472792e6b696e64 = retry is not native analysis
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e72657472792e6d69736d61746368 = native failure handler does not match its source
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e617574686f72697479 = { $handler } launch authority was not managed
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6465666572726564 = deferred (exit { $code })
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e64657461696c = sense: day={ $day } stream={ $stream } segment={ $segment } file={ $file } error={ $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e65786974 = { $handler } exit { $code }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6661696c6564 = failed (exit { $code })
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6c61756e6368 = { $handler } spawn failed
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6c61756e63682e6661696c6564 = sense: { $handler } launch failed: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6c6f672e7461696c = sense: handler diagnostic log={ $log } tail={ $tail }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6c6f672e756e7265616461626c65 = sense: handler diagnostic log={ $log } unreadable: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6f75747075742e696e636f6d706c657465 = { $handler } exited 0 with unfinished output (analysis output incomplete): { $path }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6f75747075742e6e6f6e726567756c6172 = { $handler } exited 0 without a regular output: { $path }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6f75747075742e756e66696e6973686564 = { $handler } exited 0 with unfinished output ({ $reason }): { $path }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6f75747075742e756e7265616461626c65 = { $handler } exited 0 without readable output { $path }: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e706f6f6c = { $handler } pool unavailable
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e70726f6772616d2e65786563757461626c65 = { $handler } dispatcher current_exe failed: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e70726f6772616d2e6d697373696e67 = { $handler } dispatcher missing: { $path }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e70726f6772616d2e6e6f6e65786563757461626c65 = { $handler } dispatcher not executable: { $path }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e70726f6772616d2e6e6f6e726567756c6172 = { $handler } dispatcher not a file: { $path }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e737461747573 = sense: handler={ $handler } file={ $file } outcome={ $outcome } log={ $log }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e7375727669766f7273 = sense: process-tree-not-reaped handler={ $handler } reason={ $reason } survivors={ $count }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e7465726d696e6174696f6e = sense: managed termination failed handler={ $handler }: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e74696d656f7574 = { $handler } watchdog_timeout after { $seconds }s
+
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e7761746368646f67 = watchdog or process wait failed
+
+m6a6f75726e616c2e636c692e7468696e6b2e736574746c652e73617665 = activity settle state not saved: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e757064617465642e6361706162696c697479 = catchup capability unavailable on this platform
+
+m6a6f75726e616c2e636c692e7468696e6b2e757064617465642e636f6e666c696374 = { "--updated" } is incompatible with { $options }
+
+m6a6f75726e616c2e636c692e7468696e6b2e757064617465642e696f = catchup I/O failed at { $path }: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e757064617465642e6d61726b6572 = catchup marker error: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e757064617465642e70617468 = catchup journal path error: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e757064617465642e7374617465 = catchup state is malformed: { $detail }
+
+m6a6f75726e616c2e636c692e7468696e6b2e75736167652e6572726f72 = usage: { "solstone journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--reactivate] [--stream STREAM] [--flush] [--settle] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [--sense-batch] [-v] [-d]" }{ "\u000a" }{ "solstone journal think" }: error: { $message }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e61637469766974792e696e636f6d70617469626c65 = { "--activity" } is incompatible with { "--segment" }, { "--segments" }, and { "--flush" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e61637469766974792e72657175697265732e646179 = { "--activity" } requires { "--day" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e61637469766974792e72657175697265732e6661636574 = { "--activity" } requires { "--facet" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e636164656e63652e696e636f6d70617469626c65 = { "--cadence" } is incompatible with { "--segment" }, { "--segments" }, { "--activity" }, { "--flush" }, and { "--weekly" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e6461696c792e6f6e6c79 = { "--daily-only" } requires { "--day" } and cannot be combined with another thinking mode
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e66616365742e72657175697265732e6163746976697479 = { "--facet" } requires { "--activity" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e666c7573682e696e636f6d70617469626c65 = { "--flush" } is incompatible with { "--segments" } and { "--refresh" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e666c7573682e72657175697265732e7365676d656e74 = { "--flush" } requires { "--segment" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e6d756c74692e776f726b65722e756e6c696d697465642e6a6f6273 = { "--jobs" } 0 is incompatible with multi-worker { "--segments" }; set { "--jobs" } to a positive bound or { "--segment-workers" } 1
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e6e6f2e61637469766974792e70726f6d7074732e776974682e6163746976697479 = { "--no-activity-prompts" } cannot be combined with { "--activity" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e726561637469766174652e696e636f6d70617469626c652e72656672657368 = { "--reactivate" } is incompatible with { "--refresh" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e726561637469766174652e72657175697265732e6163746976697479 = { "--reactivate" } requires { "--activity" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e7265706169722e7365676d656e74 = { "--repair-segment" } requires { "--day" } and { "--segment" } and cannot be combined with another thinking mode
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e72657472792e756e6974 = { "--retry-unit" } requires { "--day" } and { "--retry-cause" } without another thinking mode
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e7365676d656e742e776f726b6572732e72616e6765 = { "--segment-workers" } must be between 1 and 32
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e7365676d656e74732e696e636f6d70617469626c65 = { "--segments" } is incompatible with { "--segment" } and { "--facet" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e736574746c652e696e636f6d70617469626c65 = { "--settle" } is incompatible with { "--segment" }, { "--segments" }, { "--activity" }, { "--flush" }, { "--refresh" }, { "--weekly" }, and { "--cadence" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e7765656b6c792e696e636f6d70617469626c65 = { "--weekly" } is incompatible with { "--segment" }, { "--segments" }, { "--activity" }, and { "--flush" }
+
+m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e776f726b2e696e74656e74 = { "--work-intent" } requires a from-scratch daily request
+
+m6a6f75726e616c2e636c692e7468696e6b2e776169742e636f72746578 = cortex wait failed: { $error }
+
+m6a6f75726e616c2e636c692e7468696e6b2e776169742e6661696c6564 = wait failed: { $error }
+

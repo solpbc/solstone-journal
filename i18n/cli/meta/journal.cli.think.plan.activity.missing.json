@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for plan activity missing.",
+  "context": "Journal command-line text for plan activity missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "activity",
+      "type": "string"
+    },
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7524fbb955f26555a219c813ddb041e34e179b1ccad6e643c3a6c8443558d529",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

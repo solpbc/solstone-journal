@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for updated state.",
+  "context": "Journal command-line text for updated state.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6868c52fc1fb498399c17b195d8003cf784c364c6a47c58e4717bce73e65bef4",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

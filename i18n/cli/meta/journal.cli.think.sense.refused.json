@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense refused.",
+  "context": "Journal command-line text for sense refused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "89a975f984495703fe4b5f366523082d627818273c0d574c06177482810ca3f3",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

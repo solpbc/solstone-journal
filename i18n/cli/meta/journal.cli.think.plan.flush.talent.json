@@ -1,0 +1,34 @@
+{
+  "description": "Journal command-line text for plan flush talent.",
+  "context": "Journal command-line text for plan flush talent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "6485bb44f1b61cc91ad845aaf0f4e668a84e8d703338971ae8d4437bd4ed3cfb",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "kind",
+    "type": "string",
+    "enum_values": [
+      "generate",
+      "agent"
+    ],
+    "enum_default": "agent"
+  }
+}

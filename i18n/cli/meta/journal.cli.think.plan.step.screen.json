@@ -1,0 +1,54 @@
+{
+  "description": "Journal command-line text for plan step screen.",
+  "context": "Journal command-line text for plan step screen.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "presence",
+      "type": "string"
+    },
+    {
+      "name": "step",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "format",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "75aaa2d83d558e857d9e5f119561020fe7ee7e30974bf41c2900eed416c219bd",
+  "max_length": 342,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "recommend_screen_record",
+      "kind": "accepted-input",
+      "value": "recommend.screen_record"
+    }
+  ],
+  "selector": {
+    "name": "presence",
+    "type": "string",
+    "enum_values": [
+      "existing",
+      "new",
+      "plain"
+    ],
+    "enum_default": "plain"
+  }
+}

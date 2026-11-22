@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for validation repair segment.",
+  "context": "Journal command-line text for validation repair segment.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f0e102f6211d1b02d72ec722dda8aac0a2e13e279099185aff877f7b303bf99a",
+  "max_length": 151,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "repair_segment_flag",
+      "kind": "flag",
+      "value": "--repair-segment"
+    },
+    {
+      "name": "day_flag",
+      "kind": "flag",
+      "value": "--day"
+    },
+    {
+      "name": "segment_flag",
+      "kind": "flag",
+      "value": "--segment"
+    }
+  ]
+}

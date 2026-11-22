@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for log segment turn.",
+  "context": "Journal command-line text for log segment turn.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "31770cc2c6275eb27596143c5047900e66aa208c2660fb9ae13f86b6a9c5e7fb",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{Attempt, DECLARED_FIXES, Unit};
+use super::{Attempt, DECLARED_FIXES, ReadFailure, Unit};
 
 pub const JOURNAL_ENV: &str = "SOLSTONE_RETRY_JOURNAL";
 pub const UNIT_ENV: &str = "SOLSTONE_RETRY_UNIT";
@@ -35,12 +35,24 @@ fn component(value: &str) -> bool {
 }
 
 pub fn unit_for_output(journal: &Path, output: &Path, handler: &str) -> Result<Unit, String> {
+    unit_for_output_typed(journal, output, handler).map_err(String::from)
+}
+
+pub(super) fn unit_for_output_typed(
+    journal: &Path,
+    output: &Path,
+    handler: &str,
+) -> Result<Unit, ReadFailure> {
     let relative = output
         .strip_prefix(journal.join("chronicle"))
         .map_err(|e| e.to_string())?;
     let parts = relative
         .iter()
-        .map(|p| p.to_str().ok_or("non-UTF8 retry coordinate"))
+        .map(|p| {
+            p.to_str().ok_or(ReadFailure::Message(
+                "journal.cli.think.retry.raw.coordinate.utf8",
+            ))
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let (day, stream, segment, output, direct) = match parts.as_slice() {
         [day, segment, output] => (
@@ -51,7 +63,11 @@ pub fn unit_for_output(journal: &Path, output: &Path, handler: &str) -> Result<U
             true,
         ),
         [day, stream, segment, output] => (*day, *stream, *segment, *output, false),
-        _ => return Err("invalid native retry coordinate".into()),
+        _ => {
+            return Err(ReadFailure::Message(
+                "journal.cli.think.retry.raw.coordinate.invalid",
+            ));
+        }
     };
     let unit = Unit::Raw {
         day: day.into(),
@@ -61,24 +77,26 @@ pub fn unit_for_output(journal: &Path, output: &Path, handler: &str) -> Result<U
         output: output.into(),
         direct,
     };
-    unit.validate()?;
+    unit.validate_typed()?;
     Ok(unit)
 }
 
 /// The header stays bounded and existing-file read errors remain errors,
 /// never an absent processing record that could manufacture a fresh attempt.
-fn header(output: &Path) -> Result<Value, String> {
-    bounded_header(output)?.ok_or_else(|| "native processing header is incomplete".into())
+fn header(output: &Path) -> Result<Value, ReadFailure> {
+    bounded_header(output)?.ok_or(ReadFailure::Message(
+        "journal.cli.think.retry.raw.header.incomplete",
+    ))
 }
 
 /// `None` when the first row fills the bound: like any sidecar, that file has no
 /// readable record. A shorter row without its newline is still an error.
-fn bounded_header(output: &Path) -> Result<Option<Value>, String> {
+fn bounded_header(output: &Path) -> Result<Option<Value>, ReadFailure> {
     let bound = solstone_core_processing_record::vocab::MAX_FIRST_ROW_BYTES;
     let file = match std::fs::File::open(output) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.to_string()),
+        Err(error) => return Err(error.to_string().into()),
     };
     let mut reader = std::io::BufReader::new(file.take(bound as u64));
     let mut row = Vec::new();
@@ -89,11 +107,15 @@ fn bounded_header(output: &Path) -> Result<Option<Value>, String> {
         if row.len() == bound {
             return Ok(None);
         }
-        return Err("native processing header is incomplete".into());
+        return Err(ReadFailure::Message(
+            "journal.cli.think.retry.raw.header.incomplete",
+        ));
     }
     let header: Value = serde_json::from_slice(&row).map_err(|e| e.to_string())?;
     if !header.is_object() {
-        return Err("native processing header is not an object".into());
+        return Err(ReadFailure::Message(
+            "journal.cli.think.retry.raw.header.kind",
+        ));
     }
     Ok(Some(header))
 }
@@ -107,6 +129,14 @@ pub fn inspect_output_checked(
     output: &Path,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Option<Evidence>, String> {
+    inspect_output_typed(journal, output, checkpoint).map_err(String::from)
+}
+
+pub fn inspect_output_typed(
+    journal: &Path,
+    output: &Path,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<Option<Evidence>, ReadFailure> {
     let Some(header) = bounded_header(output)? else {
         return Ok(None);
     };
@@ -114,12 +144,16 @@ pub fn inspect_output_checked(
         return Ok(None);
     };
     if !record.is_object() {
-        return Err("native processing record is malformed".into());
+        return Err(ReadFailure::Message(
+            "journal.cli.think.retry.raw.record.malformed",
+        ));
     }
     if record.get("schema").and_then(Value::as_str)
         != Some(solstone_core_processing_record::vocab::SCHEMA)
     {
-        return Err("native processing schema is unrecognized".into());
+        return Err(ReadFailure::Message(
+            "journal.cli.think.retry.raw.schema.unknown",
+        ));
     }
     if record.get("state").and_then(Value::as_str) != Some("failed")
         || !solstone_core_processing_record::is_failure_exhausted(record)
@@ -129,19 +163,27 @@ pub fn inspect_output_checked(
     let handler = record
         .get("handler")
         .and_then(Value::as_str)
-        .ok_or("native failure has no handler")?;
-    let unit = unit_for_output(journal, output, handler)?;
+        .ok_or(ReadFailure::Message(
+            "journal.cli.think.retry.raw.handler.missing",
+        ))?;
+    let unit = unit_for_output_typed(journal, output, handler)?;
     let raw = header
         .get("raw")
         .and_then(Value::as_str)
         .filter(|s| component(s))
-        .ok_or("native failure has no safe source filename")?;
+        .ok_or(ReadFailure::Message(
+            "journal.cli.think.retry.raw.source.invalid",
+        ))?;
     let input_path = output
         .parent()
-        .ok_or("native output has no parent")?
+        .ok_or(ReadFailure::Message(
+            "journal.cli.think.retry.raw.parent.missing",
+        ))?
         .join(raw);
     if input_path.with_extension("jsonl") != output {
-        return Err("native failure source does not match its output".into());
+        return Err(ReadFailure::Message(
+            "journal.cli.think.retry.raw.source.mismatch",
+        ));
     }
     let input = super::file_fingerprint_checked(&input_path, checkpoint)?;
     let baseline = match record.get("input_sha256") {
@@ -151,7 +193,11 @@ pub fn inspect_output_checked(
         {
             value.clone()
         }
-        Some(_) => return Err("native failure input fingerprint is malformed".into()),
+        Some(_) => {
+            return Err(ReadFailure::Message(
+                "journal.cli.think.retry.raw.fingerprint.invalid",
+            ));
+        }
     };
     let reason = record
         .get("reason_code")
@@ -508,32 +554,51 @@ pub fn finish_output_checked(
     attempt: &Attempt,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), String> {
+    finish_output_typed(journal, unit, attempt, checkpoint).map_err(String::from)
+}
+
+pub fn finish_output_typed(
+    journal: &Path,
+    unit: &Unit,
+    attempt: &Attempt,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<(), ReadFailure> {
     checkpoint()?;
     let Unit::Raw {
         output, handler, ..
     } = unit
     else {
-        return Err("not native analysis".into());
+        return Err(ReadFailure::Message("journal.cli.think.retry.raw.kind"));
     };
-    let record = super::read(journal, &unit.id()?)?.ok_or("retry evidence is missing")?;
+    let record = super::read_typed(journal, &unit.id()?)?.ok_or(ReadFailure::Message(
+        "journal.cli.think.retry.evidence.missing",
+    ))?;
     if record.attempt.as_ref() != Some(attempt) {
-        return Err("native writer did not consume the retry permission".into());
+        return Err(ReadFailure::Message(
+            "journal.cli.think.retry.raw.permission.unused",
+        ));
     }
     let output = unit.segment_directory(journal)?.join(output);
     let header = header(&output)?;
     let processing = header
         .get("_solstone_processing")
-        .ok_or("native terminal receipt is missing")?;
+        .ok_or(ReadFailure::Message(
+            "journal.cli.think.retry.raw.receipt.missing",
+        ))?;
     if processing.get("schema").and_then(Value::as_str)
         != Some(solstone_core_processing_record::vocab::SCHEMA)
         || processing.get("handler").and_then(Value::as_str) != Some(handler.as_str())
     {
-        return Err("native terminal receipt changed".into());
+        return Err(ReadFailure::Message(
+            "journal.cli.think.retry.raw.receipt.changed",
+        ));
     }
     if processing.get("retry_attempt")
         != Some(&serde_json::to_value(attempt).map_err(|e| e.to_string())?)
     {
-        return Err("native writer has not published this retry's terminal receipt".into());
+        return Err(ReadFailure::Message(
+            "journal.cli.think.retry.raw.receipt.unpublished",
+        ));
     }
     let remaining = match processing.get("state").and_then(Value::as_str) {
         Some("failed") => Some(
@@ -543,9 +608,13 @@ pub fn finish_output_checked(
                 .unwrap_or("analysis_failed"),
         ),
         Some("analyzed" | "empty") => None,
-        _ => return Err("native terminal receipt is unreadable".into()),
+        _ => {
+            return Err(ReadFailure::Message(
+                "journal.cli.think.retry.raw.receipt.unreadable",
+            ));
+        }
     };
-    super::finish_checked(journal, unit, attempt, remaining, checkpoint)
+    super::finish_checked(journal, unit, attempt, remaining, checkpoint).map_err(Into::into)
 }
 
 #[cfg(all(test, feature = "full-tests"))]
@@ -593,8 +662,7 @@ mod tests {
                 "schema":"solstone.processing.v1","handler":"transcribe","state":"analyzed","retry_attempt":context.attempt
             }});
             std::fs::write(&output, format!("{receipt}\n")).unwrap();
-            let path =
-                super::super::path(root.path(), &context.unit_id, super::super::ENGLISH).unwrap();
+            let path = super::super::path(root.path(), &context.unit_id).unwrap();
             let before = std::fs::read(&path).unwrap();
             let held = hold_lock(&path, LockOptions::default()).unwrap();
             let cancelled = Arc::new(AtomicBool::new(false));

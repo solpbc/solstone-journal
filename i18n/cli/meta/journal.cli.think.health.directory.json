@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for health directory.",
+  "context": "Journal command-line text for health directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d144a6f6b833e4a3a6e24b40e8dea545185873266f0d3efd57599ddf07ac62de",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

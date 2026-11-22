@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sense worker termination.",
+  "context": "Journal command-line text for sense worker termination.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7ddd23978a13be4cd3920b809c5cdaada0ace45e5ed45a0982fbc67b18df9485",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

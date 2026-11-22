@@ -1,0 +1,30 @@
+{
+  "description": "Journal command-line text for markdown object frames.",
+  "context": "Journal command-line text for markdown object frames.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "frames",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "class",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "66bcf7788565cdcdd54c7be2a8e997867810d821c67e37648f741c671bba37fc",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "frames",
+    "type": "cardinal"
+  }
+}

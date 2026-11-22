@@ -85,40 +85,7 @@ impl PromptPreviewer for UnreachablePreviewer {
     }
 }
 
-pub fn path_detail(locale: &str, error: &solstone_core_journal_io::PathError) -> String {
-    use solstone_core_journal_io::{PathError, paths::RelativePathProblem};
-    match error {
-        PathError::InvalidRelativePath { rel, .. } => match RelativePathProblem::of(rel) {
-            Some(RelativePathProblem::Empty) => {
-                solstone_core_cli_copy::render_for(locale, "journal.cli.talent.path.empty", &[])
-            }
-            Some(RelativePathProblem::Absolute) => {
-                solstone_core_cli_copy::render_for(locale, "journal.cli.talent.path.absolute", &[])
-            }
-            Some(RelativePathProblem::Backslash) => {
-                solstone_core_cli_copy::render_for(locale, "journal.cli.talent.path.backslash", &[])
-            }
-            Some(RelativePathProblem::Component) => {
-                solstone_core_cli_copy::render_for(locale, "journal.cli.talent.path.component", &[])
-            }
-            Some(RelativePathProblem::Unreadable) => solstone_core_cli_copy::render_for(
-                locale,
-                "journal.cli.talent.path.unreadable",
-                &[],
-            ),
-            None => error.to_string(),
-        },
-        PathError::Escape(error) => solstone_core_cli_copy::display_for(
-            locale,
-            "journal.cli.talent.path.escape",
-            [
-                ("relative", &(format!("{:?}", error.rel))),
-                ("path", &(error.path.display())),
-            ],
-        ),
-        PathError::Io { .. } => error.to_string(),
-    }
-}
+pub use solstone_core_journal_io::cli_diagnostics::path_detail;
 
 pub fn facet_detail(locale: &str, error: &solstone_core_facets::FacetStoreError) -> String {
     use solstone_core_facets::FacetStoreError;
@@ -134,24 +101,7 @@ pub fn facet_detail(locale: &str, error: &solstone_core_facets::FacetStoreError)
     }
 }
 
-pub fn read_detail(locale: &str, error: &solstone_core_journal_io::ReadError) -> String {
-    use solstone_core_journal_io::ReadError;
-    match error {
-        ReadError::Malformed(error) => match error.line {
-            Some(line) => solstone_core_cli_copy::display_for(
-                locale,
-                "journal.cli.talent.facet.malformed.line",
-                [("path", &(error.path.display())), ("line", &(line))],
-            ),
-            None => solstone_core_cli_copy::display_for(
-                locale,
-                "journal.cli.talent.facet.malformed",
-                [("path", &(error.path.display()))],
-            ),
-        },
-        ReadError::Io { .. } => error.to_string(),
-    }
-}
+pub use solstone_core_journal_io::cli_diagnostics::read_detail;
 
 pub fn settings_detail(
     locale: &str,

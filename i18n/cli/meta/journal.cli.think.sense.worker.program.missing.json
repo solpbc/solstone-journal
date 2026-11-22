@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sense worker program missing.",
+  "context": "Journal command-line text for sense worker program missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "455f3a27cafaeb006a5303d964e5b35a8e91358bb208fec621887501fef113ce",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for log cadence set aside.",
+  "context": "Journal command-line text for log cadence set aside.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "15b64b53c92781cfbb9de4047ec297a4db768dcdde30a695ae9ee503f9276d38",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

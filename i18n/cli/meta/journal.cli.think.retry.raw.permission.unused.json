@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry raw permission unused.",
+  "context": "Journal command-line text for retry raw permission unused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2be0ffcb7d6e269941673a76d9d8af2fb069356bb80ee432315fa549c88a35e5",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

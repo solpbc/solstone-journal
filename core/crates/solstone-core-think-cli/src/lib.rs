@@ -14,7 +14,7 @@ mod args;
 mod cadence;
 mod cadence_state;
 mod context;
-pub use context::{CortexBoundary, DispatchFailure, IndexBoundary, ThinkContext};
+pub use context::{CortexBoundary, DispatchFailure, IndexBoundary, ThinkContext, WaitFailure};
 mod daily;
 mod daily_lifecycle;
 pub use daily_lifecycle::{INDEXER_ARGS, INDEXER_INPUTS_ARGS};
@@ -140,17 +140,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use jiff::civil::Date;
-use solstone_core_cli::THINK_USAGE;
 use solstone_core_local::{LocalEndpointResolution, resolve_local_endpoint};
-use solstone_core_segment::SUPERVISOR_MESSAGE;
-
-use crate::args::{
-    ACTIVITY_INCOMPATIBLE, ACTIVITY_REQUIRES_DAY, ACTIVITY_REQUIRES_FACET, CADENCE_INCOMPATIBLE,
-    FACET_REQUIRES_ACTIVITY, FLUSH_INCOMPATIBLE, FLUSH_REQUIRES_SEGMENT,
-    MULTI_WORKER_UNLIMITED_JOBS, NO_ACTIVITY_PROMPTS_WITH_ACTIVITY,
-    REACTIVATE_INCOMPATIBLE_REFRESH, REACTIVATE_REQUIRES_ACTIVITY, SEGMENT_WORKERS_RANGE,
-    SEGMENTS_INCOMPATIBLE, SETTLE_INCOMPATIBLE, UPDATED_INCOMPATIBLE, WEEKLY_INCOMPATIBLE,
-};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct CliRun {
@@ -178,6 +168,14 @@ pub fn activity_settle_holds_day(journal: &Path, day: &str) -> bool {
     settle::holds_day(journal, day)
 }
 
+pub fn terminal_locale() -> Option<&'static str> {
+    if std::env::var("SOL_SUPERVISOR_SPAWNED").as_deref() == Ok("1") {
+        None
+    } else {
+        Some(solstone_core_cli_copy::cli_locale())
+    }
+}
+
 pub fn run_cli(
     args: &[String],
     journal: &Path,
@@ -187,6 +185,7 @@ pub fn run_cli(
         Arc::new(|| jiff::Timestamp::now().as_millisecond());
     let start_clock = Arc::clone(&event_clock);
     run_cli_with_event_clock(
+        terminal_locale(),
         args,
         journal,
         |name| std::env::var(name).ok(),
@@ -286,6 +285,7 @@ where
     B: Fn() -> Option<u32>,
 {
     run_cli_with_event_clock(
+        Some(solstone_core_cli_copy::ENGLISH),
         raw_args,
         journal,
         lookup_env,
@@ -302,6 +302,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 fn run_cli_with_event_clock<E, C, N, M, P, R, B>(
+    terminal_locale: Option<&'static str>,
     raw_args: &[String],
     journal: &Path,
     lookup_env: E,
@@ -323,11 +324,17 @@ where
     R: Fn() -> (bool, LocalEndpointResolution),
     B: Fn() -> Option<u32>,
 {
+    let locale = terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
     let result = (|| {
-        let parsed = match args::parse(raw_args).map_err(|message| CliError::Usage { message })? {
+        let parsed = match args::parse_in(raw_args, terminal_locale)
+            .map_err(|message| CliError::Usage { message })?
+        {
             args::ParseOutcome::Help => {
                 return Ok(CliRun {
-                    stdout: THINK_USAGE.to_owned(),
+                    stdout: format!(
+                        "{}\n",
+                        solstone_core_cli_copy::render_for(locale, "journal.cli.think.help", &[])
+                    ),
                     stderr: String::new(),
                     exit_code: 0,
                 });
@@ -345,12 +352,20 @@ where
             let offenders = args::sense_batch_offenders(&parsed);
             if !offenders.is_empty() {
                 return Err(CliError::Usage {
-                    message: format!("{}{}", args::SENSE_BATCH_INCOMPATIBLE, offenders.join(", ")),
+                    message: solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.think.sense.conflict",
+                        [("options", &(offenders.join(", ")))],
+                    ),
                 });
             }
             let Some(day) = &parsed.day else {
                 return Err(CliError::Usage {
-                    message: "--sense-batch requires --day".to_owned(),
+                    message: solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.think.sense.day",
+                        &[],
+                    ),
                 });
             };
             let request = solstone_core_sense::batch::BatchRequest {
@@ -364,14 +379,16 @@ where
                 debug: parsed.debug,
             };
             let timeout = (!parsed.no_timeout).then_some(std::time::Duration::from_secs(1800));
-            solstone_core_sense::batch::run_batch_for_whole_day_with_environment_and_timeout(
+            solstone_core_sense::batch::run_batch_in(
+                terminal_locale,
                 journal,
                 &request,
                 sense_child_environment,
                 timeout,
+                solstone_core_sense::dispatch::BatchMarkerPolicy::EnclosedWholeDay,
             )
             .map_err(|error| CliError::InvalidDay {
-                message: error.to_string(),
+                message: error.render(locale),
             })?;
             return Ok(CliRun {
                 stdout: String::new(),
@@ -385,7 +402,7 @@ where
             parsed.cadence || parsed.settle,
             today,
         );
-        let day_dir = day::create_day(journal, &selected_day)
+        let day_dir = day::create_day_in(locale, journal, &selected_day)
             .map_err(|message| CliError::InvalidDay { message })?;
         let (uses_local, endpoint) = endpoint();
         let cpu_count = cpu_count();
@@ -404,7 +421,8 @@ where
 
         let now_ms = now_ms();
         let event_clock = event_clock.unwrap_or_else(|| Arc::new(move || now_ms));
-        let context = context::ThinkContext::new_with_event_clock(
+        let context = context::ThinkContext::new_for_terminal(
+            terminal_locale,
             journal,
             selected_day.clone(),
             day_dir.clone(),
@@ -419,15 +437,22 @@ where
             sense_child_environment,
         )
     })();
-    format_cli_run(result)
+    format_cli_run(locale, result)
 }
 
-fn format_cli_run(result: Result<CliRun, CliError>) -> CliRun {
+fn format_cli_run(locale: &str, result: Result<CliRun, CliError>) -> CliRun {
     match result {
         Ok(run) => run,
         Err(CliError::Usage { message }) => CliRun {
             stdout: String::new(),
-            stderr: format!("{THINK_USAGE}solstone journal think: error: {message}\n"),
+            stderr: format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.usage.error",
+                    [("message", &(message))]
+                )
+            ),
             exit_code: 2,
         },
         Err(CliError::SupervisorSpawnedUnavailable) => CliRun {
@@ -437,12 +462,22 @@ fn format_cli_run(result: Result<CliRun, CliError>) -> CliRun {
         },
         Err(CliError::SupervisorUnavailable) => CliRun {
             stdout: String::new(),
-            stderr: format!("{SUPERVISOR_MESSAGE}\n"),
+            stderr: format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(locale, "journal.cli.streams.supervisor", &[])
+            ),
             exit_code: 1,
         },
         Err(CliError::InvalidDay { message }) => CliRun {
             stdout: String::new(),
-            stderr: format!("solstone journal think: {message}\n"),
+            stderr: format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.error",
+                    [("message", &(message))]
+                )
+            ),
             exit_code: 1,
         },
     }
@@ -472,7 +507,14 @@ pub fn hosted_command_day(raw_args: &[String], today: Date) -> Result<String, St
 pub fn hosted_inspection(journal: &Path, raw_args: &[String]) -> Option<CliRun> {
     match args::parse(raw_args).ok()? {
         args::ParseOutcome::Help => Some(CliRun {
-            stdout: THINK_USAGE.to_owned(),
+            stdout: format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    solstone_core_cli_copy::ENGLISH,
+                    "journal.cli.think.help",
+                    &[]
+                )
+            ),
             stderr: String::new(),
             exit_code: 0,
         }),
@@ -480,7 +522,10 @@ pub fn hosted_inspection(journal: &Path, raw_args: &[String]) -> Option<CliRun> 
             let today = jiff::Timestamp::now()
                 .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
                 .date();
-            Some(format_cli_run(updated_run(journal, today, &parsed)))
+            Some(format_cli_run(
+                solstone_core_cli_copy::ENGLISH,
+                updated_run(journal, today, &parsed),
+            ))
         }
         _ => None,
     }
@@ -489,10 +534,23 @@ fn updated_run(journal: &Path, today: Date, parsed: &args::ThinkArgs) -> Result<
     let offenders = args::updated_offenders(parsed);
     if !offenders.is_empty() {
         return Err(CliError::Usage {
-            message: format!("{UPDATED_INCOMPATIBLE}{}", offenders.join(", ")),
+            message: solstone_core_cli_copy::display_for(
+                parsed
+                    .terminal_locale
+                    .unwrap_or(solstone_core_cli_copy::ENGLISH),
+                "journal.cli.think.updated.conflict",
+                [("options", &(offenders.join(", ")))],
+            ),
         });
     }
-    let days = day::updated(journal, today).map_err(|message| CliError::InvalidDay { message })?;
+    let days = day::updated(
+        parsed
+            .terminal_locale
+            .unwrap_or(solstone_core_cli_copy::ENGLISH),
+        journal,
+        today,
+    )
+    .map_err(|message| CliError::InvalidDay { message })?;
     Ok(CliRun {
         stdout: days.join("\n") + if days.is_empty() { "" } else { "\n" },
         stderr: String::new(),
@@ -509,7 +567,14 @@ pub fn run_hosted_command(
         let parsed = match args::parse(raw_args).map_err(|message| CliError::Usage { message })? {
             args::ParseOutcome::Help => {
                 return Ok(CliRun {
-                    stdout: THINK_USAGE.to_owned(),
+                    stdout: format!(
+                        "{}\n",
+                        solstone_core_cli_copy::render_for(
+                            solstone_core_cli_copy::ENGLISH,
+                            "journal.cli.think.help",
+                            &[]
+                        )
+                    ),
                     stderr: String::new(),
                     exit_code: 0,
                 });
@@ -533,19 +598,31 @@ pub fn run_hosted_command(
             let offenders = args::sense_batch_offenders(&parsed);
             if !offenders.is_empty() {
                 return Err(CliError::Usage {
-                    message: format!("{}{}", args::SENSE_BATCH_INCOMPATIBLE, offenders.join(", ")),
+                    message: solstone_core_cli_copy::display_for(
+                        solstone_core_cli_copy::ENGLISH,
+                        "journal.cli.think.sense.conflict",
+                        [("options", &(offenders.join(", ")))],
+                    ),
                 });
             }
             let Some(day) = &parsed.day else {
                 return Err(CliError::Usage {
-                    message: "--sense-batch requires --day".into(),
+                    message: solstone_core_cli_copy::render_for(
+                        solstone_core_cli_copy::ENGLISH,
+                        "journal.cli.think.sense.day",
+                        &[],
+                    ),
                 });
             };
             let executor = context
                 .sense_executor
                 .clone()
                 .ok_or_else(|| CliError::InvalidDay {
-                    message: "hosted Sense executor is unavailable".into(),
+                    message: solstone_core_cli_copy::render_for(
+                        solstone_core_cli_copy::ENGLISH,
+                        "journal.cli.think.host.sense.missing",
+                        &[],
+                    ),
                 })?;
             let request = solstone_core_sense::batch::BatchRequest {
                 day: day.clone(),
@@ -615,7 +692,7 @@ pub fn run_hosted_command(
             sense_child_environment,
         )
     })();
-    format_cli_run(result)
+    format_cli_run(solstone_core_cli_copy::ENGLISH, result)
 }
 
 fn execute_parsed_command(
@@ -647,7 +724,7 @@ fn execute_parsed_command(
         }
         let (mut log, run) = open_run_log(parsed, &context.journal, context.now_ms, &context.day);
         let result = cadence::run(context, configs, &mut log, parsed.refresh);
-        return logged_mode_outcome(log, run, result);
+        return logged_run(log, run, result);
     }
 
     if let Some(id) = parsed.retry_unit.as_deref() {
@@ -662,7 +739,7 @@ fn execute_parsed_command(
                 .expect("validated retry cause"),
             sense_child_environment,
         );
-        return logged_mode_outcome(log, run, result);
+        return logged_run(log, run, result);
     }
     if let Some(activity_id) = parsed.activity.as_deref() {
         let (mut log, run) = open_run_log(parsed, &context.journal, context.now_ms, &context.day);
@@ -720,7 +797,13 @@ fn execute_parsed_command(
                 .into_iter()
                 .map(|entry| (entry.key, Some(entry.stream)))
                 .collect(),
-            Err(error) => return logged_mode_outcome(log, run, Err(error.to_string())),
+            Err(error) => {
+                return logged_run(
+                    log,
+                    run,
+                    Err(context.failure(|locale| error.render(locale))),
+                );
+            }
         };
         let skip_talents = parsed
             .skip_talents
@@ -752,7 +835,7 @@ fn execute_parsed_command(
         let (mut log, run) = open_run_log(parsed, &context.journal, context.now_ms, &context.day);
         if parsed.repair_segment {
             let result = repair::run(context, &mut log, parsed, timeout, sense_child_environment);
-            return logged_mode_outcome(log, run, result);
+            return logged_run(log, run, result);
         }
         let skip_talents = parsed
             .skip_talents
@@ -818,10 +901,11 @@ fn execute_parsed_command(
                     rebuild_context.rebuild = Some(std::sync::Arc::new(lease));
                 })
         } else {
-            solstone_core_system::work_intent::claim_from_scratch(
+            solstone_core_system::work_intent::claim_from_scratch_in(
                 &context.journal,
                 &context.day,
                 id,
+                context.locale(),
             )
             .map(|lease| _run_lease = Some(lease))
         };
@@ -866,16 +950,24 @@ fn execute_parsed_command(
             });
         }
         let success = outcome.as_ref().is_ok_and(|run| run.exit_code == 0);
-        if let Err(error) = solstone_core_system::work_intent::finish_from_scratch_checked(
+        if let Err(error) = solstone_core_system::work_intent::finish_from_scratch_checked_in(
             &context.journal,
             &context.day,
             id,
             success,
             &|| context.checkpoint(),
+            context.locale(),
         ) {
             return Ok(CliRun {
                 stdout: String::new(),
-                stderr: format!("could not record reprocess outcome: {error}\n"),
+                stderr: format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        context.locale(),
+                        "journal.cli.think.reprocess.record",
+                        [("error", &(error))]
+                    )
+                ),
                 exit_code: 1,
             });
         }
@@ -883,9 +975,21 @@ fn execute_parsed_command(
     outcome
 }
 
+#[cfg(test)]
 fn mode_outcome(result: dispatch::ModeResult) -> CliRun {
+    mode_outcome_in(solstone_core_cli_copy::ENGLISH, result)
+}
+
+fn mode_outcome_in(locale: &str, result: dispatch::ModeResult) -> CliRun {
     if result.failed == 0 {
-        let mut stderr = format!("solstone journal think: {} completed\n", result.success);
+        let mut stderr = format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.outcome.completed",
+                [("count", &(result.success))]
+            )
+        );
         for name in &result.success_names {
             stderr.push_str(name);
             stderr.push('\n');
@@ -896,9 +1000,16 @@ fn mode_outcome(result: dispatch::ModeResult) -> CliRun {
             exit_code: 0,
         };
     }
-    let mut stderr = format!("solstone journal think: {} failed\n", result.failed);
+    let mut stderr = format!(
+        "{}\n",
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.think.outcome.failed",
+            [("count", &(result.failed))]
+        )
+    );
     for name in &result.failed_names {
-        stderr.push_str(name);
+        stderr.push_str(name.display());
         stderr.push('\n');
     }
     CliRun {
@@ -909,10 +1020,19 @@ fn mode_outcome(result: dispatch::ModeResult) -> CliRun {
 }
 
 fn logged_mode_outcome(
-    mut log: run_log::RunLogWriter,
+    log: run_log::RunLogWriter,
     run: RunStarted,
     result: Result<dispatch::ModeResult, String>,
 ) -> Result<CliRun, CliError> {
+    logged_run(log, run, result.map_err(Into::into))
+}
+
+fn logged_run(
+    mut log: run_log::RunLogWriter,
+    run: RunStarted,
+    result: Result<dispatch::ModeResult, dispatch::RunFailure>,
+) -> Result<CliRun, CliError> {
+    let locale = run.locale;
     let (success, failed) = result
         .as_ref()
         .map_or((0, 1), |result| (result.success, result.failed));
@@ -928,29 +1048,41 @@ fn logged_mode_outcome(
         "duration_ms".to_owned(),
         serde_json::Value::from(duration_ms),
     );
-    let failures = match &result {
-        Ok(result) => result.failed_names.as_slice(),
-        Err(error) => std::slice::from_ref(error),
+    let failure_refs: Vec<&str> = match &result {
+        Ok(result) => result.failed_names.iter().map(AsRef::as_ref).collect(),
+        Err(error) => vec![error.as_ref()],
     };
     log.outcome(
         "run.complete",
         run.started_ms.saturating_add(duration_ms),
         fields,
-        failures,
+        &failure_refs,
     );
-    let log_error = log.finish().err();
+    let log_error = log.finish_in(locale).err();
     match (result, log_error) {
-        (Ok(result), None) => Ok(mode_outcome(result)),
+        (Ok(result), None) => Ok(mode_outcome_in(locale, result)),
         (Ok(result), Some(log_error)) => {
-            let mut run = mode_outcome(result);
+            let mut run = mode_outcome_in(locale, result);
             run.exit_code = 1;
-            run.stderr
-                .push_str(&format!("solstone journal think: {log_error}\n"));
+            run.stderr.push_str(&format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.error",
+                    [("message", &(log_error))]
+                )
+            ));
             Ok(run)
         }
-        (Err(message), None) => Err(CliError::InvalidDay { message }),
+        (Err(message), None) => Err(CliError::InvalidDay {
+            message: message.display().to_owned(),
+        }),
         (Err(message), Some(log_error)) => Err(CliError::InvalidDay {
-            message: format!("{message}; {log_error}"),
+            message: solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.error.with.log",
+                [("primary", &(message.display())), ("log", &(log_error))],
+            ),
         }),
     }
 }
@@ -958,6 +1090,7 @@ fn logged_mode_outcome(
 /// The `run.start` identity (`mode`, `day`, `ref`) an invocation's closing
 /// `run.complete` repeats, and when the run started.
 struct RunStarted {
+    locale: &'static str,
     fields: serde_json::Map<String, serde_json::Value>,
     started_ms: i64,
     started: std::time::Instant,
@@ -981,6 +1114,9 @@ fn open_run_log(
     fields.insert("day".to_owned(), serde_json::Value::String(day.to_owned()));
     fields.insert("ref".to_owned(), serde_json::Value::from(now_ms));
     let run = RunStarted {
+        locale: args
+            .terminal_locale
+            .unwrap_or(solstone_core_cli_copy::ENGLISH),
         fields: fields.clone(),
         started_ms: now_ms,
         started: std::time::Instant::now(),
@@ -996,11 +1132,10 @@ fn validate(
     endpoint: LocalEndpointResolution,
     bundled_slots: Option<u32>,
 ) -> Result<(), CliError> {
-    let usage = |message: &str| {
-        Err(CliError::Usage {
-            message: message.to_owned(),
-        })
-    };
+    let locale = args
+        .terminal_locale
+        .unwrap_or(solstone_core_cli_copy::ENGLISH);
+    let usage = |message| Err(CliError::Usage { message });
     if (args.retry_unit.is_some() || args.retry_cause.is_some())
         && (args.retry_unit.is_none()
             || args.retry_cause.is_none()
@@ -1025,9 +1160,11 @@ fn validate(
             || args.work_intent.is_some()
             || args.reactivate)
     {
-        return usage(
-            "--retry-unit requires --day and --retry-cause without another thinking mode",
-        );
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.retry.unit",
+            &[],
+        ));
     }
     if args.work_intent.is_some()
         && (!args.from_scratch
@@ -1046,7 +1183,11 @@ fn validate(
             || args.repair_segment
             || args.daily_only)
     {
-        return usage("--work-intent requires a from-scratch daily request");
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.work.intent",
+            &[],
+        ));
     }
     if args.repair_segment
         && (args.day.is_none()
@@ -1066,9 +1207,11 @@ fn validate(
             || args.sense_batch
             || args.daily_only)
     {
-        return usage(
-            "--repair-segment requires --day and --segment and cannot be combined with another thinking mode",
-        );
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.repair.segment",
+            &[],
+        ));
     }
     if args.daily_only
         && (args.day.is_none()
@@ -1088,39 +1231,77 @@ fn validate(
             || args.sense_batch
             || args.repair_segment)
     {
-        return usage(
-            "--daily-only requires --day and cannot be combined with another thinking mode",
-        );
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.daily.only",
+            &[],
+        ));
     }
     if args.reactivate && args.activity.is_none() {
-        return usage(REACTIVATE_REQUIRES_ACTIVITY);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.reactivate.requires.activity",
+            &[],
+        ));
     }
     if args.reactivate && args.refresh {
-        return usage(REACTIVATE_INCOMPATIBLE_REFRESH);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.reactivate.incompatible.refresh",
+            &[],
+        ));
     }
     if args.facet.is_some() && args.activity.is_none() {
-        return usage(FACET_REQUIRES_ACTIVITY);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.facet.requires.activity",
+            &[],
+        ));
     }
     if args.activity.is_some() && args.facet.is_none() {
-        return usage(ACTIVITY_REQUIRES_FACET);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.activity.requires.facet",
+            &[],
+        ));
     }
     if args.activity.is_some() && args.day.is_none() {
-        return usage(ACTIVITY_REQUIRES_DAY);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.activity.requires.day",
+            &[],
+        ));
     }
     if args.no_activity_prompts && args.activity.is_some() {
-        return usage(NO_ACTIVITY_PROMPTS_WITH_ACTIVITY);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.no.activity.prompts.with.activity",
+            &[],
+        ));
     }
     if args
         .segment_workers
         .is_some_and(|workers| !(1..=32).contains(&workers))
     {
-        return usage(SEGMENT_WORKERS_RANGE);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.segment.workers.range",
+            &[],
+        ));
     }
     if args.activity.is_some() && (args.segment.is_some() || args.segments || args.flush) {
-        return usage(ACTIVITY_INCOMPATIBLE);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.activity.incompatible",
+            &[],
+        ));
     }
     if args.flush && args.segment.is_none() {
-        return usage(FLUSH_REQUIRES_SEGMENT);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.flush.requires.segment",
+            &[],
+        ));
     }
     if args.settle
         && (args.segment.is_some()
@@ -1131,18 +1312,34 @@ fn validate(
             || args.weekly
             || args.cadence)
     {
-        return usage(SETTLE_INCOMPATIBLE);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.settle.incompatible",
+            &[],
+        ));
     }
     if args.flush && (args.segments || args.refresh) {
-        return usage(FLUSH_INCOMPATIBLE);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.flush.incompatible",
+            &[],
+        ));
     }
     if args.segments && (args.segment.is_some() || args.facet.is_some()) {
-        return usage(SEGMENTS_INCOMPATIBLE);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.segments.incompatible",
+            &[],
+        ));
     }
     if args.weekly
         && (args.segment.is_some() || args.segments || args.activity.is_some() || args.flush)
     {
-        return usage(WEEKLY_INCOMPATIBLE);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.weekly.incompatible",
+            &[],
+        ));
     }
     if args.cadence
         && (args.segment.is_some()
@@ -1151,7 +1348,11 @@ fn validate(
             || args.flush
             || args.weekly)
     {
-        return usage(CADENCE_INCOMPATIBLE);
+        return usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.validation.cadence.incompatible",
+            &[],
+        ));
     }
     if args.segments {
         let workers = args
@@ -1161,7 +1362,11 @@ fn validate(
                 workers::default_segment_workers(cpu_count, uses_local, endpoint, bundled_slots)
             });
         if args.jobs == 0 && workers > 1 {
-            return usage(MULTI_WORKER_UNLIMITED_JOBS);
+            return usage(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.think.validation.multi.worker.unlimited.jobs",
+                &[],
+            ));
         }
     }
     Ok(())
@@ -1452,6 +1657,7 @@ mod tests {
 
     fn test_run_started() -> RunStarted {
         RunStarted {
+            locale: solstone_core_cli_copy::ENGLISH,
             fields: Map::new(),
             started_ms: 1_785_000_000_000,
             started: std::time::Instant::now(),
@@ -1505,6 +1711,7 @@ mod tests {
             }
             assert!(line < lines.len(), "oracle block must state its exit");
             let stdout = stdout
+                .replace("Total: 1 agents\n", "Total: 1 agent\n")
                 .replace(
                     "Pre-phase:  journal sense",
                     "Pre-phase:  solstone journal sense",
@@ -1699,8 +1906,8 @@ mod tests {
             success: 1,
             failed: 2,
             failed_names: vec![
-                "daily_summary (send)".to_owned(),
-                "facts (gpu-unavailable)".to_owned(),
+                "daily_summary (send)".to_owned().into(),
+                "facts (gpu-unavailable)".to_owned().into(),
             ],
             applicable_units: BTreeSet::new(),
             success_names: vec!["schedule".to_owned()],
@@ -3298,6 +3505,7 @@ mod tests {
             Arc::new(move || event_counter.fetch_add(1, Ordering::SeqCst));
         let run_start_clock = Arc::clone(&start_clock);
         let result = run_cli_with_event_clock(
+            None,
             &["--cadence".to_owned()],
             journal.path(),
             |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
@@ -3393,7 +3601,8 @@ mod tests {
     fn cadence_missing_file_loads_empty_state() {
         let journal = tempdir().unwrap();
         assert_eq!(
-            cadence_state::CadenceState::load(journal.path()).timestamp("missing"),
+            cadence_state::CadenceState::load(solstone_core_cli_copy::ENGLISH, journal.path())
+                .timestamp("missing"),
             None
         );
     }
@@ -3408,7 +3617,8 @@ mod tests {
             r#"{"fired": 1, "unknown": "keep", "nested": {"a": 1}}"#,
         )
         .unwrap();
-        let mut state = cadence_state::CadenceState::load(journal.path());
+        let mut state =
+            cadence_state::CadenceState::load(solstone_core_cli_copy::ENGLISH, journal.path());
         state.set_timestamp("fired", 9);
         state.save(journal.path()).unwrap();
         let saved: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
@@ -3420,13 +3630,15 @@ mod tests {
     #[test]
     fn cadence_call_site_updates_only_clean_fires_and_keeps_prior_timestamp_on_failure() {
         let journal = tempdir().unwrap();
-        let mut state = cadence_state::CadenceState::load(journal.path());
+        let mut state =
+            cadence_state::CadenceState::load(solstone_core_cli_copy::ENGLISH, journal.path());
         state.set_timestamp("failed", 11);
         state.set_timestamp("other", 12);
         assert!(!cadence::record_clean_fire(&mut state, "failed", 20, false));
         assert!(cadence::record_clean_fire(&mut state, "fired", 20, true));
         state.save(journal.path()).unwrap();
-        let loaded = cadence_state::CadenceState::load(journal.path());
+        let loaded =
+            cadence_state::CadenceState::load(solstone_core_cli_copy::ENGLISH, journal.path());
         assert_eq!(loaded.timestamp("failed"), Some(11));
         assert_eq!(loaded.timestamp("fired"), Some(20));
         assert_eq!(loaded.timestamp("other"), Some(12));
@@ -3676,15 +3888,18 @@ mod tests {
     fn criterion_sixteen_cadence_round_trips_and_save_replaces_previous_state() {
         let journal = tempdir().unwrap();
         fs::create_dir_all(journal.path().join("health")).unwrap();
-        let mut initial = cadence_state::CadenceState::load(journal.path());
+        let mut initial =
+            cadence_state::CadenceState::load(solstone_core_cli_copy::ENGLISH, journal.path());
         initial.set_timestamp("one", 12);
         initial.set_timestamp("two", 24);
         initial.save(journal.path()).unwrap();
-        let mut replacement = cadence_state::CadenceState::load(journal.path());
+        let mut replacement =
+            cadence_state::CadenceState::load(solstone_core_cli_copy::ENGLISH, journal.path());
         assert_eq!(replacement.timestamp("one"), Some(12));
         replacement.set_timestamp("two", 36);
         replacement.save(journal.path()).unwrap();
-        let loaded = cadence_state::CadenceState::load(journal.path());
+        let loaded =
+            cadence_state::CadenceState::load(solstone_core_cli_copy::ENGLISH, journal.path());
         assert_eq!(loaded.timestamp("one"), Some(12));
         assert_eq!(loaded.timestamp("two"), Some(36));
     }
@@ -3698,7 +3913,8 @@ mod tests {
         let corrupt = b"{ definitely not json }";
         fs::write(&path, corrupt).unwrap();
         assert_eq!(
-            cadence_state::CadenceState::load(journal.path()).timestamp("x"),
+            cadence_state::CadenceState::load(solstone_core_cli_copy::ENGLISH, journal.path())
+                .timestamp("x"),
             None
         );
         assert_eq!(warnings().len(), 1);
@@ -3707,7 +3923,8 @@ mod tests {
         LOGS.get().unwrap().lock().unwrap().clear();
         fs::write(&path, "[]").unwrap();
         assert_eq!(
-            cadence_state::CadenceState::load(journal.path()).timestamp("x"),
+            cadence_state::CadenceState::load(solstone_core_cli_copy::ENGLISH, journal.path())
+                .timestamp("x"),
             None
         );
         assert!(warnings().is_empty());
@@ -7169,7 +7386,7 @@ mod tests {
 
         assert_eq!(
             (result.success, result.failed, result.failed_names.clone()),
-            (1, 0, Vec::<String>::new()),
+            (1, 0, Vec::<dispatch::RunFailure>::new()),
             "a use whose own log ended in finish must not be failed by the wait"
         );
         let records = oplog_records(journal.path(), &context.day, "segment");
@@ -7324,7 +7541,7 @@ mod tests {
                     case.timed_out,
                     case.failed_names
                         .iter()
-                        .map(|name| (*name).to_owned())
+                        .map(|name| (*name).to_owned().into())
                         .collect(),
                     case.success_names
                         .iter()

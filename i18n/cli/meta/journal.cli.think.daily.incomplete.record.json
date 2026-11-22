@@ -1,0 +1,36 @@
+{
+  "description": "Journal command-line text for daily incomplete record.",
+  "context": "Journal command-line text for daily incomplete record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "units",
+      "type": "string"
+    },
+    {
+      "name": "blockers",
+      "type": "string"
+    },
+    {
+      "name": "details",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cd5b0d4a13d8b936d57daa5f39a3a6e0f9197c828fbf49ac681954beb298c006",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "phase",
+      "kind": "accepted-input",
+      "value": "daily_incomplete"
+    }
+  ]
+}

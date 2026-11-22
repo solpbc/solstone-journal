@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for validation no activity prompts with activity.",
+  "context": "Journal command-line text for validation no activity prompts with activity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c8ca5ea151df82b3c8c9db39256fd353d3b9c7a860682536f5e3de2313f36fe7",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "no_activity_prompts_flag",
+      "kind": "flag",
+      "value": "--no-activity-prompts"
+    },
+    {
+      "name": "activity_flag",
+      "kind": "flag",
+      "value": "--activity"
+    }
+  ]
+}

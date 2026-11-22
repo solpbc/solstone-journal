@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for health marker malformed.",
+  "context": "Journal command-line text for health marker malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "762a61513c7056e7c6275c90a12983898603bbf9c885943c9eb7afe31d4326d0",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -248,11 +248,17 @@ pub fn pass(
         }
     }
     log::info!(
-        "name answers: {} changed, {} activities judged again, {} changed, {} waiting",
-        outcome.answers,
-        outcome.judged,
-        outcome.changed,
-        outcome.waiting
+        "{}",
+        solstone_core_cli_copy::display_for(
+            solstone_core_cli_copy::ENGLISH,
+            "journal.cli.think.log.name.answers",
+            [
+                ("answers", &(outcome.answers)),
+                ("judged", &(outcome.judged)),
+                ("changed", &(outcome.changed)),
+                ("waiting", &(outcome.waiting))
+            ]
+        )
     );
     Ok(outcome)
 }

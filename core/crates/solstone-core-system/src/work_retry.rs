@@ -48,6 +48,54 @@ pub enum Unit {
     },
 }
 
+/// A retry-record read failure retained until the caller chooses its display language.
+#[derive(Debug)]
+pub enum ReadFailure {
+    Io(String),
+    Message(&'static str),
+    InvalidId,
+    Unrecognized,
+    InvalidDay,
+    InvalidUnit,
+}
+
+impl From<String> for ReadFailure {
+    fn from(value: String) -> Self {
+        Self::Io(value)
+    }
+}
+impl From<ReadFailure> for String {
+    fn from(value: ReadFailure) -> Self {
+        value.render(ENGLISH)
+    }
+}
+impl ReadFailure {
+    pub fn render(&self, locale: &str) -> String {
+        match self {
+            Self::Io(detail) => detail.clone(),
+            Self::Message(id) => solstone_core_cli_copy::render_for(locale, id, &[]),
+            Self::InvalidDay => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.reprocess.retry.invalid.day",
+                &[],
+            ),
+            Self::InvalidUnit => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.reprocess.retry.invalid.unit",
+                &[],
+            ),
+            Self::InvalidId => text(
+                locale,
+                "journal.window.health.action.retry.identity.invalid",
+            ),
+            Self::Unrecognized => text(
+                locale,
+                "journal.window.health.action.retry.record.unrecognized",
+            ),
+        }
+    }
+}
+
 impl Unit {
     pub fn day(&self) -> &str {
         match self {
@@ -62,12 +110,11 @@ impl Unit {
         self.validate_in(ENGLISH)
     }
     fn validate_in(&self, locale: &str) -> Result<(), String> {
+        self.validate_typed().map_err(|e| e.render(locale))
+    }
+    fn validate_typed(&self) -> Result<(), ReadFailure> {
         if self.day().len() != 8 || solstone_core_time::parse_day(self.day()).is_none() {
-            return Err(solstone_core_cli_copy::render_for(
-                locale,
-                "journal.cli.reprocess.retry.invalid.day",
-                &[],
-            ));
+            return Err(ReadFailure::InvalidDay);
         }
         let component = |value: &str| {
             !value.is_empty() && value != "." && value != ".." && !value.contains(['/', '\\', '\0'])
@@ -105,16 +152,15 @@ impl Unit {
         if valid {
             Ok(())
         } else {
-            Err(solstone_core_cli_copy::render_for(
-                locale,
-                "journal.cli.reprocess.retry.invalid.unit",
-                &[],
-            ))
+            Err(ReadFailure::InvalidUnit)
         }
     }
 
     pub fn id(&self) -> Result<String, String> {
-        self.validate()?;
+        self.id_typed().map_err(|e| e.render(ENGLISH))
+    }
+    fn id_typed(&self) -> Result<String, ReadFailure> {
+        self.validate_typed()?;
         let mut identity = self.clone();
         if let Self::Daily { day, talent, facet } = &mut identity
             && talent == "daily_schedule"
@@ -124,7 +170,9 @@ impl Unit {
         }
         Ok(format!(
             "{:x}",
-            Sha256::digest(serde_json::to_vec(&identity).map_err(|e| e.to_string())?)
+            Sha256::digest(
+                serde_json::to_vec(&identity).map_err(|e| ReadFailure::Io(e.to_string()))?
+            )
         ))
     }
 
@@ -305,12 +353,9 @@ fn directory(journal: &Path) -> PathBuf {
     journal.join("health/work-retry")
 }
 
-fn path(journal: &Path, id: &str, locale: &str) -> Result<PathBuf, String> {
+fn path(journal: &Path, id: &str) -> Result<PathBuf, ReadFailure> {
     if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(text(
-            locale,
-            "journal.window.health.action.retry.identity.invalid",
-        ));
+        return Err(ReadFailure::InvalidId);
     }
     Ok(directory(journal).join(format!("{id}.json")))
 }
@@ -320,14 +365,22 @@ pub fn read(journal: &Path, id: &str) -> Result<Option<Record>, String> {
 }
 
 pub fn read_in(journal: &Path, id: &str, locale: &str) -> Result<Option<Record>, String> {
-    let bytes = match std::fs::read(path(journal, id, locale)?) {
+    read_typed(journal, id).map_err(|error| match error {
+        ReadFailure::InvalidDay | ReadFailure::InvalidUnit => error.render(ENGLISH),
+        _ => error.render(locale),
+    })
+}
+
+pub fn read_typed(journal: &Path, id: &str) -> Result<Option<Record>, ReadFailure> {
+    let bytes = match std::fs::read(path(journal, id)?) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e.to_string()),
+        Err(e) => return Err(ReadFailure::Io(e.to_string())),
     };
-    let record: Record = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    let record: Record =
+        serde_json::from_slice(&bytes).map_err(|e| ReadFailure::Io(e.to_string()))?;
     if record.version != 1
-        || record.unit.id()? != id
+        || record.unit.id_typed()? != id
         || record.input.is_empty()
         || record.reason.is_empty()
         || record
@@ -339,10 +392,7 @@ pub fn read_in(journal: &Path, id: &str, locale: &str) -> Result<Option<Record>,
             !record.consumed.contains(&attempt.cause) || attempt.input != record.input
         })
     {
-        return Err(text(
-            locale,
-            "journal.window.health.action.retry.record.unrecognized",
-        ));
+        return Err(ReadFailure::Unrecognized);
     }
     Ok(Some(record))
 }
@@ -373,7 +423,7 @@ fn update_checked_in<T>(
     locale: &str,
 ) -> Result<T, String> {
     let id = unit.id()?;
-    let path = path(journal, &id, locale)?;
+    let path = path(journal, &id).map_err(|e| e.render(locale))?;
     std::fs::create_dir_all(directory(journal)).map_err(|e| e.to_string())?;
     let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
     checkpoint()?;
@@ -495,7 +545,9 @@ pub fn execution_claim(
     journal: &Path,
     unit: &Unit,
 ) -> Result<solstone_core_journal_io::FileLock, String> {
-    let path = path(journal, &unit.id()?, ENGLISH)?.with_extension("execution");
+    let path = path(journal, &unit.id()?)
+        .map_err(|e| e.render(ENGLISH))?
+        .with_extension("execution");
     std::fs::create_dir_all(directory(journal)).map_err(|e| e.to_string())?;
     hold_lock(
         path,
@@ -754,7 +806,7 @@ mod tests {
                     .permission("input-a", &[])
                     .unwrap();
                 consume(root.path(), &unit, &grant, "schema_invalid", "input-a", &[]).unwrap();
-                let path = path(root.path(), &id, ENGLISH).unwrap();
+                let path = path(root.path(), &id).unwrap();
                 let before = std::fs::read(&path).unwrap();
                 let held = hold_lock(&path, LockOptions::default()).unwrap();
                 let cancelled = Arc::new(AtomicBool::new(false));
@@ -975,11 +1027,11 @@ mod tests {
         let record = read(root.path(), &id).unwrap().unwrap();
         assert!(record.permission("input-a", FIXES).is_none());
         assert!(record.permission("input-b", FIXES).is_some());
-        std::fs::write(path(root.path(), &id, ENGLISH).unwrap(), "{").unwrap();
+        std::fs::write(path(root.path(), &id).unwrap(), "{").unwrap();
         assert!(observe_held(root.path(), &unit, "schema_invalid", "input-c").is_err());
         assert!(request(root.path(), &unit).is_err());
         assert_eq!(
-            std::fs::read_to_string(path(root.path(), &id, ENGLISH).unwrap()).unwrap(),
+            std::fs::read_to_string(path(root.path(), &id).unwrap()).unwrap(),
             "{"
         );
     }

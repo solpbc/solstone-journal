@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::ops::Range;
+
 use serde_json::Value;
+use solstone_core_cli_copy::{ENGLISH, Value as Argument, render_for};
+
+use crate::stored_markdown::Document;
 
 use super::{JsonObject, ProducedChunks, clean_value, display_value, json_truthy, recorded_chunk};
 
@@ -130,91 +135,186 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     }
 }
 
-fn render_sense(sense_obj: &JsonObject) -> String {
-    let mut lines = Vec::new();
-    let content_type = clean_value(sense_obj.get("content_type"));
-    if !content_type.is_empty() {
-        lines.push(format!("## Sense: {content_type}"));
-    }
-
-    let activity_summary = clean_value(sense_obj.get("activity_summary"));
-    if !activity_summary.is_empty() {
-        if !lines.is_empty() {
-            lines.push(String::new());
-        }
-        lines.push(activity_summary);
-    }
-
-    let entity_lines = entities(sense_obj);
-    if !entity_lines.is_empty() {
-        if !lines.is_empty() {
-            lines.push(String::new());
-        }
-        lines.push("### Entities".to_string());
-        lines.extend(entity_lines);
-    }
-
-    let facet_lines = facets(sense_obj);
-    if !facet_lines.is_empty() {
-        if !lines.is_empty() {
-            lines.push(String::new());
-        }
-        lines.push("### Facets".to_string());
-        lines.extend(facet_lines);
-    }
-
-    if json_truthy(sense_obj.get("meeting_detected"))
-        && let Some(Value::Array(speakers)) = sense_obj.get("speakers")
-    {
-        let speaker_names = speakers
-            .iter()
-            .map(|speaker| display_value(speaker).trim().to_string())
-            .filter(|speaker| !speaker.is_empty())
-            .collect::<Vec<_>>();
-        if !speaker_names.is_empty() {
-            if !lines.is_empty() {
-                lines.push(String::new());
-            }
-            lines.push(format!("**Speakers:** {}", speaker_names.join(", ")));
-        }
-    }
-
-    lines.join("\n").trim().to_string()
+fn render_sense(record: &JsonObject) -> String {
+    sense_text(record, ENGLISH).body.into_text()
 }
 
-fn entities(sense_obj: &JsonObject) -> Vec<String> {
-    let mut lines = Vec::new();
-    let Some(Value::Array(entities)) = sense_obj.get("entities") else {
-        return lines;
-    };
+struct Edit {
+    range: Range<usize>,
+    translated: Option<String>,
+    hide_in_excerpt: bool,
+}
 
-    for entity in entities {
-        let Value::Object(entity) = entity else {
-            continue;
-        };
+#[derive(Default)]
+struct SenseText {
+    body: Document,
+    edits: Vec<Edit>,
+}
+
+impl SenseText {
+    fn section(&mut self) {
+        if !self.body.is_empty() {
+            self.body.push_str("\n\n");
+        }
+    }
+
+    fn field(&mut self, english: &str, translated: Option<String>, hide_in_excerpt: bool) {
+        let start = self.body.len();
+        self.body.push_str(english);
+        if translated.is_some() || hide_in_excerpt {
+            self.edits.push(Edit {
+                range: start..self.body.len(),
+                translated,
+                hide_in_excerpt,
+            });
+        }
+    }
+
+    fn message(&mut self, locale: &str, id: &str, args: &[(&str, Argument<'_>)], hide: bool) {
+        self.field(
+            &render_for(ENGLISH, id, args),
+            (locale != ENGLISH).then(|| render_for(locale, id, args)),
+            hide,
+        );
+    }
+
+    // The index's English cutoff selects the same owner characters in both views.
+    fn display(&self, retained: usize, tail: &str, excerpt: bool) -> String {
+        let mut shown = String::new();
+        let mut end = 0;
+        for edit in self.edits.iter().take_while(|e| e.range.start < retained) {
+            shown.push_str(&self.body[end..edit.range.start]);
+            end = edit.range.end.min(retained);
+            if excerpt && edit.hide_in_excerpt {
+                continue;
+            }
+            let kept = &self.body[edit.range.start..end];
+            if end == edit.range.end {
+                shown.push_str(edit.translated.as_deref().unwrap_or(kept));
+            } else {
+                shown.push_str(kept);
+            }
+        }
+        shown.push_str(&self.body[end..retained]);
+        shown.push_str(tail);
+        shown.trim().to_owned()
+    }
+}
+
+pub fn sense_presentations(bytes: &[u8], locale: &str) -> Option<(String, String, Option<String>)> {
+    let record: JsonObject = serde_json::from_slice(bytes).ok()?;
+    let mut text = sense_text(&record, locale);
+    if text.body.is_empty() {
+        return None;
+    }
+    let retained = super::append_partial_input_notice(&mut text.body, &record);
+    let tail = text.body.render_from(retained, locale);
+    let full = text.display(retained, &tail, false);
+    let owner = text
+        .edits
+        .iter()
+        .any(|e| e.hide_in_excerpt && e.range.start < retained)
+        .then(|| text.display(retained, &tail, true))
+        .filter(|s| !s.is_empty());
+    Some((text.body.into_text(), full, owner))
+}
+
+fn sense_text(record: &JsonObject, locale: &str) -> SenseText {
+    let mut text = SenseText::default();
+    let kind = clean_value(record.get("content_type"));
+    if !kind.is_empty() {
+        text.message(
+            locale,
+            "journal.cli.think.markdown.sense.record",
+            &[("kind", Argument::String(&kind))],
+            true,
+        );
+    }
+
+    let summary = clean_value(record.get("activity_summary"));
+    if !summary.is_empty() {
+        text.section();
+        text.body.push_str(&summary);
+    }
+
+    let mut first_entity = true;
+    for entity in record
+        .get("entities")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_object)
+    {
         let name = clean_value(entity.get("name"));
         if name.is_empty() {
             continue;
         }
-        let etype = clean_value(entity.get("type"));
-        let context_text = clean_value(entity.get("context"));
-        let level = clean_value(entity.get("level"));
-        let prefix = if etype.is_empty() {
-            String::new()
+        if first_entity {
+            text.section();
+            text.message(
+                locale,
+                "journal.cli.think.markdown.sense.entities",
+                &[],
+                true,
+            );
+            text.field("\n", None, true);
+            first_entity = false;
         } else {
-            format!("{etype}: ")
-        };
-        let mut line = format!("- {prefix}{name}");
-        if !context_text.is_empty() {
-            line.push_str(&format!(" — {context_text}"));
+            text.body.push_str("\n");
+        }
+        let kind = clean_value(entity.get("type"));
+        let context = clean_value(entity.get("context"));
+        let level = clean_value(entity.get("level"));
+        text.body.push_str("- ");
+        if !kind.is_empty() {
+            text.field(&format!("{kind}: "), None, entity_kind(&kind));
+        }
+        text.body.push_str(&name);
+        if !context.is_empty() {
+            text.body.push_str(" — ");
+            text.body.push_str(&context);
         }
         if !level.is_empty() {
-            line.push_str(&format!(" ({level})"));
+            text.field(
+                &format!(" ({level})"),
+                None,
+                entity_kind(&kind) && matches!(level.as_str(), "high" | "medium" | "low"),
+            );
         }
-        lines.push(line);
     }
 
-    lines
+    let facet_lines = facets(record);
+    if !facet_lines.is_empty() {
+        text.section();
+        text.message(
+            locale,
+            "journal.cli.think.markdown.sense.facets",
+            &[],
+            false,
+        );
+        text.body.push_str("\n");
+        text.body.push_str(&facet_lines.join("\n"));
+    }
+    if json_truthy(record.get("meeting_detected"))
+        && let Some(Value::Array(speakers)) = record.get("speakers")
+    {
+        let names = speakers
+            .iter()
+            .map(|s| display_value(s).trim().to_owned())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if !names.is_empty() {
+            text.section();
+            text.message(
+                locale,
+                "journal.cli.think.markdown.sense.speakers",
+                &[("names", Argument::String(&names))],
+                false,
+            );
+        }
+    }
+    text
 }
 
 fn facets(sense_obj: &JsonObject) -> Vec<String> {
@@ -320,6 +420,69 @@ mod tests {
         assert!(rendered.contains("### Facets"));
         assert!(rendered.contains("- work: launch planning (high)"));
         assert!(rendered.contains("**Speakers:** Alice Smith, Bob Chen"));
+    }
+
+    #[test]
+    fn partial_sense_keeps_exactly_the_english_summary_in_each_size_tier() {
+        let locale = "en-XA";
+        let heading = "## Sense: meeting\n\n";
+        let notice = crate::stored_markdown::Message::PartialInput;
+        for limit in [16 * 1024, 64 * 1024] {
+            let mut summary = "界".repeat((limit - heading.len()) / "界".len());
+            summary.push_str(&"x".repeat(limit - heading.len() - summary.len()));
+            let record = serde_json::json!({
+                "content_type": "meeting", "activity_summary": summary, "partial_input": {}
+            });
+            let indexed = render_one(&record.to_string()).chunks.remove(0).content;
+            let (source, full, owner) =
+                sense_presentations(&serde_json::to_vec(&record).unwrap(), locale).unwrap();
+            assert_eq!(source, indexed);
+            let visible = source
+                .strip_prefix(heading)
+                .unwrap()
+                .strip_suffix(&format!("\n\n{}", notice.render(ENGLISH)))
+                .unwrap();
+            assert!(summary.starts_with(visible) && visible.len() < summary.len());
+            let display_note = notice.render(locale);
+            assert_eq!(owner.unwrap(), format!("{visible}\n\n{display_note}"));
+            let display_heading = render_for(
+                locale,
+                "journal.cli.think.markdown.sense.record",
+                &[("kind", Argument::String("meeting"))],
+            );
+            assert_eq!(
+                full,
+                format!("{display_heading}\n\n{visible}\n\n{display_note}")
+            );
+        }
+    }
+
+    #[test]
+    fn structured_owner_excerpt_only_removes_system_fields() {
+        let summary = "### Entities\n- Person: quoted (high)";
+        let record = serde_json::json!({"activity_summary": summary, "entities": []});
+        let (_, full, owner) =
+            sense_presentations(&serde_json::to_vec(&record).unwrap(), "en-XA").unwrap();
+        assert_eq!(full, summary);
+        assert!(owner.is_none());
+
+        let record = serde_json::json!({"content_type":"meeting", "activity_summary":summary,
+            "entities":[{"type":"Person","name":"Person: Ada (high)","context":"","level":"high"},
+                        {"type":"Tool","name":"Notes","context":"### Entities","level":"unknown"}],
+            "meeting_detected":true, "speakers":[2,"Speaker 2"]});
+        let (_, _, owner) =
+            sense_presentations(&serde_json::to_vec(&record).unwrap(), "en-XA").unwrap();
+        let speakers = render_for(
+            "en-XA",
+            "journal.cli.think.markdown.sense.speakers",
+            &[("names", Argument::String("2, Speaker 2"))],
+        );
+        assert_eq!(
+            owner.unwrap(),
+            format!(
+                "{summary}\n\n- Person: Ada (high)\n- Notes — ### Entities (unknown)\n\n{speakers}"
+            )
+        );
     }
 
     #[test]

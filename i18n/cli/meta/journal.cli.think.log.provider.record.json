@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for log provider record.",
+  "context": "Journal command-line text for log provider record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "left",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6bb64578f25bd583db3092565bb1d183a27e85e6d86baa2ab9e66b147e3020e8",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

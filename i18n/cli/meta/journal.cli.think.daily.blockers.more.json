@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for daily blockers more.",
+  "context": "Journal command-line text for daily blockers more.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "names",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e20b63bb2ba33c09913ebeab5788e3a5d952b33e405e426cd0de99b23b9a63cb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for log held release.",
+  "context": "Journal command-line text for log held release.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "341fe43d65acf1c834e4e7dfcf63c2bf45efc5f8ca81b3936c68d625e91c3a54",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for validation segment workers range.",
+  "context": "Journal command-line text for validation segment workers range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5de4313de55b26a2aa11611e23d6251409d0763a28f5aad02fd7f791583d16b2",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "segment_workers_flag",
+      "kind": "flag",
+      "value": "--segment-workers"
+    }
+  ]
+}

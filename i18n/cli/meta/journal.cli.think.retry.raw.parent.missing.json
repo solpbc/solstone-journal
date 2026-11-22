@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry raw parent missing.",
+  "context": "Journal command-line text for retry raw parent missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b4365976318e070899b03a08216b58ef186232c915a90edc0e8d9c3eb09409de",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

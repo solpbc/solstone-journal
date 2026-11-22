@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for sense worker survivors.",
+  "context": "Journal command-line text for sense worker survivors.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "52174562f59b30697500b54bc21863f96c6505c792bb4cb3b6dd23ad282481c0",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

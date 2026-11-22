@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sense complete.",
+  "context": "Journal command-line text for sense complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a7917a4ab9c8d29d309bad689ec81d9621d6e953103f1fa542f89c90e7577f5a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
