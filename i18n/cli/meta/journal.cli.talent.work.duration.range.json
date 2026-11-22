@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for work duration range.",
+  "context": "Journal command-line text for work duration range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d055b3532dc0c879d4d2cb37c7eaf7fa58bc24d416d2925f49219b02e07f721",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for config frontmatter.",
+  "context": "Journal command-line text for config frontmatter.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "14e1beaa7bdef31cd00943bdae000ed4a555f6bb32117ff09c152fe207230c7f",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

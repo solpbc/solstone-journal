@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for passages unavailable.",
+  "context": "Journal command-line text for passages unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "88ef926361cc6685333b80011f87d97de4b799e6b704837b02f0aa3ac8eb5b1a",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

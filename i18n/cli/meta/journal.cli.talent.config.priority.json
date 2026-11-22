@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for config priority.",
+  "context": "Journal command-line text for config priority.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "697836e67db337b3078a3877e4d93d475018c31c0faf0e1c07591a1692cabbb9",
+  "max_length": 169,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "priority",
+      "kind": "accepted-input",
+      "value": "'priority'"
+    },
+    {
+      "name": "schedule",
+      "kind": "accepted-input",
+      "value": "'schedule'"
+    }
+  ]
+}

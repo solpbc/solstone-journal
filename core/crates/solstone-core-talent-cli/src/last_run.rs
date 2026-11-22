@@ -100,23 +100,36 @@ fn format_run(bytes: &[u8], now: SystemTime) -> Option<(String, bool)> {
     let first = serde_json::from_str::<Value>(first_line).ok()?;
     let first_ts = first.get("ts")?.as_f64()?;
     let now_seconds = now.duration_since(UNIX_EPOCH).ok()?.as_secs_f64();
-    let mut age = format_age(now_seconds - first_ts / 1000.0);
+    let age = compact_age(now_seconds - first_ts / 1000.0);
     let last_line = lines.next_back();
-    let mut failed = false;
-    if let Some(last_line) = last_line {
+    let (display, failed) = if let Some(last_line) = last_line {
         let last = serde_json::from_str::<Value>(last_line).ok()?;
         let last_ts = last.get("ts")?.as_f64()?;
-        failed = last.get("event").and_then(Value::as_str) == Some("error");
-        age.push_str(&format!(
-            " ({})",
-            format_duration(last_ts / 1000.0 - first_ts / 1000.0)
-        ));
-    }
-    Some((age, failed))
+        let duration = format_duration(last_ts / 1000.0 - first_ts / 1000.0);
+        let failed = last.get("event").and_then(Value::as_str) == Some("error");
+        (
+            solstone_core_cli_copy::display_for(
+                solstone_core_cli_copy::cli_locale(),
+                "journal.cli.talent.last.age.duration",
+                [("age", &(age)), ("duration", &(duration))],
+            ),
+            failed,
+        )
+    } else {
+        (
+            solstone_core_cli_copy::display_for(
+                solstone_core_cli_copy::cli_locale(),
+                "journal.cli.talent.last.age",
+                [("age", &(age))],
+            ),
+            false,
+        )
+    };
+    Some((display, failed))
 }
 
-fn format_age(seconds: f64) -> String {
-    let value = if seconds < 60.0 {
+fn compact_age(seconds: f64) -> String {
+    if seconds < 60.0 {
         format!("{}s", seconds as i64)
     } else if seconds < 3600.0 {
         format!("{}m", (seconds / 60.0) as i64)
@@ -124,8 +137,7 @@ fn format_age(seconds: f64) -> String {
         format!("{}h", (seconds / 3600.0) as i64)
     } else {
         format!("{}d", (seconds / 86400.0) as i64)
-    };
-    format!("{value} ago")
+    }
 }
 
 fn format_duration(seconds: f64) -> String {

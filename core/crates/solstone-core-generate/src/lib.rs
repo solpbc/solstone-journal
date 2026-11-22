@@ -15,8 +15,8 @@ pub use cancellation::Cancellation;
 
 pub use client::{
     CapturedStream, ChildStatus, ClientError, InvalidResponseFailure, OneShotClient,
-    ProcessFailure, ProtocolFailure, STDERR_LIMIT, STDOUT_LIMIT, UnexpectedChildFailure,
-    sibling_executable,
+    ProcessFailure, ProtocolFailure, STDERR_LIMIT, STDOUT_LIMIT, SiblingError,
+    UnexpectedChildFailure, sibling_executable,
 };
 pub use codec::{
     SessionCorrelation, SessionError, decode_one_shot_request, decode_one_shot_response,

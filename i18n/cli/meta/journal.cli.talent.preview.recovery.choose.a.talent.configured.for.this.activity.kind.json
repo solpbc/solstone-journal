@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for preview recovery choose a talent configured for this activity kind.",
+  "context": "Journal command-line text for preview recovery choose a talent configured for this activity kind.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1eba1443187fe6733a978f09606b8f043934bd4acdd26051de888a551be6c39e",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

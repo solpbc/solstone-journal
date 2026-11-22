@@ -1,0 +1,31 @@
+{
+  "description": "Journal command-line text for floor mismatch.",
+  "context": "Journal command-line text for floor mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entries",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "sources",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4828933609984e243f3869ca070ca70d6d6b058002c2aa7e975c850e0784b409",
+  "max_length": 451,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "entries",
+    "type": "cardinal"
+  }
+}

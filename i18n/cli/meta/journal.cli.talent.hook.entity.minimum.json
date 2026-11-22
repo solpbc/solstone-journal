@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for hook entity minimum.",
+  "context": "Journal command-line text for hook entity minimum.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "maximum",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0b1c5a05cf77f9ad7999eb98b3a9057f8c27078cd23d400975fb7ac2e283d048",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for startup package.",
+  "context": "Journal command-line text for startup package.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "577188c4845472813129a2d00de53225cdebfc73782ea0f0208476194f1e7aa8",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "package",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

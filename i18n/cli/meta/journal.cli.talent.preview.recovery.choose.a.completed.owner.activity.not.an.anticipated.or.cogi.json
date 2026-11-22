@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for preview recovery choose a completed owner activity not an anticipated or cogi.",
+  "context": "Journal command-line text for preview recovery choose a completed owner activity not an anticipated or cogi.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b0fcc2ece504616d3dc5088b5927b92e180d7b3c178d9f59358cacc1efcb6d47",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

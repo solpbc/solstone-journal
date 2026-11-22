@@ -7295,11 +7295,13 @@ dependencies = [
  "jsonschema",
  "regex",
  "serde_json",
+ "solstone-core-cli-copy",
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-talent-config",
+ "solstone-core-window-catalog",
 ]
 
 [[package]]
@@ -7307,6 +7309,7 @@ name = "solstone-core-talent-config"
 version = "2.0.87"
 dependencies = [
  "serde_json",
+ "solstone-core-cli-copy",
 ]
 
 [[package]]
@@ -7323,6 +7326,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-cli-copy",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",

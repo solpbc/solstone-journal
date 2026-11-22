@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for log event updated.",
+  "context": "Journal command-line text for log event updated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "44662040c9c7bc22c0c1eec5595dc205ddc3238ccbf56e37f2ec05aae8ff2c77",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

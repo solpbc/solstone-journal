@@ -1,0 +1,48 @@
+{
+  "description": "Journal command-line text for error root choice.",
+  "context": "Journal command-line text for error root choice.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6139244ab664eb3f0a55176e28d85efd1aedbcdc6bc9c97ff5c5834404ad9c9a",
+  "max_length": 167,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal talent [-h] [-v] [-d] {list,show,passages,logs,log} ..."
+    },
+    {
+      "name": "choices",
+      "kind": "accepted-input",
+      "value": "'list', 'show', 'passages', 'logs', 'log'"
+    },
+    {
+      "name": "program",
+      "kind": "command",
+      "value": "solstone journal talent"
+    },
+    {
+      "name": "subcommand",
+      "kind": "accepted-input",
+      "value": "subcommand"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

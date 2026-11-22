@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for preview recovery pass day yyyymmdd with activity.",
+  "context": "Journal command-line text for preview recovery pass day yyyymmdd with activity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b906980102ced38bea416823f5a401121c29e33a1f2ad3df018a3055d054c6a8",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "yyyymmdd",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    },
+    {
+      "name": "day_flag",
+      "kind": "flag",
+      "value": "--day"
+    },
+    {
+      "name": "activity_flag",
+      "kind": "flag",
+      "value": "--activity"
+    }
+  ]
+}

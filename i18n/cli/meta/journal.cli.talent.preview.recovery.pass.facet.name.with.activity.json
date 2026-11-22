@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for preview recovery pass facet name with activity.",
+  "context": "Journal command-line text for preview recovery pass facet name with activity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ee93325b101e2a3bc1a370af5ef7f0c292f12357fa81649d6135fce029dcea0d",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "name",
+      "kind": "accepted-input",
+      "value": "NAME"
+    },
+    {
+      "name": "facet_flag",
+      "kind": "flag",
+      "value": "--facet"
+    },
+    {
+      "name": "activity_flag",
+      "kind": "flag",
+      "value": "--activity"
+    }
+  ]
+}

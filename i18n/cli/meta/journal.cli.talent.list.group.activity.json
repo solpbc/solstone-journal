@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list group activity.",
+  "context": "Journal command-line text for list group activity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5944d095a7fdc226ac5e003947c9e57c81b994d164827262012c11cf4eb752f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -63,10 +63,18 @@ pub fn gate(
 ) -> Result<GateDecision, StageError> {
     let day = configured_day(prepared);
     if day.is_empty() {
-        return Ok(GateDecision::Skip("missing day".to_owned()));
+        return Ok(GateDecision::Skip(solstone_core_cli_copy::render_for(
+            prepared.skip_locale(),
+            "journal.cli.talent.hook.day.missing",
+            &[],
+        )));
     }
     if solstone_core_time::parse_day(&day).is_none() {
-        return Ok(GateDecision::Skip(format!("invalid day: {day}")));
+        return Ok(GateDecision::Skip(solstone_core_cli_copy::display_for(
+            prepared.skip_locale(),
+            "journal.cli.reprocess.input.day",
+            [("day", &(day))],
+        )));
     }
     Ok(GateDecision::Proceed)
 }
@@ -80,9 +88,14 @@ pub fn build(
         solstone_core_time::parse_day(&day).ok_or_else(|| RuntimeOutcome::Skipped {
             stage: "morning_briefing".into(),
             talent: prepared.name.clone(),
-            reason: format!("invalid day: {day}"),
+            reason: solstone_core_cli_copy::display_for(
+                prepared.skip_locale(),
+                "journal.cli.reprocess.input.day",
+                [("day", &(day))],
+            ),
         })?;
-    let state = build_briefing_state(
+    let state = build_briefing_state_in(
+        prepared.skip_locale(),
         &day,
         analysis_day,
         prepared
@@ -95,7 +108,11 @@ pub fn build(
     .map_err(|error| RuntimeOutcome::Skipped {
         stage: "morning_briefing".into(),
         talent: prepared.name.clone(),
-        reason: format!("morning briefing pre-hook failed: {error}"),
+        reason: solstone_core_cli_copy::display_for(
+            prepared.skip_locale(),
+            "journal.cli.talent.hook.briefing.failed",
+            [("error", &(error))],
+        ),
     })?;
     Ok(PrePostState::MorningBriefing(state))
 }
@@ -202,7 +219,11 @@ pub fn apply_prompt_override(
             "prompt_override",
             "morning_briefing",
             prepared,
-            "prepared request does not fit the floor input budget",
+            solstone_core_cli_copy::render_for(
+                prepared.stage_locale(),
+                "journal.cli.talent.hook.budget",
+                &[],
+            ),
         ));
     }
 
@@ -247,17 +268,30 @@ fn build_packet(
     model: &str,
     context: &ExecutionContext,
 ) -> Result<Map<String, Value>, String> {
-    let state = build_briefing_state(day, analysis_day, model, context)?;
+    let state = build_briefing_state_in(
+        solstone_core_cli_copy::ENGLISH,
+        day,
+        analysis_day,
+        model,
+        context,
+    )?;
     Ok(state.values)
 }
 
-fn build_briefing_state(
+fn build_briefing_state_in(
+    locale: &str,
     day: &str,
     analysis_day: Date,
     model: &str,
     context: &ExecutionContext,
 ) -> Result<MorningBriefingPreState, String> {
-    let dates = BriefingDates::for_analysis(analysis_day).ok_or("briefing date overflow")?;
+    let dates = BriefingDates::for_analysis(analysis_day).ok_or_else(|| {
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.talent.hook.briefing.date.overflow",
+            &[],
+        )
+    })?;
     let presentation_day = solstone_core_time::day_key(dates.presentation);
     let mut gaps = Vec::new();
     let home = HomeContext::new(&context.journal, Timestamp::now());

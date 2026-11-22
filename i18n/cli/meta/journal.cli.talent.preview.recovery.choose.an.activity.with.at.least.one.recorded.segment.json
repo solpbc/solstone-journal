@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for preview recovery choose an activity with at least one recorded segment.",
+  "context": "Journal command-line text for preview recovery choose an activity with at least one recorded segment.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cc7906b44f5064e4e61e521c031b0ff16b0da469c8386d353fe2173f2ecc785d",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

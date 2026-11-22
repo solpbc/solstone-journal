@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for passages generate.",
+  "context": "Journal command-line text for passages generate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e61621bf533c5fe73309b7a3db06bdf25d47e16891c8a7b6570e2fa8a3e38e4",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

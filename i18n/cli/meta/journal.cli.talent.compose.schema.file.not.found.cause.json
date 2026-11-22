@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for compose schema file not found cause.",
+  "context": "Journal command-line text for compose schema file not found cause.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8c3e7da98820b0109fd85036ff76eb3f9da569aca4d52b8f4e57ad3496c56d5a",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

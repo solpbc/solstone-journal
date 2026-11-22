@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for hook budget.",
+  "context": "Journal command-line text for hook budget.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4f75fb3c75ff7a3afc97123bd3d3b7001c107b6cb87564dc0974b8c60006545b",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for logs total.",
+  "context": "Journal command-line text for logs total.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "17c0c89ed3ebe7d802ceb6642709d96073053aa14accea7172c32dcf0b694c80",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

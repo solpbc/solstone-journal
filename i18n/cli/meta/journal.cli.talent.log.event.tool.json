@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for log event tool.",
+  "context": "Journal command-line text for log event tool.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "609622f148f341ba6c568e88c94f876a68098930b1422548e19db292326460c8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

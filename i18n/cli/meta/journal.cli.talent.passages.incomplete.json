@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for passages incomplete.",
+  "context": "Journal command-line text for passages incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "265efd6652d4a029218a2d07367720040db5f77d4d1e589b09e2eeaceae5597a",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

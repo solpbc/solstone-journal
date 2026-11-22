@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for prepare request field field is retired.",
+  "context": "Journal command-line text for prepare request field field is retired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "907da04da494f5b3f6502e76ed01627d01ed47471193b2d5f716b421d2a9dbdf",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

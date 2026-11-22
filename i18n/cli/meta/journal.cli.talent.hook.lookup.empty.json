@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for hook lookup empty.",
+  "context": "Journal command-line text for hook lookup empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "candidate",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6825110fbe264ec5e1736ade949db23e6e245a67ef9f987baea61d9aed6a4c83",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for hook day missing.",
+  "context": "Journal command-line text for hook day missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42de14d573c726ef296a4c6e0e438198855d2b9da4b79ccf45b8e96a400c4776",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

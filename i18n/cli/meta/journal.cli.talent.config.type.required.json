@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for config type required.",
+  "context": "Journal command-line text for config type required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7ee6d84e5e1938b17dffc8497ebcea97179f3d42844961d446dfbfe3383cc561",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "type",
+      "kind": "accepted-input",
+      "value": "'type'"
+    }
+  ]
+}

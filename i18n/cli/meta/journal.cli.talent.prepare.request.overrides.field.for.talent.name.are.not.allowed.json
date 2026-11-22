@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for prepare request overrides field for talent name are not allowed.",
+  "context": "Journal command-line text for prepare request overrides field for talent name are not allowed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "declared",
+      "type": "string"
+    },
+    {
+      "name": "requested",
+      "type": "string"
+    },
+    {
+      "name": "field",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "855be1e7b45445d233c68905e8d5ea3b2784dc0c9576e149ebfbbfdef8453897",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

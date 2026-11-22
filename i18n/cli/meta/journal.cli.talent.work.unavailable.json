@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for work unavailable.",
+  "context": "Journal command-line text for work unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bf5177f357c3389a701bdb7669d1e251cae38dbb3bee379a40192019e6621cf0",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

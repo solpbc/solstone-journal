@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for startup executable.",
+  "context": "Journal command-line text for startup executable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0e332040450a2e58b46f75db8a17075e5ab23dd55d7697879a6697cdc9b20b12",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for show hook.",
+  "context": "Journal command-line text for show hook.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d4fc376c503f68e1f85b2705c0fbaba478ca7508d28cbd79584975d8ea4ceb5e",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

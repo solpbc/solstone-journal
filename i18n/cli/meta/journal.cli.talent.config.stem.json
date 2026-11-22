@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for config stem.",
+  "context": "Journal command-line text for config stem.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "20ece1bd67597375fef02e695f845cd6a1cbd4350b42f68bbd009083dcc4be66",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

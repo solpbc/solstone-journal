@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for prepare invalid config segment or span requires day.",
+  "context": "Journal command-line text for prepare invalid config segment or span requires day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b021e056da4de5a227c565eac32626ed73989637406c06c4ce9c8f7492d69221",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "segment",
+      "kind": "accepted-input",
+      "value": "'segment'"
+    },
+    {
+      "name": "span",
+      "kind": "accepted-input",
+      "value": "'span'"
+    },
+    {
+      "name": "day",
+      "kind": "accepted-input",
+      "value": "'day'"
+    }
+  ]
+}

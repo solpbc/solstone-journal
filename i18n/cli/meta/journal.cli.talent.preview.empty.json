@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for preview empty.",
+  "context": "Journal command-line text for preview empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fe36ef9c6ba404b69f8d08dc1a372eb2c78325a04b5b488e8a626a2b5a216b95",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

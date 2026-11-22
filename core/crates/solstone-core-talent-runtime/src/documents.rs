@@ -17,7 +17,8 @@ pub fn gate(
 ) -> Result<GateDecision, StageError> {
     // Callable hosts do not project request.env into the host environment.
     // The prepared request carries the same bound stream in every host.
-    Ok(gate_stream(
+    Ok(gate_stream_in(
+        prepared.skip_locale(),
         prepared
             .config
             .get("stream")
@@ -25,11 +26,15 @@ pub fn gate(
     ))
 }
 
-fn gate_stream(stream: Option<&str>) -> GateDecision {
+fn gate_stream_in(locale: &str, stream: Option<&str>) -> GateDecision {
     if stream == Some("import.document") {
         GateDecision::Proceed
     } else {
-        GateDecision::Skip("not a document import segment".to_owned())
+        GateDecision::Skip(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.talent.hook.document.stream",
+            &[],
+        ))
     }
 }
 

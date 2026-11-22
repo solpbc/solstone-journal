@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for hook identity object.",
+  "context": "Journal command-line text for hook identity object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "20d0f4e0fe04b62fae1d96e6e8ed3972ea043b578fa17b9dbd95f5941601f43c",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

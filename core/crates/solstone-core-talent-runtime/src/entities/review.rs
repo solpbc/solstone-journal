@@ -799,7 +799,11 @@ pub fn build(
             "build",
             "entities:entities_review",
             prepared,
-            "review inputs changed during preparation",
+            solstone_core_cli_copy::render_for(
+                prepared.stage_locale(),
+                "journal.cli.talent.hook.review.changed",
+                &[],
+            ),
         )));
     }
     let mut inputs = inputs;

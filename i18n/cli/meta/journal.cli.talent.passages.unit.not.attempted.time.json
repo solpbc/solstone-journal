@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for passages unit not attempted time.",
+  "context": "Journal command-line text for passages unit not attempted time.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    },
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "525a614e63b112674f9768a3a371a55f2172ec6d3174a9e960790979a131d8c5",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

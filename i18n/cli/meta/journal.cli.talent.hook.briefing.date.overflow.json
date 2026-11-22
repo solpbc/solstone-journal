@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for hook briefing date overflow.",
+  "context": "Journal command-line text for hook briefing date overflow.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "375a7813dbdc6a48ded72e1d29179c94a22900cf1615229bd783f9f86c9f17bd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

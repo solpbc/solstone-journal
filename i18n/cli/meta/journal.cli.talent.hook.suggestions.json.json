@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for hook suggestions json.",
+  "context": "Journal command-line text for hook suggestions json.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eaf79a52530abf120fb15b27691109ead137a9a81f9b0a5cfe9ee2f84ca2cea2",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

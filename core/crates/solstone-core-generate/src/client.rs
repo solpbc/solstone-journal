@@ -288,24 +288,42 @@ fn sibling_file_name() -> String {
     format!("solstone-core{}", env::consts::EXE_SUFFIX)
 }
 
-fn resolve_sibling_executable(current: &Path) -> Result<PathBuf, ClientError> {
-    let parent = current
-        .parent()
-        .ok_or_else(|| ClientError::Resolve("current executable has no parent".to_owned()))?;
-    let path = parent.join(sibling_file_name());
-    if Path::new(&path).is_file() {
-        Ok(path)
-    } else {
-        Err(ClientError::Resolve(format!(
-            "missing sibling executable {}",
-            path.display()
-        )))
+#[derive(Debug)]
+pub enum SiblingError {
+    Current(io::Error),
+    NoParent,
+    Missing(PathBuf),
+}
+
+impl fmt::Display for SiblingError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Current(error) => error.fmt(formatter),
+            Self::NoParent => formatter.write_str("current executable has no parent"),
+            Self::Missing(path) => {
+                write!(formatter, "missing sibling executable {}", path.display())
+            }
+        }
     }
 }
 
-pub fn sibling_executable() -> Result<PathBuf, ClientError> {
-    let current = env::current_exe().map_err(|error| ClientError::Resolve(error.to_string()))?;
+fn resolve_sibling_executable(current: &Path) -> Result<PathBuf, SiblingError> {
+    let parent = current.parent().ok_or(SiblingError::NoParent)?;
+    let path = parent.join(sibling_file_name());
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err(SiblingError::Missing(path))
+    }
+}
+
+fn resolve_current_sibling() -> Result<PathBuf, SiblingError> {
+    let current = env::current_exe().map_err(SiblingError::Current)?;
     resolve_sibling_executable(&current)
+}
+
+pub fn sibling_executable() -> Result<PathBuf, ClientError> {
+    resolve_current_sibling().map_err(|error| ClientError::Resolve(error.to_string()))
 }
 
 fn collect_bounded<R: Read>(mut reader: R, limit: usize) -> StreamCollection {
@@ -662,7 +680,11 @@ impl OneShotClient {
     }
 
     pub fn sibling() -> Result<Self, ClientError> {
-        sibling_executable()
+        Self::resolve_sibling().map_err(|error| ClientError::Resolve(error.to_string()))
+    }
+
+    pub fn resolve_sibling() -> Result<Self, SiblingError> {
+        resolve_current_sibling()
             .map(|path| Self::at_path(path).with_prefix_arguments([OsString::from("generate")]))
     }
 
@@ -879,7 +901,7 @@ mod tests {
 
         assert!(matches!(
             resolve_sibling_executable(&current),
-            Err(ClientError::Resolve(_))
+            Err(SiblingError::Missing(_))
         ));
     }
 
@@ -911,7 +933,7 @@ mod tests {
         if std::env::consts::EXE_SUFFIX.is_empty() {
             assert!(resolved.is_ok());
         } else {
-            assert!(matches!(resolved, Err(ClientError::Resolve(_))));
+            assert!(matches!(resolved, Err(SiblingError::Missing(_))));
         }
     }
 

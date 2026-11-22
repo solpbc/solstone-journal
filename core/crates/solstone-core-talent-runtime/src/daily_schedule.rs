@@ -32,9 +32,10 @@ pub fn build(
         .and_then(Value::as_i64)
         .unwrap_or(7);
     let anchor = solstone_core_indexer::daily_evidence::journal_today(&context.journal);
-    let activity_spans = generate_span_summary(&context.journal, days, anchor).map_err(|e| {
-        RuntimeOutcome::StageFailed(stage_error("build", "daily_schedule", prepared, e))
-    })?;
+    let activity_spans =
+        generate_span_summary_in(prepared.stage_locale(), &context.journal, days, anchor).map_err(
+            |e| RuntimeOutcome::StageFailed(stage_error("build", "daily_schedule", prepared, e)),
+        )?;
     Ok(PrePostState::DailySchedule(DailySchedulePreState {
         activity_spans,
     }))
@@ -135,13 +136,27 @@ pub(crate) fn apply_result_cancellable(
     .map_err(|error| error.to_string())?
 }
 
+#[cfg(test)]
 fn generate_span_summary(
     journal: &std::path::Path,
     days: i64,
     end_date: Date,
 ) -> Result<String, String> {
+    generate_span_summary_in(solstone_core_cli_copy::ENGLISH, journal, days, end_date)
+}
+
+fn generate_span_summary_in(
+    locale: &str,
+    journal: &std::path::Path,
+    days: i64,
+    end_date: Date,
+) -> Result<String, String> {
     if !(1..=366).contains(&days) {
-        return Err("daily schedule lookback outside 1..=366".to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.talent.hook.daily.lookback",
+            &[],
+        ));
     }
     let start_date = end_date
         .checked_sub(jiff::Span::new().days(days - 1))

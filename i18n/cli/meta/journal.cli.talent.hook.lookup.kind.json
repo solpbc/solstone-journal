@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for hook lookup kind.",
+  "context": "Journal command-line text for hook lookup kind.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6d27e25604d76e751eae9346e757e4cc37e3a715ded886727ca8c67680465145",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

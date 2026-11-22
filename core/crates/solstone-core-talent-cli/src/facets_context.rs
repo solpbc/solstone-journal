@@ -23,18 +23,23 @@ const MAX_ENTITY_LINE_CHARS: usize = 240;
 /// that is not muted. A journal keeps at least one (`ensure_default_facet` at
 /// supervisor boot, and the store refuses to mute or delete the last one), so an
 /// empty list here means a damaged inventory, not a new journal.
-pub(crate) fn enabled_facet_names(journal_root: &Path) -> Result<Vec<String>, String> {
-    let inventory = observe_declared_facet_inventory(journal_root).map_err(|e| e.to_string())?;
+pub(crate) fn enabled_facet_names(
+    locale: &str,
+    journal_root: &Path,
+) -> Result<Vec<String>, String> {
+    let inventory = observe_declared_facet_inventory(journal_root)
+        .map_err(|error| crate::preview::facet_detail(locale, &error))?;
     Ok(inventory.enabled)
 }
 
 /// Replace the `__RUNTIME_FACETS__` placeholder in a talent schema with the owner's
 /// real facet names.
 pub(crate) fn substitute_runtime_facets(
+    locale: &str,
     schema: &mut Value,
     journal_root: &Path,
 ) -> Result<(), String> {
-    let names = enabled_facet_names(journal_root)?;
+    let names = enabled_facet_names(locale, journal_root)?;
     substitute_runtime_facets_with(schema, &names);
     Ok(())
 }
@@ -84,20 +89,35 @@ pub(crate) fn substitute_runtime_facets_with(schema: &mut Value, names: &[String
 /// The token the shipped talent schemas carry in their `facet` enums.
 pub(crate) const RUNTIME_FACETS_PLACEHOLDER: &str = "__RUNTIME_FACETS__";
 
+#[cfg(test)]
 pub(crate) fn resolve_facets(
     journal_root: &Path,
     focused_facet: Option<&str>,
 ) -> Result<String, String> {
+    resolve_facets_in(solstone_core_cli_copy::ENGLISH, journal_root, focused_facet)
+}
+
+pub(crate) fn resolve_facets_in(
+    locale: &str,
+    journal_root: &Path,
+    focused_facet: Option<&str>,
+) -> Result<String, String> {
     match focused_facet {
-        Some(facet) => focused_summary(journal_root, facet),
-        None => all_summaries(journal_root),
+        Some(facet) => focused_summary(locale, journal_root, facet),
+        None => all_summaries(locale, journal_root),
     }
 }
 
-fn focused_summary(journal_root: &Path, facet: &str) -> Result<String, String> {
+fn focused_summary(locale: &str, journal_root: &Path, facet: &str) -> Result<String, String> {
     let declaration = observe_facet_declaration(journal_root, facet)
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("facet '{facet}' not found"))?;
+        .map_err(|error| crate::preview::facet_detail(locale, &error))?
+        .ok_or_else(|| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.compose.facet.missing",
+                [("facet", &(facet))],
+            )
+        })?;
     let mut output = format!("## Facet Focus\n# {}", declaration.title);
     if !declaration.color.is_empty() {
         output.push_str(&format!("\n![Color]({})\n", declaration.color));
@@ -118,9 +138,9 @@ fn focused_summary(journal_root: &Path, facet: &str) -> Result<String, String> {
     Ok(output)
 }
 
-fn all_summaries(journal_root: &Path) -> Result<String, String> {
-    let inventory =
-        observe_declared_facet_inventory(journal_root).map_err(|error| error.to_string())?;
+fn all_summaries(locale: &str, journal_root: &Path) -> Result<String, String> {
+    let inventory = observe_declared_facet_inventory(journal_root)
+        .map_err(|error| crate::preview::facet_detail(locale, &error))?;
 
     let mut enabled = Vec::new();
     for facet in &inventory.enabled {

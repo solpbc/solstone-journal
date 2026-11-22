@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for hook entity size.",
+  "context": "Journal command-line text for hook entity size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "maximum",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "db4cdb41ff82a70c486b75ba59c68753c708e86081686a2857792e2388f07904",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

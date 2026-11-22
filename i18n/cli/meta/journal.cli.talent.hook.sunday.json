@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for hook sunday.",
+  "context": "Journal command-line text for hook sunday.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "97c7d180982e4b1aa329ff7ecef797d7fc2d1f4fee766018c9c53c5a16618afe",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

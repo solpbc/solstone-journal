@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for preview recovery restore a readable segment directory then retry detail.",
+  "context": "Journal command-line text for preview recovery restore a readable segment directory then retry detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "279ddff89aaf1a368dc7f72697185e2721a4eb8af114180a9bec5205b9bdefcc",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

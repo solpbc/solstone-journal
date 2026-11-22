@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for path component.",
+  "context": "Journal command-line text for path component.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1cab7b56344a5cdf56ee765f6dbd472d8cda97b4bb4be1050b2df93155a0b915",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

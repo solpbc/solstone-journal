@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for hook briefing failed.",
+  "context": "Journal command-line text for hook briefing failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7dda26bb1cc08f39adda50568884f0b1b70ebd0a0c0f2a8aa0a6a7308db9eb22",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

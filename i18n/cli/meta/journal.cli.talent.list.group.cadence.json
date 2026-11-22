@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list group cadence.",
+  "context": "Journal command-line text for list group cadence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "87fc2c6e47b6cda732f41258d5c2a6c5fdcb095650f57d0d08a6d00ebdb37d20",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

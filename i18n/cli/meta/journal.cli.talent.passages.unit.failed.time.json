@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for passages unit failed time.",
+  "context": "Journal command-line text for passages unit failed time.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    },
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "time",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ee5b50bd320d9a98d7551a73f258f5044571240e0722a5bf4170dac3f6a396ff",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

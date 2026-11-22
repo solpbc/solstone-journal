@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for compose schema directory is unavailable.",
+  "context": "Journal command-line text for compose schema directory is unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4b7cd669d0961c914d91cf0e98e65835e5dbe142a3e0c045c6f53b3090edaa92",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

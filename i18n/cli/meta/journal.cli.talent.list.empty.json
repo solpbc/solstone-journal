@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list empty.",
+  "context": "Journal command-line text for list empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3389abeba189d5665aa9039f2d0074a628e7af6822d719c5760484dea913d1f",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

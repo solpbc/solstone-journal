@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for path unreadable.",
+  "context": "Journal command-line text for path unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f97cbcaf479e38477fe98f94e55828a148fd3999a2e7999fd7ec00cacc7b0c7a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

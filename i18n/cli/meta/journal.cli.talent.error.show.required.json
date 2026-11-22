@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for error show required.",
+  "context": "Journal command-line text for error show required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "arguments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "85567e345b5522398fa98fd10a059668ffb7f89de06ddd35d1ac93b7a91352c9",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]"
+    },
+    {
+      "name": "program",
+      "kind": "command",
+      "value": "solstone journal talent show"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

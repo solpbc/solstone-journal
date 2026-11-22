@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for path absolute.",
+  "context": "Journal command-line text for path absolute.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "560f5d047e3aab5c7ecbc57cf52095393d2a251b32a69aa4cf230eb85ed56605",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

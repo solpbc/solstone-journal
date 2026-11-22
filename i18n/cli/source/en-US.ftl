@@ -2401,8 +2401,6 @@ journal.cli.brain.check.key.rejected = the provider rejected this key, and your 
 
 
 
-
-
 journal.cli.brain.help.refresh = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_12 }show this help message and exit{ $line_break }{ $indent_2 }{ $json_option }{ $gap_16 }Emit { $json_format } instead of plain output{ $line_break }{ $syntax_continuation_7 }{ $line_break }{ $syntax_continuation_8 }{ $line_break }{ $syntax_continuation_9 }
 
 journal.cli.brain.help.renew = usage: { $syntax }{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_2 }show this help message and exit
@@ -2668,3 +2666,423 @@ journal.cli.brain.hold.superseded = credential validation was superseded
 journal.cli.brain.hold.unavailable = credential hold state is unavailable
 
 journal.cli.brain.check.fingerprint.options = expected active fingerprint and expected absence are mutually exclusive
+
+journal.cli.talent.error.list.choice = usage: { $syntax }{ $line_break }{ $program }: error: argument { $flag }: invalid choice: '{ $value }' (choose from { $choices })
+
+journal.cli.talent.error.list.unknown = usage: { $syntax }{ $line_break }{ $program }: error: unrecognized arguments: { $arguments }
+
+journal.cli.talent.error.list.value = usage: { $syntax }{ $line_break }{ $program }: error: argument { $flag }: expected one argument
+
+journal.cli.talent.error.log.required = usage: { $syntax }{ $line_break }{ $program }: error: the following arguments are required: { $arguments }
+
+journal.cli.talent.error.logs.count = usage: { $syntax }{ $line_break }{ $program }: error: argument { $count_options }: invalid int value: '{ $value }'
+
+journal.cli.talent.error.logs.value = usage: { $syntax }{ $line_break }{ $program }: error: argument { $flag }: expected one argument
+
+journal.cli.talent.error.passages.required = usage: { $syntax }{ $line_break }{ $program }: error: the following arguments are required: { $arguments }
+
+journal.cli.talent.error.passages.unknown = usage: { $syntax }{ $line_break }{ $program }: error: unrecognized arguments: { $arguments }
+
+journal.cli.talent.error.passages.value = usage: { $syntax }{ $line_break }{ $program }: error: argument { $flag }: expected one argument
+
+journal.cli.talent.error.root.choice = usage: { $syntax }{ $line_break }{ $program }: error: argument { $subcommand }: invalid choice: '{ $value }' (choose from { $choices })
+
+journal.cli.talent.error.root.encoding = usage: { $syntax }{ $line_break }{ $program }: error: arguments are not valid { $encoding }
+
+journal.cli.talent.error.root.unknown = usage: { $syntax }{ $line_break }{ $program }: error: unrecognized arguments: { $arguments }
+
+journal.cli.talent.error.show.required = usage: { $syntax }{ $line_break }{ $program }: error: the following arguments are required: { $arguments }
+
+journal.cli.talent.error.show.unknown = usage: { $syntax }{ $line_break }{ $program }: error: unrecognized arguments: { $arguments }
+
+journal.cli.talent.error.show.value = usage: { $syntax }{ $line_break }{ $program }: error: argument { $flag }: expected one argument
+
+journal.cli.talent.help.list = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_12 }show this help message and exit{ $line_break }{ $syntax_continuation_5 }{ $line_break }                        Filter by schedule type{ $line_break }{ $syntax_continuation_7 }{ $line_break }                        Filter by origin{ $line_break }{ $indent_2 }{ $disabled_option }{ $gap_12 }Include disabled prompts{ $line_break }{ $indent_2 }{ $json_option }{ $gap_16 }Output as { $jsonl }
+
+journal.cli.talent.help.log = usage: { $syntax }{ $line_break }{ $line_break }positional arguments:{ $line_break }  { $id }Agent ID{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_2 }show this help message and exit{ $line_break }{ $indent_2 }{ $json_option }{ $gap_6 }Output raw { $jsonl }{ $line_break }{ $indent_2 }{ $full_option }{ $gap_6 }Expand event details
+
+journal.cli.talent.help.logs = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $line_break }positional arguments:{ $line_break }  { $agent }Filter to a specific agent{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_12 }show this help message and exit{ $line_break }{ $syntax_continuation_9 }{ $line_break }                        Number of runs to show (default: 20){ $line_break }{ $indent_2 }{ $day_option }{ $gap_8 }Show only runs from this day{ $line_break }{ $indent_2 }{ $daily_option }{ $gap_15 }Show only daily-scheduled runs{ $line_break }{ $indent_2 }{ $errors_option }{ $gap_14 }Show only error runs{ $line_break }{ $indent_2 }{ $summary_option }{ $gap_13 }Show grouped summary
+
+journal.cli.talent.help.passages = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }                           name{ $line_break }{ $line_break }Copy exact passages from the source an activity talent reads.{ $line_break }A short source unit is kept whole without a model call; a longer one{ $line_break }takes one completion to choose what to copy. No passages are written to{ $line_break }the journal; a completion's usage is logged like any other.{ $line_break }{ $line_break }positional arguments:{ $line_break }  { $name }Activity talent name, such as work or conversation{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_12 }show this help message and exit{ $line_break }{ $indent_2 }{ $json_option }{ $gap_16 }Output the passage document as { $json }{ $line_break }{ $indent_2 }{ $day_option }{ $gap_8 }Day of the activity{ $line_break }{ $indent_2 }{ $facet_option }{ $gap_10 }Facet of the activity{ $line_break }{ $indent_2 }{ $activity_option }{ $gap_9 }Activity ID
+
+journal.cli.talent.help.root = usage: { $syntax }{ $line_break }{ $line_break }Inspect talent prompt configurations{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $syntax_continuation_5 }{ $line_break }    { $list }List prompts grouped by schedule{ $line_break }    { $show }Show details for a specific prompt{ $line_break }    { $passages }Copy source passages from an activity's source{ $line_break }    { $logs }Show recent talent run log{ $line_break }    { $log }Show events for an agent run{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_12 }show this help message and exit{ $line_break }{ $indent_2 }{ $verbose_option }{ $gap_9 }Enable verbose output{ $line_break }{ $indent_2 }{ $debug_option }{ $gap_11 }Enable debug logging
+
+journal.cli.talent.help.show = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }                           name{ $line_break }{ $line_break }positional arguments:{ $line_break }  { $name }Prompt name{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_12 }show this help message and exit{ $line_break }{ $indent_2 }{ $json_option }{ $gap_16 }Output as { $jsonl }{ $line_break }{ $indent_2 }{ $prompt_option }{ $gap_14 }Show full prompt context (dry-run mode){ $line_break }{ $indent_2 }{ $day_option }{ $gap_8 }Day for prompt context{ $line_break }{ $indent_2 }{ $segment_option }{ $gap_2 }Segment for segment-scheduled prompts{ $line_break }{ $indent_2 }{ $facet_option }{ $gap_10 }Facet for multi-facet prompts{ $line_break }{ $indent_2 }{ $activity_option }{ $gap_9 }Activity ID for activity-scheduled prompts{ $line_break }{ $indent_2 }{ $query_option }{ $gap_10 }Sample query for tool agents{ $line_break }{ $indent_2 }{ $full_option }{ $gap_16 }Show full content without truncation
+
+journal.cli.talent.startup.executable = talent failed: could not inspect current executable: { $error }
+
+journal.cli.talent.startup.package = talent failed: could not locate installed { $package } package
+
+journal.cli.talent.config.access.retired = Prompt '{ $talent }' sets retired { $access_tier }
+
+journal.cli.talent.config.activities = Activity-scheduled prompt '{ $talent }' must have a non-empty { $activities } list (activity types to match, or { $all_types } for all types).
+
+journal.cli.talent.config.budget.invalid = Prompt '{ $talent }' has invalid { $max_output_tokens } { $value }. Expected a positive integer measured against the bundled model.
+
+journal.cli.talent.config.budget.required = Prompt '{ $talent }' is missing required { $max_output_tokens }. Measure its largest output on the bundled model and declare 1.5 times that, rounded up to a multiple of 256.
+
+journal.cli.talent.config.budget.retired = Prompt '{ $talent }' declares retired { $thinking_budget }. Thinking is set only in Thinking, for the owner's own model.
+
+journal.cli.talent.config.cwd.retired = Prompt '{ $talent }' sets retired { $cwd }
+
+journal.cli.talent.config.frontmatter = failed to parse frontmatter from { $path }
+
+journal.cli.talent.config.output.required = Prompt '{ $talent }' has type={ $generate } but is missing required { $output } field.
+
+journal.cli.talent.config.priority = Scheduled prompt '{ $talent }' is missing required { $priority } field. All prompts with { $schedule } must declare an explicit priority.
+
+journal.cli.talent.config.read = failed to read { $path }: { $error }
+
+journal.cli.talent.config.stat = failed to stat { $path }: { $error }
+
+journal.cli.talent.config.stem = talent filename has no { $encoding } stem: { $path }
+
+journal.cli.talent.config.type.invalid = Prompt '{ $talent }' has invalid type { $value }. Expected { $generate }.
+
+journal.cli.talent.config.type.required = Prompt '{ $talent }' has output but is missing required { $type } field.
+
+journal.cli.talent.last.age = { $age } ago
+
+journal.cli.talent.last.age.duration = { $age } ago ({ $duration })
+
+journal.cli.talent.list.empty = No prompts found matching filters.
+
+journal.cli.talent.list.group.activity = activity:
+
+journal.cli.talent.list.group.cadence = cadence:
+
+journal.cli.talent.list.group.daily = daily:
+
+journal.cli.talent.list.group.segment = segment:
+
+journal.cli.talent.list.group.unscheduled = unscheduled:
+
+journal.cli.talent.list.group.weekly = weekly:
+
+journal.cli.talent.list.header.last = LAST RUN
+
+journal.cli.talent.list.header.name = NAME
+
+journal.cli.talent.list.header.tags = TAGS
+
+journal.cli.talent.list.header.title = TITLE
+
+journal.cli.talent.list.tag.disabled = disabled
+
+journal.cli.talent.list.tag.fail = FAIL
+
+journal.cli.talent.list.visible = { $count ->
+    [one] { $count } prompt ({ $hidden } disabled hidden, use { $disabled_flag })
+   *[other] { $count } prompts ({ $hidden } disabled hidden, use { $disabled_flag })
+    }
+
+journal.cli.talent.log.event.thinking = think
+
+journal.cli.talent.log.event.tool = tool
+
+journal.cli.talent.log.event.updated = updated
+
+journal.cli.talent.log.missing = Talent run not found: { $run }
+
+journal.cli.talent.log.tokens = { $result } [{ $input }in/{ $output }out]
+
+journal.cli.talent.logs.date = { $month } { $day_time }
+
+journal.cli.talent.logs.day.invalid = Invalid { $day_flag } format: { $day }. Expected { $day_format }.
+
+journal.cli.talent.logs.total = total
+
+journal.cli.talent.passages.incomplete = some source units have no passages; see each unit's outcome
+
+journal.cli.talent.passages.unavailable = source passages unavailable: { $detail }
+
+journal.cli.talent.preview.all.lines = (use { $full_flag } to see all { $count } lines)
+
+journal.cli.talent.preview.banner = Preview of what this talent would send. Same assembly a real run uses; the model is not called.
+
+journal.cli.talent.preview.effective = Effective prompt for: { $talent }
+
+journal.cli.talent.preview.empty = (empty)
+
+journal.cli.talent.preview.instruction = INSTRUCTION
+
+journal.cli.talent.preview.no.day = No day given, so this preview has no day's recordings in it. Pass { $day_flag } { $day_format } to include them.
+
+journal.cli.talent.preview.omitted = { $count ->
+    [one] ... ({ $count } line omitted)
+   *[other] ... ({ $count } lines omitted)
+    }
+
+journal.cli.talent.preview.omitted.legacy = ... ({ $count } lines omitted)
+
+journal.cli.talent.preview.prestep = Prompt preview cannot assemble this talent: a required pre-step is not available.
+
+journal.cli.talent.preview.skipped = This talent would not run: { $reason }
+
+journal.cli.talent.show.body = body:
+
+journal.cli.talent.show.body.lines = { $count ->
+    [one] { $count } line
+   *[other] { $count } lines
+    }
+
+journal.cli.talent.show.hook = Prompt '{ $talent }' is a hook prompt and cannot be run directly.
+
+journal.cli.talent.show.missing = Prompt not found: { $talent }
+
+journal.cli.talent.show.missing.path = Prompt not found: { $talent }{ $line_break }  looked at: { $path }
+
+journal.cli.talent.show.variables = variables:
+
+journal.cli.talent.compose.facet.missing = facet '{ $facet }' not found
+
+journal.cli.talent.compose.prompt.path.has.no.parent = talent { $talent }: prompt path has no parent
+
+journal.cli.talent.compose.prompt.path.is.missing = talent { $talent }: prompt path is missing
+
+journal.cli.talent.compose.schema.directory.is.unavailable = talent { $talent }: schema directory is unavailable: { $error }
+
+journal.cli.talent.compose.schema.file.could.not.be.read = talent { $talent }: schema file could not be read: { $error }
+
+journal.cli.talent.compose.schema.file.is.not.a.valid.json.schema = talent { $talent }: schema file is not a valid { $schema_format }: { $path }
+
+journal.cli.talent.compose.schema.file.is.not.valid.json = talent { $talent }: schema file is not valid { $json }: { $path }
+
+journal.cli.talent.compose.schema.file.not.found.cause = talent { $talent }: schema file not found: { $error }
+
+journal.cli.talent.compose.schema.file.not.found.path = talent { $talent }: schema file not found: { $path }
+
+journal.cli.talent.compose.schema.must.be.a.string.got = talent { $talent }: schema must be a string, got { $type_name }: { $value }
+
+journal.cli.talent.compose.schema.path.escapes.talent.directory = talent { $talent }: schema path escapes talent directory: { $path }
+
+journal.cli.talent.compose.schema.path.must.be.relative = talent { $talent }: schema path must be relative: { $path }
+
+journal.cli.talent.compose.schema.path.must.not.contain = talent { $talent }: schema path must not contain '..': { $path }
+
+journal.cli.talent.compose.settings = failed to read journal config: { $detail }
+
+journal.cli.talent.passages.generate = source passages could not reach generate: { $error }
+
+journal.cli.talent.passages.unit.failed = # unit { $index } · { $kind } · no passages: { $reason }
+
+journal.cli.talent.passages.unit.failed.time = # unit { $index } · { $kind } · { $time } · no passages: { $reason }
+
+journal.cli.talent.passages.unit.not.attempted = # unit { $index } · { $kind } · not attempted
+
+journal.cli.talent.passages.unit.not.attempted.time = # unit { $index } · { $kind } · { $time } · not attempted
+
+journal.cli.talent.passages.unit.passages = { $count ->
+    [one] # unit { $index } · { $kind } · { $count } passage
+   *[other] # unit { $index } · { $kind } · { $count } passage(s)
+    }
+
+journal.cli.talent.passages.unit.passages.time = { $count ->
+    [one] # unit { $index } · { $kind } · { $time } · { $count } passage
+   *[other] # unit { $index } · { $kind } · { $time } · { $count } passage(s)
+    }
+
+journal.cli.talent.passages.verbatim = Verbatim from source:
+
+journal.cli.talent.prepare.configuration.name.declares.an.invalid.mobile.local.timeout = configuration '{ $name }' declares an invalid { $timeout }
+
+journal.cli.talent.prepare.invalid.config.must.have.type.day.or.prompt = Invalid config: must have { $type }, { $day }, or { $prompt }
+
+journal.cli.talent.prepare.invalid.config.segment.or.span.requires.day = Invalid config: { $segment } or { $span } requires { $day }
+
+journal.cli.talent.prepare.invalid.talent.type.kind = invalid talent type '{ $kind }'
+
+journal.cli.talent.prepare.request.field.field.is.retired = request field '{ $field }' is retired
+
+journal.cli.talent.prepare.request.overrides.field.for.talent.name.are.not.allowed = Request overrides '{ $field }' for talent '{ $name }' are not allowed ({ $declared } != { $requested })
+
+journal.cli.talent.prepare.request.overrides.for.field.are.not.allowed = request overrides for '{ $field }' are not allowed; thinking provider and model are configured only in Thinking
+
+journal.cli.talent.prepare.request.overrides.for.field.are.not.allowed.budget = request overrides for '{ $field }' are not allowed; a talent's budgets are its own
+
+journal.cli.talent.prepare.talent.name.declares.field.in.frontmatter = talent '{ $name }' declares '{ $field }' in frontmatter; thinking provider and model are configured only in Thinking
+
+journal.cli.talent.prepare.talent.name.declares.outbound.approval.in.frontmatter = talent '{ $name }' declares { $outbound_approval } in frontmatter; this field is launch-config-only and may not come from a talent definition
+
+journal.cli.talent.prepare.talent.name.not.found = talent '{ $name }' not found
+
+journal.cli.talent.prepare.talent.request.missing.name = talent request missing name
+
+journal.cli.talent.preview.recovery.choose.a.completed.owner.activity.not.an.anticipated.or.cogi = Choose a completed owner activity, not an anticipated or cogitate record.
+
+journal.cli.talent.preview.recovery.choose.a.talent.configured.for.this.activity.kind = Choose a talent configured for this activity kind.
+
+journal.cli.talent.preview.recovery.choose.a.talent.that.loads.its.activity.s.sources = Choose a talent that loads its activity's sources.
+
+journal.cli.talent.preview.recovery.choose.a.talent.that.reads.its.activity.source.without.a.pre = Choose a talent that reads its activity source without a pre-step.
+
+journal.cli.talent.preview.recovery.choose.a.talent.whose.required.pre.step.is.available.in.the = Choose a talent whose required pre-step is available in the native runtime.
+
+journal.cli.talent.preview.recovery.choose.a.talent.whose.schedule.is.activity = Choose a talent whose schedule is { $schedule }
+
+journal.cli.talent.preview.recovery.choose.an.activity.id.stored.in.the.requested.day.and.facet = Choose an activity ID stored in the requested day and facet.
+
+journal.cli.talent.preview.recovery.choose.an.activity.with.at.least.one.recorded.segment = Choose an activity with at least one recorded segment.
+
+journal.cli.talent.preview.recovery.choose.either.activity.or.segment.not.both = Choose either { $activity_flag } or { $segment_flag }, not both.
+
+journal.cli.talent.preview.recovery.correct.the.activity.preview.input.then.retry.detail = Correct the activity preview input, then retry: { $detail }
+
+journal.cli.talent.preview.recovery.correct.the.talent.configuration.detail = Correct the talent configuration: { $detail }
+
+journal.cli.talent.preview.recovery.make.the.selected.activity.and.talent.eligible.then.retry = Make the selected activity and talent eligible, then retry.
+
+journal.cli.talent.preview.recovery.make.the.selected.talent.eligible.then.retry = Make the selected talent eligible, then retry.
+
+journal.cli.talent.preview.recovery.pass.day.yyyymmdd.facet.name.and.activity.id = Pass { $day_flag } { $yyyymmdd }, { $facet_flag } { $name } and { $activity_flag } ID.
+
+journal.cli.talent.preview.recovery.pass.day.yyyymmdd.with.activity = Pass { $day_flag } { $yyyymmdd } with { $activity_flag }.
+
+journal.cli.talent.preview.recovery.pass.facet.name.with.activity = Pass { $facet_flag } { $name } with { $activity_flag }.
+
+journal.cli.talent.preview.recovery.remove.duplicate.records.with.this.id.in.the.requested.day.a = Remove duplicate records with this ID in the requested day and facet.
+
+journal.cli.talent.preview.recovery.repair.the.activity.span.so.every.segment.is.a.non.empty.str = Repair the activity span so every segment is a non-empty string.
+
+journal.cli.talent.preview.recovery.restore.a.readable.activity.record.file.then.retry.detail = Restore a readable activity record file, then retry: { $detail }
+
+journal.cli.talent.preview.recovery.restore.a.readable.segment.directory.then.retry.detail = Restore a readable segment directory, then retry: { $detail }
+
+journal.cli.talent.preview.recovery.restore.readable.segment.directories.then.retry.detail = Restore readable segment directories, then retry: { $detail }
+
+journal.cli.talent.preview.recovery.restore.the.selected.activity.segment.then.retry = Restore the selected activity segment, then retry.
+
+journal.cli.talent.passages.generate.missing = source passages could not reach generate: missing sibling executable { $path }
+
+journal.cli.talent.passages.generate.parent = source passages could not reach generate: current executable has no parent
+
+journal.cli.talent.facet.malformed = malformed data in { $path }
+
+journal.cli.talent.facet.malformed.line = malformed data in { $path } at line { $line }
+
+journal.cli.talent.facet.object = facet declaration is not an object: { $path }
+
+journal.cli.talent.path.absolute = journal path must be relative
+
+journal.cli.talent.path.backslash = journal path must use forward slashes
+
+journal.cli.talent.path.component = journal path contains invalid component
+
+journal.cli.talent.path.day = day must be { $day_format }
+
+journal.cli.talent.path.empty = journal path must not be empty
+
+journal.cli.talent.path.escape = { $relative } escapes the journal root (resolved to { $path })
+
+journal.cli.talent.path.unreadable = journal path is not readable
+
+journal.cli.talent.floor.invalid.budget = missing or invalid { $budget }
+
+
+journal.cli.talent.prepare.memory.incomplete = private memory context is incomplete
+
+journal.cli.talent.prepare.segment.missing = { $count ->
+    [one] Segment directory not found: { $segments }
+   *[other] Segment directories not found: { $segments }
+    }
+
+journal.cli.talent.work.duration = invalid Work source duration: { $error }
+
+journal.cli.talent.work.duration.range = Work source duration is out of range
+
+journal.cli.talent.work.interval = invalid Work source interval: { $error }
+
+journal.cli.talent.work.interval.range = Work source interval is out of range
+
+journal.cli.talent.work.key = invalid Work source segment: { $segment }
+
+journal.cli.talent.work.read = cannot read Work segment results: { $error }
+
+journal.cli.talent.work.unavailable = Work source segment is unavailable: { $day }/{ $segment }
+
+journal.cli.talent.floor.mismatch = { $entries ->
+        [one] entry count mismatch: parsed { $entries } entry but have { $sources ->
+                [one] { $sources } entry source
+               *[other] { $sources } entry sources
+            }
+       *[other] entry count mismatch: parsed { $entries } entries but have { $sources ->
+                [one] { $sources } entry source
+               *[other] { $sources } entry sources
+            }
+    }
+
+journal.cli.talent.hook.briefing.date.overflow = briefing date overflow
+
+journal.cli.talent.hook.briefing.failed = morning briefing pre-hook failed: { $error }
+
+journal.cli.talent.hook.budget = prepared request does not fit the floor input budget
+
+journal.cli.talent.hook.daily.lookback = daily schedule lookback outside { $range }
+
+journal.cli.talent.hook.day.invalid = invalid or unparseable day: '{ $day }'
+
+journal.cli.talent.hook.day.missing = missing day
+
+journal.cli.talent.hook.document.stream = not a document import segment
+
+journal.cli.talent.hook.entity.minimum = entity packet for { $entity } is at least { $count } characters; maximum is { $maximum }
+
+journal.cli.talent.hook.entity.name = missing entity name
+
+journal.cli.talent.hook.entity.size = entity packet for { $entity } is { $count } characters; maximum is { $maximum }
+
+journal.cli.talent.hook.facet.missing = missing facet
+
+journal.cli.talent.hook.facts.size = entity facts context is { $count } characters; maximum is { $maximum }
+
+journal.cli.talent.hook.failure = { $phase } hook '{ $stage }' for talent '{ $talent }': { $detail }
+
+journal.cli.talent.hook.possible.no.prompt = the talent has no prompt
+
+journal.cli.talent.hook.review.changed = review inputs changed during preparation
+
+journal.cli.talent.hook.suggest.size = entity suggest context is { $count } characters; maximum is { $maximum }
+
+journal.cli.talent.hook.suggestions.array = suggestions JSON missing { $entities } array
+
+journal.cli.talent.hook.suggestions.json = invalid suggestions JSON in { $path }: { $error }
+
+journal.cli.talent.hook.suggestions.missing = missing suggestions artifact: { $path }
+
+journal.cli.talent.hook.sunday = request day { $day } is not a Sunday
+
+journal.cli.talent.hook.transcript.read = transcript { $file } could not be read: { $error }
+
+journal.cli.talent.hook.transcript.utf8 = transcript { $file } is not UTF-8: { $error }
+
+journal.cli.talent.hook.week.incomplete = week ending { $end } has not completed before today { $today }
+
+journal.cli.talent.hook.facet.read = facet { $facet } could not be read: { $error }
+
+journal.cli.talent.hook.facets.list = facets could not be listed: { $error }
+
+journal.cli.talent.hook.identities.read = entity identities could not be read: { $error }
+
+journal.cli.talent.hook.identity.object = entity identity is not an object: { $path }
+
+journal.cli.talent.hook.stream.layout = direct layout requires stream "{ $default_stream }", got "{ $stream }"
+
+journal.cli.talent.hook.transcript.bytes = transcript bytes are not valid UTF-8
+
+journal.cli.talent.hook.lookup.control = invalid path component '{ $candidate }': the name contains a control character
+
+journal.cli.talent.hook.lookup.dotcomponent = invalid path component '{ $candidate }': { $dot } and { $parent } are not valid names
+
+journal.cli.talent.hook.lookup.empty = invalid path component '{ $candidate }': the name is empty
+
+journal.cli.talent.hook.lookup.kind = { $path } is not a directory ({ $kind })
+
+journal.cli.talent.hook.lookup.layout = direct layout requires stream "{ $default_stream }", got { $stream }
+
+journal.cli.talent.hook.lookup.rootorprefix = invalid path component '{ $candidate }': the name must be a single relative component
+
+journal.cli.talent.hook.lookup.separator = invalid path component '{ $candidate }': the name contains a path separator
+
+journal.cli.talent.hook.resolution.absent = resolved ambiguity { $ambiguity } names entity { $entity } absent from this resolution call
+
+journal.cli.talent.hook.resolution.hidden = resolved ambiguity { $ambiguity } names hidden entity { $entity }

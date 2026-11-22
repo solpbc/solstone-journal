@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list tag disabled.",
+  "context": "Journal command-line text for list tag disabled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ee89b27ab355006f1a68d71cc0c5cdf9806e04b127859af2cc20b9997917b459",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

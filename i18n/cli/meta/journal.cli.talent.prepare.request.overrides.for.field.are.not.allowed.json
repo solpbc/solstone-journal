@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for prepare request overrides for field are not allowed.",
+  "context": "Journal command-line text for prepare request overrides for field are not allowed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "05e3d003eea1843833c54553663f57d99a1e6dec1feb722463dc27f15aecc620",
+  "max_length": 143,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

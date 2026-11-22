@@ -2583,6 +2583,7 @@ name = "solstone-core-talent-config"
 version = "2.0.87"
 dependencies = [
  "serde_json",
+ "solstone-core-cli-copy",
 ]
 
 [[package]]

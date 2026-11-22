@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for compose schema path escapes talent directory.",
+  "context": "Journal command-line text for compose schema path escapes talent directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "00e2eb2e6affe8baa96ae4a4c753f9beb9d87ab8054ea2246adf6e584668ff91",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

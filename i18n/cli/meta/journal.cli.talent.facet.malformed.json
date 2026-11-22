@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet malformed.",
+  "context": "Journal command-line text for facet malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "80be1b909940ea8c1ace3c9179b4a59e29e2acad544a0a21ab647a1ac31175f9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

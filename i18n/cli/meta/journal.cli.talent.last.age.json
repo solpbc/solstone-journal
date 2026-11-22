@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for last age.",
+  "context": "Journal command-line text for last age.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "75e692e57d060b6465db85a2d5df5de652f06efae873918b727b2a71714ad4fc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

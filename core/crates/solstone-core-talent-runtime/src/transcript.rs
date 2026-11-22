@@ -17,8 +17,7 @@ use solstone_core_transcripts::{
     EntrySource, MemoryContext, ScreenCut, SourceCounts, Sources, TalentSource, TranscriptLayout,
     VoiceNames, cluster_for_screen_talent_with_memory,
     cluster_period_for_screen_talent_with_memory, cluster_period_with_memory,
-    cluster_span_for_screen_talent_with_memory, cluster_span_with_memory,
-    cluster_span_with_screen_age_with_memory, cluster_with_memory,
+    cluster_span_with_memory, cluster_with_memory,
 };
 
 pub(crate) struct LoadedTranscript {
@@ -192,7 +191,16 @@ fn speaker_evidence(dir: &Path, source: &str) -> Option<String> {
     Some(header.get("speaker_evidence")?.as_str()?.to_owned())
 }
 
+#[cfg(test)]
 pub(crate) fn load_transcript(
+    journal: &Path,
+    composed: &Map<String, Value>,
+) -> Result<LoadedTranscript, String> {
+    load_transcript_in(None, journal, composed)
+}
+
+pub(crate) fn load_transcript_in(
+    display_locale: Option<&str>,
     journal: &Path,
     composed: &Map<String, Value>,
 ) -> Result<LoadedTranscript, String> {
@@ -251,13 +259,37 @@ pub(crate) fn load_transcript(
                     .eq(span.iter().copied())
             });
     let (transcript, counts, memory) = if !span.is_empty() {
-        if screen_projection {
-            cluster_span_for_screen_talent_with_memory(journal, day, &span, &sources, stream)
+        use solstone_core_transcripts::{
+            PerceptProjection, cluster_span_with_projection_and_memory,
+        };
+        let projection = if screen_projection {
+            PerceptProjection::ScreenTalent
         } else if screen_age {
-            cluster_span_with_screen_age_with_memory(journal, day, &span, &sources, stream)
+            PerceptProjection::StoryScreenAge
         } else {
-            cluster_span_with_memory(journal, day, &span, &sources, stream)
-        }?
+            PerceptProjection::Generic
+        };
+        cluster_span_with_projection_and_memory(journal, day, &span, &sources, stream, projection)
+            .map_err(|error| match display_locale {
+            Some(locale) => {
+                let count = error.0.len();
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.talent.prepare.segment.missing",
+                    &[
+                        (
+                            "count",
+                            solstone_core_cli_copy::Value::Cardinal(count as i64),
+                        ),
+                        (
+                            "segments",
+                            solstone_core_cli_copy::Value::String(&error.0.join(", ")),
+                        ),
+                    ],
+                )
+            }
+            None => error.to_string(),
+        })?
     } else if let Some(segment) = composed.get("segment").and_then(Value::as_str) {
         if screen_projection {
             cluster_period_for_screen_talent_with_memory(journal, day, segment, &sources, stream)

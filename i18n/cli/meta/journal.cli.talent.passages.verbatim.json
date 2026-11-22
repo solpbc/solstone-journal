@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for passages verbatim.",
+  "context": "Journal command-line text for passages verbatim.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9bdf710869b47bff1f15c722b5bc37de6b5aa7f25eba3d7f5a06bd2b292e2c0d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

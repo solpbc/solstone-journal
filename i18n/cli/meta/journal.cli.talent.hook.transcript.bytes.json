@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for hook transcript bytes.",
+  "context": "Journal command-line text for hook transcript bytes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7a7e5aef7af2c8ce91ceb4e70ecb06bf51b66034ed9e255519da250d4cb30af6",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list group weekly.",
+  "context": "Journal command-line text for list group weekly.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e07089a08aee2b9e43425bfc1570c00a4a5835ef5589e5ddbb8756ce3568b76d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

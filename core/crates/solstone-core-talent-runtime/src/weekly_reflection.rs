@@ -279,7 +279,11 @@ pub fn build(
                 "build",
                 "weekly_reflection",
                 prepared,
-                format!("invalid or unparseable day: '{day_str}'"),
+                solstone_core_cli_copy::display_for(
+                    prepared.stage_locale(),
+                    "journal.cli.talent.hook.day.invalid",
+                    [("day", &(day_str))],
+                ),
             )));
         }
     };
@@ -289,7 +293,11 @@ pub fn build(
             "build",
             "weekly_reflection",
             prepared,
-            format!("request day {day_str} is not a Sunday"),
+            solstone_core_cli_copy::display_for(
+                prepared.stage_locale(),
+                "journal.cli.talent.hook.sunday",
+                [("day", &(day_str))],
+            ),
         )));
     }
 
@@ -298,7 +306,11 @@ pub fn build(
             "build",
             "weekly_reflection",
             prepared,
-            format!("invalid or unparseable day: '{day_str}'"),
+            solstone_core_cli_copy::display_for(
+                prepared.stage_locale(),
+                "journal.cli.talent.hook.day.invalid",
+                [("day", &(day_str))],
+            ),
         )));
     };
     if end_date >= today {
@@ -306,7 +318,11 @@ pub fn build(
             "build",
             "weekly_reflection",
             prepared,
-            format!("week ending {end_date} has not completed before today {today}"),
+            solstone_core_cli_copy::display_for(
+                prepared.stage_locale(),
+                "journal.cli.talent.hook.week.incomplete",
+                [("end", &(end_date)), ("today", &(today))],
+            ),
         )));
     }
 

@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for prepare invalid config must have type day or prompt.",
+  "context": "Journal command-line text for prepare invalid config must have type day or prompt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c8e7d012730b05e6a26ed505e61bb76ae77d484bdc05cd10bbd44d755403c43",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "prompt",
+      "kind": "accepted-input",
+      "value": "'prompt'"
+    },
+    {
+      "name": "type",
+      "kind": "accepted-input",
+      "value": "'type'"
+    },
+    {
+      "name": "day",
+      "kind": "accepted-input",
+      "value": "'day'"
+    }
+  ]
+}

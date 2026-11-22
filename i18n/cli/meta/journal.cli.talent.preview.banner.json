@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for preview banner.",
+  "context": "Journal command-line text for preview banner.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "283f06d99a75251ebb1a27f740e4a00d29334d6f5bbf0f81c77ef8598eec8e74",
+  "max_length": 127,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

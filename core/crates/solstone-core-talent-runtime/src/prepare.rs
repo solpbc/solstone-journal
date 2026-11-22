@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
-use solstone_core_talent_config::{TalentConfig, discover, is_truthy, merge, validate};
+use solstone_core_talent_config::{TalentConfig, discover_in, is_truthy, merge, validate_in};
 
 use crate::{ExecutionContext, PreparedTalent, transcript};
 
@@ -48,16 +48,34 @@ pub fn prepare(
     context: &ExecutionContext,
     mode: PrepareMode,
 ) -> Result<PreparedTalent, PrepareFailure> {
+    prepare_in(None, request, paths, context, mode)
+}
+
+pub(crate) fn prepare_in(
+    display_locale: Option<&str>,
+    request: Map<String, Value>,
+    paths: &RuntimePaths,
+    context: &ExecutionContext,
+    mode: PrepareMode,
+) -> Result<PreparedTalent, PrepareFailure> {
+    let locale = display_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
     let name = request
         .get("name")
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| PrepareFailure::Refusal("talent request missing name".to_owned()))?
+        .ok_or_else(|| {
+            PrepareFailure::Refusal(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.prepare.talent.request.missing.name",
+                &[],
+            ))
+        })?
         .to_owned();
-    let config = resolve_talent_config(&name, paths, context)?;
-    reject_request_fields(&config, &request, &name)?;
+    let config = resolve_talent_config_in(locale, &name, paths, context)?;
+    reject_request_fields_in(locale, &config, &request, &name)?;
     let focused_facet = request.get("facet").and_then(Value::as_str);
-    let mut composed = solstone_core_talent_cli::compose_talent(
+    let mut composed = solstone_core_talent_cli::compose_talent_in(
+        locale,
         &config,
         &context.journal,
         &paths.templates_dir,
@@ -119,7 +137,7 @@ pub fn prepare(
         };
         composed.insert("destination_id".to_owned(), Value::String(destination_id));
     }
-    mobile_local_timeout(&composed, &name)?;
+    mobile_local_timeout_in(locale, &composed, &name)?;
     let (provider, model) = configured_brain(&context.journal);
     composed.insert("provider".to_owned(), Value::String(provider));
     composed.insert("model".to_owned(), Value::String(model));
@@ -149,12 +167,14 @@ pub fn prepare(
             .as_ref()
             .is_some_and(transcript::sources_are_enabled)
     {
-        let loaded = transcript::load_transcript(&context.journal, &composed)
+        let loaded = transcript::load_transcript_in(display_locale, &context.journal, &composed)
             .map_err(PrepareFailure::Refusal)?;
         if loaded.memory_incomplete {
-            return Err(PrepareFailure::Refusal(
-                "private memory context is incomplete".to_owned(),
-            ));
+            return Err(PrepareFailure::Refusal(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.prepare.memory.incomplete",
+                &[],
+            )));
         }
         composed.insert(
             "_memory_sources".to_owned(),
@@ -283,7 +303,8 @@ pub fn prepare(
             .get("facet")
             .and_then(Value::as_str)
             .or(import_facet.as_deref());
-        let instruction = solstone_core_talent_cli::compose_talent_instruction(
+        let instruction = solstone_core_talent_cli::compose_talent_instruction_in(
+            locale,
             &config,
             &context.journal,
             &paths.templates_dir,
@@ -361,7 +382,7 @@ pub fn prepare(
             Value::String(output_path.display().to_string()),
         );
     }
-    validate_config(&composed).map_err(PrepareFailure::Refusal)?;
+    validate_config_in(locale, &composed).map_err(PrepareFailure::Refusal)?;
     // A request that replaces the output schema the model reads asks for a
     // body the talent's own source-word body was never measured against.
     if mode == PrepareMode::Execute
@@ -385,7 +406,8 @@ pub fn prepare(
         && composed.get("messages").is_none()
     {
         Some(
-            crate::participation_floor::apply(
+            crate::participation_floor::apply_in(
+                display_locale,
                 &mut composed,
                 &entry_sources,
                 &entry_layout,
@@ -408,8 +430,9 @@ pub fn prepare(
             crate::story_messages::Candidate::prepare(&prepared.entry_sources, &prepared.config);
     }
     if matches!(prepared.name.as_str(), "work" | "conversation") {
-        prepared.story_input = crate::story_input::prepare(&context.journal, &prepared.config)
-            .map_err(PrepareFailure::Refusal)?;
+        prepared.story_input =
+            crate::story_input::prepare_in(display_locale, &context.journal, &prepared.config)
+                .map_err(PrepareFailure::Refusal)?;
         // Over the floor, the fitted packet is the input on every backend, so
         // a story never depends on the window that happens to serve it.
         if let Some(candidate) = &prepared.story_input
@@ -457,47 +480,57 @@ pub fn prepare(
 
 /// Resolve owner overrides and definition-level refusals without composing a
 /// prompt or reading facet/segment source context.
-pub(crate) fn resolve_talent_config(
+pub(crate) fn resolve_talent_config_in(
+    locale: &str,
     name: &str,
     paths: &RuntimePaths,
     context: &ExecutionContext,
 ) -> Result<TalentConfig, PrepareFailure> {
-    let configs = merged_talent_configs(paths, context)?;
-    select_talent_config(configs, name)
+    let configs = merged_talent_configs(locale, paths, context)?;
+    select_talent_config(locale, configs, name)
 }
 
 /// Activity preview admits talents through the same whole-corpus validation
 /// gate production activity dispatch uses, without changing execute semantics.
-pub(crate) fn resolve_validated_talent_config(
+pub(crate) fn resolve_validated_talent_config_in(
+    locale: &str,
     name: &str,
     paths: &RuntimePaths,
     context: &ExecutionContext,
 ) -> Result<TalentConfig, PrepareFailure> {
-    let mut configs = merged_talent_configs(paths, context)?;
-    validate(&mut configs).map_err(PrepareFailure::Refusal)?;
-    select_talent_config(configs, name)
+    let mut configs = merged_talent_configs(locale, paths, context)?;
+    validate_in(locale, &mut configs).map_err(PrepareFailure::Refusal)?;
+    select_talent_config(locale, configs, name)
 }
 
 fn merged_talent_configs(
+    locale: &str,
     paths: &RuntimePaths,
     context: &ExecutionContext,
 ) -> Result<Vec<TalentConfig>, PrepareFailure> {
-    let mut configs =
-        discover(&paths.talent_root, &paths.apps_root).map_err(PrepareFailure::Refusal)?;
+    let mut configs = discover_in(locale, &paths.talent_root, &paths.apps_root)
+        .map_err(PrepareFailure::Refusal)?;
     let overrides = talent_overrides(&context.journal);
     merge(&mut configs, overrides.as_ref());
     Ok(configs)
 }
 
 fn select_talent_config(
+    locale: &str,
     configs: Vec<TalentConfig>,
     name: &str,
 ) -> Result<TalentConfig, PrepareFailure> {
     let config = configs
         .into_iter()
         .find(|config| config.key == name)
-        .ok_or_else(|| PrepareFailure::Refusal(format!("talent '{name}' not found")))?;
-    reject_definition_fields(&config, name)?;
+        .ok_or_else(|| {
+            PrepareFailure::Refusal(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.prepare.talent.name.not.found",
+                [("name", &(name))],
+            ))
+        })?;
+    reject_definition_fields_in(locale, &config, name)?;
     Ok(config)
 }
 
@@ -549,6 +582,14 @@ pub(crate) fn mobile_local_timeout(
     composed: &Map<String, Value>,
     name: &str,
 ) -> Result<Option<std::time::Duration>, PrepareFailure> {
+    mobile_local_timeout_in(solstone_core_cli_copy::ENGLISH, composed, name)
+}
+
+pub(crate) fn mobile_local_timeout_in(
+    locale: &str,
+    composed: &Map<String, Value>,
+    name: &str,
+) -> Result<Option<std::time::Duration>, PrepareFailure> {
     let Some(value) = composed.get("mobile_local_timeout_s") else {
         return Ok(None);
     };
@@ -558,9 +599,7 @@ pub(crate) fn mobile_local_timeout(
         .and_then(|seconds| std::time::Duration::try_from_secs_f64(seconds).ok())
         .filter(|duration| !duration.is_zero())
         .ok_or_else(|| {
-            PrepareFailure::Refusal(format!(
-                "configuration '{name}' declares an invalid mobile_local_timeout_s"
-            ))
+            PrepareFailure::Refusal(solstone_core_cli_copy::display_for(locale, "journal.cli.talent.prepare.configuration.name.declares.an.invalid.mobile.local.timeout", [("name", &(name))]))
         })?;
     Ok(Some(duration))
 }
@@ -585,32 +624,63 @@ fn read_journal_config(journal: &Path) -> Option<Value> {
         .and_then(|text| serde_json::from_str(&text).ok())
 }
 
+#[cfg(test)]
 fn reject_definition_fields(config: &TalentConfig, name: &str) -> Result<(), PrepareFailure> {
+    reject_definition_fields_in(solstone_core_cli_copy::ENGLISH, config, name)
+}
+
+fn reject_definition_fields_in(
+    locale: &str,
+    config: &TalentConfig,
+    name: &str,
+) -> Result<(), PrepareFailure> {
     if config.metadata.contains_key("outbound_approval") {
-        return Err(PrepareFailure::Refusal(format!(
-            "talent '{name}' declares 'outbound_approval' in frontmatter; this field is launch-config-only and may not come from a talent definition"
-        )));
+        return Err(PrepareFailure::Refusal(
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.prepare.talent.name.declares.outbound.approval.in.frontmatter",
+                [("name", &(name))],
+            ),
+        ));
     }
     for field in ["provider", "model"] {
         if config.metadata.contains_key(field) {
-            return Err(PrepareFailure::Refusal(format!(
-                "talent '{name}' declares '{field}' in frontmatter; thinking provider and model are configured only in Thinking"
-            )));
+            return Err(PrepareFailure::Refusal(
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.prepare.talent.name.declares.field.in.frontmatter",
+                    [("name", &(name)), ("field", &(field))],
+                ),
+            ));
         }
     }
     Ok(())
 }
 
+#[cfg(test)]
 fn reject_request_fields(
+    config: &TalentConfig,
+    request: &Map<String, Value>,
+    name: &str,
+) -> Result<(), PrepareFailure> {
+    reject_request_fields_in(solstone_core_cli_copy::ENGLISH, config, request, name)
+}
+
+fn reject_request_fields_in(
+    locale: &str,
     config: &TalentConfig,
     request: &Map<String, Value>,
     name: &str,
 ) -> Result<(), PrepareFailure> {
     for field in ["provider", "model"] {
         if request.get(field).is_some_and(|value| !value.is_null()) {
-            return Err(PrepareFailure::Refusal(format!(
-                "request overrides for '{field}' are not allowed; thinking provider and model are configured only in Thinking"
-            )));
+            return Err(PrepareFailure::Refusal(
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.prepare.request.overrides.for.field.are.not.allowed",
+                    [("field", &(field))],
+                ),
+            ));
         }
     }
     // A talent's budgets and sampling are its own; a request can neither raise nor
@@ -624,9 +694,13 @@ fn reject_request_fields(
         "temperature",
     ] {
         if request.get(field).is_some_and(|value| !value.is_null()) {
-            return Err(PrepareFailure::Refusal(format!(
-                "request overrides for '{field}' are not allowed; a talent's budgets are its own"
-            )));
+            return Err(PrepareFailure::Refusal(
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.prepare.request.overrides.for.field.are.not.allowed.budget",
+                    [("field", &(field))],
+                ),
+            ));
         }
     }
     let equal_or_refuse = |field: &str, declared: Option<&Value>| -> Result<(), PrepareFailure> {
@@ -634,19 +708,30 @@ fn reject_request_fields(
             return Ok(());
         };
         if declared != Some(requested) {
-            return Err(PrepareFailure::Refusal(format!(
-                "Request overrides '{field}' for talent '{name}' are not allowed ({} != {})",
-                python_repr(declared),
-                python_repr(Some(requested)),
-            )));
+            return Err(PrepareFailure::Refusal(
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.prepare.request.overrides.field.for.talent.name.are.not.allowed",
+                    [
+                        ("declared", &(python_repr(declared))),
+                        ("requested", &(python_repr(Some(requested)))),
+                        ("field", &(field)),
+                        ("name", &(name)),
+                    ],
+                ),
+            ));
         }
         Ok(())
     };
     for field in ["cwd", "access_tier"] {
         if request.get(field).is_some_and(|value| !value.is_null()) {
-            return Err(PrepareFailure::Refusal(format!(
-                "request field '{field}' is retired"
-            )));
+            return Err(PrepareFailure::Refusal(
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.prepare.request.field.field.is.retired",
+                    [("field", &(field))],
+                ),
+            ));
         }
     }
     equal_or_refuse("type", config.metadata.get("type"))
@@ -663,6 +748,10 @@ fn python_repr(value: Option<&Value>) -> String {
 }
 
 pub fn validate_config(config: &Map<String, Value>) -> Result<(), String> {
+    validate_config_in(solstone_core_cli_copy::ENGLISH, config)
+}
+
+pub fn validate_config_in(locale: &str, config: &Map<String, Value>) -> Result<(), String> {
     let kind = config
         .get("type")
         .and_then(Value::as_str)
@@ -680,15 +769,27 @@ pub fn validate_config(config: &Map<String, Value>) -> Result<(), String> {
         .and_then(Value::as_str)
         .is_some_and(|value| !value.is_empty());
     if !kind.is_empty() && kind != "generate" {
-        return Err(format!("invalid talent type '{kind}'"));
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.prepare.invalid.talent.type.kind",
+            [("kind", &(kind))],
+        ));
     }
     if !day && !instruction && !prompt {
-        return Err("Invalid config: must have 'type', 'day', or 'prompt'".to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.talent.prepare.invalid.config.must.have.type.day.or.prompt",
+            &[],
+        ));
     }
     if (config.get("segment").is_some_and(is_truthy) || config.get("span").is_some_and(is_truthy))
         && !day
     {
-        return Err("Invalid config: 'segment' or 'span' requires 'day'".to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.talent.prepare.invalid.config.segment.or.span.requires.day",
+            &[],
+        ));
     }
     Ok(())
 }

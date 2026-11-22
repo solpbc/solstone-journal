@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for hook suggestions missing.",
+  "context": "Journal command-line text for hook suggestions missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e2f13e45c8048fb40b379bb111b211f97be777da6adf0650238ed5a11b2b9791",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

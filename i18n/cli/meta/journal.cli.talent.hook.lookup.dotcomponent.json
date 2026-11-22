@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for hook lookup dotcomponent.",
+  "context": "Journal command-line text for hook lookup dotcomponent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "candidate",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3aef8660490e6e87a9d128fbad4f7597e4d65a658f23565a15214999bb8e808b",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "parent",
+      "kind": "accepted-input",
+      "value": "'..'"
+    },
+    {
+      "name": "dot",
+      "kind": "accepted-input",
+      "value": "'.'"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for prepare memory incomplete.",
+  "context": "Journal command-line text for prepare memory incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "86e68cae02b5450924264045ceaad58ff82f69e3618276fa80391439c7f0a736",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

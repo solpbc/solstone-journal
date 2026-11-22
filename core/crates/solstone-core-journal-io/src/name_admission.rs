@@ -378,12 +378,12 @@ impl Error for NameAdmissionError {
 }
 
 /// Escape a filesystem path for owner-facing text.
-pub(crate) fn escape_path(path: &Path) -> String {
+pub fn escape_path(path: &Path) -> String {
     escape_name(&path.display().to_string())
 }
 
 /// Escape a user-controlled name for owner-facing text.
-pub(crate) fn escape_name(name: &str) -> String {
+pub fn escape_name(name: &str) -> String {
     let mut escaped = String::new();
     for character in name.chars() {
         match character {

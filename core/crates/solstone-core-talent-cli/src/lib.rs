@@ -19,7 +19,9 @@ pub mod preview;
 mod schema;
 mod templates;
 
-pub use compose::{compose_talent, compose_talent_instruction};
+pub use compose::{
+    compose_talent, compose_talent_in, compose_talent_instruction, compose_talent_instruction_in,
+};
 pub use preview::{
     PassageRun, PreviewRequest, PromptPreview, PromptPreviewRefusal, PromptPreviewer,
 };
@@ -89,7 +91,15 @@ pub fn run_cli(
             &solstone_core_journal_config::owner_zone(journal_root),
         ),
         args::Command::Logs(options) => {
-            let mut config_loader = || load_configs(talent_root, apps_root, journal_root, None);
+            let mut config_loader = || {
+                load_configs(
+                    talent_root,
+                    apps_root,
+                    journal_root,
+                    None,
+                    output_locale(false),
+                )
+            };
             logs::run_logs(
                 journal_root,
                 &options,
@@ -103,6 +113,7 @@ pub fn run_cli(
             apps_root,
             journal_root,
             options.schedule.as_deref(),
+            output_locale(options.json),
         ) {
             Ok(configs) if options.json => success(emit::jsonl(&configs, &options)),
             Ok(configs) => success(list::render(&configs, &options, journal_root, now)),
@@ -120,9 +131,11 @@ fn load_configs(
     apps_root: &Path,
     journal_root: &Path,
     schedule: Option<&str>,
+    locale: &str,
 ) -> Result<Vec<solstone_core_talent_config::TalentConfig>, String> {
-    let overrides = solstone_core_talent_config::read_talent_overrides(journal_root)?;
-    solstone_core_talent_config::load_talent_configs(
+    let overrides = solstone_core_talent_config::read_talent_overrides_in(locale, journal_root)?;
+    solstone_core_talent_config::load_talent_configs_in(
+        locale,
         talent_root,
         apps_root,
         overrides.as_ref(),
@@ -132,6 +145,14 @@ fn load_configs(
             include_disabled: true,
         },
     )
+}
+
+pub fn output_locale(json: bool) -> &'static str {
+    if json {
+        solstone_core_cli_copy::ENGLISH
+    } else {
+        solstone_core_cli_copy::cli_locale()
+    }
 }
 
 fn success(stdout: String) -> CliRun {
@@ -420,7 +441,7 @@ mod tests {
         assert!(
             hidden
                 .stdout
-                .contains("1 prompts (1 disabled hidden, use --disabled)\n")
+                .contains("1 prompt (1 disabled hidden, use --disabled)\n")
         );
         assert!(!hidden.stdout.contains("  hidden"));
 

@@ -39,7 +39,8 @@ fn format_disclosure_transcript(
     out
 }
 
-pub(crate) fn apply(
+pub(crate) fn apply_in(
+    display_locale: Option<&str>,
     composed: &mut Map<String, Value>,
     sources: &[Option<EntrySource>],
     layout: &TranscriptLayout,
@@ -47,7 +48,13 @@ pub(crate) fn apply(
 ) -> Result<Value, String> {
     let max_output_tokens = match composed.get("max_output_tokens") {
         Some(Value::Number(n)) if n.as_u64().is_some() => n.as_u64().unwrap() as u32,
-        _ => return Err("missing or invalid max_output_tokens".to_owned()),
+        _ => {
+            return Err(solstone_core_cli_copy::render_for(
+                display_locale.unwrap_or(solstone_core_cli_copy::ENGLISH),
+                "journal.cli.talent.floor.invalid.budget",
+                &[],
+            ));
+        }
     };
     let floor_input = solstone_core_local::generate::compute_input_budget(
         max_output_tokens,
@@ -80,7 +87,7 @@ pub(crate) fn apply(
 
     if preserved_tokens.saturating_add(FRAMING_TOKENS) > floor_input {
         // Over-floor path: request framing alone exceeds floor
-        let parsed = parse_all(text_to_parse, sources, layout, journal, day)?;
+        let parsed = parse_all_in(display_locale, text_to_parse, sources, layout, journal, day)?;
         let disclosure = over_floor_disclosure(
             parsed.total_speech_lines,
             parsed.total_sense_segments,
@@ -109,7 +116,7 @@ pub(crate) fn apply(
         <= floor_input
     {
         // Fits whole without sampling
-        let parsed = parse_all(text_to_parse, sources, layout, journal, day)?;
+        let parsed = parse_all_in(display_locale, text_to_parse, sources, layout, journal, day)?;
         let event = build_event(
             parsed.total_speech_lines,
             0,
@@ -125,12 +132,41 @@ pub(crate) fn apply(
     }
 
     let transcript_budget = floor_input - preserved_tokens - FRAMING_TOKENS;
-    let sampled = sample_to_budget(transcript, sources, layout, journal, day, transcript_budget)?;
+    let sampled = sample_to_budget_in(
+        display_locale,
+        transcript,
+        sources,
+        layout,
+        journal,
+        day,
+        transcript_budget,
+    )?;
     composed.insert("transcript".to_owned(), Value::String(sampled.transcript));
     Ok(sampled.event)
 }
 
-pub(crate) fn sample_to_budget(
+#[cfg(test)]
+fn sample_to_budget(
+    transcript: &str,
+    sources: &[Option<EntrySource>],
+    layout: &TranscriptLayout,
+    journal: &Path,
+    day: &str,
+    transcript_budget: u32,
+) -> Result<FloorSample, String> {
+    sample_to_budget_in(
+        None,
+        transcript,
+        sources,
+        layout,
+        journal,
+        day,
+        transcript_budget,
+    )
+}
+
+pub(crate) fn sample_to_budget_in(
+    display_locale: Option<&str>,
     transcript: &str,
     sources: &[Option<EntrySource>],
     layout: &TranscriptLayout,
@@ -141,7 +177,7 @@ pub(crate) fn sample_to_budget(
     let (has_sparse, text_without_sparse) = strip_sparse_prefix(transcript);
     let (has_incomplete_trailer, text_to_parse) = strip_incomplete_trailer(text_without_sparse);
 
-    let parsed = parse_all(text_to_parse, sources, layout, journal, day)?;
+    let parsed = parse_all_in(display_locale, text_to_parse, sources, layout, journal, day)?;
 
     if solstone_core_tokens::count(transcript) <= transcript_budget {
         return Ok(FloorSample {
@@ -663,7 +699,19 @@ struct ParsedAll {
 /// Splits the transcript into its groups and entries at the headings the
 /// renderer says it wrote. An entry's content is free text, so a line in it
 /// shaped like a heading stays content.
+#[cfg(test)]
 fn parse_all(
+    text: &str,
+    sources: &[Option<EntrySource>],
+    layout: &TranscriptLayout,
+    journal: &Path,
+    day: &str,
+) -> Result<ParsedAll, String> {
+    parse_all_in(None, text, sources, layout, journal, day)
+}
+
+fn parse_all_in(
+    display_locale: Option<&str>,
     text: &str,
     sources: &[Option<EntrySource>],
     layout: &TranscriptLayout,
@@ -729,11 +777,27 @@ fn parse_all(
 
     let total_entries: usize = raw_groups.iter().map(|(_, es)| es.len()).sum();
     if total_entries != sources.len() {
-        return Err(format!(
-            "entry count mismatch: parsed {} entries but have {} entry sources",
-            total_entries,
-            sources.len()
-        ));
+        return Err(match display_locale {
+            Some(locale) => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.floor.mismatch",
+                &[
+                    (
+                        "entries",
+                        solstone_core_cli_copy::Value::Cardinal(total_entries as i64),
+                    ),
+                    (
+                        "sources",
+                        solstone_core_cli_copy::Value::Cardinal(sources.len() as i64),
+                    ),
+                ],
+            ),
+            None => format!(
+                "entry count mismatch: parsed {} entries but have {} entry sources",
+                total_entries,
+                sources.len()
+            ),
+        });
     }
 
     let mut entry_idx = 0;

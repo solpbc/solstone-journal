@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for preview recovery choose either activity or segment not both.",
+  "context": "Journal command-line text for preview recovery choose either activity or segment not both.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f874c453ee0097aca2fc6faec40de53072ce17cd41ad487e8e038183c609935",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "activity_flag",
+      "kind": "flag",
+      "value": "--activity"
+    },
+    {
+      "name": "segment_flag",
+      "kind": "flag",
+      "value": "--segment"
+    }
+  ]
+}

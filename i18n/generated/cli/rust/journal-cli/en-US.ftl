@@ -2682,3 +2682,422 @@ m6a6f75726e616c2e636c692e73747265616d732e7365676d656e74732e6572726f72 = Could no
 
 m6a6f75726e616c2e636c692e73747265616d732e73757065727669736f72 = journal isn't running. start it with '{ "solstone journal up" }' and retry.
 
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e66616365742e6d697373696e67 = facet '{ $facet }' not found
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e70726f6d70742e706174682e6861732e6e6f2e706172656e74 = talent { $talent }: prompt path has no parent
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e70726f6d70742e706174682e69732e6d697373696e67 = talent { $talent }: prompt path is missing
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e736368656d612e6469726563746f72792e69732e756e617661696c61626c65 = talent { $talent }: schema directory is unavailable: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e736368656d612e66696c652e636f756c642e6e6f742e62652e72656164 = talent { $talent }: schema file could not be read: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e736368656d612e66696c652e69732e6e6f742e612e76616c69642e6a736f6e2e736368656d61 = talent { $talent }: schema file is not a valid { "JSON Schema" }: { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e736368656d612e66696c652e69732e6e6f742e76616c69642e6a736f6e = talent { $talent }: schema file is not valid { "JSON" }: { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e736368656d612e66696c652e6e6f742e666f756e642e6361757365 = talent { $talent }: schema file not found: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e736368656d612e66696c652e6e6f742e666f756e642e70617468 = talent { $talent }: schema file not found: { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e736368656d612e6d7573742e62652e612e737472696e672e676f74 = talent { $talent }: schema must be a string, got { $type_name }: { $value }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e736368656d612e706174682e657363617065732e74616c656e742e6469726563746f7279 = talent { $talent }: schema path escapes talent directory: { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e736368656d612e706174682e6d7573742e62652e72656c6174697665 = talent { $talent }: schema path must be relative: { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e736368656d612e706174682e6d7573742e6e6f742e636f6e7461696e = talent { $talent }: schema path must not contain '..': { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6d706f73652e73657474696e6773 = failed to read journal config: { $detail }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e6163636573732e72657469726564 = Prompt '{ $talent }' sets retired { "'access_tier'" }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e61637469766974696573 = Activity-scheduled prompt '{ $talent }' must have a non-empty { "'activities'" } list (activity types to match, or { "[\"*\"]" } for all types).
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e6275646765742e696e76616c6964 = Prompt '{ $talent }' has invalid { "'max_output_tokens'" } { $value }. Expected a positive integer measured against the bundled model.
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e6275646765742e7265717569726564 = Prompt '{ $talent }' is missing required { "'max_output_tokens'" }. Measure its largest output on the bundled model and declare 1.5 times that, rounded up to a multiple of 256.
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e6275646765742e72657469726564 = Prompt '{ $talent }' declares retired { "'thinking_budget'" }. Thinking is set only in Thinking, for the owner's own model.
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e6377642e72657469726564 = Prompt '{ $talent }' sets retired { "'cwd'" }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e66726f6e746d6174746572 = failed to parse frontmatter from { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e6f75747075742e7265717569726564 = Prompt '{ $talent }' has type={ "'generate'" } but is missing required { "'output'" } field.
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e7072696f72697479 = Scheduled prompt '{ $talent }' is missing required { "'priority'" } field. All prompts with { "'schedule'" } must declare an explicit priority.
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e72656164 = failed to read { $path }: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e73746174 = failed to stat { $path }: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e7374656d = talent filename has no { "UTF-8" } stem: { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e747970652e696e76616c6964 = Prompt '{ $talent }' has invalid type { $value }. Expected { "'generate'" }.
+
+m6a6f75726e616c2e636c692e74616c656e742e636f6e6669672e747970652e7265717569726564 = Prompt '{ $talent }' has output but is missing required { "'type'" } field.
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e6c6973742e63686f696365 = usage: { "solstone journal talent list [-h] [--schedule {daily,segment,activity}]" }{ "\u000a" }{ "solstone journal talent list" }: error: argument { $flag }: invalid choice: '{ $value }' (choose from { $choices })
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e6c6973742e756e6b6e6f776e = usage: { "solstone journal talent list [-h] [--schedule {daily,segment,activity}]" }{ "\u000a" }{ "solstone journal talent list" }: error: unrecognized arguments: { $arguments }
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e6c6973742e76616c7565 = usage: { "solstone journal talent list [-h] [--schedule {daily,segment,activity}]" }{ "\u000a" }{ "solstone journal talent list" }: error: argument { $flag }: expected one argument
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e6c6f672e7265717569726564 = usage: { "solstone journal talent log [-h] [--json] [--full] id" }{ "\u000a" }{ "solstone journal talent log" }: error: the following arguments are required: { $arguments }
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e6c6f67732e636f756e74 = usage: { "solstone journal talent logs [-h] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors]" }{ "\u000a" }{ "solstone journal talent logs" }: error: argument { "-c/--count" }: invalid int value: '{ $value }'
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e6c6f67732e76616c7565 = usage: { "solstone journal talent logs [-h] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors]" }{ "\u000a" }{ "solstone journal talent logs" }: error: argument { $flag }: expected one argument
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e70617373616765732e7265717569726564 = usage: { "solstone journal talent passages [-h] [--json] --day YYYYMMDD" }{ "\u000a" }{ "solstone journal talent passages" }: error: the following arguments are required: { $arguments }
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e70617373616765732e756e6b6e6f776e = usage: { "solstone journal talent passages [-h] [--json] --day YYYYMMDD" }{ "\u000a" }{ "solstone journal talent passages" }: error: unrecognized arguments: { $arguments }
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e70617373616765732e76616c7565 = usage: { "solstone journal talent passages [-h] [--json] --day YYYYMMDD" }{ "\u000a" }{ "solstone journal talent passages" }: error: argument { $flag }: expected one argument
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e726f6f742e63686f696365 = usage: { "solstone journal talent [-h] [-v] [-d] {list,show,passages,logs,log} ..." }{ "\u000a" }{ "solstone journal talent" }: error: argument { "subcommand" }: invalid choice: '{ $value }' (choose from { "'list', 'show', 'passages', 'logs', 'log'" })
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e726f6f742e656e636f64696e67 = usage: { "solstone journal talent [-h] [-v] [-d] {list,show,passages,logs,log} ..." }{ "\u000a" }{ "solstone journal talent" }: error: arguments are not valid { "UTF-8" }
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e726f6f742e756e6b6e6f776e = usage: { "solstone journal talent [-h] [-v] [-d] {list,show,passages,logs,log} ..." }{ "\u000a" }{ "solstone journal talent" }: error: unrecognized arguments: { $arguments }
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e73686f772e7265717569726564 = usage: { "solstone journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]" }{ "\u000a" }{ "solstone journal talent show" }: error: the following arguments are required: { $arguments }
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e73686f772e756e6b6e6f776e = usage: { "solstone journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]" }{ "\u000a" }{ "solstone journal talent show" }: error: unrecognized arguments: { $arguments }
+
+m6a6f75726e616c2e636c692e74616c656e742e6572726f722e73686f772e76616c7565 = usage: { "solstone journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]" }{ "\u000a" }{ "solstone journal talent show" }: error: argument { $flag }: expected one argument
+
+m6a6f75726e616c2e636c692e74616c656e742e66616365742e6d616c666f726d6564 = malformed data in { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e66616365742e6d616c666f726d65642e6c696e65 = malformed data in { $path } at line { $line }
+
+m6a6f75726e616c2e636c692e74616c656e742e66616365742e6f626a656374 = facet declaration is not an object: { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e666c6f6f722e696e76616c69642e627564676574 = missing or invalid { "max_output_tokens" }
+
+m6a6f75726e616c2e636c692e74616c656e742e666c6f6f722e6d69736d61746368 = { $i18nCategory ->
+    [one] entry count mismatch: parsed { NUMBER($entries, useGrouping: 0) } entry but have { $i18nCategory-sources ->
+        [one] { NUMBER($sources, useGrouping: 0) } entry source
+       *[other] { NUMBER($sources, useGrouping: 0) } entry sources
+    }
+   *[other] entry count mismatch: parsed { NUMBER($entries, useGrouping: 0) } entries but have { $i18nCategory-sources ->
+        [one] { NUMBER($sources, useGrouping: 0) } entry source
+       *[other] { NUMBER($sources, useGrouping: 0) } entry sources
+    }
+}
+
+m6a6f75726e616c2e636c692e74616c656e742e68656c702e6c697374 = usage: { "solstone journal talent list [-h] [--schedule {daily,segment,activity}]" }{ "\u000a" }{ "                           [--source {system,app}] [--disabled] [--json]" }{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  --schedule {daily,segment,activity}" }{ "\u000a" }                        Filter by schedule type{ "\u000a" }{ "  --source {system,app}" }{ "\u000a" }                        Filter by origin{ "\u000a" }{ "  " }{ "--disabled" }{ "            " }Include disabled prompts{ "\u000a" }{ "  " }{ "--json" }{ "                " }Output as { "JSONL" }
+
+m6a6f75726e616c2e636c692e74616c656e742e68656c702e6c6f67 = usage: { "solstone journal talent log [-h] [--json] [--full] id" }{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }  { "id          " }Agent ID{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }{ "  " }{ "--json" }{ "      " }Output raw { "JSONL" }{ "\u000a" }{ "  " }{ "--full" }{ "      " }Expand event details
+
+m6a6f75726e616c2e636c692e74616c656e742e68656c702e6c6f6773 = usage: { "solstone journal talent logs [-h] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors]" }{ "\u000a" }{ "                           [--summary]" }{ "\u000a" }{ "                           [agent]" }{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }  { "agent                 " }Filter to a specific agent{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  -c COUNT, --count COUNT" }{ "\u000a" }                        Number of runs to show (default: 20){ "\u000a" }{ "  " }{ "--day YYYYMMDD" }{ "        " }Show only runs from this day{ "\u000a" }{ "  " }{ "--daily" }{ "               " }Show only daily-scheduled runs{ "\u000a" }{ "  " }{ "--errors" }{ "              " }Show only error runs{ "\u000a" }{ "  " }{ "--summary" }{ "             " }Show grouped summary
+
+m6a6f75726e616c2e636c692e74616c656e742e68656c702e7061737361676573 = usage: { "solstone journal talent passages [-h] [--json] --day YYYYMMDD" }{ "\u000a" }{ "                           --facet NAME --activity ID" }{ "\u000a" }                           name{ "\u000a" }{ "\u000a" }Copy exact passages from the source an activity talent reads.{ "\u000a" }A short source unit is kept whole without a model call; a longer one{ "\u000a" }takes one completion to choose what to copy. No passages are written to{ "\u000a" }the journal; a completion's usage is logged like any other.{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }  { "name                  " }Activity talent name, such as work or conversation{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "--json" }{ "                " }Output the passage document as { "JSON" }{ "\u000a" }{ "  " }{ "--day YYYYMMDD" }{ "        " }Day of the activity{ "\u000a" }{ "  " }{ "--facet NAME" }{ "          " }Facet of the activity{ "\u000a" }{ "  " }{ "--activity ID" }{ "         " }Activity ID
+
+m6a6f75726e616c2e636c692e74616c656e742e68656c702e726f6f74 = usage: { "solstone journal talent [-h] [-v] [-d] {list,show,passages,logs,log} ..." }{ "\u000a" }{ "\u000a" }Inspect talent prompt configurations{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  {list,show,passages,logs,log}" }{ "\u000a" }    { "list                " }List prompts grouped by schedule{ "\u000a" }    { "show                " }Show details for a specific prompt{ "\u000a" }    { "passages            " }Copy source passages from an activity's source{ "\u000a" }    { "logs                " }Show recent talent run log{ "\u000a" }    { "log                 " }Show events for an agent run{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "         " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "           " }Enable debug logging
+
+m6a6f75726e616c2e636c692e74616c656e742e68656c702e73686f77 = usage: { "solstone journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]" }{ "\u000a" }{ "                           [--segment HHMMSS_LEN] [--facet NAME]" }{ "\u000a" }{ "                           [--activity ID] [--query TEXT] [--full]" }{ "\u000a" }                           name{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }  { "name                  " }Prompt name{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "--json" }{ "                " }Output as { "JSONL" }{ "\u000a" }{ "  " }{ "--prompt" }{ "              " }Show full prompt context (dry-run mode){ "\u000a" }{ "  " }{ "--day YYYYMMDD" }{ "        " }Day for prompt context{ "\u000a" }{ "  " }{ "--segment HHMMSS_LEN" }{ "  " }Segment for segment-scheduled prompts{ "\u000a" }{ "  " }{ "--facet NAME" }{ "          " }Facet for multi-facet prompts{ "\u000a" }{ "  " }{ "--activity ID" }{ "         " }Activity ID for activity-scheduled prompts{ "\u000a" }{ "  " }{ "--query TEXT" }{ "          " }Sample query for tool agents{ "\u000a" }{ "  " }{ "--full" }{ "                " }Show full content without truncation
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6272696566696e672e646174652e6f766572666c6f77 = briefing date overflow
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6272696566696e672e6661696c6564 = morning briefing pre-hook failed: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e627564676574 = prepared request does not fit the floor input budget
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6461696c792e6c6f6f6b6261636b = daily schedule lookback outside { "1..=366" }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6461792e696e76616c6964 = invalid or unparseable day: '{ $day }'
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6461792e6d697373696e67 = missing day
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e646f63756d656e742e73747265616d = not a document import segment
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e656e746974792e6d696e696d756d = entity packet for { $entity } is at least { $count } characters; maximum is { $maximum }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e656e746974792e6e616d65 = missing entity name
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e656e746974792e73697a65 = entity packet for { $entity } is { $count } characters; maximum is { $maximum }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e66616365742e6d697373696e67 = missing facet
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e66616365742e72656164 = facet { $facet } could not be read: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6661636574732e6c697374 = facets could not be listed: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e66616374732e73697a65 = entity facts context is { $count } characters; maximum is { $maximum }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6661696c757265 = { $phase } hook '{ $stage }' for talent '{ $talent }': { $detail }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6964656e7469746965732e72656164 = entity identities could not be read: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6964656e746974792e6f626a656374 = entity identity is not an object: { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6c6f6f6b75702e636f6e74726f6c = invalid path component '{ $candidate }': the name contains a control character
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6c6f6f6b75702e646f74636f6d706f6e656e74 = invalid path component '{ $candidate }': { "'.'" } and { "'..'" } are not valid names
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6c6f6f6b75702e656d707479 = invalid path component '{ $candidate }': the name is empty
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6c6f6f6b75702e6b696e64 = { $path } is not a directory ({ $kind })
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6c6f6f6b75702e6c61796f7574 = direct layout requires stream "{ "_default" }", got { $stream }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6c6f6f6b75702e726f6f746f72707265666978 = invalid path component '{ $candidate }': the name must be a single relative component
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e6c6f6f6b75702e736570617261746f72 = invalid path component '{ $candidate }': the name contains a path separator
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e706f737369626c652e6e6f2e70726f6d7074 = the talent has no prompt
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e7265736f6c7574696f6e2e616273656e74 = resolved ambiguity { $ambiguity } names entity { $entity } absent from this resolution call
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e7265736f6c7574696f6e2e68696464656e = resolved ambiguity { $ambiguity } names hidden entity { $entity }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e7265766965772e6368616e676564 = review inputs changed during preparation
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e73747265616d2e6c61796f7574 = direct layout requires stream "{ "_default" }", got "{ $stream }"
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e737567676573742e73697a65 = entity suggest context is { $count } characters; maximum is { $maximum }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e73756767657374696f6e732e6172726179 = suggestions JSON missing { "entities" } array
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e73756767657374696f6e732e6a736f6e = invalid suggestions JSON in { $path }: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e73756767657374696f6e732e6d697373696e67 = missing suggestions artifact: { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e73756e646179 = request day { $day } is not a Sunday
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e7472616e7363726970742e6279746573 = transcript bytes are not valid UTF-8
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e7472616e7363726970742e72656164 = transcript { $file } could not be read: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e7472616e7363726970742e75746638 = transcript { $file } is not UTF-8: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e686f6f6b2e7765656b2e696e636f6d706c657465 = week ending { $end } has not completed before today { $today }
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6173742e616765 = { $age } ago
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6173742e6167652e6475726174696f6e = { $age } ago ({ $duration })
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e656d707479 = No prompts found matching filters.
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e67726f75702e6163746976697479 = activity:
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e67726f75702e636164656e6365 = cadence:
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e67726f75702e6461696c79 = daily:
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e67726f75702e7365676d656e74 = segment:
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e67726f75702e756e7363686564756c6564 = unscheduled:
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e67726f75702e7765656b6c79 = weekly:
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e6865616465722e6c617374 = LAST RUN
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e6865616465722e6e616d65 = NAME
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e6865616465722e74616773 = TAGS
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e6865616465722e7469746c65 = TITLE
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e7461672e64697361626c6564 = disabled
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e7461672e6661696c = FAIL
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6973742e76697369626c65 = { $i18nCategory ->
+    [one] { NUMBER($count, useGrouping: 0) } prompt ({ $hidden } disabled hidden, use { "--disabled" })
+   *[other] { NUMBER($count, useGrouping: 0) } prompts ({ $hidden } disabled hidden, use { "--disabled" })
+}
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6f672e6576656e742e7468696e6b696e67 = think
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6f672e6576656e742e746f6f6c = tool
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6f672e6576656e742e75706461746564 = updated
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6f672e6d697373696e67 = Talent run not found: { $run }
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6f672e746f6b656e73 = { $result } [{ $input }in/{ $output }out]
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6f67732e64617465 = { $month } { $day_time }
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6f67732e6461792e696e76616c6964 = Invalid { "--day" } format: { $day }. Expected { "YYYYMMDD" }.
+
+m6a6f75726e616c2e636c692e74616c656e742e6c6f67732e746f74616c = total
+
+m6a6f75726e616c2e636c692e74616c656e742e70617373616765732e67656e6572617465 = source passages could not reach generate: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e70617373616765732e67656e65726174652e6d697373696e67 = source passages could not reach generate: missing sibling executable { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e70617373616765732e67656e65726174652e706172656e74 = source passages could not reach generate: current executable has no parent
+
+m6a6f75726e616c2e636c692e74616c656e742e70617373616765732e696e636f6d706c657465 = some source units have no passages; see each unit's outcome
+
+m6a6f75726e616c2e636c692e74616c656e742e70617373616765732e756e617661696c61626c65 = source passages unavailable: { $detail }
+
+m6a6f75726e616c2e636c692e74616c656e742e70617373616765732e756e69742e6661696c6564 = # unit { $index } · { $kind } · no passages: { $reason }
+
+m6a6f75726e616c2e636c692e74616c656e742e70617373616765732e756e69742e6661696c65642e74696d65 = # unit { $index } · { $kind } · { $time } · no passages: { $reason }
+
+m6a6f75726e616c2e636c692e74616c656e742e70617373616765732e756e69742e6e6f742e617474656d70746564 = # unit { $index } · { $kind } · not attempted
+
+m6a6f75726e616c2e636c692e74616c656e742e70617373616765732e756e69742e6e6f742e617474656d707465642e74696d65 = # unit { $index } · { $kind } · { $time } · not attempted
+
+m6a6f75726e616c2e636c692e74616c656e742e70617373616765732e756e69742e7061737361676573 = { $i18nCategory ->
+    [one] # unit { $index } · { $kind } · { NUMBER($count, useGrouping: 0) } passage
+   *[other] # unit { $index } · { $kind } · { NUMBER($count, useGrouping: 0) } passage(s)
+}
+
+m6a6f75726e616c2e636c692e74616c656e742e70617373616765732e756e69742e70617373616765732e74696d65 = { $i18nCategory ->
+    [one] # unit { $index } · { $kind } · { $time } · { NUMBER($count, useGrouping: 0) } passage
+   *[other] # unit { $index } · { $kind } · { $time } · { NUMBER($count, useGrouping: 0) } passage(s)
+}
+
+m6a6f75726e616c2e636c692e74616c656e742e70617373616765732e766572626174696d = Verbatim from source:
+
+m6a6f75726e616c2e636c692e74616c656e742e706174682e6162736f6c757465 = journal path must be relative
+
+m6a6f75726e616c2e636c692e74616c656e742e706174682e6261636b736c617368 = journal path must use forward slashes
+
+m6a6f75726e616c2e636c692e74616c656e742e706174682e636f6d706f6e656e74 = journal path contains invalid component
+
+m6a6f75726e616c2e636c692e74616c656e742e706174682e646179 = day must be { "YYYYMMDD" }
+
+m6a6f75726e616c2e636c692e74616c656e742e706174682e656d707479 = journal path must not be empty
+
+m6a6f75726e616c2e636c692e74616c656e742e706174682e657363617065 = { $relative } escapes the journal root (resolved to { $path })
+
+m6a6f75726e616c2e636c692e74616c656e742e706174682e756e7265616461626c65 = journal path is not readable
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e636f6e66696775726174696f6e2e6e616d652e6465636c617265732e616e2e696e76616c69642e6d6f62696c652e6c6f63616c2e74696d656f7574 = configuration '{ $name }' declares an invalid { "mobile_local_timeout_s" }
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e696e76616c69642e636f6e6669672e6d7573742e686176652e747970652e6461792e6f722e70726f6d7074 = Invalid config: must have { "'type'" }, { "'day'" }, or { "'prompt'" }
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e696e76616c69642e636f6e6669672e7365676d656e742e6f722e7370616e2e72657175697265732e646179 = Invalid config: { "'segment'" } or { "'span'" } requires { "'day'" }
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e696e76616c69642e74616c656e742e747970652e6b696e64 = invalid talent type '{ $kind }'
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e6d656d6f72792e696e636f6d706c657465 = private memory context is incomplete
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e726571756573742e6669656c642e6669656c642e69732e72657469726564 = request field '{ $field }' is retired
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e726571756573742e6f76657272696465732e6669656c642e666f722e74616c656e742e6e616d652e6172652e6e6f742e616c6c6f776564 = Request overrides '{ $field }' for talent '{ $name }' are not allowed ({ $declared } != { $requested })
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e726571756573742e6f76657272696465732e666f722e6669656c642e6172652e6e6f742e616c6c6f776564 = request overrides for '{ $field }' are not allowed; thinking provider and model are configured only in Thinking
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e726571756573742e6f76657272696465732e666f722e6669656c642e6172652e6e6f742e616c6c6f7765642e627564676574 = request overrides for '{ $field }' are not allowed; a talent's budgets are its own
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e7365676d656e742e6d697373696e67 = { $i18nCategory ->
+    [one] Segment directory not found: { $segments }
+   *[other] Segment directories not found: { $segments }
+}
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e74616c656e742e6e616d652e6465636c617265732e6669656c642e696e2e66726f6e746d6174746572 = talent '{ $name }' declares '{ $field }' in frontmatter; thinking provider and model are configured only in Thinking
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e74616c656e742e6e616d652e6465636c617265732e6f7574626f756e642e617070726f76616c2e696e2e66726f6e746d6174746572 = talent '{ $name }' declares { "'outbound_approval'" } in frontmatter; this field is launch-config-only and may not come from a talent definition
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e74616c656e742e6e616d652e6e6f742e666f756e64 = talent '{ $name }' not found
+
+m6a6f75726e616c2e636c692e74616c656e742e707265706172652e74616c656e742e726571756573742e6d697373696e672e6e616d65 = talent request missing name
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e616c6c2e6c696e6573 = (use { "--full" } to see all { $count } lines)
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e62616e6e6572 = Preview of what this talent would send. Same assembly a real run uses; the model is not called.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e656666656374697665 = Effective prompt for: { $talent }
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e656d707479 = (empty)
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e696e737472756374696f6e = INSTRUCTION
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e6e6f2e646179 = No day given, so this preview has no day's recordings in it. Pass { "--day" } { "YYYYMMDD" } to include them.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e6f6d6974746564 = { $i18nCategory ->
+    [one] ... ({ NUMBER($count, useGrouping: 0) } line omitted)
+   *[other] ... ({ NUMBER($count, useGrouping: 0) } lines omitted)
+}
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e6f6d69747465642e6c6567616379 = ... ({ $count } lines omitted)
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e70726573746570 = Prompt preview cannot assemble this talent: a required pre-step is not available.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e63686f6f73652e612e636f6d706c657465642e6f776e65722e61637469766974792e6e6f742e616e2e616e7469636970617465642e6f722e636f6769 = Choose a completed owner activity, not an anticipated or cogitate record.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e63686f6f73652e612e74616c656e742e636f6e666967757265642e666f722e746869732e61637469766974792e6b696e64 = Choose a talent configured for this activity kind.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e63686f6f73652e612e74616c656e742e746861742e6c6f6164732e6974732e61637469766974792e732e736f7572636573 = Choose a talent that loads its activity's sources.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e63686f6f73652e612e74616c656e742e746861742e72656164732e6974732e61637469766974792e736f757263652e776974686f75742e612e707265 = Choose a talent that reads its activity source without a pre-step.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e63686f6f73652e612e74616c656e742e77686f73652e72657175697265642e7072652e737465702e69732e617661696c61626c652e696e2e746865 = Choose a talent whose required pre-step is available in the native runtime.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e63686f6f73652e612e74616c656e742e77686f73652e7363686564756c652e69732e6163746976697479 = Choose a talent whose schedule is { "activity." }
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e63686f6f73652e616e2e61637469766974792e69642e73746f7265642e696e2e7468652e7265717565737465642e6461792e616e642e6661636574 = Choose an activity ID stored in the requested day and facet.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e63686f6f73652e616e2e61637469766974792e776974682e61742e6c656173742e6f6e652e7265636f726465642e7365676d656e74 = Choose an activity with at least one recorded segment.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e63686f6f73652e6569746865722e61637469766974792e6f722e7365676d656e742e6e6f742e626f7468 = Choose either { "--activity" } or { "--segment" }, not both.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e636f72726563742e7468652e61637469766974792e707265766965772e696e7075742e7468656e2e72657472792e64657461696c = Correct the activity preview input, then retry: { $detail }
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e636f72726563742e7468652e74616c656e742e636f6e66696775726174696f6e2e64657461696c = Correct the talent configuration: { $detail }
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e6d616b652e7468652e73656c65637465642e61637469766974792e616e642e74616c656e742e656c696769626c652e7468656e2e7265747279 = Make the selected activity and talent eligible, then retry.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e6d616b652e7468652e73656c65637465642e74616c656e742e656c696769626c652e7468656e2e7265747279 = Make the selected talent eligible, then retry.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e706173732e6461792e797979796d6d64642e66616365742e6e616d652e616e642e61637469766974792e6964 = Pass { "--day" } { "YYYYMMDD" }, { "--facet" } { "NAME" } and { "--activity" } ID.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e706173732e6461792e797979796d6d64642e776974682e6163746976697479 = Pass { "--day" } { "YYYYMMDD" } with { "--activity" }.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e706173732e66616365742e6e616d652e776974682e6163746976697479 = Pass { "--facet" } { "NAME" } with { "--activity" }.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e72656d6f76652e6475706c69636174652e7265636f7264732e776974682e746869732e69642e696e2e7468652e7265717565737465642e6461792e61 = Remove duplicate records with this ID in the requested day and facet.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e7265706169722e7468652e61637469766974792e7370616e2e736f2e65766572792e7365676d656e742e69732e612e6e6f6e2e656d7074792e737472 = Repair the activity span so every segment is a non-empty string.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e726573746f72652e612e7265616461626c652e61637469766974792e7265636f72642e66696c652e7468656e2e72657472792e64657461696c = Restore a readable activity record file, then retry: { $detail }
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e726573746f72652e612e7265616461626c652e7365676d656e742e6469726563746f72792e7468656e2e72657472792e64657461696c = Restore a readable segment directory, then retry: { $detail }
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e726573746f72652e7265616461626c652e7365676d656e742e6469726563746f726965732e7468656e2e72657472792e64657461696c = Restore readable segment directories, then retry: { $detail }
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e7265636f766572792e726573746f72652e7468652e73656c65637465642e61637469766974792e7365676d656e742e7468656e2e7265747279 = Restore the selected activity segment, then retry.
+
+m6a6f75726e616c2e636c692e74616c656e742e707265766965772e736b6970706564 = This talent would not run: { $reason }
+
+m6a6f75726e616c2e636c692e74616c656e742e73686f772e626f6479 = body:
+
+m6a6f75726e616c2e636c692e74616c656e742e73686f772e626f64792e6c696e6573 = { $i18nCategory ->
+    [one] { NUMBER($count, useGrouping: 0) } line
+   *[other] { NUMBER($count, useGrouping: 0) } lines
+}
+
+m6a6f75726e616c2e636c692e74616c656e742e73686f772e686f6f6b = Prompt '{ $talent }' is a hook prompt and cannot be run directly.
+
+m6a6f75726e616c2e636c692e74616c656e742e73686f772e6d697373696e67 = Prompt not found: { $talent }
+
+m6a6f75726e616c2e636c692e74616c656e742e73686f772e6d697373696e672e70617468 = Prompt not found: { $talent }{ "\u000a" }  looked at: { $path }
+
+m6a6f75726e616c2e636c692e74616c656e742e73686f772e7661726961626c6573 = variables:
+
+m6a6f75726e616c2e636c692e74616c656e742e737461727475702e65786563757461626c65 = talent failed: could not inspect current executable: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e737461727475702e7061636b616765 = talent failed: could not locate installed { "solstone" } package
+
+m6a6f75726e616c2e636c692e74616c656e742e776f726b2e6475726174696f6e = invalid Work source duration: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e776f726b2e6475726174696f6e2e72616e6765 = Work source duration is out of range
+
+m6a6f75726e616c2e636c692e74616c656e742e776f726b2e696e74657276616c = invalid Work source interval: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e776f726b2e696e74657276616c2e72616e6765 = Work source interval is out of range
+
+m6a6f75726e616c2e636c692e74616c656e742e776f726b2e6b6579 = invalid Work source segment: { $segment }
+
+m6a6f75726e616c2e636c692e74616c656e742e776f726b2e72656164 = cannot read Work segment results: { $error }
+
+m6a6f75726e616c2e636c692e74616c656e742e776f726b2e756e617661696c61626c65 = Work source segment is unavailable: { $day }/{ $segment }
+

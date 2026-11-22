@@ -22,7 +22,8 @@ pub(crate) fn run(
         facet: options.facet.clone(),
         activity: options.activity.clone(),
     };
-    match previewer.passages(journal_root, &request) {
+    let locale = crate::output_locale(options.json);
+    match previewer.passages_in((!options.json).then_some(locale), journal_root, &request) {
         // An incomplete document is still printed whole, so the units that
         // have no passages say why; the exit status says it is incomplete.
         PassageRun::Extracted {
@@ -38,7 +39,14 @@ pub(crate) fn run(
             stderr: if complete {
                 String::new()
             } else {
-                "some source units have no passages; see each unit's outcome\n".to_owned()
+                format!(
+                    "{}\n",
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.talent.passages.incomplete",
+                        &[]
+                    )
+                )
             },
             exit_code: if complete { 0 } else { 1 },
         },
@@ -54,12 +62,18 @@ pub(crate) fn run(
             refusal,
         ),
         PassageRun::NotPrepared(PromptPreview::WouldNotRun { reason }) => {
-            failure(format!("This talent would not run: {reason}"))
+            failure(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.preview.skipped",
+                [("reason", &reason)],
+            ))
         }
         PassageRun::NotPrepared(PromptPreview::Failed { error }) => failure(error),
-        PassageRun::NotPrepared(other) => {
-            failure(format!("source passages unavailable: {other:?}"))
-        }
+        PassageRun::NotPrepared(other) => failure(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.passages.unavailable",
+            [("detail", &(format!("{other:?}")))],
+        )),
     }
 }
 

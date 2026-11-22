@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for preview prestep.",
+  "context": "Journal command-line text for preview prestep.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "415dec5230644cca19f1d585a61c84672a300d30da9ec44fdf44b8aa45c2d308",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

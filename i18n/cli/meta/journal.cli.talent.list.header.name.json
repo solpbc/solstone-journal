@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list header name.",
+  "context": "Journal command-line text for list header name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef31cf12932aabe5e943923d69df119e4f821b738cd6f84c5ca520853c681947",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for error passages unknown.",
+  "context": "Journal command-line text for error passages unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "arguments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a9e9696e674e5bc3d0c3dea7d6b6c61d0aa27172093e71f6f3f6554e4775120d",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal talent passages [-h] [--json] --day YYYYMMDD"
+    },
+    {
+      "name": "program",
+      "kind": "command",
+      "value": "solstone journal talent passages"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

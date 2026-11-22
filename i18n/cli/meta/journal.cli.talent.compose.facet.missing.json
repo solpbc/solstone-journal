@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for compose facet missing.",
+  "context": "Journal command-line text for compose facet missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d621480797b69ee09b8854e1276ba10157cce68961b306e7e519d2e5dcd5daac",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for prepare talent request missing name.",
+  "context": "Journal command-line text for prepare talent request missing name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "98620bb2ad5b96577a97ea64be1a1b1e5c1e0286133482b43c2356571f5aaec5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

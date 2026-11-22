@@ -319,32 +319,65 @@ pub struct DirEntry {
 /// Re-export the existing core journal-root resolver.
 pub use solstone_core_journal::resolve_journal_path as resolve_configured_journal;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RelativePathProblem {
+    Empty,
+    Absolute,
+    Backslash,
+    Component,
+    Unreadable,
+}
+
+impl RelativePathProblem {
+    pub fn of(rel: &str) -> Option<Self> {
+        Self::of_normalized(&normalize_rel(rel))
+    }
+
+    fn of_normalized(normalized: &str) -> Option<Self> {
+        if normalized.trim().is_empty() {
+            return Some(RelativePathProblem::Empty);
+        }
+        if normalized.starts_with('/') || Path::new(normalized).has_root() {
+            return Some(RelativePathProblem::Absolute);
+        }
+        if normalized.contains('\\') {
+            return Some(RelativePathProblem::Backslash);
+        }
+        if normalized.split('/').any(|part| {
+            part.is_empty()
+                || matches!(part, "." | "..")
+                || !matches!(
+                    Path::new(part).components().collect::<Vec<_>>().as_slice(),
+                    [Component::Normal(_)]
+                )
+        }) {
+            return Some(RelativePathProblem::Component);
+        }
+        let first = normalized.split('/').next().unwrap_or("");
+        if solstone_core_journal::is_trash_root_name(std::ffi::OsStr::new(first)) {
+            return Some(RelativePathProblem::Unreadable);
+        }
+        None
+    }
+
+    fn message(self) -> &'static str {
+        match self {
+            Self::Empty => "journal path must not be empty",
+            Self::Absolute => "journal path must be relative",
+            Self::Backslash => "journal path must use forward slashes",
+            Self::Component => "journal path contains invalid component",
+            Self::Unreadable => "journal path is not readable",
+        }
+    }
+}
+
 /// Resolve a Python-compatible journal-relative path against `journal`.
 pub fn resolve_journal_path(journal: &Path, rel: &str) -> Result<PathBuf, PathError> {
     let normalized = normalize_rel(rel);
-    if normalized.trim().is_empty() {
-        return Err(invalid(rel, "journal path must not be empty"));
-    }
-    if normalized.starts_with('/') || Path::new(&normalized).has_root() {
-        return Err(invalid(rel, "journal path must be relative"));
-    }
-    if normalized.contains('\\') {
-        return Err(invalid(rel, "journal path must use forward slashes"));
-    }
-    if normalized.split('/').any(|part| {
-        part.is_empty()
-            || matches!(part, "." | "..")
-            || !matches!(
-                Path::new(part).components().collect::<Vec<_>>().as_slice(),
-                [Component::Normal(_)]
-            )
-    }) {
-        return Err(invalid(rel, "journal path contains invalid component"));
+    if let Some(problem) = RelativePathProblem::of_normalized(&normalized) {
+        return Err(invalid(rel, problem.message()));
     }
     let first = normalized.split('/').next().unwrap_or("");
-    if solstone_core_journal::is_trash_root_name(std::ffi::OsStr::new(first)) {
-        return Err(invalid(rel, "journal path is not readable"));
-    }
     let mut resolved = if is_day_key(first) {
         journal.join(CHRONICLE_DIR)
     } else {

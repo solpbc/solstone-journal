@@ -29,7 +29,7 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_generate::{GenerateExecutor, GenerateRequest, GenerateResponse};
 
-pub use activity::{ActivityPassages, activity_passages};
+pub use activity::{ActivityPassages, activity_passages, activity_passages_in};
 pub use select::{EDGE_CONTEXT_CHARS, MAX_RENDERED_CHARS, PASSAGE_PREFIX};
 pub use units::{
     SourceChannel, SourceKind, SourceUnit, UNIT_MAX_CHARS, UNIT_OVERLAP_CHARS, source_units,
@@ -551,34 +551,106 @@ fn failure_value(failure: &Failure) -> Value {
 
 /// The passages as plain readable text, one block per passage.
 pub fn readable(units: &[SourceUnit], extraction: &Extraction) -> String {
+    readable_in(solstone_core_cli_copy::ENGLISH, units, extraction)
+}
+
+pub fn readable_in(locale: &str, units: &[SourceUnit], extraction: &Extraction) -> String {
     let mut output = String::new();
     for (index, (unit, outcome)) in units.iter().zip(&extraction.outcomes).enumerate() {
-        let label = format!(
-            "unit {index} · {}{}",
-            unit.kind.as_str(),
-            unit.timestamp
-                .as_deref()
-                .map(|time| format!(" · {time}"))
-                .unwrap_or_default()
-        );
+        let kind = unit.kind.as_str();
+        let time = unit.timestamp.as_deref();
         let passages = match outcome {
             UnitOutcome::Whole { passage } => std::slice::from_ref(passage),
             UnitOutcome::Selected { passages, .. } => passages.as_slice(),
             UnitOutcome::Failed { failure, .. } => {
-                output.push_str(&format!(
-                    "# {label} · no passages: {}\n\n",
-                    failure_value(failure)["kind"].as_str().unwrap_or("failed")
-                ));
+                let failure = failure_value(failure);
+                let reason = failure["kind"].as_str().unwrap_or("failed");
+                let header = match time {
+                    Some(time) => solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.talent.passages.unit.failed.time",
+                        [
+                            ("index", &(index)),
+                            ("kind", &(kind)),
+                            ("time", &(time)),
+                            ("reason", &(reason)),
+                        ],
+                    ),
+                    None => solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.talent.passages.unit.failed",
+                        [
+                            ("index", &(index)),
+                            ("kind", &(kind)),
+                            ("reason", &(reason)),
+                        ],
+                    ),
+                };
+                output.push_str(&header);
+                output.push_str("\n\n");
                 continue;
             }
             UnitOutcome::NotAttempted => {
-                output.push_str(&format!("# {label} · not attempted\n\n"));
+                let header = match time {
+                    Some(time) => solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.talent.passages.unit.not.attempted.time",
+                        [("index", &(index)), ("kind", &(kind)), ("time", &(time))],
+                    ),
+                    None => solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.talent.passages.unit.not.attempted",
+                        [("index", &(index)), ("kind", &(kind))],
+                    ),
+                };
+                output.push_str(&header);
+                output.push_str("\n\n");
                 continue;
             }
         };
-        output.push_str(&format!("# {label} · {} passage(s)\n\n", passages.len()));
+        let count = passages.len();
+        let header = match time {
+            Some(time) => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.passages.unit.passages.time",
+                &[
+                    (
+                        "count",
+                        solstone_core_cli_copy::Value::Cardinal(count as i64),
+                    ),
+                    (
+                        "index",
+                        solstone_core_cli_copy::Value::String(&index.to_string()),
+                    ),
+                    ("kind", solstone_core_cli_copy::Value::String(kind)),
+                    ("time", solstone_core_cli_copy::Value::String(time)),
+                ],
+            ),
+            None => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.passages.unit.passages",
+                &[
+                    (
+                        "count",
+                        solstone_core_cli_copy::Value::Cardinal(count as i64),
+                    ),
+                    (
+                        "index",
+                        solstone_core_cli_copy::Value::String(&index.to_string()),
+                    ),
+                    ("kind", solstone_core_cli_copy::Value::String(kind)),
+                ],
+            ),
+        };
+        output.push_str(&header);
+        output.push_str("\n\n");
         for passage in passages {
-            output.push_str(PASSAGE_PREFIX);
+            output.push_str(&solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.passages.verbatim",
+                &[],
+            ));
+            output.push('\n');
             output.push_str(&passage.text);
             if !passage.text.ends_with('\n') {
                 output.push('\n');

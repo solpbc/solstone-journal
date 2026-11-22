@@ -70,7 +70,11 @@ pub fn build(
                 "build",
                 "entities:entity_suggest",
                 talent,
-                "missing day",
+                solstone_core_cli_copy::render_for(
+                    talent.stage_locale(),
+                    "journal.cli.talent.hook.day.missing",
+                    &[],
+                ),
             ))
         })?;
     let facet = talent
@@ -82,13 +86,18 @@ pub fn build(
                 "build",
                 "entities:entity_suggest",
                 talent,
-                "missing facet",
+                solstone_core_cli_copy::render_for(
+                    talent.stage_locale(),
+                    "journal.cli.talent.hook.facet.missing",
+                    &[],
+                ),
             ))
         })?;
 
-    let assembly = assemble_suggest_context(&context.journal, facet, day).map_err(|e| {
-        RuntimeOutcome::StageFailed(stage_error("build", "entities:entity_suggest", talent, e))
-    })?;
+    let assembly = assemble_suggest_context_in(talent.stage_locale(), &context.journal, facet, day)
+        .map_err(|e| {
+            RuntimeOutcome::StageFailed(stage_error("build", "entities:entity_suggest", talent, e))
+        })?;
     let memory_sources = serde_json::to_value(&assembly.memory_sources).map_err(|error| {
         RuntimeOutcome::StageFailed(stage_error(
             "build",
@@ -229,12 +238,34 @@ pub fn commit(
         .config
         .get("facet")
         .and_then(Value::as_str)
-        .ok_or_else(|| stage_error("commit", "entities:entity_suggest", talent, "missing facet"))?;
+        .ok_or_else(|| {
+            stage_error(
+                "commit",
+                "entities:entity_suggest",
+                talent,
+                solstone_core_cli_copy::render_for(
+                    talent.stage_locale(),
+                    "journal.cli.talent.hook.facet.missing",
+                    &[],
+                ),
+            )
+        })?;
     let day = talent
         .config
         .get("day")
         .and_then(Value::as_str)
-        .ok_or_else(|| stage_error("commit", "entities:entity_suggest", talent, "missing day"))?;
+        .ok_or_else(|| {
+            stage_error(
+                "commit",
+                "entities:entity_suggest",
+                talent,
+                solstone_core_cli_copy::render_for(
+                    talent.stage_locale(),
+                    "journal.cli.talent.hook.day.missing",
+                    &[],
+                ),
+            )
+        })?;
 
     Ok(CommitPlan::Write(WriteIntent::EntitySuggest {
         output,
@@ -249,7 +280,8 @@ struct SuggestContextAssembly {
     memory_sources: Vec<ConsumedOriginal>,
 }
 
-fn assemble_suggest_context(
+fn assemble_suggest_context_in(
+    locale: &str,
     journal: &Path,
     facet: &str,
     day: &str,
@@ -322,7 +354,7 @@ fn assemble_suggest_context(
 
     for (entity, rows) in &selected {
         let (packet, packet_sources) =
-            render_suggest_entity_packet(journal, facet, day, entity, rows)?;
+            render_suggest_entity_packet_in(locale, journal, facet, day, entity, rows)?;
         for source in packet_sources {
             if !memory_sources.contains(&source) {
                 memory_sources.push(source);
@@ -347,8 +379,13 @@ fn assemble_suggest_context(
 
     let context_chars = context.chars().count();
     if context_chars > MAX_SUGGEST_CONTEXT_CHARS {
-        return Err(format!(
-            "entity suggest context is {context_chars} characters; maximum is {MAX_SUGGEST_CONTEXT_CHARS}"
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.hook.suggest.size",
+            [
+                ("count", &(context_chars)),
+                ("maximum", &(MAX_SUGGEST_CONTEXT_CHARS)),
+            ],
         ));
     }
 
@@ -359,7 +396,26 @@ fn assemble_suggest_context(
     })
 }
 
+#[cfg(test)]
 fn render_suggest_entity_packet(
+    journal: &Path,
+    _facet: &str,
+    day: &str,
+    entity: &solstone_core_facets::ScopedFacetEntity,
+    detected_rows: &[Value],
+) -> Result<(String, Vec<ConsumedOriginal>), String> {
+    render_suggest_entity_packet_in(
+        solstone_core_cli_copy::ENGLISH,
+        journal,
+        _facet,
+        day,
+        entity,
+        detected_rows,
+    )
+}
+
+fn render_suggest_entity_packet_in(
+    locale: &str,
     journal: &Path,
     _facet: &str,
     day: &str,
@@ -476,7 +532,7 @@ fn render_suggest_entity_packet(
         if source_excerpts.len() >= MAX_SOURCE_SEGMENTS {
             break;
         }
-        if let Some((text, sources)) = load_segment_text(journal, day, &label)? {
+        if let Some((text, sources)) = load_segment_text_in(locale, journal, day, &label)? {
             for source in sources {
                 if !memory_sources.contains(&source) {
                     memory_sources.push(source);
@@ -499,9 +555,14 @@ fn render_suggest_entity_packet(
                 .map(|prefix| prefix.chars().count())
                 .sum::<usize>();
         if fixed_chars > MAX_ENTITY_CONTEXT_CHARS {
-            return Err(format!(
-                "entity packet for {} is at least {fixed_chars} characters; maximum is {MAX_ENTITY_CONTEXT_CHARS}",
-                entity.entity_id
+            return Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.hook.entity.minimum",
+                [
+                    ("entity", &(entity.entity_id)),
+                    ("count", &(fixed_chars)),
+                    ("maximum", &(MAX_ENTITY_CONTEXT_CHARS)),
+                ],
             ));
         }
         let mut remaining = MAX_ENTITY_CONTEXT_CHARS - fixed_chars;
@@ -522,9 +583,14 @@ fn render_suggest_entity_packet(
     let rendered = parts.join("\n");
     let count = rendered.chars().count();
     if count > MAX_ENTITY_CONTEXT_CHARS {
-        return Err(format!(
-            "entity packet for {} is {count} characters; maximum is {MAX_ENTITY_CONTEXT_CHARS}",
-            entity.entity_id
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.hook.entity.size",
+            [
+                ("entity", &(entity.entity_id)),
+                ("count", &(count)),
+                ("maximum", &(MAX_ENTITY_CONTEXT_CHARS)),
+            ],
         ));
     }
 
@@ -535,7 +601,8 @@ fn joined_chars(parts: &[String]) -> usize {
     parts.iter().map(|part| part.chars().count()).sum::<usize>() + parts.len().saturating_sub(1)
 }
 
-fn load_segment_text(
+fn load_segment_text_in(
+    locale: &str,
     journal: &Path,
     day: &str,
     label: &str,
@@ -562,7 +629,11 @@ fn load_segment_text(
         &source_config,
     );
     if memory.incomplete {
-        return Err("private memory context is incomplete".to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.talent.prepare.memory.incomplete",
+            &[],
+        ));
     }
     if counts.total() == 0 {
         Ok(None)

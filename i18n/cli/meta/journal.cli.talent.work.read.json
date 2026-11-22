@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for work read.",
+  "context": "Journal command-line text for work read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "743b02196ddb6d8b8c83381e23805c02fb28ae126e1a71248e5a697c45c8d9bb",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

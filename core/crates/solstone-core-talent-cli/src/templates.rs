@@ -75,17 +75,30 @@ pub fn safe_substitute(text: &str, vars: &BTreeMap<String, String>) -> String {
     output
 }
 
+#[cfg(test)]
 pub(crate) fn compose_prompt_body(
     body: &str,
     journal_root: &Path,
     templates_dir: &Path,
     context: &BTreeMap<String, String>,
 ) -> Result<String, String> {
-    let vars = match template_vars(journal_root, templates_dir, context) {
-        Ok(vars) => vars,
-        Err(error) if error.starts_with("failed to read journal config:") => return Err(error),
-        Err(_) => return Ok(body.to_owned()),
-    };
+    compose_prompt_body_in(
+        solstone_core_cli_copy::ENGLISH,
+        body,
+        journal_root,
+        templates_dir,
+        context,
+    )
+}
+
+pub(crate) fn compose_prompt_body_in(
+    locale: &str,
+    body: &str,
+    journal_root: &Path,
+    templates_dir: &Path,
+    context: &BTreeMap<String, String>,
+) -> Result<String, String> {
+    let vars = template_vars(locale, journal_root, templates_dir, context)?;
     let templates = match load_raw_templates(templates_dir) {
         Ok(templates) => templates,
         Err(_) => return Ok(body.to_owned()),
@@ -100,12 +113,19 @@ pub(crate) fn compose_prompt_body(
 }
 
 fn template_vars(
+    locale: &str,
     journal_root: &Path,
     _templates_dir: &Path,
     context: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, String>, String> {
-    let read = read_journal_config(journal_root)
-        .map_err(|error| format!("failed to read journal config: {error}"))?;
+    let read = read_journal_config(journal_root).map_err(|error| {
+        let detail = crate::preview::settings_detail(locale, &error);
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.compose.settings",
+            [("detail", &(detail))],
+        )
+    })?;
     let config = read.config.unwrap_or_else(plain_defaults);
     let identity = config.get("identity").and_then(Value::as_object);
     let mut vars = identity.map_or_else(BTreeMap::new, flatten_identity);
