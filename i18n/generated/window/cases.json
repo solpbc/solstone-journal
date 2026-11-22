@@ -44460,6 +44460,1120 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.added\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6164646564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6164646564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.added",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6164646564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Calendar event added",
+      "message_id": "journal.window.calendar.note.added",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.added\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6164646564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "title",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.added.titled\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e61646465642e7469746c6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e61646465642e7469746c6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.added.titled",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e61646465642e7469746c6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "title": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Calendar event added: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.added.titled",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.added.titled\", [[\"title\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e61646465642e7469746c6564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.attendee.owner\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e6f776e6572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e6f776e6572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.attendee.owner",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e6f776e6572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩, you",
+      "message_id": "journal.window.calendar.note.attendee.owner",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.attendee.owner\", [[\"name\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e6f776e6572",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "attendees",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "attendee",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.attendee.pair\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e70616972",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e70616972_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.attendee.pair",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e70616972",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "attendee": "sample",
+        "attendees": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩; ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.attendee.pair",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.attendee.pair\", [[\"attendee\", \"sample\"], [\"attendees\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e70616972",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.attendee.status\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e737461747573",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e737461747573_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.attendee.status",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e737461747573",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "name": "sample",
+        "status": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ (⁨sample⁩)",
+      "message_id": "journal.window.calendar.note.attendee.status",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.attendee.status\", [[\"name\", \"sample\"], [\"status\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e737461747573",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "calendar",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.calendar\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e646172",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e646172_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.calendar",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e646172",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "calendar": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Calendar: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.calendar",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.calendar\", [[\"calendar\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e646172",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "calendar",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "account",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.calendar.account\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e6461722e6163636f756e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e6461722e6163636f756e74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.calendar.account",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e6461722e6163636f756e74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "account": "sample",
+        "calendar": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Calendar: ⁨sample⁩ (⁨sample⁩)",
+      "message_id": "journal.window.calendar.note.calendar.account",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.calendar.account\", [[\"account\", \"sample\"], [\"calendar\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e6461722e6163636f756e74",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.changed\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e676564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e676564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.changed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e676564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Calendar event changed",
+      "message_id": "journal.window.calendar.note.changed",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.changed\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e676564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "title",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.changed.titled\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e6765642e7469746c6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e6765642e7469746c6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.changed.titled",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e6765642e7469746c6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "title": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Calendar event changed: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.changed.titled",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.changed.titled\", [[\"title\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e6765642e7469746c6564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "weekday",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "month",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "year",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.date\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e64617465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e64617465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.date",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e64617465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "day": "sample",
+        "month": "sample",
+        "weekday": "sample",
+        "year": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩, ⁨sample⁩ ⁨sample⁩, ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.date",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.date\", [[\"day\", \"sample\"], [\"month\", \"sample\"], [\"weekday\", \"sample\"], [\"year\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e64617465",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "attendees",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.invited\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e7669746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e7669746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.invited",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e7669746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "attendees": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Invited: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.invited",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.invited\", [[\"attendees\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e7669746564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "remaining",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "attendees",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.invited.more\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e76697465642e6d6f7265",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e76697465642e6d6f7265_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.invited.more",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e76697465642e6d6f7265",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "attendees": "sample",
+        "remaining": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "Invited: ⁨sample⁩; and ⁨0⁩ more",
+      "message_id": "journal.window.calendar.note.invited.more",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.invited.more\", [[\"attendees\", \"sample\"], [\"remaining\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e76697465642e6d6f7265",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "notes",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.notes\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6e6f746573",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6e6f746573_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.notes",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6e6f746573",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "notes": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Notes: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.notes",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.notes\", [[\"notes\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6e6f746573",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "offset",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.recorded\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7265636f72646564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7265636f72646564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.recorded",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7265636f72646564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "date": "sample",
+        "offset": "sample",
+        "time": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Recorded: ⁨sample⁩, ⁨sample⁩ (⁨sample⁩)",
+      "message_id": "journal.window.calendar.note.recorded",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.recorded\", [[\"date\", \"sample\"], [\"offset\", \"sample\"], [\"time\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7265636f72646564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.removed\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f766564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f766564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.removed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f766564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Calendar event removed",
+      "message_id": "journal.window.calendar.note.removed",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.removed\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f766564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "title",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.removed.titled\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f7665642e7469746c6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f7665642e7469746c6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.removed.titled",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f7665642e7469746c6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "title": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Calendar event removed: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.removed.titled",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.removed.titled\", [[\"title\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f7665642e7469746c6564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "repeats",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.repeats\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72657065617473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72657065617473_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.repeats",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72657065617473",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "repeats": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Repeats: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.repeats",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.repeats\", [[\"repeats\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72657065617473",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "start_date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "start_time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_time",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.across.days\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e64617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e64617973_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.across.days",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e64617973",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "end_date": "sample",
+        "end_time": "sample",
+        "start_date": "sample",
+        "start_time": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, ⁨sample⁩ to ⁨sample⁩, ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.when.across.days",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.across.days\", [[\"end_date\", \"sample\"], [\"end_time\", \"sample\"], [\"start_date\", \"sample\"], [\"start_time\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e64617973",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "start_date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "start_time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "zone",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.across.days.zoned\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e646179732e7a6f6e6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e646179732e7a6f6e6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.across.days.zoned",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e646179732e7a6f6e6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "end_date": "sample",
+        "end_time": "sample",
+        "start_date": "sample",
+        "start_time": "sample",
+        "zone": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, ⁨sample⁩ to ⁨sample⁩, ⁨sample⁩ (⁨sample⁩)",
+      "message_id": "journal.window.calendar.note.when.across.days.zoned",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.across.days.zoned\", [[\"end_date\", \"sample\"], [\"end_time\", \"sample\"], [\"start_date\", \"sample\"], [\"start_time\", \"sample\"], [\"zone\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e646179732e7a6f6e6564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "date",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.all.day\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e646179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e646179_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.all.day",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e646179",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "date": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, all day",
+      "message_id": "journal.window.calendar.note.when.all.day",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.all.day\", [[\"date\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e646179",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "start_date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_date",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.all.days\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e64617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e64617973_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.all.days",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e64617973",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "end_date": "sample",
+        "start_date": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩ to ⁨sample⁩, all day",
+      "message_id": "journal.window.calendar.note.when.all.days",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.all.days\", [[\"end_date\", \"sample\"], [\"start_date\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e64617973",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "start_time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_time",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.same.day\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e646179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e646179_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.same.day",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e646179",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "date": "sample",
+        "end_time": "sample",
+        "start_time": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, ⁨sample⁩ to ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.when.same.day",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.same.day\", [[\"date\", \"sample\"], [\"end_time\", \"sample\"], [\"start_time\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e646179",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "start_time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "zone",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.same.day.zoned\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e6461792e7a6f6e6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e6461792e7a6f6e6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.same.day.zoned",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e6461792e7a6f6e6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "date": "sample",
+        "end_time": "sample",
+        "start_time": "sample",
+        "zone": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, ⁨sample⁩ to ⁨sample⁩ (⁨sample⁩)",
+      "message_id": "journal.window.calendar.note.when.same.day.zoned",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.same.day.zoned\", [[\"date\", \"sample\"], [\"end_time\", \"sample\"], [\"start_time\", \"sample\"], [\"zone\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e6461792e7a6f6e6564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "time",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.time\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.time",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "date": "sample",
+        "time": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.when.time",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.time\", [[\"date\", \"sample\"], [\"time\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "zone",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.time.zoned\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d652e7a6f6e6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d652e7a6f6e6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.time.zoned",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d652e7a6f6e6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "date": "sample",
+        "time": "sample",
+        "zone": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, ⁨sample⁩ (⁨sample⁩)",
+      "message_id": "journal.window.calendar.note.when.time.zoned",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.time.zoned\", [[\"date\", \"sample\"], [\"time\", \"sample\"], [\"zone\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d652e7a6f6e6564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "location",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.where\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768657265",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768657265_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.where",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768657265",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "location": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Where: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.where",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.where\", [[\"location\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768657265",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.chrome.connection.connecting\u0004m6a6f75726e616c2e77696e646f772e6368726f6d652e636f6e6e656374696f6e2e636f6e6e656374696e67",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6368726f6d652e636f6e6e656374696f6e2e636f6e6e656374696e67_plural",
         "gettext_unsigned_quantity": null,
@@ -146304,6 +147418,262 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.app.newer\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6e65776572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6e65776572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.app.newer",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6e65776572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "its solstone app is newer than your journal. update your journal.",
+      "message_id": "journal.window.ingest.notice.app.newer",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.app.newer\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6e65776572",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.app.older\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6f6c646572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6f6c646572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.app.older",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6f6c646572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "its solstone app is too old for your journal. update the solstone app on it.",
+      "message_id": "journal.window.ingest.notice.app.older",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.app.older\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6f6c646572",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "device_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.cleared.named\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e6e616d6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e6e616d6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.cleared.named",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e6e616d6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "device_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "your journal is accepting uploads from ⁨sample⁩ again",
+      "message_id": "journal.window.ingest.notice.cleared.named",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.cleared.named\", [[\"device_name\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e6e616d6564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.cleared.unnamed\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e756e6e616d6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e756e6e616d6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.cleared.unnamed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e756e6e616d6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your journal is accepting uploads from one of your devices again",
+      "message_id": "journal.window.ingest.notice.cleared.unnamed",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.cleared.unnamed\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e756e6e616d6564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "device_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.raised.named\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e6e616d6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e6e616d6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.raised.named",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e6e616d6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "device_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "your journal is turning away uploads from ⁨sample⁩",
+      "message_id": "journal.window.ingest.notice.raised.named",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.raised.named\", [[\"device_name\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e6e616d6564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.raised.unnamed\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e756e6e616d6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e756e6e616d6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.raised.unnamed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e756e6e616d6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your journal is turning away uploads from one of your devices",
+      "message_id": "journal.window.ingest.notice.raised.unnamed",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.raised.unnamed\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e756e6e616d6564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.tmux.newer\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6e65776572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6e65776572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.tmux.newer",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6e65776572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "solstone for tmux on it is newer than your journal. update your journal.",
+      "message_id": "journal.window.ingest.notice.tmux.newer",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.tmux.newer\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6e65776572",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.tmux.older\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6f6c646572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6f6c646572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.tmux.older",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6f6c646572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "solstone for tmux on it is too old for your journal. update solstone for tmux.",
+      "message_id": "journal.window.ingest.notice.tmux.older",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.tmux.older\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6f6c646572",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.link.absent\u0004m6a6f75726e616c2e77696e646f772e6c696e6b2e616273656e74",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6c696e6b2e616273656e74_plural",
         "gettext_unsigned_quantity": null,
@@ -170472,6 +171842,186 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.not.found.title\", [])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f742e666f756e642e7469746c65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.notes.transcript.edited\u0004m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e656469746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e656469746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.notes.transcript.edited",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e656469746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "edited",
+      "message_id": "journal.window.notes.transcript.edited",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.notes.transcript.edited\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e656469746564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.notes.transcript.removed\u0004m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f766564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f766564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.notes.transcript.removed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f766564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "no longer in the vault",
+      "message_id": "journal.window.notes.transcript.removed",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.notes.transcript.removed\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f766564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.notes.transcript.removed.words\u0004m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f7665642e776f726473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f7665642e776f726473_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.notes.transcript.removed.words",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f7665642e776f726473",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "removed ⁨sample⁩ words.",
+      "message_id": "journal.window.notes.transcript.removed.words",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.notes.transcript.removed.words\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f7665642e776f726473",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.notes.transcript.renamed\u0004m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656e616d6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656e616d6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.notes.transcript.renamed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656e616d6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "renamed from ⁨sample⁩",
+      "message_id": "journal.window.notes.transcript.renamed",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.notes.transcript.renamed\", [[\"path\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656e616d6564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.notes.transcript.source\u0004m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e736f75726365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e736f75726365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.notes.transcript.source",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e736f75726365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Source: ⁨sample⁩",
+      "message_id": "journal.window.notes.transcript.source",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.notes.transcript.source\", [[\"path\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e736f75726365",
       "target": "classic"
     },
     {
@@ -330722,6 +332272,1120 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.added\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6164646564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6164646564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.added",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6164646564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Calendar event added",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Calendar event added",
+      "message_id": "journal.window.calendar.note.added",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.added\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6164646564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "title",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.added.titled\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e61646465642e7469746c6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e61646465642e7469746c6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.added.titled",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e61646465642e7469746c6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Calendar event added: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "title": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Calendar event added: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.added.titled",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.added.titled\", &[(\"title\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e61646465642e7469746c6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.attendee.owner\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e6f776e6572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e6f776e6572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.attendee.owner",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e6f776e6572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩, you",
+      "folder": null,
+      "inputs": {
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩, you",
+      "message_id": "journal.window.calendar.note.attendee.owner",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.attendee.owner\", &[(\"name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e6f776e6572",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "attendees",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "attendee",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.attendee.pair\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e70616972",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e70616972_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.attendee.pair",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e70616972",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩; ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "attendee": "sample",
+        "attendees": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩; ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.attendee.pair",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.attendee.pair\", &[(\"attendee\", Value::String(\"sample\")), (\"attendees\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e70616972",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.attendee.status\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e737461747573",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e737461747573_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.attendee.status",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e737461747573",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ (⁨sample⁩)",
+      "folder": null,
+      "inputs": {
+        "name": "sample",
+        "status": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ (⁨sample⁩)",
+      "message_id": "journal.window.calendar.note.attendee.status",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.attendee.status\", &[(\"name\", Value::String(\"sample\")), (\"status\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e737461747573",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "calendar",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.calendar\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e646172",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e646172_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.calendar",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e646172",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Calendar: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "calendar": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Calendar: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.calendar",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.calendar\", &[(\"calendar\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e646172",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "calendar",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "account",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.calendar.account\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e6461722e6163636f756e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e6461722e6163636f756e74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.calendar.account",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e6461722e6163636f756e74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Calendar: ⁨sample⁩ (⁨sample⁩)",
+      "folder": null,
+      "inputs": {
+        "account": "sample",
+        "calendar": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Calendar: ⁨sample⁩ (⁨sample⁩)",
+      "message_id": "journal.window.calendar.note.calendar.account",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.calendar.account\", &[(\"account\", Value::String(\"sample\")), (\"calendar\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e6461722e6163636f756e74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.changed\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e676564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e676564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.changed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e676564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Calendar event changed",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Calendar event changed",
+      "message_id": "journal.window.calendar.note.changed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.changed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e676564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "title",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.changed.titled\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e6765642e7469746c6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e6765642e7469746c6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.changed.titled",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e6765642e7469746c6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Calendar event changed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "title": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Calendar event changed: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.changed.titled",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.changed.titled\", &[(\"title\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e6765642e7469746c6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "weekday",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "month",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "year",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.date\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e64617465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e64617465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.date",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e64617465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩, ⁨sample⁩ ⁨sample⁩, ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "day": "sample",
+        "month": "sample",
+        "weekday": "sample",
+        "year": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩, ⁨sample⁩ ⁨sample⁩, ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.date",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.date\", &[(\"day\", Value::String(\"sample\")), (\"month\", Value::String(\"sample\")), (\"weekday\", Value::String(\"sample\")), (\"year\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e64617465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "attendees",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.invited\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e7669746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e7669746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.invited",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e7669746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Invited: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "attendees": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Invited: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.invited",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.invited\", &[(\"attendees\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e7669746564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "remaining",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "attendees",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.invited.more\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e76697465642e6d6f7265",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e76697465642e6d6f7265_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.invited.more",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e76697465642e6d6f7265",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Invited: ⁨sample⁩; and ⁨0⁩ more",
+      "folder": null,
+      "inputs": {
+        "attendees": "sample",
+        "remaining": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "Invited: ⁨sample⁩; and ⁨0⁩ more",
+      "message_id": "journal.window.calendar.note.invited.more",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.invited.more\", &[(\"attendees\", Value::String(\"sample\")), (\"remaining\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e76697465642e6d6f7265",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "notes",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.notes\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6e6f746573",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6e6f746573_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.notes",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6e6f746573",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Notes: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "notes": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Notes: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.notes",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.notes\", &[(\"notes\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6e6f746573",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "offset",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.recorded\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7265636f72646564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7265636f72646564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.recorded",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7265636f72646564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Recorded: ⁨sample⁩, ⁨sample⁩ (⁨sample⁩)",
+      "folder": null,
+      "inputs": {
+        "date": "sample",
+        "offset": "sample",
+        "time": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Recorded: ⁨sample⁩, ⁨sample⁩ (⁨sample⁩)",
+      "message_id": "journal.window.calendar.note.recorded",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.recorded\", &[(\"date\", Value::String(\"sample\")), (\"offset\", Value::String(\"sample\")), (\"time\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7265636f72646564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.removed\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f766564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f766564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.removed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f766564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Calendar event removed",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Calendar event removed",
+      "message_id": "journal.window.calendar.note.removed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.removed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f766564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "title",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.removed.titled\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f7665642e7469746c6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f7665642e7469746c6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.removed.titled",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f7665642e7469746c6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Calendar event removed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "title": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Calendar event removed: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.removed.titled",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.removed.titled\", &[(\"title\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f7665642e7469746c6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "repeats",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.repeats\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72657065617473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72657065617473_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.repeats",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72657065617473",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Repeats: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "repeats": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Repeats: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.repeats",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.repeats\", &[(\"repeats\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72657065617473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "start_date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "start_time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_time",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.across.days\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e64617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e64617973_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.across.days",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e64617973",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "When: ⁨sample⁩, ⁨sample⁩ to ⁨sample⁩, ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "end_date": "sample",
+        "end_time": "sample",
+        "start_date": "sample",
+        "start_time": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, ⁨sample⁩ to ⁨sample⁩, ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.when.across.days",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.across.days\", &[(\"end_date\", Value::String(\"sample\")), (\"end_time\", Value::String(\"sample\")), (\"start_date\", Value::String(\"sample\")), (\"start_time\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e64617973",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "start_date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "start_time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "zone",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.across.days.zoned\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e646179732e7a6f6e6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e646179732e7a6f6e6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.across.days.zoned",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e646179732e7a6f6e6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "When: ⁨sample⁩, ⁨sample⁩ to ⁨sample⁩, ⁨sample⁩ (⁨sample⁩)",
+      "folder": null,
+      "inputs": {
+        "end_date": "sample",
+        "end_time": "sample",
+        "start_date": "sample",
+        "start_time": "sample",
+        "zone": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, ⁨sample⁩ to ⁨sample⁩, ⁨sample⁩ (⁨sample⁩)",
+      "message_id": "journal.window.calendar.note.when.across.days.zoned",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.across.days.zoned\", &[(\"end_date\", Value::String(\"sample\")), (\"end_time\", Value::String(\"sample\")), (\"start_date\", Value::String(\"sample\")), (\"start_time\", Value::String(\"sample\")), (\"zone\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e646179732e7a6f6e6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "date",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.all.day\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e646179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e646179_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.all.day",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e646179",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "When: ⁨sample⁩, all day",
+      "folder": null,
+      "inputs": {
+        "date": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, all day",
+      "message_id": "journal.window.calendar.note.when.all.day",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.all.day\", &[(\"date\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e646179",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "start_date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_date",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.all.days\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e64617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e64617973_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.all.days",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e64617973",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "When: ⁨sample⁩ to ⁨sample⁩, all day",
+      "folder": null,
+      "inputs": {
+        "end_date": "sample",
+        "start_date": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩ to ⁨sample⁩, all day",
+      "message_id": "journal.window.calendar.note.when.all.days",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.all.days\", &[(\"end_date\", Value::String(\"sample\")), (\"start_date\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e64617973",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "start_time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_time",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.same.day\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e646179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e646179_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.same.day",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e646179",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "When: ⁨sample⁩, ⁨sample⁩ to ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "date": "sample",
+        "end_time": "sample",
+        "start_time": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, ⁨sample⁩ to ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.when.same.day",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.same.day\", &[(\"date\", Value::String(\"sample\")), (\"end_time\", Value::String(\"sample\")), (\"start_time\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e646179",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "start_time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "end_time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "zone",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.same.day.zoned\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e6461792e7a6f6e6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e6461792e7a6f6e6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.same.day.zoned",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e6461792e7a6f6e6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "When: ⁨sample⁩, ⁨sample⁩ to ⁨sample⁩ (⁨sample⁩)",
+      "folder": null,
+      "inputs": {
+        "date": "sample",
+        "end_time": "sample",
+        "start_time": "sample",
+        "zone": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, ⁨sample⁩ to ⁨sample⁩ (⁨sample⁩)",
+      "message_id": "journal.window.calendar.note.when.same.day.zoned",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.same.day.zoned\", &[(\"date\", Value::String(\"sample\")), (\"end_time\", Value::String(\"sample\")), (\"start_time\", Value::String(\"sample\")), (\"zone\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e6461792e7a6f6e6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "time",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.time\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.time",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "When: ⁨sample⁩, ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "date": "sample",
+        "time": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.when.time",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.time\", &[(\"date\", Value::String(\"sample\")), (\"time\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "date",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "time",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "zone",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.when.time.zoned\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d652e7a6f6e6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d652e7a6f6e6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.when.time.zoned",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d652e7a6f6e6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "When: ⁨sample⁩, ⁨sample⁩ (⁨sample⁩)",
+      "folder": null,
+      "inputs": {
+        "date": "sample",
+        "time": "sample",
+        "zone": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "When: ⁨sample⁩, ⁨sample⁩ (⁨sample⁩)",
+      "message_id": "journal.window.calendar.note.when.time.zoned",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.when.time.zoned\", &[(\"date\", Value::String(\"sample\")), (\"time\", Value::String(\"sample\")), (\"zone\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d652e7a6f6e6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "location",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.calendar.note.where\u0004m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768657265",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768657265_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.calendar.note.where",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768657265",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Where: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "location": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Where: ⁨sample⁩",
+      "message_id": "journal.window.calendar.note.where",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.calendar.note.where\", &[(\"location\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768657265",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.chrome.connection.connecting\u0004m6a6f75726e616c2e77696e646f772e6368726f6d652e636f6e6e656374696f6e2e636f6e6e656374696e67",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6368726f6d652e636f6e6e656374696f6e2e636f6e6e656374696e67_plural",
         "gettext_unsigned_quantity": null,
@@ -432566,6 +435230,262 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.app.newer\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6e65776572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6e65776572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.app.newer",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6e65776572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "its solstone app is newer than your journal. update your journal.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "its solstone app is newer than your journal. update your journal.",
+      "message_id": "journal.window.ingest.notice.app.newer",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.app.newer\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6e65776572",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.app.older\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6f6c646572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6f6c646572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.app.older",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6f6c646572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "its solstone app is too old for your journal. update the solstone app on it.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "its solstone app is too old for your journal. update the solstone app on it.",
+      "message_id": "journal.window.ingest.notice.app.older",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.app.older\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6f6c646572",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "device_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.cleared.named\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e6e616d6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e6e616d6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.cleared.named",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e6e616d6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your journal is accepting uploads from ⁨sample⁩ again",
+      "folder": null,
+      "inputs": {
+        "device_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "your journal is accepting uploads from ⁨sample⁩ again",
+      "message_id": "journal.window.ingest.notice.cleared.named",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.cleared.named\", &[(\"device_name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e6e616d6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.cleared.unnamed\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e756e6e616d6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e756e6e616d6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.cleared.unnamed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e756e6e616d6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your journal is accepting uploads from one of your devices again",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your journal is accepting uploads from one of your devices again",
+      "message_id": "journal.window.ingest.notice.cleared.unnamed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.cleared.unnamed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e756e6e616d6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "device_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.raised.named\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e6e616d6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e6e616d6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.raised.named",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e6e616d6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your journal is turning away uploads from ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "device_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "your journal is turning away uploads from ⁨sample⁩",
+      "message_id": "journal.window.ingest.notice.raised.named",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.raised.named\", &[(\"device_name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e6e616d6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.raised.unnamed\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e756e6e616d6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e756e6e616d6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.raised.unnamed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e756e6e616d6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your journal is turning away uploads from one of your devices",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your journal is turning away uploads from one of your devices",
+      "message_id": "journal.window.ingest.notice.raised.unnamed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.raised.unnamed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e756e6e616d6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.tmux.newer\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6e65776572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6e65776572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.tmux.newer",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6e65776572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "solstone for tmux on it is newer than your journal. update your journal.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "solstone for tmux on it is newer than your journal. update your journal.",
+      "message_id": "journal.window.ingest.notice.tmux.newer",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.tmux.newer\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6e65776572",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.ingest.notice.tmux.older\u0004m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6f6c646572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6f6c646572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.ingest.notice.tmux.older",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6f6c646572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "solstone for tmux on it is too old for your journal. update solstone for tmux.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "solstone for tmux on it is too old for your journal. update solstone for tmux.",
+      "message_id": "journal.window.ingest.notice.tmux.older",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.ingest.notice.tmux.older\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6f6c646572",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.link.absent\u0004m6a6f75726e616c2e77696e646f772e6c696e6b2e616273656e74",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6c696e6b2e616273656e74_plural",
         "gettext_unsigned_quantity": null,
@@ -456734,6 +459654,186 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.not.found.title\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f742e666f756e642e7469746c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.notes.transcript.edited\u0004m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e656469746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e656469746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.notes.transcript.edited",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e656469746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "edited",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "edited",
+      "message_id": "journal.window.notes.transcript.edited",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.notes.transcript.edited\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e656469746564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.notes.transcript.removed\u0004m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f766564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f766564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.notes.transcript.removed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f766564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "no longer in the vault",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "no longer in the vault",
+      "message_id": "journal.window.notes.transcript.removed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.notes.transcript.removed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f766564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.notes.transcript.removed.words\u0004m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f7665642e776f726473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f7665642e776f726473_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.notes.transcript.removed.words",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f7665642e776f726473",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "removed ⁨sample⁩ words.",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "removed ⁨sample⁩ words.",
+      "message_id": "journal.window.notes.transcript.removed.words",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.notes.transcript.removed.words\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f7665642e776f726473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.notes.transcript.renamed\u0004m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656e616d6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656e616d6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.notes.transcript.renamed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656e616d6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "renamed from ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "renamed from ⁨sample⁩",
+      "message_id": "journal.window.notes.transcript.renamed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.notes.transcript.renamed\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656e616d6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.notes.transcript.source\u0004m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e736f75726365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e736f75726365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.notes.transcript.source",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e736f75726365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Source: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Source: ⁨sample⁩",
+      "message_id": "journal.window.notes.transcript.source",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.notes.transcript.source\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e736f75726365",
       "target": "rust"
     },
     {

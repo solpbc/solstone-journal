@@ -5749,6 +5749,27 @@
       "locales": []
     },
     {
+      "id": "journal.cli.doctor.device.day.listing.chronicle.error",
+      "source": "7626f27d387dc6ab19371dd28e675469dd9467714be705fa9acc3fa0a7c21945",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.doctor.device.day.listing.continuity.error",
+      "source": "5c30c7526a048278508078aa944d120d34b7ced176fe81906e99448799c67fb0",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.doctor.device.day.listing.continuity.malformed",
+      "source": "334a261f1c59031d414b8808e9e28873336b4baa62e4ca98c03957d8fa1430a9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.cli.doctor.device.day.listing.fault",
       "source": "f43b58bc545b00b32ae4171a22fd5738dda50de34ab83571b9813c16a486e1d1",
       "contract": "4b420ee87628d903f479148460bdd02a71211349ab6d16931f525d46f0ff98bc",
@@ -5759,6 +5780,27 @@
       "id": "journal.cli.doctor.device.day.listing.readable",
       "source": "8dd203d66010770bc95ddd2137985e9e5b24a02c5256d181306bd8629f698e9e",
       "contract": "0ba9410a9f6744790077db4dc21b6d26a8313f774b8e9f7cc39bd807adfff928",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.doctor.device.day.listing.record.line",
+      "source": "280fdde2fddad1e5959e5ccfa3d5fdcf3da48f58d7187938137bdb26d0365cdb",
+      "contract": "a05c8ff36ebb3012b629c366b58d63737dd935788737628d7b4d91c07306a4fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.doctor.device.day.listing.record.malformed",
+      "source": "47ae4c781d58d3058e9ecaa175e0b0a0596b687a19822db78c7e0f46919d0ecb",
+      "contract": "52d82276a20e02d9a183ed2866ee1459150d7dd35cbbaa21c9984bab9abc3aa4",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.doctor.device.day.listing.registry.error",
+      "source": "248709fcad370c10f365fe1abbe65093b89fb6c7c64e116779487e357d6c4667",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },

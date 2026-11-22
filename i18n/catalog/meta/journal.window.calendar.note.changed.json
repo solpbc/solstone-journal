@@ -1,0 +1,16 @@
+{
+  "description": "Heading for a calendar change without a title.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Heading for a calendar change without a title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "377000266fe017a8b76481013054a4a5a862ad4be54a11437c0da6c741eba07d",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

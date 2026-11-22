@@ -48,6 +48,7 @@ pub use own_memory::{
     report_memory_read_damage,
 };
 pub use predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
+pub use solstone_core_indexer_store::calendar::IndexedCalendarDisplay;
 pub use solstone_core_indexer_store::screen_text_source_current;
 pub use temporal::{TemporalExtraction, extract_temporal_references};
 pub use types::{

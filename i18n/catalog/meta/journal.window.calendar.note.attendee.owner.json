@@ -1,0 +1,21 @@
+{
+  "description": "Name of the owner on an invitation.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Name of the owner on an invitation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b2291fe205e03a764301acc5afdab9b14340c7f7dd03e343625eca1b23c2f705",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status of a note the device reports as removed from the vault.",
+  "context": "Note transcript in the journal. Status of a note the device reports as removed from the vault.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6208ced8a6592a52abd7e947ea114ba6f643476c262eab0e11d6dc07095e78e4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

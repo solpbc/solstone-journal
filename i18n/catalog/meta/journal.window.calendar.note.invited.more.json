@@ -1,0 +1,30 @@
+{
+  "description": "List of people invited to the event followed by how many further names were omitted.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. List of people invited to the event followed by how many further names were omitted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "remaining",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "attendees",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2fc9161979771d00a678907932d9545ac198fe06729b3e9f11db395a3c866869",
+  "max_length": 411,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "remaining"
+  }
+}

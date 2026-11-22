@@ -17,6 +17,11 @@ pub enum FormatterView<'a> {
         note: &'a CalendarNote,
         owner: &'a OwnerAddresses,
     },
+    LocalizedCalendarNote {
+        note: &'a CalendarNote,
+        owner: &'a OwnerAddresses,
+        locale: &'a str,
+    },
     Places(&'a dyn PlaceFormatter),
 }
 
@@ -54,6 +59,16 @@ pub fn format_file(
         (FileFormat::Content(Family::Calendar), FormatterView::CalendarNote { note, owner }) => {
             literal(crate::calendar::render_calendar_note(note, owner))
         }
+        (
+            FileFormat::Content(Family::Calendar),
+            FormatterView::LocalizedCalendarNote {
+                note,
+                owner,
+                locale,
+            },
+        ) => literal(crate::calendar::calendar_note_for_locale(
+            note, owner, locale,
+        )),
         (FileFormat::Place, FormatterView::Places(formatter)) => formatter.render(text),
         (FileFormat::Content(family), FormatterView::Stored) => {
             super::produce_content_chunks(family, rel, text)

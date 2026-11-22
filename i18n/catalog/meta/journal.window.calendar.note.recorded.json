@@ -1,0 +1,29 @@
+{
+  "description": "Moment at which the change was recorded, including its UTC offset.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Moment at which the change was recorded, including its UTC offset.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "time",
+      "type": "string"
+    },
+    {
+      "name": "offset",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e572cf0e2d6941f4edb097f0c9b02f5aeeac1c5050397653637eb85562904bcc",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

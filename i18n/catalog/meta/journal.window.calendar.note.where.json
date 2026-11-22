@@ -1,0 +1,21 @@
+{
+  "description": "Event location from the source.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Event location from the source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "location",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9a49181d1ac2faa236acf41dbdaf2b7973a3bc45861a49d06e41e89f077d7303",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

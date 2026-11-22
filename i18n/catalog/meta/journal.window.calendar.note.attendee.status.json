@@ -1,0 +1,25 @@
+{
+  "description": "Displayed name and response status supplied by the source.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Displayed name and response status supplied by the source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "54a53a51b630a2437f765c82a3a52654f8b7aa63619760a54174308a30212116",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

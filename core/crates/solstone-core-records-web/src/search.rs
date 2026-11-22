@@ -19,8 +19,9 @@ use solstone_core_convey_http::window_catalog::{ENGLISH, response_locale, string
 use solstone_core_format::agent_memory::{Coordinate, SourceKey};
 use solstone_core_format::stored_markdown::{DisplayUse, IndexedDisplay, is_display_document};
 use solstone_core_indexer_query::{
-    IndexAccessError, IndexedEntry, OwnerBoundary, OwnerIndex, QueryBoundary, SearchRequest,
-    open_owner_index, read_indexed_entry, read_owner_entry_for_display,
+    IndexAccessError, IndexedCalendarDisplay, IndexedEntry, OwnerBoundary, OwnerIndex,
+    QueryBoundary, SearchRequest, open_owner_index, read_indexed_entry,
+    read_owner_entry_for_display,
 };
 use solstone_core_indexer_query::{
     memory_row_matches_original, open_own_memory_index, read_own_memory_row,
@@ -473,7 +474,8 @@ async fn entry_response(
     let result = tokio::task::spawn_blocking(move || {
         let display = owner_display
             && locale != ENGLISH
-            && is_display_document(std::path::Path::new(&query.path));
+            && (is_display_document(std::path::Path::new(&query.path))
+                || OwnerDisplay::calendar(&query.path));
         let (entry, stamp) = if display {
             read_owner_entry_for_display(
                 &journal_root,
@@ -496,12 +498,13 @@ async fn entry_response(
             )
         };
         let projected = stamp.and_then(|stamp| {
-            let display = IndexedDisplay::load(
+            let display = OwnerDisplay::load(
                 &journal_root,
                 &query.path,
                 &stamp,
                 locale,
                 DisplayUse::Record,
+                std::iter::once(query.idx),
             )?;
             let text = display.get(query.idx, entry.content()?)?;
             Some(unescape_display_text(&query.path, text).into_owned())
@@ -1075,6 +1078,41 @@ fn unescape_display_text<'a>(path: &str, text: &'a str) -> Cow<'a, str> {
     Cow::Owned(visible)
 }
 
+enum OwnerDisplay {
+    Document(IndexedDisplay),
+    Calendar(IndexedCalendarDisplay),
+}
+
+impl OwnerDisplay {
+    fn calendar(path: &str) -> bool {
+        use solstone_core_format::content::{Family, resolve_spec};
+        let rel = path.strip_prefix("chronicle/").unwrap_or(path);
+        resolve_spec(rel).is_some_and(|spec| spec.family == Family::Calendar)
+    }
+
+    fn load(
+        root: &std::path::Path,
+        path: &str,
+        stamp: &str,
+        locale: &str,
+        usage: DisplayUse,
+        indices: impl Iterator<Item = i64>,
+    ) -> Option<Self> {
+        if Self::calendar(path) {
+            IndexedCalendarDisplay::load(root, path, stamp, locale, indices).map(Self::Calendar)
+        } else {
+            IndexedDisplay::load(root, path, stamp, locale, usage).map(Self::Document)
+        }
+    }
+
+    fn get(&self, idx: i64, english: &str) -> Option<&str> {
+        match self {
+            Self::Calendar(display) => display.get(idx, english),
+            Self::Document(display) => display.get(idx, english),
+        }
+    }
+}
+
 /// Keep only the requested rows between files; a terminal source can contain many other chunks.
 fn localized_hit_text(
     root: &std::path::Path,
@@ -1092,9 +1130,14 @@ fn localized_hit_text(
         }
     }
     for ((path, stamp), hits) in by_file {
-        if let Some(display) =
-            IndexedDisplay::load(root, path, stamp, locale, DisplayUse::SearchExcerpt)
-        {
+        if let Some(display) = OwnerDisplay::load(
+            root,
+            path,
+            stamp,
+            locale,
+            DisplayUse::SearchExcerpt,
+            hits.iter().map(|hit| hit.metadata.idx),
+        ) {
             for hit in hits {
                 if let Some(text) = display.get(hit.metadata.idx, &hit.text) {
                     result.insert(hit.row_id, text.to_owned());

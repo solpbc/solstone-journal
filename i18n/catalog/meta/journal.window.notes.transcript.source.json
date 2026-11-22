@@ -1,0 +1,21 @@
+{
+  "description": "Caption giving the vault-relative path of a note.",
+  "context": "Note transcript in the journal. Caption giving the vault-relative path of a note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "391c3e342a1fa7d66615fbf595c1ae7aa0214773cacbddd2bc5a7da5c72b6dd1",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

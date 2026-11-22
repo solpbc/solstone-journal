@@ -1,0 +1,21 @@
+{
+  "description": "Date of an all-day event.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Date of an all-day event.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "41fea520dbb1e3f613925ae65f7bc9cc4da73ba2599757c08c602637a955f80b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

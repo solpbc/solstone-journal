@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for continuity error.",
+  "context": "Journal command-line text for continuity error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5c30c7526a048278508078aa944d120d34b7ced176fe81906e99448799c67fb0",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

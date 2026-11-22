@@ -1,0 +1,33 @@
+{
+  "description": "A full event date with day of the week.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. A full event date with day of the week.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "weekday",
+      "type": "string"
+    },
+    {
+      "name": "month",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "year",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9eaa48fe56f40e2f7ee2795ae7669fb5758d90611a7add89490035d652bf63d1",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

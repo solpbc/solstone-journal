@@ -1,0 +1,29 @@
+{
+  "description": "Times of an event within one date.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Times of an event within one date.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "start_time",
+      "type": "string"
+    },
+    {
+      "name": "end_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "10e679a254fc87337d7e7ab138348339e5dcbf8d1719db0f19ef904af767c68a",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

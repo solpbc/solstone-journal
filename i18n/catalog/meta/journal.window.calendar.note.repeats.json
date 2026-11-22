@@ -1,0 +1,21 @@
+{
+  "description": "Event repetition description supplied by the source.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Event repetition description supplied by the source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "repeats",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cf56f8a368a510355ee37c972c1c5a16fb070dd5fe4e6a1d1088810730daa1bf",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

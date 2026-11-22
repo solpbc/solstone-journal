@@ -21,6 +21,7 @@ jiff.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-distribution.workspace = true
 solstone-core-facets.workspace = true
+solstone-core-segment.workspace = true
 solstone-core-ingest.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-journal-config.workspace = true

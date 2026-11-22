@@ -79,6 +79,17 @@ pub fn project_screen_extractions(
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "message", rename_all = "snake_case")]
 pub enum Message<T = String> {
+    NoteSource {
+        path: T,
+    },
+    NoteEdited,
+    NoteRenamed {
+        path: T,
+    },
+    NoteRemoved,
+    NoteRemovedWords {
+        count: usize,
+    },
     Topics,
     Quotes,
     Objects,
@@ -118,6 +129,11 @@ pub enum Message<T = String> {
 impl<T> Message<T> {
     fn map_text<U>(&self, mut f: impl FnMut(&T) -> Option<U>) -> Option<Message<U>> {
         Some(match self {
+            Self::NoteSource { path } => Message::NoteSource { path: f(path)? },
+            Self::NoteEdited => Message::NoteEdited,
+            Self::NoteRenamed { path } => Message::NoteRenamed { path: f(path)? },
+            Self::NoteRemoved => Message::NoteRemoved,
+            Self::NoteRemovedWords { count } => Message::NoteRemovedWords { count: *count },
             Self::Topics => Message::Topics,
             Self::Quotes => Message::Quotes,
             Self::Objects => Message::Objects,
@@ -238,6 +254,37 @@ impl Message {
 
     fn render_at(&self, locale: &str, segment: Option<&str>) -> String {
         match self {
+            Self::NoteSource { path } => solstone_core_window_catalog::strings(
+                locale,
+                "journal.window.notes.transcript.source",
+                [("path", path)],
+            ),
+            Self::NoteEdited => {
+                solstone_core_window_catalog::text(locale, "journal.window.notes.transcript.edited")
+            }
+            Self::NoteRenamed { path } => solstone_core_window_catalog::strings(
+                locale,
+                "journal.window.notes.transcript.renamed",
+                [("path", path)],
+            ),
+            Self::NoteRemoved => solstone_core_window_catalog::text(
+                locale,
+                "journal.window.notes.transcript.removed",
+            ),
+            Self::NoteRemovedWords { count } => solstone_core_window_catalog::render(
+                locale,
+                "journal.window.notes.transcript.removed.words",
+                &[
+                    (
+                        "quantity",
+                        solstone_core_window_catalog::Value::Cardinal(*count as i64),
+                    ),
+                    (
+                        "count",
+                        solstone_core_window_catalog::Value::String(&count.to_string()),
+                    ),
+                ],
+            ),
             Self::Topics => {
                 solstone_core_cli_copy::render_for(locale, "journal.cli.think.markdown.topics", &[])
             }
@@ -492,6 +539,21 @@ impl Document {
     pub fn push_str(&mut self, value: &str) {
         self.text.push_str(value)
     }
+    pub(crate) fn push_prefix(&mut self, document: &Self, end: usize) {
+        let offset = self.text.len();
+        self.text.push_str(&document.text[..end]);
+        self.spans.extend(
+            document
+                .spans
+                .iter()
+                .take_while(|span| span.end <= end)
+                .map(|span| Span {
+                    start: offset + span.start,
+                    end: offset + span.end,
+                    copy: span.copy.clone(),
+                }),
+        );
+    }
     pub fn push_screen_line(&mut self, line: &str) {
         crate::content::screen_text::append_screen_text_line(&mut self.text, line);
     }
@@ -525,7 +587,7 @@ impl Document {
 
     /// A missing or torn companion leaves the English document directly readable.
     pub fn save_display_receipt(&self, path: &Path) -> std::io::Result<()> {
-        let receipt_path = path.with_extension("md.display");
+        let receipt_path = display_receipt_path(path);
         if let Some(bytes) = self.display_receipt_bytes()? {
             atomic_replace(&receipt_path, &bytes, AtomicWriteOptions::default())
                 .map_err(std::io::Error::other)
@@ -589,6 +651,7 @@ impl Receipt {
                 || span.start >= span.end
                 || matches!(&span.copy, Message::Object { frames, photos, .. }
                     if i32::try_from(*frames).is_err() || i32::try_from(*photos).is_err())
+                || matches!(&span.copy, Message::NoteRemovedWords { count } if i32::try_from(*count).is_err())
                 || source.get(span.start..span.end) != Some(span.copy.render(ENGLISH).as_str())
             {
                 return false;
@@ -625,8 +688,13 @@ pub fn project_file(
         return None;
     }
     let retained = directory(root, path)?;
-    let (source, receipt) =
-        read_document(&retained, path, displayed.len().checked_add(65536)?, None)?;
+    let (source, receipt) = read_document(
+        root,
+        retained,
+        path,
+        displayed.len().checked_add(65536)?,
+        None,
+    )?;
     let source = source.as_str();
     if displayed != source.trim() {
         return None;
@@ -644,8 +712,13 @@ pub fn project_sense_file(
         return None;
     }
     let retained = directory(root, path)?;
-    let (source, receipt) =
-        read_document(&retained, path, displayed.len().checked_add(65536)?, None)?;
+    let (source, receipt) = read_document(
+        root,
+        retained,
+        path,
+        displayed.len().checked_add(65536)?,
+        None,
+    )?;
     let source = source.as_str();
     if source.trim() != displayed || !receipt.valid(source) {
         return None;
@@ -716,6 +789,40 @@ impl Receipt<std::ops::Range<usize>> {
     }
 }
 
+pub const NOTE_RECEIPT_DIR: &str = "talents";
+pub const NOTE_RECEIPT_FILE: &str = "note_transcript.md.display";
+
+/// Device uploads accept flat file names. Keep a live note’s presentation metadata
+/// in a journal-controlled directory rather than accepting an uploaded companion.
+pub fn display_receipt_path(source: &Path) -> std::path::PathBuf {
+    let sibling = source.with_extension("md.display");
+    if source
+        .file_name()
+        .is_some_and(|name| name == crate::obsidian::NOTE_TRANSCRIPT_FILE)
+    {
+        source
+            .with_file_name(NOTE_RECEIPT_DIR)
+            .join(NOTE_RECEIPT_FILE)
+    } else {
+        sibling
+    }
+}
+
+fn receipt_directory(
+    root: &Path,
+    path: &Path,
+    source: Arc<MediaDirectory>,
+) -> Option<Arc<MediaDirectory>> {
+    if path
+        .file_name()
+        .is_some_and(|name| name == crate::obsidian::NOTE_TRANSCRIPT_FILE)
+    {
+        directory(root, &display_receipt_path(path))
+    } else {
+        Some(source)
+    }
+}
+
 fn read_receipt(
     retained: &MediaDirectory,
     path: &Path,
@@ -736,12 +843,14 @@ fn receipt_bytes(retained: &MediaDirectory, path: &Path) -> Option<Vec<u8>> {
 }
 
 fn read_document(
-    retained: &MediaDirectory,
+    root: &Path,
+    retained: Arc<MediaDirectory>,
     path: &Path,
     limit: usize,
     expected_stamp: Option<&str>,
 ) -> Option<(String, Receipt)> {
-    let (receipt, stamp) = read_receipt(retained, path)?;
+    let companion = receipt_directory(root, path, Arc::clone(&retained))?;
+    let (receipt, stamp) = read_receipt(&companion, path)?;
     if expected_stamp.is_some_and(|expected| expected != stamp) {
         return None;
     }
@@ -750,7 +859,7 @@ fn read_document(
         .ok()??;
     // Equal English bytes can have different provenance (e.g. a literal speaker name).
     // A writer invalidates the old receipt before publishing its replacement.
-    if format!("{:x}", Sha256::digest(receipt_bytes(retained, path)?)) != stamp {
+    if format!("{:x}", Sha256::digest(receipt_bytes(&companion, path)?)) != stamp {
         return None;
     }
     let source = String::from_utf8(bytes.bytes).ok()?;
@@ -759,6 +868,12 @@ fn read_document(
 }
 
 pub fn is_display_document(path: &Path) -> bool {
+    if path
+        .file_name()
+        .is_some_and(|name| name == crate::obsidian::NOTE_TRANSCRIPT_FILE)
+    {
+        return true;
+    }
     path.parent()
         .and_then(Path::file_name)
         .is_some_and(|name| name == "talents")
@@ -783,7 +898,8 @@ pub fn index_stamp(root: &Path, path: &Path, text: &str) -> Option<String> {
     if path.file_name().is_some_and(|name| name == "sense.json") {
         return Some(format!("{:x}", Sha256::digest(text.as_bytes())));
     }
-    let (receipt, stamp) = read_receipt(directory(root, path)?.as_ref(), path)?;
+    let companion = receipt_directory(root, path, directory(root, path)?)?;
+    let (receipt, stamp) = read_receipt(&companion, path)?;
     (receipt.version == 1
         && receipt.source_sha256 == format!("{:x}", Sha256::digest(text.as_bytes())))
     .then_some(stamp)
@@ -845,7 +961,8 @@ impl IndexedDisplay {
                 }),
             )]));
         }
-        let (source, receipt) = read_document(&retained, &path, 32 * 1024 * 1024, Some(stamp))?;
+        let (source, receipt) =
+            read_document(root, retained, &path, 32 * 1024 * 1024, Some(stamp))?;
         let source = source.as_str();
         if !receipt.valid(source) {
             return None;
@@ -950,15 +1067,28 @@ impl IndexedDisplay {
                     let mut display = if names { copy.owner_entity() } else { None }
                         .unwrap_or_else(|| copy.render(locale));
                     let mut indexed_field = std::borrow::Cow::Borrowed(field);
-                    if matches!(copy, Message::Entity { .. })
-                        && !restored
-                            .get(start..next)
-                            .is_some_and(|part| part.starts_with(field))
+                    if matches!(
+                        copy,
+                        Message::Entity { .. }
+                            | Message::NoteSource { .. }
+                            | Message::NoteRenamed { .. }
+                    ) && !restored
+                        .get(start..next)
+                        .is_some_and(|part| part.starts_with(field))
                     {
-                        // List items in the index have already passed through Markdown.
-                        // Use the same parser on both versions of this writer-identified row.
+                        // Indexing interprets Markdown in an entity row or note path.
+                        // Apply the same parsing to this writer-identified field.
+                        let normalize = |text: &str| {
+                            let line = if matches!(copy, Message::Entity { .. }) {
+                                format!("- {text}")
+                            } else {
+                                text.to_owned()
+                            };
+                            let mut chunks = crate::chunker::format_markdown(&line).chunks;
+                            (chunks.len() == 1).then(|| chunks.pop().unwrap().markdown)
+                        };
                         let Some((normalized, normalized_display)) =
-                            normalized_item(field).zip(normalized_item(&display))
+                            normalize(field).zip(normalize(&display))
                         else {
                             return (english, None);
                         };
@@ -984,11 +1114,6 @@ impl IndexedDisplay {
             .collect();
         Some(Self(result))
     }
-}
-
-fn normalized_item(text: &str) -> Option<String> {
-    let mut chunks = crate::chunker::format_markdown(&format!("- {text}")).chunks;
-    (chunks.len() == 1).then(|| chunks.pop().unwrap().markdown)
 }
 
 pub fn project_sense_record(

@@ -1,0 +1,16 @@
+{
+  "description": "Status of an existing note after its contents changed.",
+  "context": "Note transcript in the journal. Status of an existing note after its contents changed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "de4bedb1a544223bc0c5e119de10405e4af7e5e6d0dd869544d193f230a9f65d",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

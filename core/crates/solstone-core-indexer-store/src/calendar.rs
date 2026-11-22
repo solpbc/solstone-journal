@@ -22,6 +22,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use sha2::{Digest, Sha256};
+
 use jiff::civil::{Date, DateTime, Time};
 use jiff::tz::{Offset, TimeZone};
 use jiff::{SignedDuration, Timestamp};
@@ -104,6 +106,84 @@ pub(crate) const CREATE_CALENDAR_HITS_IDENTITY: &str =
 /// `n` sits at `LISTING_IDX_BASE + line * LISTING_IDX_STRIDE + n`.
 pub const LISTING_IDX_BASE: i64 = 1_000_000_000;
 pub(crate) const LISTING_IDX_STRIDE: i64 = 1_000;
+
+/// New indexes identify the typed source used to write their English excerpts.
+pub(crate) fn display_stamp(bytes: &[u8]) -> String {
+    let digest = Sha256::new()
+        .chain_update(b"solstone-calendar-display-v1\0")
+        .chain_update(bytes)
+        .finalize();
+    format!("{digest:x}")
+}
+
+fn note_line(idx: i64) -> Option<usize> {
+    let line = if idx >= LISTING_IDX_BASE {
+        (idx - LISTING_IDX_BASE) / LISTING_IDX_STRIDE
+    } else {
+        idx
+    };
+    usize::try_from(line).ok()
+}
+
+/// Display text for requested Calendar rows, paired with the indexer's English.
+/// Both stored-day and listing rows refer back to the same physical note line.
+pub struct IndexedCalendarDisplay(BTreeMap<usize, (String, String)>);
+
+impl IndexedCalendarDisplay {
+    pub fn load(
+        journal: &Path,
+        rel: &str,
+        stamp: &str,
+        locale: &str,
+        indices: impl Iterator<Item = i64>,
+    ) -> Option<Self> {
+        use solstone_core_format::calendar::{MAX_FILE_BYTES, calendar_note_for_locale};
+        use solstone_core_journal_io::{JournalRoot, read_relative_file_bounded};
+
+        let rel = Path::new(rel);
+        let relative = Path::new("chronicle").join(rel.strip_prefix("chronicle").unwrap_or(rel));
+        let root = JournalRoot::open(journal).ok()?;
+        let file = read_relative_file_bounded(&root, &relative, MAX_FILE_BYTES).ok()??;
+        if display_stamp(&file.bytes) != stamp {
+            return None;
+        }
+        let source = std::str::from_utf8(&file.bytes).ok()?;
+        let requested: BTreeSet<_> = indices.filter_map(note_line).collect();
+        let owner = owner_addresses(journal).ok()?;
+        let conn = crate::db::open_index_reader(journal).ok()?;
+        let mut rows = BTreeMap::new();
+        let mut owners = BTreeMap::new();
+        for (line, raw) in source
+            .lines()
+            .enumerate()
+            .filter(|(line, _)| requested.contains(line))
+        {
+            let Ok(note) = parse_calendar_note(raw) else {
+                continue;
+            };
+            if !owners.contains_key(&note.event) {
+                owners.insert(
+                    note.event.clone(),
+                    event_owner(&conn, &owner, &note.event).ok()?,
+                );
+            }
+            let owner = &owners[&note.event];
+            rows.insert(
+                line,
+                (
+                    render_calendar_note(&note, owner),
+                    calendar_note_for_locale(&note, owner, locale),
+                ),
+            );
+        }
+        Some(Self(rows))
+    }
+
+    pub fn get(&self, idx: i64, english: &str) -> Option<&str> {
+        let (original, localized) = self.0.get(&note_line(idx)?)?;
+        (original == english).then_some(localized.as_str())
+    }
+}
 
 /// The agent every calendar chunk is indexed under.
 pub const CALENDAR_AGENT: &str = "calendar";

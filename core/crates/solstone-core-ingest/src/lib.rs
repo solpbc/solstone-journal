@@ -29,6 +29,7 @@ pub mod known_sources;
 mod listing;
 mod model;
 mod obsidian;
+mod obsidian_display;
 mod read_routes;
 mod rejection_notice;
 mod router;
@@ -37,6 +38,8 @@ mod stream_identity;
 mod validation;
 
 pub use carried::{CarriedKind, carried_kinds};
-pub use health::{DeviceDayFault, device_day_listing_faults};
+pub use health::{
+    DeviceDayFault, DeviceDayReadError, device_day_listing_checked, device_day_listing_faults,
+};
 pub use rejection_notice::notice_key as ingest_rejected_notice_key;
 pub use router::api_router;

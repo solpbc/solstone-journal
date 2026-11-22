@@ -15585,6 +15585,58 @@
       }
     },
     {
+      "id": "journal.cli.doctor.device.day.listing.chronicle.error",
+      "resource": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e6368726f6e69636c652e6572726f72",
+      "namespace": "journal.cli.doctor.device.day.listing.chronicle",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.doctor.device.day.listing.continuity.error",
+      "resource": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e636f6e74696e756974792e6572726f72",
+      "namespace": "journal.cli.doctor.device.day.listing.continuity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.doctor.device.day.listing.continuity.malformed",
+      "resource": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e636f6e74696e756974792e6d616c666f726d6564",
+      "namespace": "journal.cli.doctor.device.day.listing.continuity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.cli.doctor.device.day.listing.fault",
       "resource": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e6661756c74",
       "namespace": "journal.cli.doctor.device.day.listing",
@@ -15636,6 +15688,87 @@
       "arguments": [
         {
           "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.doctor.device.day.listing.record.line",
+      "resource": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265636f72642e6c696e65",
+      "namespace": "journal.cli.doctor.device.day.listing.record",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "record",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "line",
+          "type": "integer",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.doctor.device.day.listing.record.malformed",
+      "resource": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265636f72642e6d616c666f726d6564",
+      "namespace": "journal.cli.doctor.device.day.listing.record",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "record",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.doctor.device.day.listing.registry.error",
+      "resource": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e72656769737472792e6572726f72",
+      "namespace": "journal.cli.doctor.device.day.listing.registry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
           "type": "string",
           "numeric_style": null,
           "min": null,

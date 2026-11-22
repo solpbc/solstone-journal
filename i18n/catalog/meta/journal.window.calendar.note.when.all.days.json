@@ -1,0 +1,25 @@
+{
+  "description": "First and last included dates of an all-day event.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. First and last included dates of an all-day event.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start_date",
+      "type": "string"
+    },
+    {
+      "name": "end_date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3bbbec6529808d616fd3d2eb8f7999253091fea5cedbdf8d9546dea7a824a5c5",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

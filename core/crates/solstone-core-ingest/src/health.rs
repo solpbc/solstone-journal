@@ -6,9 +6,9 @@
 //! A segment-day read refuses an unreadable day. This check runs that same
 //! per-day listing for every bound device stream and names each refused day.
 
-use std::path::Path;
+use std::{fmt, path::Path};
 
-use solstone_core_segment::{list_days, list_stream_bindings, read_continuity};
+use solstone_core_segment::{SegmentError, list_days, list_stream_bindings, read_continuity};
 
 use crate::listing::{ListingError, merge_day_listing, native_events};
 use crate::model::ReasonCode;
@@ -23,6 +23,24 @@ pub struct DeviceDayFault {
     pub reason_code: &'static str,
 }
 
+/// The failed read and its underlying diagnostic.
+#[derive(Debug)]
+pub enum DeviceDayReadError {
+    Registry(SegmentError),
+    Continuity(SegmentError),
+    Chronicle(SegmentError),
+}
+
+impl fmt::Display for DeviceDayReadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Registry(error) => write!(f, "stream registry unreadable: {error}"),
+            Self::Continuity(error) => write!(f, "stream continuity unreadable: {error}"),
+            Self::Chronicle(error) => write!(f, "chronicle unreadable: {error}"),
+        }
+    }
+}
+
 /// Run the device manifest's per-day listing for every chain-advanced device
 /// stream over the newest `recent_days` chronicle days.
 ///
@@ -31,18 +49,25 @@ pub fn device_day_listing_faults(
     journal_root: &Path,
     recent_days: usize,
 ) -> Result<Option<Vec<DeviceDayFault>>, String> {
+    device_day_listing_checked(journal_root, recent_days).map_err(|error| error.to_string())
+}
+
+/// Read device-day health, retaining the failure type for presentation.
+pub fn device_day_listing_checked(
+    journal_root: &Path,
+    recent_days: usize,
+) -> Result<Option<Vec<DeviceDayFault>>, DeviceDayReadError> {
     let bindings = list_stream_bindings(journal_root)
-        .map_err(|error| format!("stream registry unreadable: {error}"))?
+        .map_err(DeviceDayReadError::Registry)?
         .into_iter()
         .filter(|binding| binding.seq > 0)
         .collect::<Vec<_>>();
-    let continuity = read_continuity(journal_root)
-        .map_err(|error| format!("stream continuity unreadable: {error}"))?;
+    let continuity = read_continuity(journal_root).map_err(DeviceDayReadError::Continuity)?;
     if bindings.is_empty() {
         return Ok(None);
     }
     let mut days = list_days(journal_root)
-        .map_err(|error| format!("chronicle unreadable: {error}"))?
+        .map_err(DeviceDayReadError::Chronicle)?
         .into_iter()
         .map(|(day, _)| day)
         .collect::<Vec<_>>();

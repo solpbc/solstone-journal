@@ -1,0 +1,30 @@
+{
+  "description": "Journal command-line text for record line.",
+  "context": "Journal command-line text for record line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "record",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "line",
+      "type": "integer",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "280fdde2fddad1e5959e5ccfa3d5fdcf3da48f58d7187938137bdb26d0365cdb",
+  "max_length": 170,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

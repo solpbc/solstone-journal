@@ -1,0 +1,16 @@
+{
+  "description": "Notice title when uploads keep failing.",
+  "context": "Persistent ingest refusal on a paired device. Notice title when uploads keep failing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c6115725541422f7b44ed83a5eafad275ba4d9f61f686437991eed3a90d9a5a2",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

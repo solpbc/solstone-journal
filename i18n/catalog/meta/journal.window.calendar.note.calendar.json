@@ -1,0 +1,21 @@
+{
+  "description": "Calendar name supplied by the source.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Calendar name supplied by the source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "calendar",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c1b8797853cf9ec06d746223f361eb1ba78b665ffe5da305b3ac8db72829f941",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

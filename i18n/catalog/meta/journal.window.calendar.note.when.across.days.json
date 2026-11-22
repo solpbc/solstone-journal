@@ -1,0 +1,33 @@
+{
+  "description": "Start and end of an event on different dates.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Start and end of an event on different dates.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start_date",
+      "type": "string"
+    },
+    {
+      "name": "start_time",
+      "type": "string"
+    },
+    {
+      "name": "end_date",
+      "type": "string"
+    },
+    {
+      "name": "end_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cc54aa77bfce40e7a25445dcd647e098d76c42aa268d15f03d90f02ca5cd313e",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

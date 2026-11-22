@@ -13,6 +13,7 @@
 use std::path::Path;
 
 use serde_json::json;
+use solstone_core_convey_http::window_catalog::{ENGLISH, strings, text};
 use solstone_core_sol_link::client_status::{
     ClientActivityState, ClientAssessment, ClientInspection, inspect_clients_at,
 };
@@ -74,28 +75,21 @@ pub fn notice_key(cid: &str) -> String {
 /// sent it. An unavailable pairing identity is only refused for a device with
 /// no pairing row, which has no activity to announce. Health still lists every
 /// one of them.
-fn owner_fix(reason_code: &str, app: DeviceApp) -> Option<&'static str> {
-    if APP_TOO_OLD.contains(&reason_code) {
-        Some(match app {
-            DeviceApp::Solstone => {
-                "its solstone app is too old for your journal. update the solstone app on it."
-            }
-            DeviceApp::Tmux => {
-                "solstone for tmux on it is too old for your journal. update solstone for tmux."
-            }
-        })
+fn owner_fix(reason_code: &str, app: DeviceApp) -> Option<String> {
+    let id = if APP_TOO_OLD.contains(&reason_code) {
+        match app {
+            DeviceApp::Solstone => "journal.window.ingest.notice.app.older",
+            DeviceApp::Tmux => "journal.window.ingest.notice.tmux.older",
+        }
     } else if reason_code == JOURNAL_TOO_OLD {
-        Some(match app {
-            DeviceApp::Solstone => {
-                "its solstone app is newer than your journal. update your journal."
-            }
-            DeviceApp::Tmux => {
-                "solstone for tmux on it is newer than your journal. update your journal."
-            }
-        })
+        match app {
+            DeviceApp::Solstone => "journal.window.ingest.notice.app.newer",
+            DeviceApp::Tmux => "journal.window.ingest.notice.tmux.newer",
+        }
     } else {
-        None
-    }
+        return None;
+    };
+    Some(text(ENGLISH, id))
 }
 
 /// The framed Callosum line to announce for `cid` after the ledger recorded
@@ -117,13 +111,13 @@ pub(crate) fn announcement(journal: &Path, cid: &str, now_ms: i64) -> Option<Str
     let rejections = active_rejections(client);
     let descriptions = read_descriptions(journal).unwrap_or_default();
     let stored = descriptions.get(&client.cid);
-    let label = device_label(client, stored);
+    let label = current_display_label(&client.client_entry, stored);
     let row = if rejections.is_empty() {
         json!({
             "tract": "owner_notice",
             "event": "clear",
             "key": notice_key(cid),
-            "title": format!("your journal is accepting uploads from {label} again"),
+            "title": UploadNotice::Cleared.title(&label),
         })
     } else {
         let fix = rejections
@@ -134,7 +128,7 @@ pub(crate) fn announcement(journal: &Path, cid: &str, now_ms: i64) -> Option<Str
             "tract": "owner_notice",
             "event": "raise",
             "key": notice_key(cid),
-            "title": format!("your journal is turning away uploads from {label}"),
+            "title": UploadNotice::Raised.title(&label),
             "message": fix,
             "action": HEALTH_DEVICES,
         })
@@ -156,12 +150,26 @@ fn active_rejections(client: &ClientAssessment) -> Vec<&IngestRejection> {
         .collect()
 }
 
-fn device_label(client: &ClientAssessment, stored: Option<&StoredClientDescription>) -> String {
-    let label = current_display_label(&client.client_entry, stored);
-    if label.trim().is_empty() {
-        "one of your devices".to_owned()
-    } else {
-        label
+enum UploadNotice {
+    Raised,
+    Cleared,
+}
+
+impl UploadNotice {
+    fn title(self, device_name: &str) -> String {
+        if device_name.trim().is_empty() {
+            let id = match self {
+                Self::Raised => "journal.window.ingest.notice.raised.unnamed",
+                Self::Cleared => "journal.window.ingest.notice.cleared.unnamed",
+            };
+            text(ENGLISH, id)
+        } else {
+            let id = match self {
+                Self::Raised => "journal.window.ingest.notice.raised.named",
+                Self::Cleared => "journal.window.ingest.notice.cleared.named",
+            };
+            strings(ENGLISH, id, [("device_name", device_name)])
+        }
     }
 }
 

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for chronicle error.",
+  "context": "Journal command-line text for chronicle error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7626f27d387dc6ab19371dd28e675469dd9467714be705fa9acc3fa0a7c21945",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

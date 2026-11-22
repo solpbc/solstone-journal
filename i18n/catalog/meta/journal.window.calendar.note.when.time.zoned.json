@@ -1,0 +1,29 @@
+{
+  "description": "Start of a timed event. Includes the time zone supplied by the calendar.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Start of a timed event. Includes the time zone supplied by the calendar.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "time",
+      "type": "string"
+    },
+    {
+      "name": "zone",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "814e4c0816ee99309bb03443ba028e6629cf5029a416895d30ecee95c99df4ac",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

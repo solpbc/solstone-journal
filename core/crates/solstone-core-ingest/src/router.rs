@@ -785,7 +785,7 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
     } else if envelope.source == CALENDAR_SOURCE {
         write_calendar(state, cid, envelope)
     } else {
-        write_envelope_inner(state, cid, envelope)
+        write_envelope_inner(state, cid, envelope, None)
     }
     .with_source(source);
     finish_ingest_completion(state, cid, completion)
@@ -826,7 +826,7 @@ fn write_note_changes(state: &IngestState, cid: &str, mut envelope: Envelope) ->
             return write_failed("cannot read note state");
         }
     };
-    let Some(transcript) = prepared.transcript.clone() else {
+    let Some(transcript) = prepared.transcript.as_ref() else {
         // Nothing here is new: a resend, or a second device reporting what
         // the journal already has.
         if let Err(error) = prepared.commit(&state.journal_root, cid) {
@@ -848,10 +848,10 @@ fn write_note_changes(state: &IngestState, cid: &str, mut envelope: Envelope) ->
     };
     envelope.files = vec![IncomingFile {
         submitted: NOTE_TRANSCRIPT_FILE.to_owned(),
-        bytes: transcript,
+        bytes: transcript.as_bytes().to_vec(),
         descriptor_extra: Map::new(),
     }];
-    let completion = write_envelope_inner(state, cid, envelope);
+    let completion = write_envelope_inner(state, cid, envelope, Some(transcript));
     if !matches!(completion.activity, IngestActivity::Accepted(_)) {
         return completion;
     }
@@ -879,7 +879,7 @@ fn write_screenshot(state: &IngestState, cid: &str, mut envelope: Envelope) -> I
         );
     }
     let Some(screenshot) = envelope.screenshot.take() else {
-        return write_envelope_inner(state, cid, envelope);
+        return write_envelope_inner(state, cid, envelope, None);
     };
     match crate::screenshots::lookup(&state.journal_root, &screenshot.id) {
         Ok(Some(received)) => {
@@ -913,7 +913,7 @@ fn write_screenshot(state: &IngestState, cid: &str, mut envelope: Envelope) -> I
             );
         }
     }
-    let completion = write_envelope_inner(state, cid, envelope);
+    let completion = write_envelope_inner(state, cid, envelope, None);
     // Remember it only once it is durably in the journal. A crash in between
     // is answered by the segment's own duplicate on the resend, which then
     // records it here.
@@ -993,7 +993,7 @@ fn write_calendar(state: &IngestState, cid: &str, mut envelope: Envelope) -> Ing
     }
     envelope.files = prepared.files.clone();
     envelope.calendar = Some(prepared.receipt.clone());
-    let completion = write_envelope_inner(state, cid, envelope);
+    let completion = write_envelope_inner(state, cid, envelope, None);
     if !matches!(completion.activity, IngestActivity::Accepted(_)) {
         return completion;
     }
@@ -1004,7 +1004,12 @@ fn write_calendar(state: &IngestState, cid: &str, mut envelope: Envelope) -> Ing
     completion
 }
 
-fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> IngestCompletion {
+fn write_envelope_inner(
+    state: &IngestState,
+    cid: &str,
+    envelope: Envelope,
+    note_display: Option<&solstone_core_format::stored_markdown::Document>,
+) -> IngestCompletion {
     let hints = StreamHints {
         kind: Some(stream_kind(&envelope.source)),
         host: None,
@@ -1150,6 +1155,15 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
             );
         }
     };
+    if let Some(document) = note_display
+        && applied.files.iter().any(|file| {
+            file.name.as_str() == NOTE_TRANSCRIPT_FILE
+                && file.disposition == AppliedDisposition::Written
+        })
+        && let Err(error) = crate::obsidian_display::save(applied.segment.path(), document)
+    {
+        log::warn!("obsidian display receipt could not be saved: {error}");
+    }
     let mut descriptors = descriptors(&envelope.files, &applied.files);
     if let Some(receipt) = &envelope.calendar {
         descriptors = receipt.restore(descriptors);

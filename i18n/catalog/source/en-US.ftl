@@ -20586,3 +20586,87 @@ journal.window.oauth.scope.whole = your whole journal
 journal.window.oauth.scope.whole.detail = everything in your journal now, and anything added later, including facets you create later.
 
 journal.window.oauth.wrong.code = that code didn't match. enter it again, or make a new one in the agents app, then connect from your agent again.
+
+journal.window.calendar.note.added = Calendar event added
+
+journal.window.calendar.note.added.titled = Calendar event added: { $title }
+
+journal.window.calendar.note.attendee.owner = { $name }, you
+
+journal.window.calendar.note.attendee.pair = { $attendees }; { $attendee }
+
+journal.window.calendar.note.attendee.status = { $name } ({ $status })
+
+journal.window.calendar.note.calendar = Calendar: { $calendar }
+
+journal.window.calendar.note.calendar.account = Calendar: { $calendar } ({ $account })
+
+journal.window.calendar.note.changed = Calendar event changed
+
+journal.window.calendar.note.changed.titled = Calendar event changed: { $title }
+
+journal.window.calendar.note.date = { $weekday }, { $month } { $day }, { $year }
+
+journal.window.calendar.note.invited = Invited: { $attendees }
+
+journal.window.calendar.note.invited.more = { $remaining ->
+    [one] Invited: { $attendees }; and { $remaining } more
+   *[other] Invited: { $attendees }; and { $remaining } more
+}
+
+journal.window.calendar.note.notes = Notes: { $notes }
+
+journal.window.calendar.note.recorded = Recorded: { $date }, { $time } ({ $offset })
+
+journal.window.calendar.note.removed = Calendar event removed
+
+journal.window.calendar.note.removed.titled = Calendar event removed: { $title }
+
+journal.window.calendar.note.repeats = Repeats: { $repeats }
+
+journal.window.calendar.note.when.across.days = When: { $start_date }, { $start_time } to { $end_date }, { $end_time }
+
+journal.window.calendar.note.when.across.days.zoned = When: { $start_date }, { $start_time } to { $end_date }, { $end_time } ({ $zone })
+
+journal.window.calendar.note.when.all.day = When: { $date }, all day
+
+journal.window.calendar.note.when.all.days = When: { $start_date } to { $end_date }, all day
+
+journal.window.calendar.note.when.same.day = When: { $date }, { $start_time } to { $end_time }
+
+journal.window.calendar.note.when.same.day.zoned = When: { $date }, { $start_time } to { $end_time } ({ $zone })
+
+journal.window.calendar.note.when.time = When: { $date }, { $time }
+
+journal.window.calendar.note.when.time.zoned = When: { $date }, { $time } ({ $zone })
+
+journal.window.calendar.note.where = Where: { $location }
+
+journal.window.ingest.notice.app.newer = its solstone app is newer than your journal. update your journal.
+
+journal.window.ingest.notice.app.older = its solstone app is too old for your journal. update the solstone app on it.
+
+journal.window.ingest.notice.cleared.named = your journal is accepting uploads from { $device_name } again
+
+journal.window.ingest.notice.cleared.unnamed = your journal is accepting uploads from one of your devices again
+
+journal.window.ingest.notice.raised.named = your journal is turning away uploads from { $device_name }
+
+journal.window.ingest.notice.raised.unnamed = your journal is turning away uploads from one of your devices
+
+journal.window.ingest.notice.tmux.newer = solstone for tmux on it is newer than your journal. update your journal.
+
+journal.window.ingest.notice.tmux.older = solstone for tmux on it is too old for your journal. update solstone for tmux.
+
+journal.window.notes.transcript.edited = edited
+
+journal.window.notes.transcript.removed = no longer in the vault
+
+journal.window.notes.transcript.removed.words = { $quantity ->
+    [one] removed { $count } word.
+   *[other] removed { $count } words.
+}
+
+journal.window.notes.transcript.renamed = renamed from { $path }
+
+journal.window.notes.transcript.source = Source: { $path }

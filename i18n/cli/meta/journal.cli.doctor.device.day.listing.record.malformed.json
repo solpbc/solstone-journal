@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for record malformed.",
+  "context": "Journal command-line text for record malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "record",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "47ae4c781d58d3058e9ecaa175e0b0a0596b687a19822db78c7e0f46919d0ecb",
+  "max_length": 152,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

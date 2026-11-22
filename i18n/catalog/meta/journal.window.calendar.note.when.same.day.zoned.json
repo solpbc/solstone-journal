@@ -1,0 +1,33 @@
+{
+  "description": "Times of an event within one date. Includes the time zone supplied by the calendar.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Times of an event within one date. Includes the time zone supplied by the calendar.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "start_time",
+      "type": "string"
+    },
+    {
+      "name": "end_time",
+      "type": "string"
+    },
+    {
+      "name": "zone",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f2d237923a34fadd1a14f05fc3e56bbbab0206ce13f06d20182e78b7ff74642d",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

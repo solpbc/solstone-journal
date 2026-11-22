@@ -1,0 +1,21 @@
+{
+  "description": "Heading with the title supplied by the calendar.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Heading with the title supplied by the calendar.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "title",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b6484dce35e5d29347474d58fb3ace24cb9bbd6de27969182ddf1f78cba5770e",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

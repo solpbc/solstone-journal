@@ -1780,9 +1780,21 @@ m6a6f75726e616c2e636c692e646f63746f722e64656c69766572792e72656a65637465642e736f7
    *[other] the journal rejected an upload from { $client } ({ $sources } need attention)
 }
 
+m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e6368726f6e69636c652e6572726f72 = device streams unavailable: chronicle unreadable: { $error }
+
+m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e636f6e74696e756974792e6572726f72 = device streams unavailable: stream continuity unreadable: { $error }
+
+m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e636f6e74696e756974792e6d616c666f726d6564 = device streams unavailable: stream continuity unreadable: continuity record is malformed or unsupported
+
 m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e6661756c74 = day { $day } stream { $stream } device { $device }: { $reason }
 
 m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265616461626c65 = the journal can read the last { $days } days for every bound device
+
+m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265636f72642e6c696e65 = device streams unavailable: stream registry unreadable: malformed stream record { $record }: malformed data in { $path } at line { NUMBER($line, useGrouping: 0) }
+
+m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265636f72642e6d616c666f726d6564 = device streams unavailable: stream registry unreadable: malformed stream record { $record }: malformed data in { $path }
+
+m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e72656769737472792e6572726f72 = device streams unavailable: stream registry unreadable: { $error }
 
 m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e726570616972 = a device syncing that day is told the journal cannot read it; a { "solstone" } app older than the 2026-09 fix shows that as offline; inspect the named stream directory's segments and their { "events.jsonl" }
 

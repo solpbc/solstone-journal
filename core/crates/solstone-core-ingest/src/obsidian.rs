@@ -24,8 +24,10 @@ use sha2::{Digest, Sha256};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use solstone_core_format::obsidian::{
-    Change, KnownRename, NoteChange, NoteEntry, only_link_rewrites, render_edit, render_transcript,
+    Change, KnownRename, NoteChange, NoteEntry, only_link_rewrites, render_edit_document,
+    render_transcript_document,
 };
+use solstone_core_format::stored_markdown::{Document, Message};
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 use solstone_core_sol_link::client_description_store::read_descriptions;
 use solstone_core_sol_link::current_display_label;
@@ -133,7 +135,7 @@ struct Slot {
 /// What an upload amounts to, ready to commit once its memory is durable.
 pub(crate) struct Prepared {
     /// The window's memory, or `None` when the upload changes nothing.
-    pub(crate) transcript: Option<Vec<u8>>,
+    pub(crate) transcript: Option<Document>,
     notes: HashMap<NoteKey, Option<NoteState>>,
     vaults: BTreeMap<String, VaultUpdate>,
 }
@@ -295,7 +297,7 @@ pub(crate) fn prepare(journal: &Path, mut changes: Vec<NoteChange>) -> Result<Pr
     }
 
     let known = known_renames(journal, &vaults)?;
-    let mut entries: Vec<(i64, NoteEntry)> = Vec::new();
+    let mut entries: Vec<(i64, NoteEntry<Document>)> = Vec::new();
     for slot in &slots {
         let renames = renames_near(
             known
@@ -317,7 +319,7 @@ pub(crate) fn prepare(journal: &Path, mut changes: Vec<NoteChange>) -> Result<Pr
         .into_iter()
         .map(|(_, entry)| entry)
         .collect::<Vec<_>>();
-    let transcript = (!entries.is_empty()).then(|| render_transcript(&entries).into_bytes());
+    let transcript = (!entries.is_empty()).then(|| render_transcript_document(&entries));
     Ok(Prepared {
         transcript,
         notes: overlay,
@@ -382,7 +384,7 @@ fn renames_near(renames: &[StoredRename], at_ms: i64) -> Vec<KnownRename> {
         .collect()
 }
 
-fn entry_for(slot: &Slot, renames: &[KnownRename]) -> Option<NoteEntry> {
+fn entry_for(slot: &Slot, renames: &[KnownRename]) -> Option<NoteEntry<Document>> {
     if slot.deleted {
         // Seen and gone within one upload leaves nothing to say.
         if slot.vanished {
@@ -390,32 +392,38 @@ fn entry_for(slot: &Slot, renames: &[KnownRename]) -> Option<NoteEntry> {
         }
         return Some(NoteEntry {
             path: slot.start_path.clone(),
-            status: Some("no longer in the vault".to_owned()),
-            body: String::new(),
+            status: Some(note_status(Message::NoteRemoved)),
+            body: Document::default(),
         });
     }
     let Some(base) = &slot.base else {
         return (!slot.text.trim().is_empty()).then(|| NoteEntry {
             path: slot.path.clone(),
             status: None,
-            body: slot.text.clone(),
+            body: Document::plain(slot.text.clone()),
         });
     };
     if let Some(from) = &slot.renamed_from {
         return Some(NoteEntry {
             path: slot.path.clone(),
-            status: Some(format!("renamed from {from}")),
-            body: render_edit(base, &slot.text).unwrap_or_default(),
+            status: Some(note_status(Message::NoteRenamed { path: from.clone() })),
+            body: render_edit_document(base, &slot.text).unwrap_or_default(),
         });
     }
     if only_link_rewrites(base, &slot.text, renames) {
         return None;
     }
-    render_edit(base, &slot.text).map(|body| NoteEntry {
+    render_edit_document(base, &slot.text).map(|body| NoteEntry {
         path: slot.path.clone(),
-        status: Some("edited".to_owned()),
+        status: Some(note_status(Message::NoteEdited)),
         body,
     })
+}
+
+fn note_status(message: Message) -> Document {
+    let mut document = Document::default();
+    document.push_message(message);
+    document
 }
 
 impl Prepared {

@@ -24995,6 +24995,682 @@
       "selector": null
     },
     {
+      "id": "journal.window.calendar.note.added",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6164646564",
+      "namespace": "journal.window.calendar.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.added.titled",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e61646465642e7469746c6564",
+      "namespace": "journal.window.calendar.note.added",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "title",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.attendee.owner",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e6f776e6572",
+      "namespace": "journal.window.calendar.note.attendee",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.attendee.pair",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e70616972",
+      "namespace": "journal.window.calendar.note.attendee",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "attendees",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "attendee",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.attendee.status",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e617474656e6465652e737461747573",
+      "namespace": "journal.window.calendar.note.attendee",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.calendar",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e646172",
+      "namespace": "journal.window.calendar.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "calendar",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.calendar.account",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e63616c656e6461722e6163636f756e74",
+      "namespace": "journal.window.calendar.note.calendar",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "calendar",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "account",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.changed",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e676564",
+      "namespace": "journal.window.calendar.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.changed.titled",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6368616e6765642e7469746c6564",
+      "namespace": "journal.window.calendar.note.changed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "title",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.date",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e64617465",
+      "namespace": "journal.window.calendar.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "weekday",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "month",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "year",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.invited",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e7669746564",
+      "namespace": "journal.window.calendar.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "attendees",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.invited.more",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e696e76697465642e6d6f7265",
+      "namespace": "journal.window.calendar.note.invited",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "remaining",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "attendees",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "remaining",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.calendar.note.notes",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6e6f746573",
+      "namespace": "journal.window.calendar.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "notes",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.recorded",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7265636f72646564",
+      "namespace": "journal.window.calendar.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "offset",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.removed",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f766564",
+      "namespace": "journal.window.calendar.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.removed.titled",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72656d6f7665642e7469746c6564",
+      "namespace": "journal.window.calendar.note.removed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "title",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.repeats",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e72657065617473",
+      "namespace": "journal.window.calendar.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "repeats",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.when.across.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e64617973",
+      "namespace": "journal.window.calendar.note.when.across",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "start_date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "start_time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "end_date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "end_time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.when.across.days.zoned",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e6163726f73732e646179732e7a6f6e6564",
+      "namespace": "journal.window.calendar.note.when.across.days",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "start_date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "start_time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "end_date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "end_time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "zone",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.when.all.day",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e646179",
+      "namespace": "journal.window.calendar.note.when.all",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.when.all.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e616c6c2e64617973",
+      "namespace": "journal.window.calendar.note.when.all",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "start_date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "end_date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.when.same.day",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e646179",
+      "namespace": "journal.window.calendar.note.when.same",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "start_time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "end_time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.when.same.day.zoned",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e73616d652e6461792e7a6f6e6564",
+      "namespace": "journal.window.calendar.note.when.same.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "start_time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "end_time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "zone",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.when.time",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d65",
+      "namespace": "journal.window.calendar.note.when",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.when.time.zoned",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768656e2e74696d652e7a6f6e6564",
+      "namespace": "journal.window.calendar.note.when.time",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "zone",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.calendar.note.where",
+      "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e7768657265",
+      "namespace": "journal.window.calendar.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "location",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.chrome.connection.connecting",
       "resource": "m6a6f75726e616c2e77696e646f772e6368726f6d652e636f6e6e656374696f6e2e636f6e6e656374696e67",
       "namespace": "journal.window.chrome.connection",
@@ -89696,6 +90372,118 @@
       "selector": null
     },
     {
+      "id": "journal.window.ingest.notice.app.newer",
+      "resource": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6e65776572",
+      "namespace": "journal.window.ingest.notice.app",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.ingest.notice.app.older",
+      "resource": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e6170702e6f6c646572",
+      "namespace": "journal.window.ingest.notice.app",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.ingest.notice.cleared.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e6e616d6564",
+      "namespace": "journal.window.ingest.notice.cleared",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.ingest.notice.cleared.unnamed",
+      "resource": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e636c65617265642e756e6e616d6564",
+      "namespace": "journal.window.ingest.notice.cleared",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.ingest.notice.raised.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e6e616d6564",
+      "namespace": "journal.window.ingest.notice.raised",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.ingest.notice.raised.unnamed",
+      "resource": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e7261697365642e756e6e616d6564",
+      "namespace": "journal.window.ingest.notice.raised",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.ingest.notice.tmux.newer",
+      "resource": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6e65776572",
+      "namespace": "journal.window.ingest.notice.tmux",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.ingest.notice.tmux.older",
+      "resource": "m6a6f75726e616c2e77696e646f772e696e676573742e6e6f746963652e746d75782e6f6c646572",
+      "namespace": "journal.window.ingest.notice.tmux",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.link.absent",
       "resource": "m6a6f75726e616c2e77696e646f772e6c696e6b2e616273656e74",
       "namespace": "journal.window.link",
@@ -105040,6 +105828,102 @@
       "replacement": null,
       "format_intent": "text",
       "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.notes.transcript.edited",
+      "resource": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e656469746564",
+      "namespace": "journal.window.notes.transcript",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.notes.transcript.removed",
+      "resource": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f766564",
+      "namespace": "journal.window.notes.transcript",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.notes.transcript.removed.words",
+      "resource": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656d6f7665642e776f726473",
+      "namespace": "journal.window.notes.transcript.removed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.notes.transcript.renamed",
+      "resource": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e72656e616d6564",
+      "namespace": "journal.window.notes.transcript",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.notes.transcript.source",
+      "resource": "m6a6f75726e616c2e77696e646f772e6e6f7465732e7472616e7363726970742e736f75726365",
+      "namespace": "journal.window.notes.transcript",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
       "protected_slots": [],
       "selector": null
     },

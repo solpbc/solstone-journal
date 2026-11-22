@@ -1,0 +1,37 @@
+{
+  "description": "Start and end of an event on different dates. Includes the time zone supplied by the calendar.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Start and end of an event on different dates. Includes the time zone supplied by the calendar.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start_date",
+      "type": "string"
+    },
+    {
+      "name": "start_time",
+      "type": "string"
+    },
+    {
+      "name": "end_date",
+      "type": "string"
+    },
+    {
+      "name": "end_time",
+      "type": "string"
+    },
+    {
+      "name": "zone",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6c4d9f282323a80f105e3bb3d2afc9b8825c3a34611b78a228a81dd412c33fe1",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

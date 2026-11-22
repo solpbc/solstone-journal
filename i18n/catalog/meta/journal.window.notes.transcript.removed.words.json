@@ -1,0 +1,30 @@
+{
+  "description": "Number of words an edit removed, without quoting the deleted text.",
+  "context": "Note transcript in the journal. Number of words an edit removed, without quoting the deleted text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2daa83ab42c35cfbf1bb56aa237e0b31e74b9ea0db282256d5ba7d4b050222af",
+  "max_length": 267,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "quantity"
+  }
+}

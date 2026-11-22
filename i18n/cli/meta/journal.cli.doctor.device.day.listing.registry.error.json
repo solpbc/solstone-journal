@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for registry error.",
+  "context": "Journal command-line text for registry error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "248709fcad370c10f365fe1abbe65093b89fb6c7c64e116779487e357d6c4667",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

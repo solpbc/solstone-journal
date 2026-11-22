@@ -1,0 +1,16 @@
+{
+  "description": "Notice title after uploads recover.",
+  "context": "Persistent ingest refusal on a paired device. Notice title after uploads recover.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cfae09d15cba0ed768e2453b8e5d13ca885da8b3871c4d75428cebab174f66b2",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

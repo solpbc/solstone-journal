@@ -488,6 +488,8 @@ revisions. Run
 
 Use the window catalog for stored backup diagnostics and for notices about backup, agent access, device access and updates. Render the English text when writing a backup record or broadcasting a notice on Callosum. Keep the English detail in saved agent service and activity records for older readers. On the OAuth authorization page, keep consent messages in English and render status messages in the language of the request.
 
+Use the window catalog for device ingest notices and for journal-written labels in calendar and Obsidian entries. Keep the source event and the note text as received. For a new Obsidian transcript, store its display receipt in the segment’s `talents/note_transcript.md.display`. Read older transcripts as written.
+
 ### Journal command-line strings
 
 Put command-line help, progress and human-readable errors in

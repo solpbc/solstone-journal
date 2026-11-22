@@ -1,0 +1,25 @@
+{
+  "description": "Separate another person in a list of invited names.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Separate another person in a list of invited names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "attendees",
+      "type": "string"
+    },
+    {
+      "name": "attendee",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9496deedf641a13e0d7ad568a8ef96042bfffe81904dc24738d6dc3930be4528",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

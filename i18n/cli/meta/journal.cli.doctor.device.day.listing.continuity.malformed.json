@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for continuity malformed.",
+  "context": "Journal command-line text for continuity malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "334a261f1c59031d414b8808e9e28873336b4baa62e4ca98c03957d8fa1430a9",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

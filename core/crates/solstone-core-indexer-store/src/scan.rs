@@ -2982,16 +2982,7 @@ fn ensure_file_current(
     };
     let forgotten = delete_file_chunks(conn, rel, known_chunk_rows)?;
     let indexed = if family == Family::Calendar {
-        index_calendar_source(conn, journal, rel, path, forgotten).map(|(warnings, relisted)| {
-            (
-                FileOutcome {
-                    warnings,
-                    display_stamp: None,
-                    undecidable: None,
-                },
-                relisted,
-            )
-        })
+        index_calendar_source(conn, journal, rel, path, forgotten)
     } else {
         index_file(conn, journal, rel, path, family, memory_original, hides)
             .map(|outcome| (outcome, None))
@@ -3246,10 +3237,7 @@ fn index_calendar_source(
     rel: &str,
     path: &Path,
     mut identities: BTreeSet<Identity>,
-) -> Result<
-    (Vec<solstone_core_cli_copy::MessageDetail>, Option<Relisted>),
-    solstone_core_cli_copy::MessageDetail,
-> {
+) -> Result<(FileOutcome, Option<Relisted>), solstone_core_cli_copy::MessageDetail> {
     let text = fs::read_to_string(path).map_err(|error| {
         solstone_core_cli_copy::MessageDetail::message(
             "journal.cli.journal.indexer.files.content.read",
@@ -3300,7 +3288,14 @@ fn index_calendar_source(
         )
     })?;
     warnings.append(&mut relisted.warnings);
-    Ok((warnings, Some(relisted)))
+    Ok((
+        FileOutcome {
+            warnings,
+            display_stamp: Some(crate::calendar::display_stamp(text.as_bytes())),
+            undecidable: None,
+        },
+        Some(relisted),
+    ))
 }
 
 fn resolve_rescan_target(journal: &Path, input: &Path) -> Result<(String, PathBuf), StoreError> {

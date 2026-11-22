@@ -5735,6 +5735,7 @@ dependencies = [
  "solstone-core-journal-stats-cli",
  "solstone-core-local",
  "solstone-core-processing-record",
+ "solstone-core-segment",
  "solstone-core-setup",
  "solstone-core-skill-state",
  "solstone-core-sol-link",

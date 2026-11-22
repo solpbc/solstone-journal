@@ -28955,6 +28955,112 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.doctor.device.day.listing.chronicle.error\u0004m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e6368726f6e69636c652e6572726f72",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e6368726f6e69636c652e6572726f72_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.doctor.device.day.listing.chronicle.error",
+        "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e6368726f6e69636c652e6572726f72",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "device streams unavailable: chronicle unreadable: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "device streams unavailable: chronicle unreadable: ⁨sample⁩",
+      "message_id": "journal.cli.doctor.device.day.listing.chronicle.error",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.doctor.device.day.listing.chronicle.error\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e6368726f6e69636c652e6572726f72",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.doctor.device.day.listing.continuity.error\u0004m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e636f6e74696e756974792e6572726f72",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e636f6e74696e756974792e6572726f72_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.doctor.device.day.listing.continuity.error",
+        "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e636f6e74696e756974792e6572726f72",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "device streams unavailable: stream continuity unreadable: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "device streams unavailable: stream continuity unreadable: ⁨sample⁩",
+      "message_id": "journal.cli.doctor.device.day.listing.continuity.error",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.doctor.device.day.listing.continuity.error\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e636f6e74696e756974792e6572726f72",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.doctor.device.day.listing.continuity.malformed\u0004m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e636f6e74696e756974792e6d616c666f726d6564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e636f6e74696e756974792e6d616c666f726d6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.doctor.device.day.listing.continuity.malformed",
+        "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e636f6e74696e756974792e6d616c666f726d6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "device streams unavailable: stream continuity unreadable: continuity record is malformed or unsupported",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "device streams unavailable: stream continuity unreadable: continuity record is malformed or unsupported",
+      "message_id": "journal.cli.doctor.device.day.listing.continuity.malformed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.doctor.device.day.listing.continuity.malformed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e636f6e74696e756974792e6d616c666f726d6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "day",
             "type": "string",
             "value": "sample"
@@ -29042,6 +29148,138 @@
       "own_reader_call": "render(\"en-US\", \"journal.cli.doctor.device.day.listing.readable\", &[(\"days\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265616461626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "record",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "line",
+            "type": "integer",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.doctor.device.day.listing.record.line\u0004m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265636f72642e6c696e65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265636f72642e6c696e65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.doctor.device.day.listing.record.line",
+        "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265636f72642e6c696e65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "device streams unavailable: stream registry unreadable: malformed stream record ⁨sample⁩: malformed data in ⁨sample⁩ at line ⁨0⁩",
+      "folder": null,
+      "inputs": {
+        "line": 0,
+        "path": "sample",
+        "record": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "device streams unavailable: stream registry unreadable: malformed stream record ⁨sample⁩: malformed data in ⁨sample⁩ at line ⁨0⁩",
+      "message_id": "journal.cli.doctor.device.day.listing.record.line",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.doctor.device.day.listing.record.line\", &[(\"line\", Value::Integer(0)), (\"path\", Value::String(\"sample\")), (\"record\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265636f72642e6c696e65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "record",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.doctor.device.day.listing.record.malformed\u0004m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265636f72642e6d616c666f726d6564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265636f72642e6d616c666f726d6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.doctor.device.day.listing.record.malformed",
+        "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265636f72642e6d616c666f726d6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "device streams unavailable: stream registry unreadable: malformed stream record ⁨sample⁩: malformed data in ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample",
+        "record": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "device streams unavailable: stream registry unreadable: malformed stream record ⁨sample⁩: malformed data in ⁨sample⁩",
+      "message_id": "journal.cli.doctor.device.day.listing.record.malformed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.doctor.device.day.listing.record.malformed\", &[(\"path\", Value::String(\"sample\")), (\"record\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e7265636f72642e6d616c666f726d6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.doctor.device.day.listing.registry.error\u0004m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e72656769737472792e6572726f72",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e72656769737472792e6572726f72_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.doctor.device.day.listing.registry.error",
+        "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e72656769737472792e6572726f72",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "device streams unavailable: stream registry unreadable: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "device streams unavailable: stream registry unreadable: ⁨sample⁩",
+      "message_id": "journal.cli.doctor.device.day.listing.registry.error",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.doctor.device.day.listing.registry.error\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e72656769737472792e6572726f72",
       "target": "rust"
     },
     {

@@ -21,6 +21,8 @@ use jiff::{SignedDuration, ZonedDateTime};
 use serde_json::{Map, Value};
 use solstone_core_time::{parse_day, parse_rfc3339, strftime_civil};
 
+use solstone_core_window_catalog::{ENGLISH, Value as CatalogValue, render, strings, text};
+
 use crate::segment::{is_date_key, segment_parse};
 
 /// The ingest source a calendar stream is bound to.
@@ -980,48 +982,84 @@ fn people_on_invite(record: &Map<String, Value>) -> impl Iterator<Item = &Map<St
 /// every field is bounded so the text stays readable as one search entry. The
 /// attendee who is the owner, by `owner`'s addresses, is written as you.
 pub fn render_calendar_note(note: &CalendarNote, owner: &OwnerAddresses) -> String {
+    calendar_note_for_locale(note, owner, ENGLISH)
+}
+
+/// Render the journal's labels in the reader's language, retaining calendar-supplied text.
+pub fn calendar_note_for_locale(
+    note: &CalendarNote,
+    owner: &OwnerAddresses,
+    locale: &str,
+) -> String {
     let record = &note.record;
-    let mut lines = Vec::new();
-    let heading = match note.change {
-        Change::Added => "Calendar event added",
-        Change::Changed => "Calendar event changed",
-        Change::Removed => "Calendar event removed",
+    let title = text_field(record, "title", MAX_FIELD_CHARS);
+    let heading = match (note.change, title.is_some()) {
+        (Change::Added, false) => "journal.window.calendar.note.added",
+        (Change::Changed, false) => "journal.window.calendar.note.changed",
+        (Change::Removed, false) => "journal.window.calendar.note.removed",
+        (Change::Added, true) => "journal.window.calendar.note.added.titled",
+        (Change::Changed, true) => "journal.window.calendar.note.changed.titled",
+        (Change::Removed, true) => "journal.window.calendar.note.removed.titled",
     };
-    match text_field(record, "title", MAX_FIELD_CHARS) {
-        Some(title) => lines.push(format!("{heading}: {title}")),
-        None => lines.push(heading.to_owned()),
-    }
+    let mut lines = vec![match title {
+        Some(title) => strings(locale, heading, [("title", &title)]),
+        None => text(locale, heading),
+    }];
     if let Some(schedule) = &note.schedule {
-        lines.push(format!(
-            "When: {}",
-            describe_schedule(schedule, text_field(record, "time_zone", MAX_FIELD_CHARS))
+        lines.push(describe_schedule(
+            schedule,
+            text_field(record, "time_zone", MAX_FIELD_CHARS),
+            locale,
         ));
     }
     if let Some(calendar) = text_field(record, "calendar", MAX_FIELD_CHARS) {
-        // Two calendars can share a name across accounts; the account tells
-        // them apart. A calendar named after its account says it once.
-        match text_field(record, "account", MAX_FIELD_CHARS) {
-            Some(account) if !account.eq_ignore_ascii_case(&calendar) => {
-                lines.push(format!("Calendar: {calendar} ({account})"));
-            }
-            _ => lines.push(format!("Calendar: {calendar}")),
-        }
+        // Two calendars can share a name across accounts; a calendar named after its account says it once.
+        lines.push(match text_field(record, "account", MAX_FIELD_CHARS) {
+            Some(account) if !account.eq_ignore_ascii_case(&calendar) => strings(
+                locale,
+                "journal.window.calendar.note.calendar.account",
+                [("calendar", &calendar), ("account", &account)],
+            ),
+            _ => strings(
+                locale,
+                "journal.window.calendar.note.calendar",
+                [("calendar", &calendar)],
+            ),
+        });
     }
     if let Some(location) = text_field(record, "location", MAX_FIELD_CHARS) {
-        lines.push(format!("Where: {location}"));
+        lines.push(strings(
+            locale,
+            "journal.window.calendar.note.where",
+            [("location", &location)],
+        ));
     }
-    if let Some(invited) = describe_attendees(record, owner) {
-        lines.push(format!("Invited: {invited}"));
+    if let Some(invited) = describe_attendees(record, owner, locale) {
+        lines.push(invited);
     }
     if let Some(notes) = text_field(record, "notes", MAX_NOTES_CHARS) {
-        lines.push(format!("Notes: {notes}"));
+        lines.push(strings(
+            locale,
+            "journal.window.calendar.note.notes",
+            [("notes", &notes)],
+        ));
     }
     if let Some(repeats) = text_field(record, "repeats", MAX_FIELD_CHARS) {
-        lines.push(format!("Repeats: {repeats}"));
+        lines.push(strings(
+            locale,
+            "journal.window.calendar.note.repeats",
+            [("repeats", &repeats)],
+        ));
     }
-    lines.push(format!(
-        "Recorded: {}",
-        describe_zoned(&note.changed_at, true)
+    let at = note.changed_at.datetime();
+    lines.push(strings(
+        locale,
+        "journal.window.calendar.note.recorded",
+        [
+            ("date", &describe_date(at.date(), locale)),
+            ("time", &describe_clock(at, locale)),
+            ("offset", &note.changed_at.strftime("%:z").to_string()),
+        ],
     ));
     let mut text = lines.join("\n");
     if text.len() > MAX_RENDERED_BYTES {
@@ -1052,111 +1090,213 @@ fn bounded(value: &str, limit: usize) -> String {
     cut
 }
 
-fn describe_attendees(record: &Map<String, Value>, owner: &OwnerAddresses) -> Option<String> {
+fn describe_attendees(
+    record: &Map<String, Value>,
+    owner: &OwnerAddresses,
+    locale: &str,
+) -> Option<String> {
     let attendees = record.get("attendees")?.as_array()?;
     let mut named = Vec::new();
+    let mut more = 0;
     for attendee in attendees.iter().filter_map(Value::as_object) {
         let who = text_field(attendee, "name", MAX_FIELD_CHARS)
             .or_else(|| text_field(attendee, "email", MAX_FIELD_CHARS));
         let you = owner.is_owner(attendee);
+        if named.len() == MAX_ATTENDEES {
+            more += i64::from(who.is_some() || you);
+            continue;
+        }
         let who = match (who, you) {
-            (Some(who), true) => format!("{who}, you"),
+            (Some(who), true) => strings(
+                locale,
+                "journal.window.calendar.note.attendee.owner",
+                [("name", &who)],
+            ),
             (Some(who), false) => who,
-            (None, true) => "you".to_owned(),
+            (None, true) => text(locale, "journal.window.search.message.you"),
             (None, false) => continue,
         };
         match text_field(attendee, "status", MAX_STATUS_CHARS) {
-            Some(status) => named.push(format!("{who} ({status})")),
+            Some(status) => named.push(strings(
+                locale,
+                "journal.window.calendar.note.attendee.status",
+                [("name", &who), ("status", &status)],
+            )),
             None => named.push(who),
         }
     }
-    if named.is_empty() {
-        return None;
-    }
-    let more = named.len().saturating_sub(MAX_ATTENDEES);
-    named.truncate(MAX_ATTENDEES);
-    let mut text = named.join("; ");
-    if more > 0 {
-        text.push_str(&format!("; and {more} more"));
-    }
-    Some(text)
+    let mut named = named.into_iter();
+    let first = named.next()?;
+    let attendees = named.fold(first, |prior, name| {
+        strings(
+            locale,
+            "journal.window.calendar.note.attendee.pair",
+            [("attendees", &prior), ("attendee", &name)],
+        )
+    });
+    Some(if more == 0 {
+        strings(
+            locale,
+            "journal.window.calendar.note.invited",
+            [("attendees", &attendees)],
+        )
+    } else {
+        render(
+            locale,
+            "journal.window.calendar.note.invited.more",
+            &[
+                ("attendees", CatalogValue::String(&attendees)),
+                ("remaining", CatalogValue::Cardinal(more)),
+            ],
+        )
+    })
 }
 
-fn describe_date(date: Date) -> String {
-    format!(
-        "{}, {} {}, {}",
-        date.strftime("%A"),
-        date.strftime("%B"),
-        date.day(),
-        date.year()
+fn describe_date(date: Date, locale: &str) -> String {
+    const WEEKDAYS: [&str; 7] = [
+        "journal.window.date.weekdays.monday",
+        "journal.window.date.weekdays.tuesday",
+        "journal.window.date.weekdays.wednesday",
+        "journal.window.date.weekdays.thursday",
+        "journal.window.date.weekdays.friday",
+        "journal.window.date.weekdays.saturday",
+        "journal.window.date.weekdays.sunday",
+    ];
+    const MONTHS: [&str; 12] = [
+        "journal.window.shared.date.nav.months.label.january",
+        "journal.window.shared.date.nav.months.label.february",
+        "journal.window.shared.date.nav.months.label.march",
+        "journal.window.shared.date.nav.months.label.april",
+        "journal.window.shared.date.nav.months.label.may",
+        "journal.window.shared.date.nav.months.label.june",
+        "journal.window.shared.date.nav.months.label.july",
+        "journal.window.shared.date.nav.months.label.august",
+        "journal.window.shared.date.nav.months.label.september",
+        "journal.window.shared.date.nav.months.label.october",
+        "journal.window.shared.date.nav.months.label.november",
+        "journal.window.shared.date.nav.months.label.december",
+    ];
+    strings(
+        locale,
+        "journal.window.calendar.note.date",
+        [
+            (
+                "weekday",
+                &text(
+                    locale,
+                    WEEKDAYS[date.weekday().to_monday_zero_offset() as usize],
+                ),
+            ),
+            ("month", &text(locale, MONTHS[(date.month() - 1) as usize])),
+            ("day", &date.day().to_string()),
+            ("year", &date.year().to_string()),
+        ],
     )
 }
 
-fn describe_clock(time: DateTime) -> String {
-    let pm = time.hour() >= 12;
+fn describe_clock(time: DateTime, locale: &str) -> String {
     let hour = match time.hour() % 12 {
         0 => 12,
         hour => hour,
     };
-    format!(
-        "{hour}:{:02} {}",
-        time.minute(),
-        if pm { "PM" } else { "AM" }
+    strings(
+        locale,
+        if time.hour() >= 12 {
+            "journal.window.body.date.clock.afternoon"
+        } else {
+            "journal.window.body.date.clock.morning"
+        },
+        [
+            ("hour", &hour.to_string()),
+            ("minute", &format!("{:02}", time.minute())),
+        ],
     )
 }
 
-fn describe_wall(time: DateTime) -> String {
-    format!("{}, {}", describe_date(time.date()), describe_clock(time))
-}
-
-fn describe_zoned(time: &ZonedDateTime, with_offset: bool) -> String {
-    let wall = describe_wall(time.datetime());
-    if with_offset {
-        format!("{wall} ({})", time.strftime("%:z"))
-    } else {
-        wall
-    }
-}
-
-fn describe_schedule(schedule: &Schedule, zone: Option<String>) -> String {
-    let span = match (&schedule.start, &schedule.end) {
+fn describe_schedule(schedule: &Schedule, zone: Option<String>, locale: &str) -> String {
+    let (start, end) = match (&schedule.start, &schedule.end) {
         (When::Date(start), end) => {
-            let start = *start;
             let last = match end {
-                Some(When::Date(end)) if *end > start => end.yesterday().unwrap_or(start),
-                _ => start,
+                Some(When::Date(end)) if end > start => end.yesterday().unwrap_or(*start),
+                _ => *start,
             };
-            if last == start {
-                format!("{}, all day", describe_date(start))
-            } else {
-                format!(
-                    "{} to {}, all day",
-                    describe_date(start),
-                    describe_date(last)
+            let date = describe_date(*start, locale);
+            return if last == *start {
+                strings(
+                    locale,
+                    "journal.window.calendar.note.when.all.day",
+                    [("date", &date)],
                 )
-            }
+            } else {
+                strings(
+                    locale,
+                    "journal.window.calendar.note.when.all.days",
+                    [
+                        ("start_date", &date),
+                        ("end_date", &describe_date(last, locale)),
+                    ],
+                )
+            };
         }
         (When::Zoned(start), Some(When::Zoned(end))) if end > start => {
-            span_text(start.datetime(), end.datetime())
+            (start.datetime(), Some(end.datetime()))
         }
-        (When::Zoned(start), _) => describe_wall(start.datetime()),
-        (When::Floating(start), Some(When::Floating(end))) if end > start => {
-            span_text(*start, *end)
-        }
-        (When::Floating(start), _) => describe_wall(*start),
+        (When::Zoned(start), _) => (start.datetime(), None),
+        (When::Floating(start), Some(When::Floating(end))) if end > start => (*start, Some(*end)),
+        (When::Floating(start), _) => (*start, None),
     };
-    match zone {
-        Some(zone) if !schedule.all_day => format!("{span} ({zone})"),
-        _ => span,
-    }
-}
-
-fn span_text(start: DateTime, end: DateTime) -> String {
-    if start.date() == end.date() {
-        format!("{} to {}", describe_wall(start), describe_clock(end))
-    } else {
-        format!("{} to {}", describe_wall(start), describe_wall(end))
-    }
+    let start_date = describe_date(start.date(), locale);
+    let start_time = describe_clock(start, locale);
+    let end_time;
+    let end_date;
+    let (plain, zoned, mut fields) = match end {
+        None => (
+            "journal.window.calendar.note.when.time",
+            "journal.window.calendar.note.when.time.zoned",
+            vec![("date", start_date.as_str()), ("time", start_time.as_str())],
+        ),
+        Some(end) if end.date() == start.date() => {
+            end_time = describe_clock(end, locale);
+            (
+                "journal.window.calendar.note.when.same.day",
+                "journal.window.calendar.note.when.same.day.zoned",
+                vec![
+                    ("date", start_date.as_str()),
+                    ("start_time", start_time.as_str()),
+                    ("end_time", end_time.as_str()),
+                ],
+            )
+        }
+        Some(end) => {
+            end_date = describe_date(end.date(), locale);
+            end_time = describe_clock(end, locale);
+            (
+                "journal.window.calendar.note.when.across.days",
+                "journal.window.calendar.note.when.across.days.zoned",
+                vec![
+                    ("start_date", start_date.as_str()),
+                    ("start_time", start_time.as_str()),
+                    ("end_date", end_date.as_str()),
+                    ("end_time", end_time.as_str()),
+                ],
+            )
+        }
+    };
+    let message = match zone.as_deref().filter(|_| !schedule.all_day) {
+        Some(zone) => {
+            fields.push(("zone", zone));
+            zoned
+        }
+        None => plain,
+    };
+    render(
+        locale,
+        message,
+        &fields
+            .into_iter()
+            .map(|(name, value)| (name, CatalogValue::String(value)))
+            .collect::<Vec<_>>(),
+    )
 }
 
 #[cfg(test)]

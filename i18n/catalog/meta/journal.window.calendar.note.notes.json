@@ -1,0 +1,21 @@
+{
+  "description": "Event notes from the source.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Event notes from the source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "notes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "428ab8dc67dbdc9df270b837c478301784eb5d679f328e5da4d3b3695a08fee2",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

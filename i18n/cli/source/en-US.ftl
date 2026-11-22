@@ -7291,3 +7291,15 @@ journal.cli.share.usage.match = usage: { $syntax }
 journal.cli.share.usage.package = usage: { $syntax }
 
 journal.cli.share.usage.root = usage: { $syntax }
+
+journal.cli.doctor.device.day.listing.chronicle.error = device streams unavailable: chronicle unreadable: { $error }
+
+journal.cli.doctor.device.day.listing.continuity.error = device streams unavailable: stream continuity unreadable: { $error }
+
+journal.cli.doctor.device.day.listing.continuity.malformed = device streams unavailable: stream continuity unreadable: continuity record is malformed or unsupported
+
+journal.cli.doctor.device.day.listing.record.line = device streams unavailable: stream registry unreadable: malformed stream record { $record }: malformed data in { $path } at line { $line }
+
+journal.cli.doctor.device.day.listing.record.malformed = device streams unavailable: stream registry unreadable: malformed stream record { $record }: malformed data in { $path }
+
+journal.cli.doctor.device.day.listing.registry.error = device streams unavailable: stream registry unreadable: { $error }

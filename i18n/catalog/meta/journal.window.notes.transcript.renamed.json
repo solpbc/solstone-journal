@@ -1,0 +1,21 @@
+{
+  "description": "Status after a note moved, giving its former vault-relative path.",
+  "context": "Note transcript in the journal. Status after a note moved, giving its former vault-relative path.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0d172cb1a9457061d480b4e0f542023f1c82f58d6826daee0ea21c4ae3142339",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

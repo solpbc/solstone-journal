@@ -16,6 +16,7 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::calendar::segment_window;
+use crate::stored_markdown::{Document, Message};
 
 /// The ingest source an Obsidian stream is bound to.
 pub const OBSIDIAN_SOURCE: &str = "obsidian";
@@ -299,37 +300,51 @@ fn check_path(path: &str) -> Result<(), String> {
 
 /// One note's entry in a window's memory.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NoteEntry {
+pub struct NoteEntry<T = String> {
     pub path: String,
     /// What happened, when it needs saying. A note seen for the first time
     /// simply reads as the note.
-    pub status: Option<String>,
-    pub body: String,
+    pub status: Option<T>,
+    pub body: T,
 }
 
 /// The memory for a window: each entry as a titled note, in the order given.
 pub fn render_transcript(entries: &[NoteEntry]) -> String {
-    let mut out = String::new();
+    transcript_with(entries, |out, field, end| out.push_str(&field[..end])).into_text()
+}
+
+/// Render live note changes, keeping their authored status and edit spans.
+pub fn render_transcript_document(entries: &[NoteEntry<Document>]) -> Document {
+    transcript_with(entries, Document::push_prefix)
+}
+
+fn transcript_with<T: std::ops::Deref<Target = str>>(
+    entries: &[NoteEntry<T>],
+    append: impl Fn(&mut Document, &T, usize),
+) -> Document {
+    let mut transcript = Document::default();
     for (index, entry) in entries.iter().enumerate() {
         if index > 0 {
-            out.push_str("\n\n");
+            transcript.push_str("\n\n");
         }
-        out.push_str("## ");
-        out.push_str(note_title(&entry.path));
-        out.push_str("\nSource: ");
-        out.push_str(&entry.path);
+        transcript.push_str("## ");
+        transcript.push_str(note_title(&entry.path));
+        transcript.push_str("\n");
+        transcript.push_message(Message::NoteSource {
+            path: entry.path.clone(),
+        });
         if let Some(status) = &entry.status {
-            out.push('\n');
-            out.push_str(status);
+            transcript.push_str("\n");
+            append(&mut transcript, status, status.len());
         }
-        let body = entry.body.trim_end();
-        if !body.is_empty() {
-            out.push_str("\n\n");
-            out.push_str(body);
+        let end = entry.body.trim_end().len();
+        if end > 0 {
+            transcript.push_str("\n\n");
+            append(&mut transcript, &entry.body, end);
         }
     }
-    out.push('\n');
-    out
+    transcript.push_str("\n");
+    transcript
 }
 
 /// A note's title: its file name without the extension.
@@ -344,6 +359,10 @@ pub fn note_title(path: &str) -> &str {
 /// What an edit wrote: the text inserted, and a count of the words taken out.
 /// Nothing written before the edit appears. `None` means no change of substance.
 pub fn render_edit(old: &str, new: &str) -> Option<String> {
+    render_edit_document(old, new).map(Document::into_text)
+}
+
+pub fn render_edit_document(old: &str, new: &str) -> Option<Document> {
     let old = old.replace("\r\n", "\n");
     let new = new.replace("\r\n", "\n");
     if old == new {
@@ -373,14 +392,13 @@ pub fn render_edit(old: &str, new: &str) -> Option<String> {
             blocks.push(inserted.join(" … "));
         }
     }
-    let mut out = blocks.join("\n\n");
+    let mut out = Document::plain(blocks.join("\n\n"));
     if removed_words > 0 {
         if !out.is_empty() {
             out.push_str("\n\n");
         }
-        out.push_str(&match removed_words {
-            1 => "removed 1 word.".to_owned(),
-            count => format!("removed {count} words."),
+        out.push_message(Message::NoteRemovedWords {
+            count: removed_words,
         });
     }
     (!out.is_empty()).then_some(out)

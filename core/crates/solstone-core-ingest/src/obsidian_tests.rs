@@ -45,7 +45,7 @@ fn apply(journal: &Path, cid: &str, changes: Vec<NoteChange>) -> Option<String> 
     let text = prepared
         .transcript
         .clone()
-        .map(|bytes| String::from_utf8(bytes).unwrap());
+        .map(solstone_core_format::stored_markdown::Document::into_text);
     prepared.commit(journal, cid).unwrap();
     text
 }

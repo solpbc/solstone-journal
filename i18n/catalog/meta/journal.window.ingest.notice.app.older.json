@@ -1,0 +1,16 @@
+{
+  "description": "How to restore uploads when the device and journal use different protocol versions.",
+  "context": "Persistent ingest refusal on a paired device. How to restore uploads when the device and journal use different protocol versions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b1e94c520ef575fafa19b48141c060e1d873a15ce7d1a28fa059d15c00b36c0c",
+  "max_length": 228,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Start of a timed event.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Start of a timed event.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1abd97ed665a5dff66a479fc4e0835ccef08b4db3147fe2289ce84088b4cb944",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

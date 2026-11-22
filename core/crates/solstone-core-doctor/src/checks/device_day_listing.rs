@@ -7,7 +7,9 @@ use crate::{
 };
 use solstone_core_cli_copy as copy;
 
-use solstone_core_ingest::device_day_listing_faults;
+use solstone_core_ingest::{DeviceDayReadError, device_day_listing_checked};
+use solstone_core_journal_io::ReadError;
+use solstone_core_segment::SegmentError;
 
 /// Newest chronicle days the listing is run over, per bound device stream.
 const RECENT_DAYS: usize = 14;
@@ -21,14 +23,11 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             None::<String>,
         ));
     }
-    match device_day_listing_faults(&context.journal_path, RECENT_DAYS) {
+    match device_day_listing_checked(&context.journal_path, RECENT_DAYS) {
         Err(error) => Ok(make_result(
             check,
             Status::Skip,
-            copy::display(
-                "journal.cli.doctor.device.day.listing.streams.unavailable",
-                [("error", &error)],
-            ),
+            unavailable(error),
             None::<String>,
         )),
         Ok(None) => Ok(make_result(
@@ -69,5 +68,48 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 Some(copy::text("journal.cli.doctor.device.day.listing.repair")),
             ))
         }
+    }
+}
+
+fn unavailable(error: DeviceDayReadError) -> String {
+    use DeviceDayReadError::{Chronicle, Continuity, Registry};
+    match error {
+        Registry(SegmentError::MalformedStreamRecord {
+            path,
+            source: ReadError::Malformed(data),
+        }) => {
+            let record = path.display();
+            let source = data.path.display();
+            if let Some(line) = data.line {
+                copy::render(
+                    "journal.cli.doctor.device.day.listing.record.line",
+                    &[
+                        ("record", copy::Value::String(&record.to_string())),
+                        ("path", copy::Value::String(&source.to_string())),
+                        ("line", copy::Value::Integer(line as i64)),
+                    ],
+                )
+            } else {
+                copy::display(
+                    "journal.cli.doctor.device.day.listing.record.malformed",
+                    [("record", &record), ("path", &source)],
+                )
+            }
+        }
+        Continuity(SegmentError::StreamInput("continuity record is malformed or unsupported")) => {
+            copy::text("journal.cli.doctor.device.day.listing.continuity.malformed")
+        }
+        Registry(cause) => copy::display(
+            "journal.cli.doctor.device.day.listing.registry.error",
+            [("error", &cause)],
+        ),
+        Continuity(cause) => copy::display(
+            "journal.cli.doctor.device.day.listing.continuity.error",
+            [("error", &cause)],
+        ),
+        Chronicle(cause) => copy::display(
+            "journal.cli.doctor.device.day.listing.chronicle.error",
+            [("error", &cause)],
+        ),
     }
 }

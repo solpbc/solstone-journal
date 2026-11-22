@@ -375,7 +375,7 @@ fn prepare_segment_localized(
                             "type": "calendar",
                             "time": local_time(&zone, timestamp),
                             "timestamp": timestamp,
-                            "text": format_file(FileFormat::Content(Family::Calendar), name, "", FormatterView::CalendarNote { note, owner }).chunks.into_iter().map(|chunk| chunk.content).collect::<String>(),
+                            "text": format_file(FileFormat::Content(Family::Calendar), name, "", FormatterView::LocalizedCalendarNote { note, owner, locale }).chunks.into_iter().map(|chunk| chunk.content).collect::<String>(),
                         }));
                     }
                 }
@@ -524,7 +524,20 @@ fn prepare_segment_localized(
                     .into_iter()
                     .map(|chunk| chunk.content)
                     .collect::<String>();
-                    chunks.push(json!({"type":"markdown","time":time,"timestamp":timestamp,"markdown":markdown.trim(),"source_ref":{"filename":path.file_name().and_then(|name| name.to_str()).unwrap_or_default()}}));
+                    let note_display = if path.file_name().is_some_and(|name| {
+                        name == solstone_core_format::obsidian::NOTE_TRANSCRIPT_FILE
+                    }) {
+                        solstone_core_format::stored_markdown::project_file(
+                            root,
+                            &path,
+                            markdown.trim(),
+                            locale,
+                            None,
+                        )
+                    } else {
+                        None
+                    };
+                    chunks.push(json!({"type":"markdown","time":time,"timestamp":timestamp,"markdown":note_display.as_deref().unwrap_or(markdown.trim()),"source_ref":{"filename":path.file_name().and_then(|name| name.to_str()).unwrap_or_default()}}));
                     markdown_added = true;
                 }
                 Ok(_) => {}

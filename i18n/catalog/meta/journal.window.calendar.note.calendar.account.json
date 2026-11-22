@@ -1,0 +1,25 @@
+{
+  "description": "Calendar and its associated account when their names differ.",
+  "context": "Recorded and listed calendar events, also read in Transcripts. Calendar and its associated account when their names differ.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "calendar",
+      "type": "string"
+    },
+    {
+      "name": "account",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f85b1f8599e11efd676175f2011937c43ef6a70265c930348a87194ff27b626b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
