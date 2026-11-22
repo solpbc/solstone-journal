@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission process signaled.",
+  "context": "Journal command-line text for admission process signaled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2c01f11bf8a03563b558500229a6847454a52c2bb3c997866878e3f92ad36ce0",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    }
+  ]
+}

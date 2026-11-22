@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission cleanup pending.",
+  "context": "Journal command-line text for admission cleanup pending.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a1367de9ff32d3112d5be7aba1cab7b559614cb1b87bc8fb6b79db38844ab366",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "io",
+      "kind": "accepted-input",
+      "value": "I/O"
+    }
+  ]
+}

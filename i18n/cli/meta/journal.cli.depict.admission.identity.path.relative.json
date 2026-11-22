@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission identity path relative.",
+  "context": "Journal command-line text for admission identity path relative.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1780c41e3c8cb3d96862ba8fe3488d52b9ddd1fa072ef6acfa45725c38bdc266",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    }
+  ]
+}

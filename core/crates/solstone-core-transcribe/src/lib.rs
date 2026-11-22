@@ -234,13 +234,7 @@ fn owner_route_when_contended_in(
     })
 }
 
-pub fn terminal_locale() -> Option<&'static str> {
-    if std::env::var("SOL_SUPERVISOR_SPAWNED").as_deref() == Ok("1") {
-        None
-    } else {
-        Some(solstone_core_cli_copy::cli_locale())
-    }
-}
+pub use solstone_core_cli_copy::terminal_locale;
 
 /// Run the standalone transcription contract against an explicitly resolved journal root.
 pub fn run_cli(

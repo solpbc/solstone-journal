@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for admission identity io owner open.",
+  "context": "Journal command-line text for admission identity io owner open.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b7677461b04de3df8bdaeef2c22c09f1abd3a5bc8babf4b105e9923d85c2b38d",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

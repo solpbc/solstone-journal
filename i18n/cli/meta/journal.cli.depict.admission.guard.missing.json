@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission guard missing.",
+  "context": "Journal command-line text for admission guard missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b462c3300aea0fddcffa98c93092aa2e62f97422095d19a9114ea3b8189bb363",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

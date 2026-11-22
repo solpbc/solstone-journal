@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission peer unverified.",
+  "context": "Journal command-line text for admission peer unverified.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d12c628d578be6f53f1b1022f8475c712adeedbb242e5594422346a053fc7914",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

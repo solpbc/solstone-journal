@@ -456,7 +456,8 @@ fn prepare_segment_localized(
                                 if let Some(err) =
                                     entry.get("detection_error").filter(|v| v.is_object())
                                 {
-                                    source_ref["detection_error"] = err.clone();
+                                    source_ref["detection_error"] =
+                                        depict_detection_error(locale, record.as_ref(), entry, err);
                                 }
                                 let detections = entry.get("detections");
                                 if let Some(overlay) = detections.and_then(objects_overlay) {
@@ -738,6 +739,32 @@ fn prepare_segment_localized(
         obj.insert("granola".to_owned(), note);
     }
     Ok(payload)
+}
+
+/// Preserve raw diagnostics from legacy or unrelated writers, including matching English.
+fn depict_detection_error(
+    locale: &str,
+    record: Option<&Value>,
+    row: &Map<String, Value>,
+    error: &Value,
+) -> Value {
+    let mut displayed = error.clone();
+    if locale != ENGLISH
+        && record
+            .and_then(|r| r.get("handler"))
+            .and_then(Value::as_str)
+            == Some(vocab::HANDLER_DEPICT)
+        && error.get("reason_code").and_then(Value::as_str) == Some("rfdetr-unavailable")
+        && let Some(
+            id @ ("journal.cli.depict.detection.unavailable"
+            | "journal.cli.depict.detection.unavailable.windows"),
+        ) = row.get("detection_error_copy").and_then(Value::as_str)
+        && let Some(detail) = error.get("detail").and_then(Value::as_str)
+        && detail == solstone_core_cli_copy::render_for(ENGLISH, id, &[])
+    {
+        displayed["detail"] = Value::from(solstone_core_cli_copy::render_for(locale, id, &[]));
+    }
+    displayed
 }
 
 const GRANOLA_STREAM_PREFIX: &str = solstone_core_format::content::granola::STREAM_PREFIX;

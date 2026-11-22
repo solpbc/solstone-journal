@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission handle invalid.",
+  "context": "Journal command-line text for admission handle invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "24f17831fe043a9321dc0bf572e2b2e9c2f5ee341688e18347582b97c435546a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

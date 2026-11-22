@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission snapshot absent.",
+  "context": "Journal command-line text for admission snapshot absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3a649cf200551aae77927941d22ab32ec2b54c4804c11eb952f0dca353b7d996",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

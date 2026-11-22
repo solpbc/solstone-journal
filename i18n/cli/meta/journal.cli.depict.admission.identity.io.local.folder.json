@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for admission identity io local folder.",
+  "context": "Journal command-line text for admission identity io local folder.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d107f04e630adba0993a396aec042f1e06bb9a7f64cb71e1ae07681fa258d85e",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "local_data",
+      "kind": "accepted-input",
+      "value": "LocalAppData"
+    }
+  ]
+}

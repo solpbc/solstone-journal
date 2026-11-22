@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission identity namespace child.",
+  "context": "Journal command-line text for admission identity namespace child.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "49c21088ccda896dd96efe0a9414377716c90fd5b0db9eab7ca6abc097b09d3f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

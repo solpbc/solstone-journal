@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission grant disk.",
+  "context": "Journal command-line text for admission grant disk.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0cc9f4956343b9349a20c63bae688f0e6423b9c524e836d2aeb2e13faa309c31",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

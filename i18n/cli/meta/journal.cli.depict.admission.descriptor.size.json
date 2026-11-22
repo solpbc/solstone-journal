@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission descriptor size.",
+  "context": "Journal command-line text for admission descriptor size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f610fb10b34e9da57ff2b9c1e476b69abca6d87b612120677d363b5557cd323",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    }
+  ]
+}

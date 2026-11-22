@@ -200,7 +200,7 @@ fn installed_transport_receiver() {
     };
     if mode != "valid" {
         assert!(
-            matches!(admission, Err(LaunchError::Admission(ref message)) if message == REFUSAL),
+            matches!(admission, Err(LaunchError::Admission(ref message)) if message.to_string() == REFUSAL),
             "actual entry refusal: {admission:?}"
         );
         publish(&fixture().join("refusal"), REFUSAL.as_bytes()).unwrap();

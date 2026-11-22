@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for admission identity local encoding.",
+  "context": "Journal command-line text for admission identity local encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7903dbf9b5c5cafc0307f80c5456d0d22ede15f1716ff65a80e82cbdf4658ee3",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "local_data",
+      "kind": "accepted-input",
+      "value": "LocalAppData"
+    },
+    {
+      "name": "utf",
+      "kind": "accepted-input",
+      "value": "UTF-16"
+    }
+  ]
+}

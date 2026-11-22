@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for admission identity io record stat.",
+  "context": "Journal command-line text for admission identity io record stat.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "54b4ca45c8e86fd19fc0443f41b9769c800cfe1206271b218f19be024d5712a3",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

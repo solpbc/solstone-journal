@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for admission identity path encoding.",
+  "context": "Journal command-line text for admission identity path encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4fd1862714c781842dc3d724d6da8e4756bfed8bd721b2f18238e56d1bef2728",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    },
+    {
+      "name": "utf",
+      "kind": "accepted-input",
+      "value": "UTF-16"
+    }
+  ]
+}

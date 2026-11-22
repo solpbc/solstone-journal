@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission identity storage file.",
+  "context": "Journal command-line text for admission identity storage file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8b056959bb53bad4007c0252dd614970b5d5229e50bd7ac26e24f209d886381b",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

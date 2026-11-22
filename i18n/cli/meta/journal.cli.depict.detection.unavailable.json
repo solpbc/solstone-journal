@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for detection unavailable.",
+  "context": "Journal command-line text for detection unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a8f6aaa5bea3ac491dd11c38e3de9f5a6e410b300efd5878946e6a04485e6bf9",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal install-models"
+    },
+    {
+      "name": "engine",
+      "kind": "accepted-input",
+      "value": "RF-DETR"
+    }
+  ]
+}

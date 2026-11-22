@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission record ascii.",
+  "context": "Journal command-line text for admission record ascii.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "904ac3c542542070e5f54e6edd34b9a6e00cda10dae76c7fce773b410d5f8bc2",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "ascii",
+      "kind": "accepted-input",
+      "value": "ASCII"
+    }
+  ]
+}

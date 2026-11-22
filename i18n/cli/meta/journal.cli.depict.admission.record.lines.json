@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission record lines.",
+  "context": "Journal command-line text for admission record lines.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "099ce7c82f14b4aacccaa88ced92f246a1b41eff9be205573f642032cf3f1ac4",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "linefeed",
+      "kind": "accepted-input",
+      "value": "LF"
+    }
+  ]
+}

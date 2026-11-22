@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission task provenance.",
+  "context": "Journal command-line text for admission task provenance.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4af02cce2176dc7a7b07cd4bce1358a610bc945e0f5b6eb7bbad30fae1c3c9d4",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

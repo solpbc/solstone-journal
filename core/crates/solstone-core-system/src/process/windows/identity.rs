@@ -261,9 +261,17 @@ impl WindowsProcessApi for SystemWindowsProcessApi {
 pub(crate) fn current_windows_process_instance() -> Result<ProcessInstance, io::Error> {
     match sample_windows_process_with(&SystemWindowsProcessApi, std::process::id()) {
         WindowsProcessProbe::Live(instance) => Ok(instance),
-        WindowsProcessProbe::Exited => Err(io::Error::other("current Windows process is signaled")),
+        WindowsProcessProbe::Exited => Err(io::Error::other(
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.depict.admission.process.signaled",
+                [],
+            ),
+        )),
         WindowsProcessProbe::Unverifiable => Err(io::Error::other(
-            "current Windows process creation FILETIME is unavailable",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.depict.admission.process.creation",
+                [],
+            ),
         )),
     }
 }

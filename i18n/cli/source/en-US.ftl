@@ -4531,3 +4531,179 @@ journal.cli.transcribe.stage.owner.save.or.disable = save a voice in Speakers, o
 journal.cli.transcribe.stage.owner.save.to.finish = save a voice in Speakers to finish this filtered recording
 
 journal.cli.transcribe.usage.error = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $syntax_continuation_3 }{ $line_break }{ $command }: error: { $message }
+
+journal.cli.depict.admission = journal process admission failed: { $detail }
+
+journal.cli.depict.admission.binding.mismatch = launch installation binding mismatch
+
+journal.cli.depict.admission.birth.invalid = { $linux } process birth has a malformed { $boot }
+
+journal.cli.depict.admission.birth.position = { $linux } process birth has a malformed { $boot } at line { $line } column { $column }
+
+journal.cli.depict.admission.byte.count = launch pipe returned an invalid byte count
+
+journal.cli.depict.admission.cleanup.pending = previous launch { $io } cleanup remains incomplete
+
+journal.cli.depict.admission.commit.mismatch = launch admission commit mismatch
+
+journal.cli.depict.admission.deadline.elapsed = launch deadline elapsed
+
+journal.cli.depict.admission.deadline.invalid = expired or invalid { $windows } launch deadline
+
+journal.cli.depict.admission.descriptor.encoding = non-{ $unicode } { $windows } launch descriptor
+
+journal.cli.depict.admission.descriptor.size = oversized { $windows } launch descriptor
+
+journal.cli.depict.admission.endpoint = invalid launch endpoint
+
+journal.cli.depict.admission.entry.hosted = installed task at hosted entry
+
+journal.cli.depict.admission.entry.mismatch = launch variant or installed action mismatch
+
+journal.cli.depict.admission.frame.size = invalid launch frame size
+
+journal.cli.depict.admission.grant.access = launch handle access or type does not match its grant
+
+journal.cli.depict.admission.grant.disk = launch grant is not a disk file
+
+journal.cli.depict.admission.grant.duplicate = duplicate launch handle or grant kind
+
+journal.cli.depict.admission.grant.ordinary = launch grant is not an ordinary disk file
+
+journal.cli.depict.admission.guard.duplicate = installation guard: duplicate identity guard { $field }
+
+journal.cli.depict.admission.guard.encoding = non-{ $unicode } installation guard
+
+journal.cli.depict.admission.guard.invalid = installation guard: invalid identity guard { $field }
+
+journal.cli.depict.admission.guard.mismatch = launch guard tuple differs from inherited guard
+
+journal.cli.depict.admission.guard.missing = installation guard: identity guard fields are incomplete
+
+journal.cli.depict.admission.handle.invalid = invalid transferred handle
+
+journal.cli.depict.admission.identity.io.local.folder = resolve { $local_data } known folder: { $error }
+
+journal.cli.depict.admission.identity.io.marker.clone = clone adoption marker: { $error }
+
+journal.cli.depict.admission.identity.io.marker.read = read adoption marker: { $error }
+
+journal.cli.depict.admission.identity.io.marker.stat = stat adoption marker: { $error }
+
+journal.cli.depict.admission.identity.io.namespace.read = read namespace directory: { $error }
+
+journal.cli.depict.admission.identity.io.owner.open = open owner directory: { $error }
+
+journal.cli.depict.admission.identity.io.record.read = read identity record: { $error }
+
+journal.cli.depict.admission.identity.io.record.stat = stat identity record: { $error }
+
+journal.cli.depict.admission.identity.io.root = canonicalize root: { $error }
+
+journal.cli.depict.admission.identity.io.storage.attrs = query storage attributes: { $error }
+
+journal.cli.depict.admission.identity.io.storage.file = open storage file: { $error }
+
+journal.cli.depict.admission.identity.io.storage.identity = query storage identity: { $error }
+
+journal.cli.depict.admission.identity.io.storage.lock = lock identity storage: { $error }
+
+journal.cli.depict.admission.identity.io.storage.open = open storage directory: { $error }
+
+journal.cli.depict.admission.identity.local.encoding = { $local_data } known folder is not valid { $utf }
+
+journal.cli.depict.admission.identity.marker.content = adoption marker has invalid content
+
+journal.cli.depict.admission.identity.marker.missing = committed record has no adoption marker
+
+journal.cli.depict.admission.identity.marker.orphan = orphan adoption marker
+
+journal.cli.depict.admission.identity.marker.size = adoption marker has invalid size
+
+journal.cli.depict.admission.identity.namespace.child = unknown namespace child
+
+journal.cli.depict.admission.identity.owner.poisoned = owner coordinator is poisoned
+
+journal.cli.depict.admission.identity.path.device = { $windows } verbatim and device paths are not accepted
+
+journal.cli.depict.admission.identity.path.encoding = { $windows } path is not valid { $utf }
+
+journal.cli.depict.admission.identity.path.escape = { $windows } path escapes its absolute root
+
+journal.cli.depict.admission.identity.path.nul = { $windows } path contains an interior { $nul }
+
+journal.cli.depict.admission.identity.path.relative = { $windows } path must be fully qualified
+
+journal.cli.depict.admission.identity.path.server = { $windows } { $unc } path has no server
+
+journal.cli.depict.admission.identity.path.share = { $windows } { $unc } path has no share
+
+journal.cli.depict.admission.identity.path.size = path exceeds { $limit } bytes
+
+journal.cli.depict.admission.identity.prepared = installation identity record is prepared
+
+journal.cli.depict.admission.identity.record.missing = namespace record is missing
+
+journal.cli.depict.admission.identity.record.size = identity record exceeds bounds
+
+journal.cli.depict.admission.identity.root.mismatch = record does not bind the requested root
+
+journal.cli.depict.admission.identity.storage.directory = storage path is not a directory
+
+journal.cli.depict.admission.identity.storage.file = storage path is not a regular file
+
+journal.cli.depict.admission.identity.storage.reparse = storage path is a reparse point
+
+journal.cli.depict.admission.identity.tombstoned = installation identity record is tombstoned
+
+journal.cli.depict.admission.nonce = invalid launch endpoint nonce
+
+journal.cli.depict.admission.obsolete = obsolete { $windows } launch marker
+
+journal.cli.depict.admission.offer.mismatch = launch offer provenance mismatch
+
+journal.cli.depict.admission.parent.mismatch = launch server is not the exact direct parent
+
+journal.cli.depict.admission.parent.provenance = invalid parent launch provenance
+
+journal.cli.depict.admission.peer.unverified = launch pipe peer is not verifiably live
+
+journal.cli.depict.admission.process.creation = current { $windows } process creation { $filetime } is unavailable
+
+journal.cli.depict.admission.process.signaled = current { $windows } process is signaled
+
+journal.cli.depict.admission.provenance = invalid launch provenance
+
+journal.cli.depict.admission.record.ascii = identity record is not { $ascii }
+
+journal.cli.depict.admission.record.checksum = identity record checksum mismatch
+
+journal.cli.depict.admission.record.field = invalid identity record { $field }
+
+journal.cli.depict.admission.record.lines = identity record is not exactly eight { $linefeed } lines
+
+journal.cli.depict.admission.record.size = identity record exceeds { $size }
+
+journal.cli.depict.admission.root.missing = launch executable has no installation root
+
+journal.cli.depict.admission.server.mismatch = launch pipe server identity mismatch
+
+journal.cli.depict.admission.snapshot.absent = current process is absent from the parent snapshot
+
+journal.cli.depict.admission.task.provenance = invalid installed task provenance
+
+journal.cli.depict.admission.wait.complete = launch { $io } wait failed: { $error }; { $io } cancellation completed
+
+journal.cli.depict.admission.wait.deadline.complete = launch deadline elapsed; { $io } cancellation completed
+
+journal.cli.depict.admission.wait.deadline.incomplete = launch deadline elapsed; { $io } cleanup incomplete and retained
+
+journal.cli.depict.admission.wait.incomplete = launch { $io } wait failed: { $error }; { $io } cleanup incomplete and retained
+
+journal.cli.depict.detection.unavailable = Object detection is unavailable. Run `{ $command }` to check or repair the { $engine } assets.
+
+journal.cli.depict.detection.unavailable.windows = object detection is unavailable. repair or reinstall your journal.
+
+journal.cli.depict.help = usage: { $syntax }
+
+journal.cli.depict.metadata.invalid = native depict: invalid { $variable } { $format }

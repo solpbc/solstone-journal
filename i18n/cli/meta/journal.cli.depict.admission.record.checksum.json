@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission record checksum.",
+  "context": "Journal command-line text for admission record checksum.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9e3d14e2680266594409d4bc84f6a87a27b18841f65847296289f479935370f9",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

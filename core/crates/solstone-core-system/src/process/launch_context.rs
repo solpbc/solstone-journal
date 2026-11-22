@@ -91,14 +91,20 @@ impl ReadFileGrant {
         {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
-                "launch grant is not a disk file",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.depict.admission.grant.disk",
+                    [],
+                ),
             ));
         }
         let metadata = file.metadata()?;
         if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
-                "launch grant is not an ordinary disk file",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.depict.admission.grant.ordinary",
+                    [],
+                ),
             ));
         }
         Ok(Self {
@@ -132,7 +138,10 @@ pub(super) fn require_handle_access(
     let refused = || {
         std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
-            "launch handle access or type does not match its grant",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.depict.admission.grant.access",
+                [],
+            ),
         )
     };
     let library: Vec<u16> = "ntdll.dll\0".encode_utf16().collect();

@@ -706,7 +706,7 @@ impl LaunchAuthority {
             return Err(LaunchError::NotExplicitlyUnowned);
         }
         Err(LaunchError::Admission(
-            "Windows launch cannot relinquish its required Job authority".to_owned(),
+            "Windows launch cannot relinquish its required Job authority".into(),
         ))
     }
 
@@ -762,7 +762,7 @@ fn reject_empty_or_unowned(disposition: &Disposition) -> Result<(), LaunchError>
             Err(LaunchError::EmptyUnownedReason)
         }
         Disposition::ExplicitlyUnowned { .. } => Err(LaunchError::Admission(
-            "an explicitly unowned request cannot use the Windows managed Job facade".to_owned(),
+            "an explicitly unowned request cannot use the Windows managed Job facade".into(),
         )),
         _ => Ok(()),
     }
@@ -866,9 +866,10 @@ pub fn launch_managed_request(
         // children borrow through the same launch transaction as hosted work;
         // metadata in the environment never substitutes for a retained grant.
         let parent = super::identity::current_windows_process_instance()
-            .map_err(|error| LaunchError::Admission(error.to_string()))?;
+            .map_err(|error| LaunchError::Admission(error.to_string().into()))?;
         let mut nonce = [0_u8; 24];
-        getrandom::fill(&mut nonce).map_err(|error| LaunchError::Admission(error.to_string()))?;
+        getrandom::fill(&mut nonce)
+            .map_err(|error| LaunchError::Admission(error.to_string().into()))?;
         let provenance = HostedLaunchProvenance {
             journal: request.options.journal_root.clone(),
             generation: parent.birth.windows_filetime().ok_or_else(|| {
@@ -912,7 +913,7 @@ pub fn launch_managed_hosted(
     let mut options = request.options;
     let control =
         super::launch_control::LaunchControl::prepare(&provenance, &mut options.environment)
-            .map_err(|error| LaunchError::Admission(error.to_string()))?;
+            .map_err(|error| LaunchError::Admission(error.to_string().into()))?;
     let (name, writer, log_path) =
         prepare_managed_log(&request.command, &options).map_err(LaunchError::SpawnManaged)?;
     let mut resources = super::bounded::BoundedHelperResources::new();

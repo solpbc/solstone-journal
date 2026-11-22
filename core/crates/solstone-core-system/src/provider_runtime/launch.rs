@@ -1997,7 +1997,7 @@ fn spawn_windows_provider(
     #[cfg(windows)]
     {
         crate::process::launch_independent_provider(request)
-            .map_err(|error| LaunchError::Admission(error.to_string()))
+            .map_err(|error| LaunchError::Admission(error.to_string().into()))
     }
     #[cfg(not(windows))]
     {

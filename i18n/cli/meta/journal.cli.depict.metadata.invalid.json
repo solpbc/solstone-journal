@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for metadata invalid.",
+  "context": "Journal command-line text for metadata invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3403e05d26a30f034c1aea7668de400fcdf218b6d439f3e67209331da41f5c96",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "variable",
+      "kind": "accepted-input",
+      "value": "SEGMENT_META"
+    },
+    {
+      "name": "format",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

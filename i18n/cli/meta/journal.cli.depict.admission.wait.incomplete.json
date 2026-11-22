@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for admission wait incomplete.",
+  "context": "Journal command-line text for admission wait incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e406b9299f2f9a4616c7eee6ac727438c27eabcf47227bd5f8e52128ea76d69",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "io",
+      "kind": "accepted-input",
+      "value": "I/O"
+    }
+  ]
+}

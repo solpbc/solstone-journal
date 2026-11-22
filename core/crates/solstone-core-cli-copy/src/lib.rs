@@ -14,6 +14,14 @@ mod compiled {
 pub use compiled::Value;
 pub use solstone_core_window_catalog::{ENGLISH, cli_locale};
 
+pub fn terminal_locale() -> Option<&'static str> {
+    if std::env::var("SOL_SUPERVISOR_SPAWNED").as_deref() == Ok("1") {
+        None
+    } else {
+        Some(cli_locale())
+    }
+}
+
 pub fn render_for(locale: &str, id: &str, args: &[(&str, Value<'_>)]) -> String {
     let (locale, id) = id
         .strip_prefix('!')
@@ -108,6 +116,7 @@ enum DetailValue {
         source: String,
     },
     Context {
+        slot: &'static str,
         message: Diagnostic,
         detail: MessageDetail,
     },
@@ -143,7 +152,17 @@ impl MessageDetail {
         id: &'static str,
         args: [(&'static str, &dyn std::fmt::Display); N],
     ) -> Self {
+        self.context_slot(id, "detail", args)
+    }
+
+    pub fn context_slot<const N: usize>(
+        self,
+        id: &'static str,
+        slot: &'static str,
+        args: [(&'static str, &dyn std::fmt::Display); N],
+    ) -> Self {
         Self(Box::new(DetailValue::Context {
+            slot,
             message: Diagnostic::new(id, args),
             detail: self,
         }))
@@ -175,14 +194,18 @@ impl MessageDetail {
                 );
                 render_for(locale, message.id, &values)
             }
-            DetailValue::Context { message, detail } => {
+            DetailValue::Context {
+                slot,
+                message,
+                detail,
+            } => {
                 let cause = detail.render_for_output(requested);
                 let mut values: Vec<_> = message
                     .values
                     .iter()
                     .map(|(name, value)| (*name, Value::String(value)))
                     .collect();
-                values.push(("detail", Value::String(&cause)));
+                values.push((*slot, Value::String(&cause)));
                 render_for(locale, message.id, &values)
             }
         }
@@ -214,3 +237,5 @@ impl std::fmt::Debug for MessageDetail {
         std::fmt::Debug::fmt(&self.render_for_output(None), f)
     }
 }
+
+impl std::error::Error for MessageDetail {}

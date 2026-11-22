@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission identity marker missing.",
+  "context": "Journal command-line text for admission identity marker missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ee4ff8170f57a43fc2170dede149602bb3d79b499dc7a35ed3faf379aa7ad1dd",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

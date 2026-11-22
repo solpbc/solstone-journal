@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission identity storage reparse.",
+  "context": "Journal command-line text for admission identity storage reparse.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6894db105c4ee86ae42dfaa53e60a3ef2f4ee04c5249ba3c7e699b71970f9e84",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

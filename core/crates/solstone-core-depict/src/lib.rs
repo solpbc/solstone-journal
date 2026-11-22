@@ -52,7 +52,9 @@ const THRESHOLD: f64 = 0.25;
 #[cfg(not(windows))]
 const RFDETR_TIMEOUT: Duration = Duration::from_secs(120);
 #[cfg(not(windows))]
-const RFDETR_UNAVAILABLE_DETAIL: &str = "Object detection is unavailable. Run `solstone journal install-models` to check or repair the RF-DETR assets.";
+const DETECTION_UNAVAILABLE_COPY: &str = "journal.cli.depict.detection.unavailable";
+#[cfg(windows)]
+const DETECTION_UNAVAILABLE_COPY: &str = "journal.cli.depict.detection.unavailable.windows";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
@@ -262,14 +264,11 @@ impl Detector for SystemDetector {
 }
 
 fn rfdetr_unavailable() -> String {
-    #[cfg(windows)]
-    {
-        solstone_core_local::install::rfdetr_windows::RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE.to_owned()
-    }
-    #[cfg(not(windows))]
-    {
-        RFDETR_UNAVAILABLE_DETAIL.to_owned()
-    }
+    solstone_core_cli_copy::render_for(
+        solstone_core_cli_copy::ENGLISH,
+        DETECTION_UNAVAILABLE_COPY,
+        &[],
+    )
 }
 
 #[cfg(not(windows))]
@@ -434,13 +433,31 @@ pub fn run_with_clients(
     wire: &dyn WireClient,
     detector: &dyn Detector,
 ) -> Result<RunOutcome, DepictError> {
-    let attempt = solstone_core_system::work_retry::raw::retry_attempt_from_environment()
-        .map_err(DepictError::Output)?;
-    run_with_clients_and_checkpoint(
+    run_with_clients_in(
+        solstone_core_cli_copy::ENGLISH,
         image_path,
         redo,
         wire,
         detector,
+    )
+}
+
+fn run_with_clients_in(
+    locale: &str,
+    image_path: &Path,
+    redo: bool,
+    wire: &dyn WireClient,
+    detector: &dyn Detector,
+) -> Result<RunOutcome, DepictError> {
+    let attempt = solstone_core_system::work_retry::raw::retry_attempt_from_environment()
+        .map_err(DepictError::Output)?;
+    run_depict(
+        locale,
+        image_path,
+        redo,
+        wire,
+        detector,
+        &FailurePublicationHooks::default(),
         &|| false,
         attempt.as_ref(),
     )
@@ -478,6 +495,7 @@ pub fn run_with_clients_and_checkpoint(
     attempt: Option<&solstone_core_system::work_retry::Attempt>,
 ) -> Result<RunOutcome, DepictError> {
     run_depict(
+        solstone_core_cli_copy::ENGLISH,
         image_path,
         redo,
         wire,
@@ -494,7 +512,9 @@ struct FailurePublicationHooks<'a> {
     before_replace: Option<&'a dyn Fn()>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_depict(
+    locale: &str,
     image_path: &Path,
     redo: bool,
     wire: &dyn WireClient,
@@ -565,6 +585,7 @@ fn run_depict(
         }
     }
     let publication = FailurePublication {
+        locale,
         output_path: &output_path,
         image_path,
         claims: &claims,
@@ -631,7 +652,10 @@ fn run_depict(
             );
         }
     };
-    let mut header = build_header(&image_path.file_name().unwrap_or_default().to_string_lossy())?;
+    let mut header = build_header_in(
+        locale,
+        &image_path.file_name().unwrap_or_default().to_string_lossy(),
+    )?;
     header.insert(
         "_solstone_processing".to_owned(),
         json!({
@@ -658,10 +682,10 @@ fn run_depict(
             Ok(block) => {
                 entry.insert("detections".to_owned(), block);
             }
-            Err(_) => insert_detection_error(&mut entry),
+            Err(_) => insert_detection_error(locale, &mut entry),
         },
         Ok(None) => {}
-        Err(_) => insert_detection_error(&mut entry),
+        Err(_) => insert_detection_error(locale, &mut entry),
     }
     if checkpoint() {
         return Err(DepictError::Cancelled);
@@ -687,6 +711,7 @@ fn run_depict(
 /// writers use the same lock. A held depict proof keeps those bytes and the
 /// original error is returned either way.
 struct FailurePublication<'a> {
+    locale: &'a str,
     output_path: &'a Path,
     image_path: &'a Path,
     claims: &'a OutputClaims,
@@ -703,6 +728,7 @@ fn publish_failed_analysis(
     attempt: Option<&solstone_core_system::work_retry::Attempt>,
 ) -> Result<RunOutcome, DepictError> {
     let FailurePublication {
+        locale,
         output_path,
         image_path,
         claims,
@@ -743,8 +769,14 @@ fn publish_failed_analysis(
     } else {
         0
     };
-    let header = match failure_document(image_path, input_size, reason_code, previous + 1, attempt)
-    {
+    let header = match failure_document(
+        locale,
+        image_path,
+        input_size,
+        reason_code,
+        previous + 1,
+        attempt,
+    ) {
         Ok(header) => header,
         Err(persist) => return Err(join_persistence(error, persist.detail())),
     };
@@ -772,13 +804,17 @@ fn attempted_at() -> String {
 }
 
 fn failure_document(
+    locale: &str,
     image_path: &Path,
     input_size: u64,
     reason_code: &str,
     attempts: i64,
     attempt: Option<&solstone_core_system::work_retry::Attempt>,
 ) -> Result<Map<String, Value>, DepictError> {
-    let mut header = build_header(&image_path.file_name().unwrap_or_default().to_string_lossy())?;
+    let mut header = build_header_in(
+        locale,
+        &image_path.file_name().unwrap_or_default().to_string_lossy(),
+    )?;
     header.insert(
         "_solstone_processing".to_owned(),
         json!({
@@ -888,12 +924,22 @@ fn is_segment_key(value: &str) -> bool {
 }
 
 pub fn build_header(raw_name: &str) -> Result<Map<String, Value>, DepictError> {
+    build_header_in(solstone_core_cli_copy::ENGLISH, raw_name)
+}
+
+fn build_header_in(locale: &str, raw_name: &str) -> Result<Map<String, Value>, DepictError> {
     let observer = env::var("OBSERVER_NAME").ok();
     let segment_meta = env::var("SEGMENT_META").ok();
-    build_header_from_values(raw_name, observer.as_deref(), segment_meta.as_deref())
+    build_header_from_values(
+        locale,
+        raw_name,
+        observer.as_deref(),
+        segment_meta.as_deref(),
+    )
 }
 
 fn build_header_from_values(
+    locale: &str,
     raw_name: &str,
     observer: Option<&str>,
     segment_meta: Option<&str>,
@@ -912,7 +958,14 @@ fn build_header_from_values(
                     "SEGMENT_META must be an object".to_owned(),
                 ));
             }
-            Err(_) => log::warn!("native depict: invalid SEGMENT_META JSON"),
+            Err(_) => log::warn!(
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.depict.metadata.invalid",
+                    &[]
+                )
+            ),
         }
     }
     Ok(header)
@@ -942,9 +995,17 @@ fn detections_block(value: Value) -> Result<Value, String> {
     }))
 }
 
-fn insert_detection_error(entry: &mut Map<String, Value>) {
+fn insert_detection_error(locale: &str, entry: &mut Map<String, Value>) {
     let detail = rfdetr_unavailable();
-    log::warn!("{detail}");
+    log::warn!(
+        "{}",
+        solstone_core_cli_copy::render_for(locale, DETECTION_UNAVAILABLE_COPY, &[])
+    );
+    // Older segment readers expose the error object verbatim. Store its identity beside it.
+    entry.insert(
+        "detection_error_copy".to_owned(),
+        Value::from(DETECTION_UNAVAILABLE_COPY),
+    );
     entry.insert(
         "detection_error".to_owned(),
         json!({
@@ -955,7 +1016,12 @@ fn insert_detection_error(entry: &mut Map<String, Value>) {
 }
 
 pub fn run(arguments: Arguments) -> Result<RunOutcome, DepictError> {
-    run_with_clients(
+    run_in(solstone_core_cli_copy::ENGLISH, arguments)
+}
+
+pub fn run_in(locale: &str, arguments: Arguments) -> Result<RunOutcome, DepictError> {
+    run_with_clients_in(
+        locale,
         &arguments.image_path,
         arguments.redo,
         &SystemWireClient,
@@ -1232,6 +1298,7 @@ mod tests {
     #[test]
     fn header_merges_metadata_and_rejects_non_object() {
         let header = build_header_from_values(
+            solstone_core_cli_copy::ENGLISH,
             "photo.png",
             Some("camera"),
             Some(r#"{"stream":"default","kind":"override"}"#),
@@ -1240,9 +1307,22 @@ mod tests {
         assert_eq!(header["raw"], "photo.png");
         assert_eq!(header["kind"], "override");
         assert_eq!(header["observer"], "camera");
-        assert!(build_header_from_values("photo.png", None, Some("not-json")).is_ok());
+        assert!(
+            build_header_from_values(
+                solstone_core_cli_copy::ENGLISH,
+                "photo.png",
+                None,
+                Some("not-json")
+            )
+            .is_ok()
+        );
         assert!(matches!(
-            build_header_from_values("photo.png", None, Some("[]")),
+            build_header_from_values(
+                solstone_core_cli_copy::ENGLISH,
+                "photo.png",
+                None,
+                Some("[]")
+            ),
             Err(DepictError::Metadata(_))
         ));
     }
@@ -1591,10 +1671,11 @@ mod tests {
         let entry: Value = serde_json::from_str(&lines[1]).unwrap();
         assert_eq!(entry["text"], "detail");
         assert!(entry.get("detections").is_none());
+        assert_eq!(entry["detection_error_copy"], DETECTION_UNAVAILABLE_COPY);
         let error = &entry["detection_error"];
         assert_eq!(error["reason_code"], "rfdetr-unavailable");
         let detail = error["detail"].as_str().expect("detail must be string");
-        assert!(!detail.is_empty());
+        assert_eq!(detail, rfdetr_unavailable());
         assert_ne!(detail, disallowed_detail);
     }
 
@@ -1928,6 +2009,7 @@ mod tests {
             fs::write(&output, &published).unwrap();
         };
         let error = run_depict(
+            solstone_core_cli_copy::ENGLISH,
             &image,
             false,
             &FailingWire,
@@ -1997,6 +2079,7 @@ mod tests {
                 resume_rx.recv_timeout(Duration::from_secs(5)).unwrap();
             };
             run_depict(
+                solstone_core_cli_copy::ENGLISH,
                 &failed_image,
                 false,
                 &FailingWire,
@@ -2310,7 +2393,15 @@ mod tests {
             reason: "test_reason".to_owned(),
         };
         let input_size = fs::metadata(&image).unwrap().len();
-        let doc = failure_document(&image, input_size, "test_code", 1, Some(&attempt)).unwrap();
+        let doc = failure_document(
+            solstone_core_cli_copy::ENGLISH,
+            &image,
+            input_size,
+            "test_code",
+            1,
+            Some(&attempt),
+        )
+        .unwrap();
         let proc = doc.get("_solstone_processing").expect("processing record");
         let retry_val = proc
             .get("retry_attempt")
@@ -2319,7 +2410,15 @@ mod tests {
         assert_eq!(retry_val["reason"], "test_reason");
         assert_eq!(retry_val["input"], "test_input_hash");
 
-        let doc_none = failure_document(&image, input_size, "test_code", 1, None).unwrap();
+        let doc_none = failure_document(
+            solstone_core_cli_copy::ENGLISH,
+            &image,
+            input_size,
+            "test_code",
+            1,
+            None,
+        )
+        .unwrap();
         let proc_none = doc_none
             .get("_solstone_processing")
             .expect("processing record");

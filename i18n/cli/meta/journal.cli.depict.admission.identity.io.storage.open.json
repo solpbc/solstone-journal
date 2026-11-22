@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for admission identity io storage open.",
+  "context": "Journal command-line text for admission identity io storage open.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "77ffedafaa80f522cf2c2b03747746bfe6a560d2e464eb169b54e43264aa238c",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission offer mismatch.",
+  "context": "Journal command-line text for admission offer mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "345cacc94e1b17b3f03e65f0ec93176ec09adc3b162306ccc4b6b0053341e8f4",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

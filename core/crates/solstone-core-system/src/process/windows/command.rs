@@ -73,7 +73,7 @@ impl CommandProcess {
             .as_ref()
             .map(|provenance| LaunchControl::prepare(provenance, &mut request.environment))
             .transpose()
-            .map_err(|error| LaunchError::Admission(error.to_string()))?;
+            .map_err(|error| LaunchError::Admission(error.to_string().into()))?;
         let piped = [
             request.stdin_piped,
             request.stdout_piped,

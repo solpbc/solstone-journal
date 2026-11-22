@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission identity owner poisoned.",
+  "context": "Journal command-line text for admission identity owner poisoned.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "343a1b6cba2f2e9412292c6d95bb59b28436dfde86caa374b3a714dda35588a8",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

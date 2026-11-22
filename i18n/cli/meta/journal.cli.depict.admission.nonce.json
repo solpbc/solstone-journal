@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission nonce.",
+  "context": "Journal command-line text for admission nonce.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ec38f7beb379c298aaf0c1c76682e0a262542a0d60127584578def4e444e4653",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

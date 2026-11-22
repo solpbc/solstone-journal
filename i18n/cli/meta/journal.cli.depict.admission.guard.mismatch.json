@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission guard mismatch.",
+  "context": "Journal command-line text for admission guard mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f8dfb8c16a069f30e4a7ad8555649c1d6422928ef74888c07c2eee1556ca92d",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

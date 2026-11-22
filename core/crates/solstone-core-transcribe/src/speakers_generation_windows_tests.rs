@@ -744,7 +744,7 @@ fn windows_generation_installed_entry_probe() {
     let refusal = receive_windows_installed_task_launch(&expected)
         .expect_err("hosted tuple must refuse the installed entry before pipe/ACK");
     assert!(matches!(refusal, LaunchError::Admission(ref message)
-        if message == "launch variant or installed action mismatch"));
+        if message.to_string() == "launch variant or installed action mismatch"));
     // The refused entry must leave this same transaction available for its
     // correct hosted recipient. Completing it provides an actual exit/status
     // witness without inferring child completion from an admission error.
