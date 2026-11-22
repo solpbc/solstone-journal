@@ -1,0 +1,33 @@
+{
+  "description": "Description of the solstone call activities create command.",
+  "context": "Rendered below the usage line for solstone call activities create, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6bc8262cedbf7abb4f4046a6aa5263264ec23c9398cac1eded4a6dff4455dd0a",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "argv",
+      "kind": "accepted-input",
+      "value": "argv"
+    },
+    {
+      "name": "json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    },
+    {
+      "name": "stdin",
+      "kind": "accepted-input",
+      "value": "stdin"
+    }
+  ]
+}

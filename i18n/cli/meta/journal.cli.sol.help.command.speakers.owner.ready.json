@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers owner-ready command.",
+  "context": "Rendered below the usage line for solstone call speakers owner-ready, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e79e0f0a7667da946989438103ba2122fdadd189757314766532ff6f986d41c7",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

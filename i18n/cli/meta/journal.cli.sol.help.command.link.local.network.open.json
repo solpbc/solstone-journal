@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call link local-network open command.",
+  "context": "Rendered below the usage line for solstone call link local-network open, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "95d9a3f40f33b89f4a542bbcc86d6ce81b02e0d9a0dd7d057fca971432c7b6d4",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

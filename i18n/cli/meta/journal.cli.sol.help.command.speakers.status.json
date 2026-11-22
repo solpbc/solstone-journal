@@ -1,0 +1,23 @@
+{
+  "description": "Description of the solstone call speakers status command.",
+  "context": "Rendered below the usage line for solstone call speakers status, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d30d8e4c011d5f84446811301df518d4a5df04854bd8125c94c40b423839009",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

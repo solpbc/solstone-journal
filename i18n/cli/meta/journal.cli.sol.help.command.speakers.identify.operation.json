@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers identify-operation command.",
+  "context": "Rendered below the usage line for solstone call speakers identify-operation, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "527416a8078ea18e0a895a98b01c6854c32f58c7bc5a584d7882f3abbbb06af9",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

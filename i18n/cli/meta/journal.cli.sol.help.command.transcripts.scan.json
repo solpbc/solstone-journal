@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call transcripts scan command.",
+  "context": "Rendered below the usage line for solstone call transcripts scan, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "075ca4ca4f65d38d016469a30f33cb2b1262362d54373584ae636e893766ab0a",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

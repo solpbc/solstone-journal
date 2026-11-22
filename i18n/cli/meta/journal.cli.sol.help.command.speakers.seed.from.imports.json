@@ -1,0 +1,28 @@
+{
+  "description": "Description of the solstone call speakers seed-from-imports command.",
+  "context": "Rendered below the usage line for solstone call speakers seed-from-imports, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bacb928ce192423b5eed7e65238f7e711015d3e28885617b2ee476cf6943728e",
+  "max_length": 452,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "transcript_file",
+      "kind": "accepted-input",
+      "value": "conversation_transcript.jsonl"
+    }
+  ]
+}

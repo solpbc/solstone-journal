@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call thinking keys validate command.",
+  "context": "Rendered below the usage line for solstone call thinking keys validate, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1bf7cdcfb4d5e49358c60625bf24b52d8f782831abbcdee07442153c32488e5e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

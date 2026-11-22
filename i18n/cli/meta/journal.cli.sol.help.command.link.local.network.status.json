@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call link local-network status command.",
+  "context": "Rendered below the usage line for solstone call link local-network status, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06d215d6d3451de0006a78889eeff6e064e03504739033aa3843063479033e32",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

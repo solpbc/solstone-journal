@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers dismiss-cluster command.",
+  "context": "Rendered below the usage line for solstone call speakers dismiss-cluster, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "22cf91c8b8fd9afc98f343474905131256b79614d392601963ee3265f42bde6b",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

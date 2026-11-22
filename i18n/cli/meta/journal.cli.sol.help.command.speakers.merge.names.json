@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers merge-names command.",
+  "context": "Rendered below the usage line for solstone call speakers merge-names, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "788370ddbd50b409931a42da7770891b331913fdcf135a10a9831c3ae536515a",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

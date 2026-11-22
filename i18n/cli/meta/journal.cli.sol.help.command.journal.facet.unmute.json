@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call journal facet unmute command.",
+  "context": "Rendered below the usage line for solstone call journal facet unmute, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a7f449de6d88fcf6e04bfbb958371b69401b370ee4b615a4167d5bd857979a79",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

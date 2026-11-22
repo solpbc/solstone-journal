@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call health summary command.",
+  "context": "Rendered below the usage line for solstone call health summary, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "20680156f33b3161ad74da2ab75c731fa1b591200959445630a127043f302c18",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

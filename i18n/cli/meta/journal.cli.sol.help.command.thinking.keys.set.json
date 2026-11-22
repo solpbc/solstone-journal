@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call thinking keys set command.",
+  "context": "Rendered below the usage line for solstone call thinking keys set, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4429059324212c76276ed93f140b3bb8bccac46bc9d6d7592256a728380a48e5",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

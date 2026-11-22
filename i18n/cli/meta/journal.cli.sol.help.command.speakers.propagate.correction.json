@@ -1,0 +1,23 @@
+{
+  "description": "Description of the solstone call speakers propagate-correction command.",
+  "context": "Rendered below the usage line for solstone call speakers propagate-correction, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "caa7b72b93bbc3f0a5785422098c2f7c09a24d1e289a8ac996e8f1f8d963ff25",
+  "max_length": 170,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Description of the solstone call entities delete command.",
+  "context": "Rendered below the usage line for solstone call entities delete, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a82ac5ee1c46524dc3a8194bc42c9ae93ef675cefd8d77066e2f7b54679ba10c",
+  "max_length": 285,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "erase_flag",
+      "kind": "flag",
+      "value": "--erase"
+    },
+    {
+      "name": "from_backups_flag",
+      "kind": "flag",
+      "value": "--from-backups"
+    },
+    {
+      "name": "not_from_backups_flag",
+      "kind": "flag",
+      "value": "--not-from-backups"
+    }
+  ]
+}

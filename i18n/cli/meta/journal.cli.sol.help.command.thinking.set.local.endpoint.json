@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call thinking set-local-endpoint command.",
+  "context": "Rendered below the usage line for solstone call thinking set-local-endpoint, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3a500cbdcad9b431fae02811683ff67e6abb3531322cea369bf6717b73f8c4e4",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

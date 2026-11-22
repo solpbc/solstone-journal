@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call entities entity-history command.",
+  "context": "Rendered below the usage line for solstone call entities entity-history, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c634e414c118cf5e9976695a5eaa7d36d7aa9cc87f9ca36f38d021f4f5d7dff5",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

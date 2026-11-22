@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers detect command.",
+  "context": "Rendered below the usage line for solstone call speakers detect, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c319cc0452bf854fb40d10ced2a3c94f12d8c2af57e58ab979ea5b6e8fe16e01",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call journal storage-summary command.",
+  "context": "Rendered below the usage line for solstone call journal storage-summary, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6df119426bb9a79d02040ce9e7a592ca9da21adf206ed372199fd3e6e2b4d95",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -53,6 +53,20 @@ pub struct LinkDispatchSeams<'a> {
     pub link_status_probe: Option<&'a dyn LinkStatusProbe>,
 }
 
+fn unsupported_command(env: &BTreeMap<String, String>, args: &[String]) -> CommandOutput {
+    let locale = if args.iter().any(|arg| arg == "--json" || arg == "--jsonl") {
+        solstone_core_cli_copy::ENGLISH
+    } else {
+        solstone_core_cli_copy::packaged_locale(env.get("SOLSTONE_LOCALE").map(String::as_str))
+    };
+    let message = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.sol.dispatch.unsupported.command",
+        &[],
+    );
+    CommandOutput::failure(format!("{message}\n"), 64)
+}
+
 pub enum LinkDispatch {
     Buffered(CommandOutput),
     Resident {
@@ -100,7 +114,7 @@ pub fn dispatch_sol_import_with_seams<'a>(
 ) -> CommandOutput {
     let Some((_, handler)) = match_generated_surface_path("sol-import", &[String::from("import")])
     else {
-        return CommandOutput::failure("unsupported command.\n", 64);
+        return unsupported_command(env, args);
     };
     handler(CommandContext {
         args,
@@ -127,7 +141,7 @@ pub fn dispatch_sol_status_with_seams<'a>(
 ) -> CommandOutput {
     let Some((_, handler)) = match_generated_surface_path("sol-status", &[String::from("status")])
     else {
-        return CommandOutput::failure("unsupported command.\n", 64);
+        return unsupported_command(env, args);
     };
     handler(CommandContext {
         args,
@@ -153,7 +167,7 @@ pub fn dispatch_sol_link_with_seams<'a>(
     seams: LinkDispatchSeams<'_>,
 ) -> LinkDispatch {
     let Some((path, remaining)) = link_lookup_path(args) else {
-        return LinkDispatch::Buffered(CommandOutput::failure("unsupported command.\n", 64));
+        return LinkDispatch::Buffered(unsupported_command(env, args));
     };
     if let Some((_, handler)) = match_generated_resident_surface_path("sol-link", &path) {
         return LinkDispatch::Resident {
@@ -162,7 +176,7 @@ pub fn dispatch_sol_link_with_seams<'a>(
         };
     }
     let Some((_, handler)) = match_generated_surface_path("sol-link", &path) else {
-        return LinkDispatch::Buffered(CommandOutput::failure("unsupported command.\n", 64));
+        return LinkDispatch::Buffered(unsupported_command(env, args));
     };
     LinkDispatch::Buffered(handler(CommandContext {
         args: remaining,
@@ -229,7 +243,7 @@ pub fn dispatch_sol_call_with_seams<'a>(
     seams: DispatchSeams<'_>,
 ) -> CommandOutput {
     let Some((_, handler, len)) = match_generated_str_path(args) else {
-        return CommandOutput::failure("unsupported command.\n", 64);
+        return unsupported_command(env, args);
     };
     let remaining = args[len..].to_vec();
     handler(CommandContext {

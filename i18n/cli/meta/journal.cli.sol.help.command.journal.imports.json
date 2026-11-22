@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call journal imports command.",
+  "context": "Rendered below the usage line for solstone call journal imports, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea9a217a2799316a66a8fff649727e82c89a2ab3538e49e02ff42757f8e8af79",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

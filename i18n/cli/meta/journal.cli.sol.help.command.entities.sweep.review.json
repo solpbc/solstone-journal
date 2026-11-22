@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call entities sweep-review command.",
+  "context": "Rendered below the usage line for solstone call entities sweep-review, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f31537d8636d7ec92a3915b83615ac8a0e9d4e9126d5818d606a164a9b62b01",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

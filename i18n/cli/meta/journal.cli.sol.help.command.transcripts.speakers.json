@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call transcripts speakers command.",
+  "context": "Rendered below the usage line for solstone call transcripts speakers, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "45f45a551590fb4cbba67f7f72025f3ff53ddbcf311e2c1131662017481dc967",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

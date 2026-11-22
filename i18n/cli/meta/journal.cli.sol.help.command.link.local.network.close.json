@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call link local-network close command.",
+  "context": "Rendered below the usage line for solstone call link local-network close, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1dd9190d033c1d2c9653eaf5cf2dc15dbfd109d8b8ea302396934e90d6e4e161",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

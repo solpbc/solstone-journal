@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call link set-label command.",
+  "context": "Rendered below the usage line for solstone call link set-label, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3a6bf27448b806a5053e688825f701d10d6de50bc62559ffb7883c3486e0af99",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone link serve command.",
+  "context": "Rendered below the usage line for solstone link serve, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cf73248132ad0a0fa3e084ad2dd07abc0f60ba869da99592b378ac2c34972a21",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

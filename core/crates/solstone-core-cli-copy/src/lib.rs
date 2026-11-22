@@ -12,7 +12,7 @@ mod compiled {
 }
 
 pub use compiled::Value;
-pub use solstone_core_window_catalog::{ENGLISH, cli_locale};
+pub use solstone_core_window_catalog::{ENGLISH, cli_locale, packaged_locale};
 
 pub fn terminal_locale() -> Option<&'static str> {
     if std::env::var("SOL_SUPERVISOR_SPAWNED").as_deref() == Ok("1") {

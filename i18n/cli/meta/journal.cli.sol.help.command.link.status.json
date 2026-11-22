@@ -1,0 +1,23 @@
+{
+  "description": "Description of the solstone call link status command.",
+  "context": "Rendered below the usage line for solstone call link status, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4594a928b4cae9bc54d2d0cb99201fcdbf50505fcbcff116a3b8319e4e9ae659",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "listen_ws",
+      "kind": "accepted-input",
+      "value": "listen-WS"
+    }
+  ]
+}

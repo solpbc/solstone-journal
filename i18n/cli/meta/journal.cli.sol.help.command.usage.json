@@ -1,0 +1,21 @@
+{
+  "description": "Usage line for a native solstone command. The complete invocation and its grammar are passed verbatim.",
+  "context": "Usage line for a native solstone command. The complete invocation and its grammar are passed verbatim.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "syntax",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eb36ca39433d1f012e767ee622c037fc92e055d082aac37c4c0c0c4bd3ba5000",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

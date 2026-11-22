@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call settings transcribe show command.",
+  "context": "Rendered below the usage line for solstone call settings transcribe show, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "572808186eb7a35c6adefbffe0f86051fcd8956301c6545abdf297e3b539c040",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

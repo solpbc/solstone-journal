@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call journal retention list command.",
+  "context": "Rendered below the usage line for solstone call journal retention list, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6fcf57db7286eab6ae4bdecbf6989f81cfc0f1c1d75ceadb1e5d6861fc573ec5",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers repair-status command.",
+  "context": "Rendered below the usage line for solstone call speakers repair-status, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7a4cdf4081b0ce985a62864cf8b74b32bd5c0fe1bafaf03e73469e1e74c45c7f",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

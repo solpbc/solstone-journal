@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call journal read command.",
+  "context": "Rendered below the usage line for solstone call journal read, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f9f28285d409609e81eaa9024d0b77fa0b7ec6583d158a67fc4bfcbd59c9c74e",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

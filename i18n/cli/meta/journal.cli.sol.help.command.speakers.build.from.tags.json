@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers build-from-tags command.",
+  "context": "Rendered below the usage line for solstone call speakers build-from-tags, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b2ccde2e131483c6d628d1679685b6239462ccc476d6fbe02d2f68e650170637",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

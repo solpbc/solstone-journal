@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call link authorized-clients command.",
+  "context": "Rendered below the usage line for solstone call link authorized-clients, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ad7da0e92f783994a5beb2335fd1ed7cec9d9a53d5d6980dae2f2fad18f16ba",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call transcripts stats command.",
+  "context": "Rendered below the usage line for solstone call transcripts stats, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eef97abf4a624900617944f6284027f1b5fa3fab9288d1fd6c8475cb5d697290",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

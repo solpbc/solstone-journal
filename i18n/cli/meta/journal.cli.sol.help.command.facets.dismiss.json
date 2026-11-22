@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call facets dismiss command.",
+  "context": "Rendered below the usage line for solstone call facets dismiss, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "251e63e448a0af8947ed6f5cce587c1abaa8a0b5485030ed6f8297e97de7f96c",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

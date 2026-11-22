@@ -1,0 +1,28 @@
+{
+  "description": "Description of the solstone call journal facet rename command.",
+  "context": "Rendered below the usage line for solstone call journal facet rename, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a59d17970969955de67fe4189b83682feeb3db5297a302150527ae2f2693d01b",
+  "max_length": 322,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "consent_flag",
+      "kind": "flag",
+      "value": "--consent"
+    }
+  ]
+}

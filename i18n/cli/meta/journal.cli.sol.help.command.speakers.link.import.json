@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers link-import command.",
+  "context": "Rendered below the usage line for solstone call speakers link-import, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b848d6083d96f23db416c07c990fad24907503d74543f10c04832cacf4ed5a52",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

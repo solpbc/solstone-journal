@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call thinking keys clear command.",
+  "context": "Rendered below the usage line for solstone call thinking keys clear, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "68bc690a03e07faa023f237613cff010d962f0f800c7cdc4e472a539a250c3e9",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

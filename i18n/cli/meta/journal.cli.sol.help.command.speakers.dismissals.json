@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers dismissals command.",
+  "context": "Rendered below the usage line for solstone call speakers dismissals, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "76b694c0049d54d0a480326ca972a22aefaf3e6ccaa3a9c59056fb9889baae35",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call entities restore-review command.",
+  "context": "Rendered below the usage line for solstone call entities restore-review, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81d0c63430388144ae1b03e4131a51d168731e095fdf4ee9f5851775e3d0ff6e",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

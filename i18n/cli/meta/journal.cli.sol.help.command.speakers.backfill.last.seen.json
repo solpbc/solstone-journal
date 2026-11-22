@@ -1,0 +1,23 @@
+{
+  "description": "Description of the solstone call speakers backfill-last-seen command.",
+  "context": "Rendered below the usage line for solstone call speakers backfill-last-seen, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "24938b1bcdf0c184db8d8911179901c09971c0981a33ba96c27b719b9793a5b6",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "last_seen_field",
+      "kind": "accepted-input",
+      "value": "last_seen_ts"
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "description": "Description of the solstone call journal search command.",
+  "context": "Rendered below the usage line for solstone call journal search, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a1a9367c6d3f21de38807c706ee633d509eae89906ee87bbee7ce7cd294c5220",
+  "max_length": 1369,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "example_terms",
+      "kind": "accepted-input",
+      "value": "what/how/did/when"
+    },
+    {
+      "name": "bm25",
+      "kind": "accepted-input",
+      "value": "BM25"
+    },
+    {
+      "name": "or_operator",
+      "kind": "accepted-input",
+      "value": "OR"
+    },
+    {
+      "name": "wildcard",
+      "kind": "accepted-input",
+      "value": "*"
+    },
+    {
+      "name": "n_flag",
+      "kind": "flag",
+      "value": "-n"
+    },
+    {
+      "name": "limit_flag",
+      "kind": "flag",
+      "value": "--limit"
+    },
+    {
+      "name": "offset_flag",
+      "kind": "flag",
+      "value": "--offset"
+    },
+    {
+      "name": "d_flag",
+      "kind": "flag",
+      "value": "-d"
+    },
+    {
+      "name": "day_flag",
+      "kind": "flag",
+      "value": "--day"
+    },
+    {
+      "name": "day_from_flag",
+      "kind": "flag",
+      "value": "--day-from"
+    },
+    {
+      "name": "day_to_flag",
+      "kind": "flag",
+      "value": "--day-to"
+    },
+    {
+      "name": "relaxed",
+      "kind": "accepted-input",
+      "value": "relaxed"
+    },
+    {
+      "name": "json_flag",
+      "kind": "flag",
+      "value": "--json"
+    },
+    {
+      "name": "json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone call journal read --path PATH --idx IDX --entry-id ENTRY_ID"
+    }
+  ]
+}

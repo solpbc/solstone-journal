@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call body window command.",
+  "context": "Rendered below the usage line for solstone call body window, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "43296faac0c4dfd29e9d303860ab52d396cb88df0e855a2a3b743538ed12324f",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

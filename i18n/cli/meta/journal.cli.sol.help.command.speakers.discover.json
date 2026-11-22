@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers discover command.",
+  "context": "Rendered below the usage line for solstone call speakers discover, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ca4ba36d5e52a6fe13344a8b2669fe87b79a754a42082e28c7484d19af04bfa6",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

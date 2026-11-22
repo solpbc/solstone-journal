@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call thinking local models command.",
+  "context": "Rendered below the usage line for solstone call thinking local models, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b1c329b1e079ed7c4f5220e80947b5507640355b7c4f5ca3d5bdd6b5231459fc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

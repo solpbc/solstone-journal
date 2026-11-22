@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call journal facet show command.",
+  "context": "Rendered below the usage line for solstone call journal facet show, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ec26ba88d63d19cd4cae7fce7402915e71512d42cff98630452859cebaefba5e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

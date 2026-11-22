@@ -1,0 +1,43 @@
+{
+  "description": "Description of the solstone call speakers wipe command.",
+  "context": "Rendered below the usage line for solstone call speakers wipe, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f007509590d50918120f4ab583e299df55c17defdce5599ffb128376b855e11d",
+  "max_length": 756,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "commit_flag",
+      "kind": "flag",
+      "value": "--commit"
+    },
+    {
+      "name": "erase_flag",
+      "kind": "flag",
+      "value": "--erase"
+    },
+    {
+      "name": "from_backups_flag",
+      "kind": "flag",
+      "value": "--from-backups"
+    },
+    {
+      "name": "not_from_backups_flag",
+      "kind": "flag",
+      "value": "--not-from-backups"
+    }
+  ]
+}

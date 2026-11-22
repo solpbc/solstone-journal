@@ -6694,6 +6694,7 @@ name = "solstone-core-sol-client-cli"
 version = "2.0.87"
 dependencies = [
  "serde_json",
+ "sha2 0.10.9",
  "solstone-core-cli-copy",
  "solstone-core-sol-client",
 ]

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call settings keys clear command.",
+  "context": "Rendered below the usage line for solstone call settings keys clear, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fb288aa8c77bf3688f11c4879dfe981c27587b4f5ce74359fb70f6088858c94a",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

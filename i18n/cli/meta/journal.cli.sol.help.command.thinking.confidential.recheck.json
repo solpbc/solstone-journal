@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call thinking confidential recheck command.",
+  "context": "Rendered below the usage line for solstone call thinking confidential recheck, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2de69d3402c6f396faa66691a0ba6a0d447ad94f69b0bf1c203b99be560625a4",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

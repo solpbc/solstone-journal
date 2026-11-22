@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call activities mute command.",
+  "context": "Rendered below the usage line for solstone call activities mute, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c510d1e11f50cd55a586423850b936fde2fd1c583ec8eb5f28183fba9625396",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

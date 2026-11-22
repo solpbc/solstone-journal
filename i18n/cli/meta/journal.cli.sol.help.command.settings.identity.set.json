@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call settings identity set command.",
+  "context": "Rendered below the usage line for solstone call settings identity set, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "62513f87feb57e1325b3bc96b0eaae530f7e66a1df83c52e204420a95a60e418",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

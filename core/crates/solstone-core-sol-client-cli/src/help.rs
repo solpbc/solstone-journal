@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+mod inventory;
+
 use serde_json::Value;
+use solstone_core_cli_copy::{ENGLISH, Value as CatalogValue, render_for};
 use solstone_core_sol_client::aggregate::{self, InventoryEntry};
 use solstone_core_sol_client::command::CommandOutput;
 
@@ -9,12 +12,12 @@ const ROOT_CONTRACT_JSON: &str = include_str!("../../../fixtures/native-sol/root
 
 #[must_use]
 pub fn render_root_help() -> String {
-    render_root_help_for(solstone_core_cli_copy::ENGLISH)
+    render_root_help_for(ENGLISH)
 }
 
 #[must_use]
 pub fn render_root_help_for(locale: &str) -> String {
-    let text = |id: &str| solstone_core_cli_copy::render_for(locale, id, &[]);
+    let text = |id: &str| render_for(locale, id, &[]);
     let contract = root_contract();
     let mut output = String::new();
     push_line(&mut output, &text("journal.cli.sol.help.title"));
@@ -52,7 +55,17 @@ pub fn render_root_help_for(locale: &str) -> String {
 
 #[must_use]
 pub fn render_call_root_help() -> String {
-    let mut output = String::from("Usage: solstone call <app> <verb> [args...]\n\nCommands:\n");
+    render_call_root_help_for(ENGLISH)
+}
+
+#[must_use]
+pub fn render_call_root_help_for(locale: &str) -> String {
+    let mut output = usage(locale, "solstone call <app> <verb> [args...]");
+    output.push_str("\n\n");
+    push_line(
+        &mut output,
+        &render_for(locale, "journal.cli.sol.help.section.commands", &[]),
+    );
     for group in root_call_groups() {
         push_line(&mut output, &format!("  {group}"));
     }
@@ -61,11 +74,16 @@ pub fn render_call_root_help() -> String {
 
 #[must_use]
 pub fn render_sol_call_help(args: &[String]) -> Option<CommandOutput> {
+    render_sol_call_help_for(ENGLISH, args)
+}
+
+#[must_use]
+pub fn render_sol_call_help_for(locale: &str, args: &[String]) -> Option<CommandOutput> {
     if args.is_empty() {
-        return Some(CommandOutput::success(render_call_root_help()));
+        return Some(CommandOutput::success(render_call_root_help_for(locale)));
     }
     if args.len() == 1 && is_help(args[0].as_str()) {
-        return Some(CommandOutput::success(render_call_root_help()));
+        return Some(CommandOutput::success(render_call_root_help_for(locale)));
     }
     if args.iter().any(|arg| arg == "--") {
         return None;
@@ -75,19 +93,25 @@ pub fn render_sol_call_help(args: &[String]) -> Option<CommandOutput> {
     }
     let path = &args[..args.len() - 1];
     if let Some(entry) = leaf_for_path("sol-call", path) {
-        return Some(CommandOutput::success(render_leaf_help(
+        return Some(CommandOutput::success(render_leaf_help_for(
+            locale,
             &format!("solstone call {}", path.join(" ")),
             entry,
         )));
     }
     if is_sol_call_group(path) {
-        return Some(CommandOutput::success(render_group_help(path)));
+        return Some(CommandOutput::success(render_group_help_for(locale, path)));
     }
     None
 }
 
 #[must_use]
 pub fn render_link_help(args: &[String]) -> Option<CommandOutput> {
+    render_link_help_for(ENGLISH, args)
+}
+
+#[must_use]
+pub fn render_link_help_for(locale: &str, args: &[String]) -> Option<CommandOutput> {
     if !args.is_empty() && !(args.len() == 1 && is_help(args[0].as_str())) {
         return None;
     }
@@ -95,7 +119,8 @@ pub fn render_link_help(args: &[String]) -> Option<CommandOutput> {
     if !is_surface_group("sol-link", &path) {
         return None;
     }
-    Some(CommandOutput::success(render_surface_group_help(
+    Some(CommandOutput::success(render_surface_group_help_for(
+        locale,
         "sol-link",
         "solstone link",
         &path,
@@ -104,6 +129,15 @@ pub fn render_link_help(args: &[String]) -> Option<CommandOutput> {
 
 #[must_use]
 pub fn render_top_level_help(command: &str, args: &[String]) -> Option<CommandOutput> {
+    render_top_level_help_for(ENGLISH, command, args)
+}
+
+#[must_use]
+pub fn render_top_level_help_for(
+    locale: &str,
+    command: &str,
+    args: &[String],
+) -> Option<CommandOutput> {
     if args.len() != 1 || !is_help(args[0].as_str()) {
         return None;
     }
@@ -113,7 +147,8 @@ pub fn render_top_level_help(command: &str, args: &[String]) -> Option<CommandOu
         _ => return None,
     };
     let entry = leaf_for_path(surface, &[command.to_string()])?;
-    Some(CommandOutput::success(render_leaf_help(
+    Some(CommandOutput::success(render_leaf_help_for(
+        locale,
         &format!("solstone {command}"),
         entry,
     )))
@@ -121,13 +156,35 @@ pub fn render_top_level_help(command: &str, args: &[String]) -> Option<CommandOu
 
 #[must_use]
 pub fn render_leaf_help(invocation: &str, entry: &InventoryEntry) -> String {
+    render_leaf_help_for(ENGLISH, invocation, entry)
+}
+
+#[must_use]
+pub fn render_leaf_help_for(locale: &str, invocation: &str, entry: &InventoryEntry) -> String {
     let mut output = String::new();
-    push_line(&mut output, &format!("Usage: {invocation} [args...]"));
+    push_line(
+        &mut output,
+        &usage(locale, &format!("{invocation} [args...]")),
+    );
     output.push('\n');
-    push_line(&mut output, entry.help);
+    push_line(&mut output, &inventory::description(locale, entry));
     output.push('\n');
-    push_line(&mut output, &format!("Authority: {}", entry.authority_path));
-    push_line(&mut output, &format!("Operation: {}", entry.operation_id));
+    push_line(
+        &mut output,
+        &render_for(
+            locale,
+            "journal.cli.sol.help.authority",
+            &[("path", CatalogValue::String(entry.authority_path))],
+        ),
+    );
+    push_line(
+        &mut output,
+        &render_for(
+            locale,
+            "journal.cli.sol.help.operation",
+            &[("operation", CatalogValue::String(entry.operation_id))],
+        ),
+    );
 
     let params = visible_params(entry);
     let arguments = params
@@ -140,16 +197,22 @@ pub fn render_leaf_help(invocation: &str, entry: &InventoryEntry) -> String {
         .collect::<Vec<_>>();
     if !arguments.is_empty() {
         output.push('\n');
-        push_line(&mut output, "Arguments:");
+        push_line(
+            &mut output,
+            &render_for(locale, "journal.cli.sol.help.section.arguments", &[]),
+        );
         for param in arguments {
-            push_line(&mut output, &format!("  {}", format_param(param)));
+            push_line(&mut output, &format!("  {}", format_param(locale, param)));
         }
     }
     if !options.is_empty() {
         output.push('\n');
-        push_line(&mut output, "Options:");
+        push_line(
+            &mut output,
+            &render_for(locale, "journal.cli.sol.help.section.options", &[]),
+        );
         for param in options {
-            push_line(&mut output, &format!("  {}", format_param(param)));
+            push_line(&mut output, &format!("  {}", format_param(locale, param)));
         }
     }
     output
@@ -157,7 +220,13 @@ pub fn render_leaf_help(invocation: &str, entry: &InventoryEntry) -> String {
 
 #[must_use]
 pub fn render_group_help(path: &[String]) -> String {
-    render_surface_group_help(
+    render_group_help_for(ENGLISH, path)
+}
+
+#[must_use]
+pub fn render_group_help_for(locale: &str, path: &[String]) -> String {
+    render_surface_group_help_for(
+        locale,
         "sol-call",
         &format!("solstone call {}", path.join(" ")),
         path,
@@ -166,16 +235,30 @@ pub fn render_group_help(path: &[String]) -> String {
 
 #[must_use]
 pub fn render_surface_group_help(surface: &str, invocation: &str, path: &[String]) -> String {
+    render_surface_group_help_for(ENGLISH, surface, invocation, path)
+}
+
+#[must_use]
+pub fn render_surface_group_help_for(
+    locale: &str,
+    surface: &str,
+    invocation: &str,
+    path: &[String],
+) -> String {
     let mut output = String::new();
     push_line(
         &mut output,
-        &format!("Usage: {invocation} <command> [args...]"),
+        &usage(locale, &format!("{invocation} <command> [args...]")),
     );
     output.push('\n');
-    push_line(&mut output, "Commands:");
+    push_line(
+        &mut output,
+        &render_for(locale, "journal.cli.sol.help.section.commands", &[]),
+    );
     for child in immediate_children(surface, path) {
         let mut line = format!("  {}", child.name);
-        if let Some(help) = child.help {
+        if let Some(entry) = child.entry {
+            let help = inventory::description(locale, entry);
             line.push_str(&format!("{:width$}{}", "", help, width = child.padding));
         }
         push_line(&mut output, &line);
@@ -219,7 +302,7 @@ fn root_call_groups() -> Vec<String> {
 
 fn leaf_for_path(surface: &str, path: &[String]) -> Option<&'static InventoryEntry> {
     let borrowed = path.iter().map(String::as_str).collect::<Vec<_>>();
-    aggregate::entries()
+    inventory::entries()
         .iter()
         .find(|entry| entry.surface == surface && entry.path == borrowed.as_slice())
 }
@@ -232,35 +315,57 @@ fn visible_params(entry: &InventoryEntry) -> Vec<Value> {
         .collect()
 }
 
-fn format_param(param: &Value) -> String {
+fn usage(locale: &str, syntax: &str) -> String {
+    render_for(
+        locale,
+        "journal.cli.sol.help.command.usage",
+        &[("syntax", CatalogValue::String(syntax))],
+    )
+}
+
+fn format_param(locale: &str, param: &Value) -> String {
     let spellings = format_spellings(param);
     let name = param["name"].as_str().unwrap_or("");
     let type_name = param["type"].as_str().unwrap_or("value");
-    let mut line = if param["is_flag"].as_bool().unwrap_or(false) {
+    let syntax = if param["is_flag"].as_bool().unwrap_or(false) {
         spellings
     } else {
         format!("{spellings} <{name}:{type_name}>")
     };
-    let mut indicators: Vec<String> = Vec::new();
-    if param["required"].as_bool().unwrap_or(false) {
-        indicators.push("required".to_string());
+    let required = param["required"].as_bool().unwrap_or(false);
+    let multiple = param["multiple"].as_bool().unwrap_or(false);
+    let count = param["count"].as_bool().unwrap_or(false);
+    let shape = match (required, multiple, count) {
+        (false, false, false) => "plain",
+        (false, false, true) => "count",
+        (false, true, false) => "multiple",
+        (false, true, true) => "multiple_count",
+        (true, false, false) => "required",
+        (true, false, true) => "required_count",
+        (true, true, false) => "required_multiple",
+        (true, true, true) => "required_multiple_count",
+    };
+    let default = (!param["default"].is_null()).then(|| value_label(&param["default"]));
+    let flag = (!param["flag_value"].is_null() && string_values(param, "secondary").is_empty())
+        .then(|| value_label(&param["flag_value"]));
+    let id = match (default.is_some(), flag.is_some()) {
+        (false, false) if shape == "plain" => return syntax,
+        (false, false) => "journal.cli.sol.help.parameter",
+        (true, false) => "journal.cli.sol.help.parameter.default",
+        (false, true) => "journal.cli.sol.help.parameter.flag",
+        (true, true) => "journal.cli.sol.help.parameter.default.flag",
+    };
+    let mut args = vec![
+        ("syntax", CatalogValue::String(&syntax)),
+        ("shape", CatalogValue::String(shape)),
+    ];
+    if let Some(value) = &default {
+        args.push(("default_value", CatalogValue::String(value)));
     }
-    if !param["default"].is_null() {
-        indicators.push(format!("default: {}", value_label(&param["default"])));
+    if let Some(value) = &flag {
+        args.push(("flag_value", CatalogValue::String(value)));
     }
-    if !param["flag_value"].is_null() && string_values(param, "secondary").is_empty() {
-        indicators.push(format!("flag value: {}", value_label(&param["flag_value"])));
-    }
-    if param["multiple"].as_bool().unwrap_or(false) {
-        indicators.push("multiple".to_string());
-    }
-    if param["count"].as_bool().unwrap_or(false) {
-        indicators.push("count".to_string());
-    }
-    if !indicators.is_empty() {
-        line.push_str(&format!(" [{}]", indicators.join(", ")));
-    }
-    line
+    render_for(locale, id, &args)
 }
 
 fn format_spellings(param: &Value) -> String {
@@ -300,7 +405,7 @@ fn value_label(value: &Value) -> String {
 #[derive(Debug)]
 struct Child {
     name: String,
-    help: Option<&'static str>,
+    entry: Option<&'static InventoryEntry>,
     padding: usize,
 }
 
@@ -327,11 +432,11 @@ fn immediate_children(surface: &str, path: &[String]) -> Vec<Child> {
                 .cloned()
                 .chain(std::iter::once(name.clone()))
                 .collect::<Vec<_>>();
-            let help = leaf_for_path(surface, &child_path).map(|entry| entry.help);
+            let entry = leaf_for_path(surface, &child_path);
             Child {
                 padding: max_len.saturating_sub(name.len()) + 2,
                 name,
-                help,
+                entry,
             }
         })
         .collect()
@@ -507,9 +612,9 @@ mod tests {
                     output.contains(&format!("  {}", child.name)),
                     "missing group child {child:?} in {group:?}"
                 );
-                if let Some(help) = child.help {
+                if let Some(entry) = child.entry {
                     assert!(
-                        output.contains(help),
+                        output.contains(entry.help),
                         "missing child help for {child:?} in {group:?}"
                     );
                 }

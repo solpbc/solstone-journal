@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call body day command.",
+  "context": "Rendered below the usage line for solstone call body day, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d89f73703a23327691264ad307600e54060780c1d569766c976ddb0132e8140a",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

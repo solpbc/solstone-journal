@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call health for-range command.",
+  "context": "Rendered below the usage line for solstone call health for-range, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d0d95af7f29f0842908be6b5cc8000db14ce6e4b3b7e8099fcb1fbbed09107e9",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -26,7 +26,10 @@ pub type Handler = for<'a> fn(CommandContext<'a>) -> CommandOutput;
 
 #[must_use]
 pub fn entries() -> &'static [InventoryEntry] {
-    inventory::ENTRIES
+    // Presentation distinguishes a registered entry from caller-supplied
+    // metadata, even when every field of the two entries is identical.
+    static REGISTERED: &[InventoryEntry] = inventory::ENTRIES;
+    REGISTERED
 }
 
 #[must_use]
@@ -50,7 +53,7 @@ pub fn handler_for_surface(
     path: &[&str],
 ) -> Option<(&'static InventoryEntry, Handler)> {
     let mut handler_index = 0;
-    for entry in inventory::ENTRIES {
+    for entry in entries() {
         if entry.resident {
             continue;
         }
@@ -77,7 +80,7 @@ pub fn resident_handler_for_surface(
     path: &[&str],
 ) -> Option<(&'static InventoryEntry, ResidentHandler)> {
     let mut handler_index = 0;
-    for entry in inventory::ENTRIES {
+    for entry in entries() {
         if !entry.resident {
             continue;
         }

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call link pair command.",
+  "context": "Rendered below the usage line for solstone call link pair, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "da24c7612600f9d95ac6a4f06f6fb2ac4664154ac1fe382d33f9855afab424a4",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

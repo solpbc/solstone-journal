@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call body status command.",
+  "context": "Rendered below the usage line for solstone call body status, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ec3c7e29b963e92e8009af18516984245d1964cba040f6b0d1d24515292432e",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

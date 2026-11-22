@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call entities search command.",
+  "context": "Rendered below the usage line for solstone call entities search, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e27ee7871baab3ecb6dabaf88abb60e0eae264bc9eb0c4096ff7afa3ae3bbdcc",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

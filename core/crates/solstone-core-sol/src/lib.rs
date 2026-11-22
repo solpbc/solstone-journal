@@ -45,6 +45,14 @@ const DEFAULT_CONVEY_PORT: i64 = 5015;
 const SOLSTONE_CONVEY_PORT_ENV: &str = "SOLSTONE_CONVEY_PORT";
 const SERVICE_MOVED_EXIT: i32 = 2;
 
+fn diagnostic_locale(args: &[OsString]) -> &'static str {
+    if args.iter().any(|arg| arg == "--json" || arg == "--jsonl") {
+        solstone_core_cli_copy::ENGLISH
+    } else {
+        solstone_core_cli_copy::cli_locale()
+    }
+}
+
 fn resolve_convey_port(
     env: &BTreeMap<String, String>,
     args: &[OsString],
@@ -57,11 +65,7 @@ fn resolve_convey_port(
                 format!(
                     "{}\n",
                     solstone_core_cli_copy::render_for(
-                        if args.iter().any(|arg| arg == "--json" || arg == "--jsonl") {
-                            solstone_core_cli_copy::ENGLISH
-                        } else {
-                            solstone_core_cli_copy::cli_locale()
-                        },
+                        diagnostic_locale(args),
                         "journal.cli.client.port.invalid",
                         &[]
                     )
@@ -138,12 +142,12 @@ fn run_with_stdin_provider(
             entry::run_journal(rest.to_vec())
         }
         [flag, ..] if flag.to_string_lossy().starts_with('-') => {
-            render_output(usage_error_output())
+            render_output(usage_error_output(&args))
         }
         [command, ..] if is_journal_host_command(command) => {
-            render_output(service_moved_output(command))
+            render_output(service_moved_output(command, &args))
         }
-        _ => render_output(unsupported_output()),
+        _ => render_output(unsupported_output(&args)),
     }
 }
 
@@ -277,32 +281,44 @@ fn help_output() -> CommandOutput {
     }
 }
 
-fn usage_error_output() -> CommandOutput {
+fn usage_error_output(args: &[OsString]) -> CommandOutput {
     CommandOutput::failure(
         format!(
             "{}\n",
-            solstone_core_cli_copy::text("journal.cli.sol.usage")
+            solstone_core_cli_copy::render_for(
+                diagnostic_locale(args),
+                "journal.cli.sol.usage",
+                &[]
+            )
         ),
         i32::from(EXIT_USAGE),
     )
 }
 
-fn unsupported_output() -> CommandOutput {
+fn unsupported_output(args: &[OsString]) -> CommandOutput {
     CommandOutput::failure(
         format!(
             "{}\n",
-            solstone_core_cli_copy::text("journal.cli.sol.unsupported")
+            solstone_core_cli_copy::render_for(
+                diagnostic_locale(args),
+                "journal.cli.sol.unsupported",
+                &[]
+            )
         ),
         i32::from(EXIT_USAGE),
     )
 }
 
-fn service_moved_output(command: &OsStr) -> CommandOutput {
+fn service_moved_output(command: &OsStr, args: &[OsString]) -> CommandOutput {
     let command = command.to_string_lossy();
     CommandOutput::failure(
         format!(
             "{}\n",
-            solstone_core_cli_copy::display("journal.cli.sol.moved", [("command", &command)])
+            solstone_core_cli_copy::display_for(
+                diagnostic_locale(args),
+                "journal.cli.sol.moved",
+                [("command", &command)]
+            )
         ),
         SERVICE_MOVED_EXIT,
     )
@@ -380,9 +396,11 @@ fn run_call(
     stdin_provider: &dyn StdinProvider,
 ) -> ExitCode {
     let Some(args) = os_strings_to_strings(command_args) else {
-        return render_output(usage_error_output());
+        return render_output(usage_error_output(command_args));
     };
-    if let Some(output) = help::render_sol_call_help(&args) {
+    if let Some(output) =
+        help::render_sol_call_help_for(solstone_core_cli_copy::cli_locale(), &args)
+    {
         return render_output(output);
     }
     run_dispatched(all_args, command_args, stdin_provider)
@@ -395,9 +413,11 @@ fn run_top_level_native(
     stdin_provider: &dyn StdinProvider,
 ) -> ExitCode {
     let Some(args) = os_strings_to_strings(command_args) else {
-        return render_output(usage_error_output());
+        return render_output(usage_error_output(command_args));
     };
-    if let Some(output) = help::render_top_level_help(command, &args) {
+    if let Some(output) =
+        help::render_top_level_help_for(solstone_core_cli_copy::cli_locale(), command, &args)
+    {
         return render_output(output);
     }
     run_dispatched(all_args, command_args, stdin_provider)
@@ -733,9 +753,9 @@ fn run_top_level_link_with_env_provider(
 ) -> ExitCode {
     let args = match os_strings_to_strings(command_args) {
         Some(args) => args,
-        None => return render_output(usage_error_output()),
+        None => return render_output(usage_error_output(command_args)),
     };
-    if let Some(output) = help::render_link_help(&args) {
+    if let Some(output) = help::render_link_help_for(solstone_core_cli_copy::cli_locale(), &args) {
         return render_output(output);
     }
     let env = env_provider();
@@ -775,14 +795,14 @@ fn run_top_level_link_with_runtime(
 ) -> ExitCode {
     let args = match os_strings_to_strings(command_args) {
         Some(args) => args,
-        None => return render_output(usage_error_output()),
+        None => return render_output(usage_error_output(command_args)),
     };
-    if let Some(output) = help::render_link_help(&args) {
+    if let Some(output) = help::render_link_help_for(solstone_core_cli_copy::cli_locale(), &args) {
         return render_output(output);
     }
     let dispatch_args = match os_strings_to_strings(all_args) {
         Some(args) => args,
-        None => return render_output(usage_error_output()),
+        None => return render_output(usage_error_output(command_args)),
     };
     let port = match resolve_convey_port(env, command_args) {
         Ok(port) => port,
@@ -894,12 +914,12 @@ fn run_dispatched_with_runtime(
 ) -> ExitCode {
     let outcome = evaluate_args(all_args);
     if matches!(outcome, Outcome::Unsupported { .. }) {
-        return render_output(unsupported_output());
+        return render_output(unsupported_output(all_args));
     }
     let args = match os_strings_to_strings(command_args) {
         Some(args) => args,
         None => {
-            return render_output(usage_error_output());
+            return render_output(usage_error_output(command_args));
         }
     };
     let port = match resolve_convey_port(env, command_args) {
@@ -952,7 +972,7 @@ fn run_dispatched_with_runtime(
                 notification_sink: None,
             },
         ),
-        Outcome::Unsupported { .. } => unsupported_output(),
+        Outcome::Unsupported { .. } => unsupported_output(all_args),
     };
     render_output(output)
 }
@@ -1991,7 +2011,7 @@ mod tests {
 
     #[test]
     fn buffered_usage_error_output_stays_byte_identical_without_resident_arm() {
-        let output = usage_error_output();
+        let output = usage_error_output(&[]);
         assert_eq!(output.stdout, "");
         assert_eq!(output.stderr, "Usage: solstone <command> [args...]\n");
         assert_eq!(output.exit, i32::from(EXIT_USAGE));
@@ -2168,7 +2188,7 @@ mod tests {
     #[test]
     fn service_host_command_moves_to_journal() {
         assert_eq!(
-            service_moved_output(OsStr::new("think")),
+            service_moved_output(OsStr::new("think"), &[]),
             CommandOutput::failure(
                 "'think' moved to 'solstone journal think'; run that instead.\n(commands that run the journal on this computer are under 'solstone journal'; see 'solstone journal --help'.)\n",
                 SERVICE_MOVED_EXIT,
@@ -2179,7 +2199,7 @@ mod tests {
     #[test]
     fn unknown_command_is_explicitly_unsupported() {
         assert_eq!(
-            unsupported_output(),
+            unsupported_output(&[]),
             CommandOutput::failure(
                 "Unsupported native solstone command.\n",
                 i32::from(EXIT_USAGE)
@@ -2189,7 +2209,7 @@ mod tests {
 
     #[test]
     fn invalid_flag_prints_usage() {
-        let output = usage_error_output();
+        let output = usage_error_output(&[]);
         assert_eq!(output.stdout, "");
         assert_eq!(output.exit, i32::from(EXIT_USAGE));
         assert_eq!(output.stderr, "Usage: solstone <command> [args...]\n");

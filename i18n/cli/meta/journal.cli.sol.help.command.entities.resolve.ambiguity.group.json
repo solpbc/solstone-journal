@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call entities resolve-ambiguity-group command.",
+  "context": "Rendered below the usage line for solstone call entities resolve-ambiguity-group, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "882190c57d59d74e1ed4d1334a69e6bcdec806aa7cc6bd37954a1b6d4910eb7a",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Description of the solstone call link unpair command.",
+  "context": "Rendered below the usage line for solstone call link unpair, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a4c22911932cf46682a47b7853ce2d2ac820acf63a581755f2303598fbe7ce9f",
+  "max_length": 116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "tls",
+      "kind": "accepted-input",
+      "value": "TLS"
+    }
+  ]
+}

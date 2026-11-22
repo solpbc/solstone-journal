@@ -502,6 +502,8 @@ Put command-line help, progress and human-readable errors in
 `i18n/cli/source/en-US.ftl`. Use the existing window message when the command
 shows the same copy. Keep machine output stable, including JSON keys, codes
 and values. Run `make journal-cli-catalog` after changing the CLI catalog.
+
+For command help, keep command names, flags, argument syntax, authority paths and operation IDs intact. Render descriptions and option labels for the terminal from the CLI catalog.
 It also updates the messages the Unix launcher prints when it cannot start the native command.
 
 Keep the English Markdown that Think and Describe write readable on its own. Store the message identities and argument ranges in the matching `.md.display` file. When reading it, check that it still matches the Markdown before translating only the marked messages.

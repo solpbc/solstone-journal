@@ -15192,10 +15192,1109 @@
       "locales": []
     },
     {
+      "id": "journal.cli.sol.dispatch.unsupported.command",
+      "source": "0ba4beee2ab8c2e76457fd743e228d5cb53f27d7471ec348711ad123bafd169f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.cli.sol.help.apps",
       "source": "fd0015571599b174117ea50f9e12cf3561c1fe42cf796317bbddc58d5ca94c7d",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "f54f0ca5804e98f9d2cdb47a9bf2cf450eee9abdcab48b0347414fbbca29c3c0",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.authority",
+      "source": "d61a62a3aa644012fc434d8c9327a2982a1a9491d459862b821240b093919cd6",
+      "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.activities.create",
+      "source": "6bc8262cedbf7abb4f4046a6aa5263264ec23c9398cac1eded4a6dff4455dd0a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "d96e936c045b2392b6d9a355e04693e2a23bc81bf5c2b657a4d0dd6a827a1839",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.activities.get",
+      "source": "e4ba219c1e426cf7f75cd9199519d4db30445d109e46245310b0c0be74f75d7c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.activities.list",
+      "source": "7984a7ea44f6bbb4ae407826e77efa79c62c038a03606523381b20685b2f3597",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.activities.mute",
+      "source": "8c510d1e11f50cd55a586423850b936fde2fd1c583ec8eb5f28183fba9625396",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.activities.unmute",
+      "source": "0056f93d2e34c0b5fa58f7c4af62fe20c7f8c20ff8d2c375119d7dc1573d08e8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.activities.update",
+      "source": "8b1b47b7d84eb4f71b7f1a1a3e0a4b612b4a589dce492b92b9fcee7bb1d9fcfb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "d96e936c045b2392b6d9a355e04693e2a23bc81bf5c2b657a4d0dd6a827a1839",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.awareness.imports",
+      "source": "75db57e80c7093a7ff6c4072a274d801bb19684c2d62668cbe346b59f1502418",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.awareness.log",
+      "source": "b9e000f87f85fc7910cf9e3fed5ad2f0437f7538f8648b36d0433519313fa00e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.awareness.log.read",
+      "source": "1c5db09903ce3e9d9fe1f928cf108eda98a7468c159c0ae0476d8ba58059ad17",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.awareness.status",
+      "source": "d84b21ebc4a9e60fcf9e68b2b2b5a167e133716484f377ca7a80293f62bcba22",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.body.day",
+      "source": "d89f73703a23327691264ad307600e54060780c1d569766c976ddb0132e8140a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.body.status",
+      "source": "2ec3c7e29b963e92e8009af18516984245d1964cba040f6b0d1d24515292432e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.body.window",
+      "source": "43296faac0c4dfd29e9d303860ab52d396cb88df0e855a2a3b743538ed12324f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.accept.merge.candidate",
+      "source": "04807183f051befe924cd9d0388245f2d62918b3bc5b497fc1c077b7ee6dfa1c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.aka",
+      "source": "db376e7ff7f4ffb3897fa3119459d13d8f3b3775220396fa395648f55ca03561",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.ambiguities",
+      "source": "20805d0e4cccd554b1a5133692113c8c9a6b006738c5c6ebec318f5ab8c2ca79",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.attach",
+      "source": "3d7c5ee10acb124e6d2095971daea78466f87798d529a6727c9fb0d68cc8d185",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.delete",
+      "source": "a82ac5ee1c46524dc3a8194bc42c9ae93ef675cefd8d77066e2f7b54679ba10c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "e41e772612fbf13e83663fc2a238c92055ba42123703eb0dcddb87f472f2e852",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.detect",
+      "source": "383dbdc4c0e26ed5053ad94c769b9569014e85b958c6baf4248d6dcbce398912",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.dismiss.merge.candidate",
+      "source": "c310a9b892758384b1f618df2628dcc2e8d3629e2bffa1475f1768d7c9ddf469",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.entity.history",
+      "source": "c634e414c118cf5e9976695a5eaa7d36d7aa9cc87f9ca36f38d021f4f5d7dff5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.history",
+      "source": "1b4cd1d14b09aa8756af42f87bf601af49f0760fb2cce36cdfbd23e7fc19b1e9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.list",
+      "source": "aae566d8f189a5f93f4a61d74c735f1b1ed408b958137c7e45365e56022a5214",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.merge",
+      "source": "a2168a35c73c1d7cbedd3abe4c5815b87fef94e40aade246b0fbb7b6dafeb022",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.merge.candidates",
+      "source": "af65a566ba67911da805b606a029b9db9950c76b3e92d2fcff7783d4ca33e4a6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.move",
+      "source": "4f8c24a94077b3d810310b329ed04a4514c2d8c523752f7e28f368f72d137724",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.network",
+      "source": "e07946c614c0316f69e3e0aebbcce13d05d40dcaff45160ac03665d2215c2317",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.observations",
+      "source": "a336ca16baa4c2ca64fef8e870bc3d0985214ef774ee0651003b9f0a22c39ce9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.observe",
+      "source": "ffc6815f184585e4ae8302d5c2b3e73e14c23a65a7069d592d0fb70fc46a6625",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.overview",
+      "source": "3f3da167de7e7d5bb6b86661d02b8fe2b4c644f3bd9c39facd7fe180efcb888b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.record.merge.candidate",
+      "source": "58f27b576697a9c9777a9f291652b8bbd21f38b49ba44546dd3320ebefd12068",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.resolve.ambiguity",
+      "source": "4d6a6cffddf710680275e702b4b0321a5f75870efe9922786bcaad649aecf531",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.resolve.ambiguity.group",
+      "source": "882190c57d59d74e1ed4d1334a69e6bcdec806aa7cc6bd37954a1b6d4910eb7a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.restore.review",
+      "source": "81d0c63430388144ae1b03e4131a51d168731e095fdf4ee9f5851775e3d0ff6e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.restore.version",
+      "source": "288d3f7fc54576c6ae41af3ef2cb3219e574041624958ff13e35639d9cd0753f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.review",
+      "source": "153a44893111029f0355ad672379191e8b29975c014262051e764d35b6235982",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.search",
+      "source": "e27ee7871baab3ecb6dabaf88abb60e0eae264bc9eb0c4096ff7afa3ae3bbdcc",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.sweep.review",
+      "source": "7f31537d8636d7ec92a3915b83615ac8a0e9d4e9126d5818d606a164a9b62b01",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.entities.update",
+      "source": "c4d61250962ef5b01aff3aa0ee157a85a7327e6be344976fe2f14c0e0c2e5726",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.facets.accept",
+      "source": "cc0f72e07d766f7e1507897b202349eae1626c2f25faf4c167de3dd419db8f05",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.facets.dismiss",
+      "source": "251e63e448a0af8947ed6f5cce587c1abaa8a0b5485030ed6f8297e97de7f96c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.facets.list.candidates",
+      "source": "f768ab3d0b6a707d1a0a6bdf57a0410a31337302f68fe729b3326f3713e5174a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.health.for.range",
+      "source": "d0d95af7f29f0842908be6b5cc8000db14ce6e4b3b7e8099fcb1fbbed09107e9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.health.full",
+      "source": "ec65738afcf8016c7b505439f3dc0d7b1c45d8159f4bca3078ae53c0ee439c4b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.health.pipeline",
+      "source": "09ae8681c4fb434ece3f9520a2d4bcd582424b13081e1f444f9c190735b0ad89",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "754d54de2b6dbcade4038d368712f05d21538147309e4dccb762252c9ac3f206",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.health.summary",
+      "source": "20680156f33b3161ad74da2ab75c731fa1b591200959445630a127043f302c18",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.import.top.level",
+      "source": "32009bb118618acff0f6bd3fb10c4c5d743edc7ac469cce59abd00bf856f8aec",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.agents",
+      "source": "09a8b52ea768647926842cbd22a76a09c48cbc58b57163d8c91ec168652d750f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.facet.create",
+      "source": "e22963a010aa97d01143806c81b55ef904e4bff2ea16e05d6fcf4e6d8b547224",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "b1a0991b091a0f2ba74a73cbc2dd7e2efdb573794be2f730027020c9d5cd7990",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.facet.delete",
+      "source": "01428325de2bea81c56c0aa4d106e13aeb21fa2ee07f12a35faf5f13ed3445a9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "717ae5f3887d10e1b56008144d8a29132a5d3d8e0058dd71a478180a1c2e1f9e",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.facet.mute",
+      "source": "6adc3f9d5d5553178afee4bafc097e24881209145d48c21768198ed2873f32ff",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.facet.rename",
+      "source": "a59d17970969955de67fe4189b83682feeb3db5297a302150527ae2f2693d01b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "b1a0991b091a0f2ba74a73cbc2dd7e2efdb573794be2f730027020c9d5cd7990",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.facet.show",
+      "source": "ec26ba88d63d19cd4cae7fce7402915e71512d42cff98630452859cebaefba5e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.facet.unmute",
+      "source": "a7f449de6d88fcf6e04bfbb958371b69401b370ee4b615a4167d5bd857979a79",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.facet.update",
+      "source": "43e77b0cbe5c1815384f12eceb01ba03b171f4936b2f6cfee7756e1e68189539",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.facets",
+      "source": "23542dde110640b5c8e06cc6b7580cefeab8d2e1b7f274b32c56bc3e839bad4a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.import",
+      "source": "7605e1088e42b6bdec19dc4418ff17df88b23e04cabe3fe07b4fa414c564797f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.imports",
+      "source": "ea9a217a2799316a66a8fff649727e82c89a2ab3538e49e02ff42757f8e8af79",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.read",
+      "source": "f9f28285d409609e81eaa9024d0b77fa0b7ec6583d158a67fc4bfcbd59c9c74e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.retention.config",
+      "source": "0d7863cb154ce62e2860d1a5fe0396e85fd6a190ec0830cd967ec39d30662313",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.retention.list",
+      "source": "6fcf57db7286eab6ae4bdecbf6989f81cfc0f1c1d75ceadb1e5d6861fc573ec5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.search",
+      "source": "a1a9367c6d3f21de38807c706ee633d509eae89906ee87bbee7ce7cd294c5220",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "9d6affb4f408cf32fb1926d76bbbe3f1483163f238dd4e57eecf36ec470c6c00",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.journal.storage.summary",
+      "source": "f6df119426bb9a79d02040ce9e7a592ca9da21adf206ed372199fd3e6e2b4d95",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.authorized.clients",
+      "source": "3ad7da0e92f783994a5beb2335fd1ed7cec9d9a53d5d6980dae2f2fad18f16ba",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.confirm",
+      "source": "64a5138119735aa1077e30454020bfecff63a838e5c650cbb7ad018999305ff7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.join",
+      "source": "d7e56ad47a6faf70120c8fb9982add0f3051862e1a6a9e9b7a5c31bce5725d1e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "f12b88dc9aec538f19d0563883717ff4938aa5b41621f1d3d537bfc47c52f752",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.list",
+      "source": "0c2504ba07f89088019208ba53eac730149c853f7b9d1ddf4567253edffb8176",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.local.network.close",
+      "source": "1dd9190d033c1d2c9653eaf5cf2dc15dbfd109d8b8ea302396934e90d6e4e161",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.local.network.open",
+      "source": "95d9a3f40f33b89f4a542bbcc86d6ce81b02e0d9a0dd7d057fca971432c7b6d4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.local.network.status",
+      "source": "06d215d6d3451de0006a78889eeff6e064e03504739033aa3843063479033e32",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.observer.pause",
+      "source": "ada5e99fd89750dbb4422149ae8c2763adcb52fe09fc2540091477388d254ebf",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.pair",
+      "source": "da24c7612600f9d95ac6a4f06f6fb2ac4664154ac1fe382d33f9855afab424a4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.private.link.disable",
+      "source": "f03b748ec39e6427b8586137fd6e731b1d4062d1d66e2ab085723c366f90fc6e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.private.link.setup",
+      "source": "82317514fc041d077a27a3f4c5f0287ad5915ce15b12b2550375c060313470cd",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.private.link.status",
+      "source": "07dcc09c70bafc6cc57e9b599b6b00f11bf1d1d91e82c6b63aae3516d8133621",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.serve",
+      "source": "cf73248132ad0a0fa3e084ad2dd07abc0f60ba869da99592b378ac2c34972a21",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.set.label",
+      "source": "3a6bf27448b806a5053e688825f701d10d6de50bc62559ffb7883c3486e0af99",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.status",
+      "source": "4594a928b4cae9bc54d2d0cb99201fcdbf50505fcbcff116a3b8319e4e9ae659",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "e7eb7434b1befa92b3c8f641e44dcbfcb7f96e267634adb64d4a198639c2aabd",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.top.level.status",
+      "source": "25171580092f941ac60d3dc2170be224ba6adbdec93924c48d52336ce614a938",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.link.unpair",
+      "source": "a4c22911932cf46682a47b7853ce2d2ac820acf63a581755f2303598fbe7ce9f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "620da254def48d9ddcb9240f93fef64d8be816601e0b2360ef694a9e109aba2d",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.moved.navigate",
+      "source": "a07d1856b1b0125080a5ea7cdaad15c042cae8dc5d1822871e1f787aa3407ba9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "efeecad5b7a5b48e5890aed283a4b0f5824fb6d2406eb21233fbe6d871b5b71c",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.settings.convey.status",
+      "source": "0a4ebde5fe00c79a4bd3b3d28c345e98a0a45ad07e26f35384782e349e248f5f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "ebe34be65b614e54a8088e30ecc81794edf3c83c62a98b49371e63e267ecacc7",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.settings.identity.set",
+      "source": "62513f87feb57e1325b3bc96b0eaae530f7e66a1df83c52e204420a95a60e418",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.settings.identity.show",
+      "source": "55c22347a7b29e08b2c94e29aed9be0270898657047feb078e8ab48b72627827",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.settings.keys.clear",
+      "source": "fb288aa8c77bf3688f11c4879dfe981c27587b4f5ce74359fb70f6088858c94a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.settings.keys.set",
+      "source": "5683a10b05c4c033750ea967a0b562bf1e3838c48b32e09185dfd222c141c35c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.settings.keys.show",
+      "source": "2d1c44f30a608c0ed9c4554ae4d6767f9102aae6ef0786a50b09dc5c23eb2fa4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.settings.keys.validate",
+      "source": "1e761153966ad5fe51bf8e17ba2c9446df66a48c1fc3baca8845d2b6c6c0d113",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.settings.processing.set",
+      "source": "13270a1bfeb57682bcd512a784cfb338507a5117b490067bb52a9b7c72dd9761",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.settings.processing.show",
+      "source": "a0b4ab7ad615de4211b1b85b1c1f88181421421a57ec2b8a0a74503fe524643d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.settings.show",
+      "source": "c069b8b08e31c5719699de21fab6d083b83cfd972439f25e41de6f6b7e7eba6c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.settings.transcribe.set.backend",
+      "source": "b81fcc5d7dfc0b659b005b849016e58c7f6e635d917e61f3b14fbd3257547934",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.settings.transcribe.show",
+      "source": "572808186eb7a35c6adefbffe0f86051fcd8956301c6545abdf297e3b539c040",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.attribute.segment",
+      "source": "a4f244bb81f957bc6dbbb65dcba95ec64aeb3dfeb2ad7747ec2a1c18f006d37b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "4e9232a036e69200d9bb3d51309b66d973148653bb7119604e8070162a356dc5",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.backfill",
+      "source": "fac7c33bd04193ffa917c326d56b7a4a7ec91df01bce9f7980fcde186ac84567",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "4e9232a036e69200d9bb3d51309b66d973148653bb7119604e8070162a356dc5",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.backfill.last.seen",
+      "source": "24938b1bcdf0c184db8d8911179901c09971c0981a33ba96c27b719b9793a5b6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "458552ede711ed7f3917130d80c563bd2113dc21301b0f68d31e44c0a05e12dd",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.backfill.resume",
+      "source": "d003acf898a5fb34b43732dfbafe4391482b84e7c22dda7f399179c014c39af4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.backfill.status",
+      "source": "9e771a8bff2c0b3a7aeff5dd25bed99bd619ab7221a2f8e6fa36cbb2d26d65e7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.bootstrap",
+      "source": "9365b66fcdc6491de809e10c0915aa666f68fca959df1fa52592c6a4bca69f00",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "b334b1cebd7f5f6a189174d1e99ebc4817ba669b055d8c1a52e4340cff2d40fd",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.build.from.tags",
+      "source": "b2ccde2e131483c6d628d1679685b6239462ccc476d6fbe02d2f68e650170637",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.confirm.owner",
+      "source": "d91c0d3a81776cf17a77f2a6b225ed31c46d863e82fef8422907a0e97e93dff0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "db8d1f6263c23d89e6940572a66cd4a0d8827702a21bfdc517be525ec64da2b1",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.correct",
+      "source": "56799ef0c81d6eb75e3c27d7765d704ad5efdc005009ac9b844062ca43f8b35a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.day.segments",
+      "source": "4d2520c688f5f9d5ff6f237004a6ddc2a88bd55beb478deef145eb9a0cea24ce",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.detect",
+      "source": "c319cc0452bf854fb40d10ced2a3c94f12d8c2af57e58ab979ea5b6e8fe16e01",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.discover",
+      "source": "ca4ba36d5e52a6fe13344a8b2669fe87b79a754a42082e28c7484d19af04bfa6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.dismiss.cluster",
+      "source": "22cf91c8b8fd9afc98f343474905131256b79614d392601963ee3265f42bde6b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.dismissals",
+      "source": "76b694c0049d54d0a480326ca972a22aefaf3e6ccaa3a9c59056fb9889baae35",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.identify",
+      "source": "73a01e1def09e6e210bb937a29ac7da5926199b97c50876cbad4b1b08ae33835",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.identify.operation",
+      "source": "527416a8078ea18e0a895a98b01c6854c32f58c7bc5a584d7882f3abbbb06af9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.identify.operations",
+      "source": "09e3eebb976a141d1bf34755c6ebfbdddb787a98ad95829fd05ef69db097a244",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.identify.undo",
+      "source": "122606301852d876d34f4166a72e1af6bcc08ba83167a4672269919e6bf39db1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.keep.separate.list",
+      "source": "486a63f3c2c3085d081a73675b9e861589725ca0bcfcc678140e3b47596dc5b8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.link.import",
+      "source": "b848d6083d96f23db416c07c990fad24907503d74543f10c04832cacf4ed5a52",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.merge.names",
+      "source": "788370ddbd50b409931a42da7770891b331913fdcf135a10a9831c3ae536515a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.owner.ready",
+      "source": "e79e0f0a7667da946989438103ba2122fdadd189757314766532ff6f986d41c7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.presence",
+      "source": "60fbd21a468b47f2495a4b3a7cf0f9b2b4f9ce79be2000c2afd4ac0f5c0c78eb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.propagate.correction",
+      "source": "caa7b72b93bbc3f0a5785422098c2f7c09a24d1e289a8ac996e8f1f8d963ff25",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "f9f7e7b88cdf0b18cd50a7d9741937e5c0fc01dc4800cc552823000c13334bd7",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.rebuild.owner",
+      "source": "90b1af8dfbbd7f8d21d7889290632abaa40746f3760d1de12606641c45f7cb00",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.reject.owner",
+      "source": "be51e217e62a475fe78856f9183e75d124a124e9fc39f95e180913fd37794f71",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.repair",
+      "source": "b7009bf7fbbc939d393785627c1c407f11f87517a034d3985fe51720f28c15a0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "905dd19a2acfda754ed763df94feb53e65f46cc098881f01f17f3786997fb836",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.repair.resume",
+      "source": "4f0249a97172655c3cbae93cce333f4286a6392e2859ad5e0c3f24abe163846d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.repair.status",
+      "source": "7a4cdf4081b0ce985a62864cf8b74b32bd5c0fe1bafaf03e73469e1e74c45c7f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.resolve.names",
+      "source": "6b5ae66e9d09d542de96e119a07a4bdd8b1739045cb2049916dc2341b8cf1fcf",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "f9f7e7b88cdf0b18cd50a7d9741937e5c0fc01dc4800cc552823000c13334bd7",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.seed.from.imports",
+      "source": "bacb928ce192423b5eed7e65238f7e711015d3e28885617b2ee476cf6943728e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "b307cf34fe8bfe72820c7b5075c75b61dc6612cf6c44515cc0e78bd5dde810a5",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.sentences",
+      "source": "ad7deab6d6c940b4aa698c214006d9bb1b55bfb504a18829dca655bd4ae50561",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.status",
+      "source": "2d30d8e4c011d5f84446811301df518d4a5df04854bd8125c94c40b423839009",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "c8a0bb3dac532844c46607f705af6cf4b8ce4dc4c770543c67b5c0c54de4e4de",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.suggest",
+      "source": "37dd26e5167407c6c709ae2dacf5808dac67ba463714d72e706341d2a87aec46",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.tag.owner",
+      "source": "b2c2994f289cdfaa76428f9814f7f43a80fc71832854b2224002cf42742c5e18",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.speakers.wipe",
+      "source": "f007509590d50918120f4ab583e299df55c17defdce5599ffb128376b855e11d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "2de8f62a62d30c3a50902d11bbfe3f8d24f16beda14d6abb1b0235308248d947",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.status.top.level",
+      "source": "fa5c0d16ad32bfe6075e70ae4f2b60686b87d45006d5466d71ddc2a5736fb7e0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.clear.local.endpoint",
+      "source": "1aafca632f058946d60179969541e5ce99739ebfeaecb9dc2fb84329536f26b3",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.confidential.disable",
+      "source": "f4a9f33085f271b03147abc4df396a05698626a23d0d44c00357c9eaa82727f4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.confidential.enable",
+      "source": "db818c9c0aedae727898e8d697072c1a7cc97afd78a05d31413b6c0497978361",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.confidential.recheck",
+      "source": "2de69d3402c6f396faa66691a0ba6a0d447ad94f69b0bf1c203b99be560625a4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.confidential.status",
+      "source": "95a33108b248da2b11dd14194ad4734a499083421c7969b34f10f27edab18446",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.keys.clear",
+      "source": "68bc690a03e07faa023f237613cff010d962f0f800c7cdc4e472a539a250c3e9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.keys.set",
+      "source": "4429059324212c76276ed93f140b3bb8bccac46bc9d6d7592256a728380a48e5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.keys.show",
+      "source": "755abb7e4bd4cef633d217b76a72cc3b7ae71a3509a843ba6c02b55dbf33bf5b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.keys.validate",
+      "source": "1bf7cdcfb4d5e49358c60625bf24b52d8f782831abbcdee07442153c32488e5e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.local.availability",
+      "source": "b0f398690f2f4f7915b6b08c4a9e0fcff60d9b060226e237eec2b3a3891a28d8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.local.bootstrap",
+      "source": "f5d76d15fae5beb2adf9f6d357c431f999985fdc94ad04362b2fec7cfd8b7766",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.local.bootstrap.cancel",
+      "source": "08a4b24aa73c270c488a6c864ca109434a8800f83fd2c9c2f7f8e9fc0e9966bc",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.local.bootstrap.status",
+      "source": "718f07eca8622d4871ac77a6a547095862112cb07c3cacc5fedc8bdf403ed1d5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.local.models",
+      "source": "b1c329b1e079ed7c4f5220e80947b5507640355b7c4f5ca3d5bdd6b5231459fc",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.local.readiness",
+      "source": "b9cd14af423797d3f6445cda6f9b69ecfe44c6ecb95aef5d09dc38402b70716a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.local.status",
+      "source": "2c67a39c9b55acf8a6787e20334d5df2b1db87702a33b2aac669698326c9eade",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.providers.set.active",
+      "source": "188798d7f9cc8b861c50e3c42c5100dc48e5a981d84a1efa19a3be9691255bd9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.providers.show",
+      "source": "8f029e8b534ac7ffa20a8cdaf69bda826f0f2a4a698b2a7aa1ffbe803d116034",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.thinking.set.local.endpoint",
+      "source": "3a500cbdcad9b431fae02811683ff67e6abb3531322cea369bf6717b73f8c4e4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.transcripts.read",
+      "source": "36080c3d2015defb7d5f6ec9763b62e8ed515580e1229a18454423d443af4c13",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.transcripts.scan",
+      "source": "075ca4ca4f65d38d016469a30f33cb2b1262362d54373584ae636e893766ab0a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.transcripts.segments",
+      "source": "241289fadb8c739c32f1964738d3cc5df16880149b0ef91b5d3b3642c0a109b0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.transcripts.speakers",
+      "source": "45f45a551590fb4cbba67f7f72025f3ff53ddbcf311e2c1131662017481dc967",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.transcripts.stats",
+      "source": "eef97abf4a624900617944f6284027f1b5fa3fab9288d1fd6c8475cb5d697290",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.command.usage",
+      "source": "eb36ca39433d1f012e767ee622c037fc92e055d082aac37c4c0c0c4bd3ba5000",
+      "contract": "50defd61977fc3670d1ba2c8205fc66368d2657bcc20f52c0a05562d29c5f8fc",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
     {
@@ -15208,6 +16307,62 @@
     {
       "id": "journal.cli.sol.help.journal",
       "source": "8b0e12de26bbdfee3e3207d24a6b3c346c591451eddbe38509f84c473c90d9c3",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.operation",
+      "source": "7316fb815406375baa2ee6fb55d08f0e0284e0890f2e4526ca884c274d062cfd",
+      "contract": "c04556608fcc7d786454e890966576dd464ddab5d7f6794ce7e57112f2bdf086",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.parameter",
+      "source": "6442ce25ba7f675b4eadc198303889d7edde0704915dbc97841b94581cbbd7c9",
+      "contract": "e6f98b61ca955667fd48a7219cb18752c3db4598c65aac825de96b8a865a714c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.parameter.default",
+      "source": "cfda6c52de09cd2b6d794bf33e05cfcffb12fc2097ba1624add19cd0c1f5cb31",
+      "contract": "0c80cfe6aa5b951d2cb77f226e816ad1e47fb24c1f25a5bd0c5308cfd73c7e3d",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.parameter.default.flag",
+      "source": "4cb0f5fbcb17c50621c05127c34ebad11cabab8c19ebbf55f81050d33760fb09",
+      "contract": "9a9404492c3c9a42afaab5f0d0a6f1ab59b810e3a1cf9c1e0eeddc2fd44d05c4",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.parameter.flag",
+      "source": "abfd5933697b7196530cf9647ac95c00ba99c999d30bae0c8b615b59f2f23b81",
+      "contract": "8a6492e515bca96730fff5cc4edebe9cb65e9d435f231dbc93d391bb7c0eb616",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.section.arguments",
+      "source": "f0579aa39becac73c174a5258c6909edfe03f77a6308995b1009cf8fada5d776",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.section.commands",
+      "source": "763a3b00e0eb95ac538f536e63861c8f58333ff8bb2bc672eda8656d94e32cf6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.sol.help.section.options",
+      "source": "ea27158ed6cdb3c8827173e399adc648452579debc6920f78d00bc13885806ae",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []

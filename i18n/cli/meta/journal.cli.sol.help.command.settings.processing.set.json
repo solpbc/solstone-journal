@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call settings processing set command.",
+  "context": "Rendered below the usage line for solstone call settings processing set, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "13270a1bfeb57682bcd512a784cfb338507a5117b490067bb52a9b7c72dd9761",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

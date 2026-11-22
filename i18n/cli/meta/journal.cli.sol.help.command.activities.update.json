@@ -1,0 +1,33 @@
+{
+  "description": "Description of the solstone call activities update command.",
+  "context": "Rendered below the usage line for solstone call activities update, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8b1b47b7d84eb4f71b7f1a1a3e0a4b612b4a589dce492b92b9fcee7bb1d9fcfb",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "argv",
+      "kind": "accepted-input",
+      "value": "argv"
+    },
+    {
+      "name": "stdin",
+      "kind": "accepted-input",
+      "value": "stdin"
+    },
+    {
+      "name": "json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Description of the solstone call speakers bootstrap command.",
+  "context": "Rendered below the usage line for solstone call speakers bootstrap, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9365b66fcdc6491de809e10c0915aa666f68fca959df1fa52592c6a4bca69f00",
+  "max_length": 384,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "speakers_file",
+      "kind": "accepted-input",
+      "value": "speakers.json"
+    }
+  ]
+}

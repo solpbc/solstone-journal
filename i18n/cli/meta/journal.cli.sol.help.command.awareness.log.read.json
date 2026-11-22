@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call awareness log-read command.",
+  "context": "Rendered below the usage line for solstone call awareness log-read, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1c5db09903ce3e9d9fe1f928cf108eda98a7468c159c0ae0476d8ba58059ad17",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

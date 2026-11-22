@@ -1,0 +1,28 @@
+{
+  "description": "Description of the solstone call speakers attribute-segment command.",
+  "context": "Rendered below the usage line for solstone call speakers attribute-segment, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a4f244bb81f957bc6dbbb65dcba95ec64aeb3dfeb2ad7747ec2a1c18f006d37b",
+  "max_length": 332,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "labels_file",
+      "kind": "accepted-input",
+      "value": "speaker_labels.json"
+    }
+  ]
+}

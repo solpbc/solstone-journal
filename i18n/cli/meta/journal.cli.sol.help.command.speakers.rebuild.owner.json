@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers rebuild-owner command.",
+  "context": "Rendered below the usage line for solstone call speakers rebuild-owner, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "90b1af8dfbbd7f8d21d7889290632abaa40746f3760d1de12606641c45f7cb00",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

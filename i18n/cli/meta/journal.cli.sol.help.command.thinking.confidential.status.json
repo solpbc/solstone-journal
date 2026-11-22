@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call thinking confidential status command.",
+  "context": "Rendered below the usage line for solstone call thinking confidential status, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "95a33108b248da2b11dd14194ad4734a499083421c7969b34f10f27edab18446",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

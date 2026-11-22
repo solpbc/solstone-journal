@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers sentences command.",
+  "context": "Rendered below the usage line for solstone call speakers sentences, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ad7deab6d6c940b4aa698c214006d9bb1b55bfb504a18829dca655bd4ae50561",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Description of the solstone call journal facet delete command.",
+  "context": "Rendered below the usage line for solstone call journal facet delete, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "01428325de2bea81c56c0aa4d106e13aeb21fa2ee07f12a35faf5f13ed3445a9",
+  "max_length": 368,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "yes_flag",
+      "kind": "flag",
+      "value": "--yes"
+    },
+    {
+      "name": "consent_flag",
+      "kind": "flag",
+      "value": "--consent"
+    }
+  ]
+}

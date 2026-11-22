@@ -7503,3 +7503,368 @@ journal.cli.importer.plaud.connect.next = run { $command } to bring in recording
 journal.cli.importer.plaud.connect.failed = could not connect { $provider }: { $detail }
 
 journal.cli.importer.plaud.sync.busy = your journal is already checking { $provider }. try again when it finishes.
+
+journal.cli.sol.dispatch.unsupported.command = unsupported command.
+
+journal.cli.sol.help.authority = Authority: { $path }
+
+journal.cli.sol.help.command.activities.create = Create a new synthetic activity record from { $argv } flags or { $json } on { $stdin }.
+
+journal.cli.sol.help.command.activities.get = Fetch one activity record by ID.
+
+journal.cli.sol.help.command.activities.list = List activity records for one day or an inclusive day range.
+
+journal.cli.sol.help.command.activities.mute = Hide an activity record without deleting it.
+
+journal.cli.sol.help.command.activities.unmute = Restore a previously hidden activity record.
+
+journal.cli.sol.help.command.activities.update = Apply an { $argv } flag or { $stdin } { $json } patch to one activity record.
+
+journal.cli.sol.help.command.awareness.imports = Read or update import tracking state.
+
+journal.cli.sol.help.command.awareness.log = Append an entry to the daily awareness log.
+
+journal.cli.sol.help.command.awareness.log.read = Read entries from the daily awareness log.
+
+journal.cli.sol.help.command.awareness.status = Show current awareness state.
+
+journal.cli.sol.help.command.body.day = Show one day of imported health data.
+
+journal.cli.sol.help.command.body.status = Show imported health data status.
+
+journal.cli.sol.help.command.body.window = Show imported health context for a time window.
+
+journal.cli.sol.help.command.entities.accept.merge.candidate = Preview or accept one recorded entity merge candidate.
+
+journal.cli.sol.help.command.entities.aka = Add an alias to an attached entity.
+
+journal.cli.sol.help.command.entities.ambiguities = List reviewable entity-resolution ambiguities.
+
+journal.cli.sol.help.command.entities.attach = Attach an entity permanently to a facet.
+
+journal.cli.sol.help.command.entities.delete = Move an entity and its facet links to the trash; { $erase_flag } erases it at once. With { $erase_flag }, { $from_backups_flag } also removes it from your backups and { $not_from_backups_flag } leaves it there. Without either, the trash setting decides.
+
+journal.cli.sol.help.command.entities.detect = Record a detected entity for a day in a facet.
+
+journal.cli.sol.help.command.entities.dismiss.merge.candidate = Dismiss one recorded entity merge candidate.
+
+journal.cli.sol.help.command.entities.entity.history = Show durable identity versions (not relationship history).
+
+journal.cli.sol.help.command.entities.history = Show recorded connection evidence for an entity pair.
+
+journal.cli.sol.help.command.entities.list = List entities for a facet.
+
+journal.cli.sol.help.command.entities.merge = Plan or commit a journal-entity merge.
+
+journal.cli.sol.help.command.entities.merge.candidates = List recorded entity merge candidates.
+
+journal.cli.sol.help.command.entities.move = Move an entity from one facet to another.
+
+journal.cli.sol.help.command.entities.network = Show one-hop recorded connections for an entity.
+
+journal.cli.sol.help.command.entities.observations = List observations for an attached entity.
+
+journal.cli.sol.help.command.entities.observe = Add an observation to an attached entity.
+
+journal.cli.sol.help.command.entities.overview = Show a global recorded-connections overview.
+
+journal.cli.sol.help.command.entities.record.merge.candidate = Record a proposed entity merge (source variant -> canonical target).
+
+journal.cli.sol.help.command.entities.resolve.ambiguity = Resolve or replace one persisted ambiguity choice.
+
+journal.cli.sol.help.command.entities.resolve.ambiguity.group = Resolve an ambiguity card group for an entity candidate.
+
+journal.cli.sol.help.command.entities.restore.review = Restore one set-aside review item or undo an automatic choice.
+
+journal.cli.sol.help.command.entities.restore.version = Restore one ordinary identity version.
+
+journal.cli.sol.help.command.entities.review = List grouped entity review cards and set-aside items.
+
+journal.cli.sol.help.command.entities.search = Search entities by text, type, facet, or activity.
+
+journal.cli.sol.help.command.entities.sweep.review = Run the entity review policy sweep.
+
+journal.cli.sol.help.command.entities.update = Update an entity description.
+
+journal.cli.sol.help.command.facets.accept = Accept one facet review candidate.
+
+journal.cli.sol.help.command.facets.dismiss = Dismiss one facet review candidate.
+
+journal.cli.sol.help.command.facets.list.candidates = List recorded facet review candidates.
+
+journal.cli.sol.help.command.health.for.range = Render the journal-data trust report for an inclusive day range.
+
+journal.cli.sol.help.command.health.full = Render the full journal-data trust report for one day.
+
+journal.cli.sol.help.command.health.pipeline = Thin wrapper around { $pipeline_module }. For journal-data trust checks use `{ $summary_verb }` / `{ $full_verb }` / `{ $for_range_verb }`.
+
+journal.cli.sol.help.command.health.summary = Summarize journal-data trust signals for one day.
+
+journal.cli.sol.help.command.import.top.level = Import media through the journal
+
+journal.cli.sol.help.command.journal.agents = List available agent outputs for a day.
+
+journal.cli.sol.help.command.journal.facet.create = Create a new facet.{ $line_break }{ $line_break }{ $consent_flag } records in the facet's audit log that the owner approved this. An{ $line_break }agent passes it after the owner approves a change the agent proposed, not for{ $line_break }one the owner asked for. It does not change what is created.
+
+journal.cli.sol.help.command.journal.facet.delete = Move a facet and everything in it to the trash, where it can be recovered until it is erased.{ $line_break }{ $line_break }{ $yes_flag } is required; without it the command refuses. Every delete is recorded in{ $line_break }the journal's action log as owner-approved, and { $consent_flag } is accepted but changes{ $line_break }nothing.
+
+journal.cli.sol.help.command.journal.facet.mute = Mute a facet (hide from default listings).
+
+journal.cli.sol.help.command.journal.facet.rename = Rename a facet.{ $line_break }{ $line_break }{ $consent_flag } records in the facet's audit log that the owner approved this. An{ $line_break }agent passes it after the owner approves a change the agent proposed, not for{ $line_break }one the owner asked for. It does not change the rename.
+
+journal.cli.sol.help.command.journal.facet.show = Show facet summary.
+
+journal.cli.sol.help.command.journal.facet.unmute = Unmute a facet (show in default listings).
+
+journal.cli.sol.help.command.journal.facet.update = Update facet configuration.
+
+journal.cli.sol.help.command.journal.facets = List facets.
+
+journal.cli.sol.help.command.journal.import = Show full metadata for a single import.
+
+journal.cli.sol.help.command.journal.imports = List recent imports with metadata.
+
+journal.cli.sol.help.command.journal.read = Read full content of an agent output.
+
+journal.cli.sol.help.command.journal.retention.config = Show or update retention configuration.
+
+journal.cli.sol.help.command.journal.retention.list = List original media ready for removal.
+
+journal.cli.sol.help.command.journal.search = Search the journal index.{ $line_break }{ $line_break }Use 2-4 content terms instead of natural-language questions; question words{ $line_break }like { $example_terms } add noise in this keyword/{ $bm25 } index. Syntax: { $or_operator } for{ $line_break }any term, quoted phrases for exact text, and { $wildcard } for prefix matches.{ $line_break }{ $n_flag }/{ $limit_flag } is the maximum results per day. Results are grouped by day,{ $line_break }newest first, up to 20 days per page. { $offset_flag } skips days. { $d_flag }/{ $day_flag } is one{ $line_break }exact day and cannot be combined with { $day_from_flag } or { $day_to_flag }. When nothing{ $line_break }matches every term within the other filters (facet, agent, stream, time{ $line_break }bucket) across the whole journal, the response is marked { $relaxed } and those{ $line_break }hits are weaker matches; that judgment happens before the date filter, so an{ $line_break }empty day or range does not mean the range never mentions the terms. Broaden{ $line_break }by dropping terms, then { $or_operator }, then { $wildcard }. { $json_flag } does not change the output{ $line_break }because it is { $json } either way.{ $line_break }Read one result as last indexed with `{ $command }`. Copy all three fields from the same result; do not use its display id as a file path.
+
+journal.cli.sol.help.command.journal.storage.summary = Show journal storage summary.
+
+journal.cli.sol.help.command.link.authorized.clients = List every authorized client cert: fingerprint, label, last-seen (flat view).
+
+journal.cli.sol.help.command.link.confirm = confirm the journal's mark for a link waiting on it
+
+journal.cli.sol.help.command.link.join = join a { $solstone } with a short code or pair link
+
+journal.cli.sol.help.command.link.list = Print every paired device with its last-seen time.
+
+journal.cli.sol.help.command.link.local.network.close = Close your journal to devices on your network.
+
+journal.cli.sol.help.command.link.local.network.open = Open your journal to devices on your network.
+
+journal.cli.sol.help.command.link.local.network.status = Show whether your journal is open to devices on your network.
+
+journal.cli.sol.help.command.link.observer.pause = pause linked devices (not yet available).
+
+journal.cli.sol.help.command.link.pair = Start a pairing link, print join-ready credentials, optionally wait.
+
+journal.cli.sol.help.command.link.private.link.disable = Turn off private network.
+
+journal.cli.sol.help.command.link.private.link.setup = Set up private network.
+
+journal.cli.sol.help.command.link.private.link.status = Show private network status.
+
+journal.cli.sol.help.command.link.serve = serve a paired journal over the local link bridge
+
+journal.cli.sol.help.command.link.set.label = Set or clear the owner label for a paired device.
+
+journal.cli.sol.help.command.link.status = Report enrollment, { $listen_ws } state, active tunnel count, relay endpoint.
+
+journal.cli.sol.help.command.link.top.level.status = show link status and observed remote journal version
+
+journal.cli.sol.help.command.link.unpair = Revoke a paired device. Next reconnect from that device fails at { $tls } handshake.
+
+journal.cli.sol.help.command.moved.navigate = Moved to `{ $command }`.
+
+journal.cli.sol.help.command.settings.convey.status = Show { $convey } network and dashboard URL status.
+
+journal.cli.sol.help.command.settings.identity.set = Update journal owner identity.
+
+journal.cli.sol.help.command.settings.identity.show = Show journal identity config.
+
+journal.cli.sol.help.command.settings.keys.clear = Clear an API key from journal config.
+
+journal.cli.sol.help.command.settings.keys.set = Set an API key in journal config.
+
+journal.cli.sol.help.command.settings.keys.show = Show configured API key status.
+
+journal.cli.sol.help.command.settings.keys.validate = Validate all configured API keys without persisting by default.
+
+journal.cli.sol.help.command.settings.processing.set = Set deferred-processing mode and drain window.
+
+journal.cli.sol.help.command.settings.processing.show = Show effective deferred-processing settings.
+
+journal.cli.sol.help.command.settings.show = Show a summary of journal settings.
+
+journal.cli.sol.help.command.settings.transcribe.set.backend = Set the transcription backend.
+
+journal.cli.sol.help.command.settings.transcribe.show = Show transcription backend configuration.
+
+journal.cli.sol.help.command.speakers.attribute.segment = Run speaker attribution (Layers 1-3) on a single segment.{ $line_break }{ $line_break }Classifies each sentence using owner detection, structural heuristics,{ $line_break }and acoustic voiceprint matching.  Optionally writes { $labels_file }{ $line_break }and accumulates high-confidence voiceprints.
+
+journal.cli.sol.help.command.speakers.backfill = Run speaker attribution across all segments with embeddings.{ $line_break }{ $line_break }Processes segments oldest-first for progressive voiceprint building.{ $line_break }Skips segments that already have { $labels_file } (safe to re-run).
+
+journal.cli.sol.help.command.speakers.backfill.last.seen = Backfill { $last_seen_field } on existing voiceprint metadata rows.
+
+journal.cli.sol.help.command.speakers.backfill.resume = Resume an interrupted or failed speaker attribution backfill operation.
+
+journal.cli.sol.help.command.speakers.backfill.status = Show status of a speaker attribution backfill operation.
+
+journal.cli.sol.help.command.speakers.bootstrap = Bootstrap voiceprints from single-speaker segments.{ $line_break }{ $line_break }Scans the full journal for segments where { $speakers_file } lists exactly{ $line_break }one speaker. In those segments, all non-owner embeddings belong to that{ $line_break }speaker. Saves them as voiceprints using the owner centroid for{ $line_break }owner subtraction.
+
+journal.cli.sol.help.command.speakers.build.from.tags = Build the owner voice centroid from validated manual owner tags.
+
+journal.cli.sol.help.command.speakers.confirm.owner = Confirm the owner voice candidate in the browser.{ $line_break }{ $line_break }Native { $confirm_verb } does not save a centroid. Review and confirm candidates in the browser at { $speakers_page }.
+
+journal.cli.sol.help.command.speakers.correct = Correct one speaker attribution immediately.
+
+journal.cli.sol.help.command.speakers.day.segments = List speaker-review segments for a day.
+
+journal.cli.sol.help.command.speakers.detect = Run owner voice candidate detection.
+
+journal.cli.sol.help.command.speakers.discover = Discover recurring unknown speakers across segments.
+
+journal.cli.sol.help.command.speakers.dismiss.cluster = Dismiss a current discovery cluster from listing surfaces.
+
+journal.cli.sol.help.command.speakers.dismissals = List folded speaker cluster dismissals.
+
+journal.cli.sol.help.command.speakers.identify = Identify a discovered unknown speaker cluster.
+
+journal.cli.sol.help.command.speakers.identify.operation = Show one redacted speaker identify operation.
+
+journal.cli.sol.help.command.speakers.identify.operations = List redacted speaker identify operations.
+
+journal.cli.sol.help.command.speakers.identify.undo = Undo a committed speaker identify operation.
+
+journal.cli.sol.help.command.speakers.keep.separate.list = List folded speaker keep-separate assertions.
+
+journal.cli.sol.help.command.speakers.link.import = Link an import participant name as an aka on an existing entity.
+
+journal.cli.sol.help.command.speakers.merge.names = Merge a speaker name variant into a canonical entity.
+
+journal.cli.sol.help.command.speakers.owner.ready = Check if owner voice detection should be surfaced to the user.
+
+journal.cli.sol.help.command.speakers.presence = Show who was around a discovered unknown voice cluster.
+
+journal.cli.sol.help.command.speakers.propagate.correction = Preview or apply scoped correction propagation.{ $line_break }{ $line_break }Reversal uses the same verb with the two speaker ids swapped.
+
+journal.cli.sol.help.command.speakers.rebuild.owner = Rebuild the owner voice centroid from current manual owner tags.
+
+journal.cli.sol.help.command.speakers.reject.owner = Reject the rendered owner voice candidate generation.
+
+journal.cli.sol.help.command.speakers.repair = Repair non-{ $person_type } speaker contamination without relearning from it.{ $line_break }{ $line_break }Surveys identities and voiceprints, removes non-{ $person_type } voiceprint contamination,{ $line_break }and updates segment labels using fresh attribution under current state.
+
+journal.cli.sol.help.command.speakers.repair.resume = Resume an interrupted or failed speaker repair operation.
+
+journal.cli.sol.help.command.speakers.repair.status = Show status of a speaker repair operation.
+
+journal.cli.sol.help.command.speakers.resolve.names = Resolve speaker name variants using voiceprint similarity.{ $line_break }{ $line_break }Compares voiceprint centroids between all entities. Pairs with cosine{ $line_break }similarity > 0.90 are flagged as the same person. Unambiguous variants{ $line_break }(short name is first word of full name) are auto-merged by adding the{ $line_break }short name as an aka on the canonical entity.
+
+journal.cli.sol.help.command.speakers.seed.from.imports = Seed voiceprints from import segments with speaker-attributed transcripts.{ $line_break }{ $line_break }Scans import streams for segments with both { $transcript_file }{ $line_break }(with speaker labels) and audio embeddings. Maps each embedding to a speaker{ $line_break }via time-based alignment, matches speakers to existing entities, and saves{ $line_break }embeddings as voiceprints with owner contamination guard.
+
+journal.cli.sol.help.command.speakers.sentences = List sentence ids for one speaker-review source.
+
+journal.cli.sol.help.command.speakers.status = Show speaker subsystem status as { $json }.
+
+journal.cli.sol.help.command.speakers.suggest = Suggest speaker curation opportunities.
+
+journal.cli.sol.help.command.speakers.tag.owner = Tag one sentence as the owner voice.
+
+journal.cli.sol.help.command.speakers.wipe = Move every speaker voice file in the journal to the trash.{ $line_break }{ $line_break }Without { $commit_flag }, prints a report of what would be moved. With{ $line_break }{ $commit_flag }, moves segment-embedding NPZs, speaker labels/corrections,{ $line_break }per-entity voiceprints, owner centroids, the owner-candidate snapshot{ $line_break }and the candidate pool to the trash, where they can be recovered until{ $line_break }they are erased. { $erase_flag } erases them at once instead.{ $line_break }{ $line_break }With { $erase_flag }, { $from_backups_flag } also removes them from your backups and{ $line_break }{ $not_from_backups_flag } leaves them there. Without either, the trash{ $line_break }setting decides.
+
+journal.cli.sol.help.command.status.top.level = Show journal network status.
+
+journal.cli.sol.help.command.thinking.clear.local.endpoint = Clear the BYO local provider endpoint.
+
+journal.cli.sol.help.command.thinking.confidential.disable = Disable confidential processing.
+
+journal.cli.sol.help.command.thinking.confidential.enable = Enable confidential processing.
+
+journal.cli.sol.help.command.thinking.confidential.recheck = Recheck confidential processing.
+
+journal.cli.sol.help.command.thinking.confidential.status = Show confidential processing status.
+
+journal.cli.sol.help.command.thinking.keys.clear = Clear an AI key from journal config.
+
+journal.cli.sol.help.command.thinking.keys.set = Set an AI key in journal config.
+
+journal.cli.sol.help.command.thinking.keys.show = Show configured AI key status.
+
+journal.cli.sol.help.command.thinking.keys.validate = Validate configured AI keys.
+
+journal.cli.sol.help.command.thinking.local.availability = Show local model availability.
+
+journal.cli.sol.help.command.thinking.local.bootstrap = Start local model setup.
+
+journal.cli.sol.help.command.thinking.local.bootstrap.cancel = Cancel local model setup.
+
+journal.cli.sol.help.command.thinking.local.bootstrap.status = Show local setup status.
+
+journal.cli.sol.help.command.thinking.local.models = List local models.
+
+journal.cli.sol.help.command.thinking.local.readiness = Show local provider readiness.
+
+journal.cli.sol.help.command.thinking.local.status = Show local provider status.
+
+journal.cli.sol.help.command.thinking.providers.set.active = Set the provider and model used for all thinking.
+
+journal.cli.sol.help.command.thinking.providers.show = Show provider configuration.
+
+journal.cli.sol.help.command.thinking.set.local.endpoint = Set the BYO local provider endpoint.
+
+journal.cli.sol.help.command.transcripts.read = Read transcript content for a day, segment, or time range.
+
+journal.cli.sol.help.command.transcripts.scan = List transcript coverage ranges for a day.
+
+journal.cli.sol.help.command.transcripts.segments = List recording segments for a day.
+
+journal.cli.sol.help.command.transcripts.speakers = List speaker correction rows for one transcript segment.
+
+journal.cli.sol.help.command.transcripts.stats = Show daily transcript coverage counts for a month.
+
+journal.cli.sol.help.command.usage = Usage: { $syntax }
+
+journal.cli.sol.help.operation = Operation: { $operation }
+
+journal.cli.sol.help.parameter = { $shape ->
+    *[count] { $syntax } [count]
+    [multiple] { $syntax } [multiple]
+    [multiple_count] { $syntax } [multiple, count]
+    [required] { $syntax } [required]
+    [required_count] { $syntax } [required, count]
+    [required_multiple] { $syntax } [required, multiple]
+    [required_multiple_count] { $syntax } [required, multiple, count]
+    }
+
+journal.cli.sol.help.parameter.default = { $shape ->
+    *[plain] { $syntax } [default: { $default_value }]
+    [count] { $syntax } [default: { $default_value }, count]
+    [multiple] { $syntax } [default: { $default_value }, multiple]
+    [multiple_count] { $syntax } [default: { $default_value }, multiple, count]
+    [required] { $syntax } [required, default: { $default_value }]
+    [required_count] { $syntax } [required, default: { $default_value }, count]
+    [required_multiple] { $syntax } [required, default: { $default_value }, multiple]
+    [required_multiple_count] { $syntax } [required, default: { $default_value }, multiple, count]
+    }
+
+journal.cli.sol.help.parameter.default.flag = { $shape ->
+    *[plain] { $syntax } [default: { $default_value }, flag value: { $flag_value }]
+    [count] { $syntax } [default: { $default_value }, flag value: { $flag_value }, count]
+    [multiple] { $syntax } [default: { $default_value }, flag value: { $flag_value }, multiple]
+    [multiple_count] { $syntax } [default: { $default_value }, flag value: { $flag_value }, multiple, count]
+    [required] { $syntax } [required, default: { $default_value }, flag value: { $flag_value }]
+    [required_count] { $syntax } [required, default: { $default_value }, flag value: { $flag_value }, count]
+    [required_multiple] { $syntax } [required, default: { $default_value }, flag value: { $flag_value }, multiple]
+    [required_multiple_count] { $syntax } [required, default: { $default_value }, flag value: { $flag_value }, multiple, count]
+    }
+
+journal.cli.sol.help.parameter.flag = { $shape ->
+    *[plain] { $syntax } [flag value: { $flag_value }]
+    [count] { $syntax } [flag value: { $flag_value }, count]
+    [multiple] { $syntax } [flag value: { $flag_value }, multiple]
+    [multiple_count] { $syntax } [flag value: { $flag_value }, multiple, count]
+    [required] { $syntax } [required, flag value: { $flag_value }]
+    [required_count] { $syntax } [required, flag value: { $flag_value }, count]
+    [required_multiple] { $syntax } [required, flag value: { $flag_value }, multiple]
+    [required_multiple_count] { $syntax } [required, flag value: { $flag_value }, multiple, count]
+    }
+
+journal.cli.sol.help.section.arguments = Arguments:
+
+journal.cli.sol.help.section.commands = Commands:
+
+journal.cli.sol.help.section.options = Options:

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers presence command.",
+  "context": "Rendered below the usage line for solstone call speakers presence, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "60fbd21a468b47f2495a4b3a7cf0f9b2b4f9ce79be2000c2afd4ac0f5c0c78eb",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

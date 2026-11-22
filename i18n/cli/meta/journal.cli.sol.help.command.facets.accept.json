@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call facets accept command.",
+  "context": "Rendered below the usage line for solstone call facets accept, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cc0f72e07d766f7e1507897b202349eae1626c2f25faf4c167de3dd419db8f05",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

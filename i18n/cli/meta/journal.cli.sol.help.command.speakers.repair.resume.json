@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers repair-resume command.",
+  "context": "Rendered below the usage line for solstone call speakers repair-resume, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4f0249a97172655c3cbae93cce333f4286a6392e2859ad5e0c3f24abe163846d",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

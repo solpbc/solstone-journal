@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call link observer-pause command.",
+  "context": "Rendered below the usage line for solstone call link observer-pause, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ada5e99fd89750dbb4422149ae8c2763adcb52fe09fc2540091477388d254ebf",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

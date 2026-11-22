@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers backfill-status command.",
+  "context": "Rendered below the usage line for solstone call speakers backfill-status, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9e771a8bff2c0b3a7aeff5dd25bed99bd619ab7221a2f8e6fa36cbb2d26d65e7",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

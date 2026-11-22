@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers correct command.",
+  "context": "Rendered below the usage line for solstone call speakers correct, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "56799ef0c81d6eb75e3c27d7765d704ad5efdc005009ac9b844062ca43f8b35a",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

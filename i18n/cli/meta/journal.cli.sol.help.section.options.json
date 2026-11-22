@@ -1,0 +1,16 @@
+{
+  "description": "Heading for the options in native solstone command help.",
+  "context": "Heading for the options in native solstone command help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea27158ed6cdb3c8827173e399adc648452579debc6920f78d00bc13885806ae",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

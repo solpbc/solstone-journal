@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call journal facet mute command.",
+  "context": "Rendered below the usage line for solstone call journal facet mute, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6adc3f9d5d5553178afee4bafc097e24881209145d48c21768198ed2873f32ff",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

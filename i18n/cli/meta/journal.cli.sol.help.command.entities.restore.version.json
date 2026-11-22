@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call entities restore-version command.",
+  "context": "Rendered below the usage line for solstone call entities restore-version, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "288d3f7fc54576c6ae41af3ef2cb3219e574041624958ff13e35639d9cd0753f",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

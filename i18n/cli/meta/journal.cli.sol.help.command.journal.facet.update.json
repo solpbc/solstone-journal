@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call journal facet update command.",
+  "context": "Rendered below the usage line for solstone call journal facet update, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "43e77b0cbe5c1815384f12eceb01ba03b171f4936b2f6cfee7756e1e68189539",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

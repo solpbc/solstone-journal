@@ -1,0 +1,38 @@
+{
+  "description": "Description of the solstone call health pipeline command.",
+  "context": "Rendered below the usage line for solstone call health pipeline, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "09ae8681c4fb434ece3f9520a2d4bcd582424b13081e1f444f9c190735b0ad89",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "pipeline_module",
+      "kind": "accepted-input",
+      "value": "think.pipeline_health"
+    },
+    {
+      "name": "summary_verb",
+      "kind": "command",
+      "value": "summary"
+    },
+    {
+      "name": "full_verb",
+      "kind": "command",
+      "value": "full"
+    },
+    {
+      "name": "for_range_verb",
+      "kind": "command",
+      "value": "for-range"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call settings transcribe set-backend command.",
+  "context": "Rendered below the usage line for solstone call settings transcribe set-backend, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b81fcc5d7dfc0b659b005b849016e58c7f6e635d917e61f3b14fbd3257547934",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

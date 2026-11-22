@@ -1,0 +1,21 @@
+{
+  "description": "Source authority path for the selected native command. The journal-relative path is literal.",
+  "context": "Source authority path for the selected native command. The journal-relative path is literal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d61a62a3aa644012fc434d8c9327a2982a1a9491d459862b821240b093919cd6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

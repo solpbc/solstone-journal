@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call entities aka command.",
+  "context": "Rendered below the usage line for solstone call entities aka, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "db376e7ff7f4ffb3897fa3119459d13d8f3b3775220396fa395648f55ca03561",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

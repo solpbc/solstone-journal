@@ -4776,11 +4776,395 @@ m6a6f75726e616c2e636c692e73686172652e75736167652e7061636b616765 = usage: { "sols
 
 m6a6f75726e616c2e636c692e73686172652e75736167652e726f6f74 = usage: { "solstone journal share [-h] {match,package} ..." }
 
+m6a6f75726e616c2e636c692e736f6c2e64697370617463682e756e737570706f727465642e636f6d6d616e64 = unsupported command.
+
 m6a6f75726e616c2e636c692e736f6c2e68656c702e61707073 = Apps ({ "solstone call <app>" }):
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e617574686f72697479 = Authority: { $path }
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e616374697669746965732e637265617465 = Create a new synthetic activity record from { "argv" } flags or { "JSON" } on { "stdin" }.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e616374697669746965732e676574 = Fetch one activity record by ID.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e616374697669746965732e6c697374 = List activity records for one day or an inclusive day range.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e616374697669746965732e6d757465 = Hide an activity record without deleting it.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e616374697669746965732e756e6d757465 = Restore a previously hidden activity record.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e616374697669746965732e757064617465 = Apply an { "argv" } flag or { "stdin" } { "JSON" } patch to one activity record.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e61776172656e6573732e696d706f727473 = Read or update import tracking state.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e61776172656e6573732e6c6f67 = Append an entry to the daily awareness log.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e61776172656e6573732e6c6f672e72656164 = Read entries from the daily awareness log.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e61776172656e6573732e737461747573 = Show current awareness state.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e626f64792e646179 = Show one day of imported health data.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e626f64792e737461747573 = Show imported health data status.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e626f64792e77696e646f77 = Show imported health context for a time window.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e6163636570742e6d657267652e63616e646964617465 = Preview or accept one recorded entity merge candidate.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e616b61 = Add an alias to an attached entity.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e616d626967756974696573 = List reviewable entity-resolution ambiguities.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e617474616368 = Attach an entity permanently to a facet.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e64656c657465 = Move an entity and its facet links to the trash; { "--erase" } erases it at once. With { "--erase" }, { "--from-backups" } also removes it from your backups and { "--not-from-backups" } leaves it there. Without either, the trash setting decides.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e646574656374 = Record a detected entity for a day in a facet.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e6469736d6973732e6d657267652e63616e646964617465 = Dismiss one recorded entity merge candidate.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e656e746974792e686973746f7279 = Show durable identity versions (not relationship history).
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e686973746f7279 = Show recorded connection evidence for an entity pair.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e6c697374 = List entities for a facet.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e6d65726765 = Plan or commit a journal-entity merge.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e6d657267652e63616e64696461746573 = List recorded entity merge candidates.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e6d6f7665 = Move an entity from one facet to another.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e6e6574776f726b = Show one-hop recorded connections for an entity.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e6f62736572766174696f6e73 = List observations for an attached entity.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e6f627365727665 = Add an observation to an attached entity.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e6f76657276696577 = Show a global recorded-connections overview.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e7265636f72642e6d657267652e63616e646964617465 = Record a proposed entity merge (source variant -> canonical target).
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e7265736f6c76652e616d62696775697479 = Resolve or replace one persisted ambiguity choice.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e7265736f6c76652e616d626967756974792e67726f7570 = Resolve an ambiguity card group for an entity candidate.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e726573746f72652e726576696577 = Restore one set-aside review item or undo an automatic choice.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e726573746f72652e76657273696f6e = Restore one ordinary identity version.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e726576696577 = List grouped entity review cards and set-aside items.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e736561726368 = Search entities by text, type, facet, or activity.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e73776565702e726576696577 = Run the entity review policy sweep.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e656e7469746965732e757064617465 = Update an entity description.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6661636574732e616363657074 = Accept one facet review candidate.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6661636574732e6469736d697373 = Dismiss one facet review candidate.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6661636574732e6c6973742e63616e64696461746573 = List recorded facet review candidates.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6865616c74682e666f722e72616e6765 = Render the journal-data trust report for an inclusive day range.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6865616c74682e66756c6c = Render the full journal-data trust report for one day.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6865616c74682e706970656c696e65 = Thin wrapper around { "think.pipeline_health" }. For journal-data trust checks use `{ "summary" }` / `{ "full" }` / `{ "for-range" }`.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6865616c74682e73756d6d617279 = Summarize journal-data trust signals for one day.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e696d706f72742e746f702e6c6576656c = Import media through the journal
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e6167656e7473 = List available agent outputs for a day.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e66616365742e637265617465 = Create a new facet.{ "\u000a" }{ "\u000a" }{ "--consent" } records in the facet's audit log that the owner approved this. An{ "\u000a" }agent passes it after the owner approves a change the agent proposed, not for{ "\u000a" }one the owner asked for. It does not change what is created.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e66616365742e64656c657465 = Move a facet and everything in it to the trash, where it can be recovered until it is erased.{ "\u000a" }{ "\u000a" }{ "--yes" } is required; without it the command refuses. Every delete is recorded in{ "\u000a" }the journal's action log as owner-approved, and { "--consent" } is accepted but changes{ "\u000a" }nothing.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e66616365742e6d757465 = Mute a facet (hide from default listings).
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e66616365742e72656e616d65 = Rename a facet.{ "\u000a" }{ "\u000a" }{ "--consent" } records in the facet's audit log that the owner approved this. An{ "\u000a" }agent passes it after the owner approves a change the agent proposed, not for{ "\u000a" }one the owner asked for. It does not change the rename.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e66616365742e73686f77 = Show facet summary.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e66616365742e756e6d757465 = Unmute a facet (show in default listings).
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e66616365742e757064617465 = Update facet configuration.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e666163657473 = List facets.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e696d706f7274 = Show full metadata for a single import.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e696d706f727473 = List recent imports with metadata.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e72656164 = Read full content of an agent output.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e726574656e74696f6e2e636f6e666967 = Show or update retention configuration.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e726574656e74696f6e2e6c697374 = List original media ready for removal.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e736561726368 = Search the journal index.{ "\u000a" }{ "\u000a" }Use 2-4 content terms instead of natural-language questions; question words{ "\u000a" }like { "what/how/did/when" } add noise in this keyword/{ "BM25" } index. Syntax: { "OR" } for{ "\u000a" }any term, quoted phrases for exact text, and { "*" } for prefix matches.{ "\u000a" }{ "-n" }/{ "--limit" } is the maximum results per day. Results are grouped by day,{ "\u000a" }newest first, up to 20 days per page. { "--offset" } skips days. { "-d" }/{ "--day" } is one{ "\u000a" }exact day and cannot be combined with { "--day-from" } or { "--day-to" }. When nothing{ "\u000a" }matches every term within the other filters (facet, agent, stream, time{ "\u000a" }bucket) across the whole journal, the response is marked { "relaxed" } and those{ "\u000a" }hits are weaker matches; that judgment happens before the date filter, so an{ "\u000a" }empty day or range does not mean the range never mentions the terms. Broaden{ "\u000a" }by dropping terms, then { "OR" }, then { "*" }. { "--json" } does not change the output{ "\u000a" }because it is { "JSON" } either way.{ "\u000a" }Read one result as last indexed with `{ "solstone call journal read --path PATH --idx IDX --entry-id ENTRY_ID" }`. Copy all three fields from the same result; do not use its display id as a file path.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6a6f75726e616c2e73746f726167652e73756d6d617279 = Show journal storage summary.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e617574686f72697a65642e636c69656e7473 = List every authorized client cert: fingerprint, label, last-seen (flat view).
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e636f6e6669726d = confirm the journal's mark for a link waiting on it
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e6a6f696e = join a { "solstone" } with a short code or pair link
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e6c697374 = Print every paired device with its last-seen time.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e6c6f63616c2e6e6574776f726b2e636c6f7365 = Close your journal to devices on your network.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e6c6f63616c2e6e6574776f726b2e6f70656e = Open your journal to devices on your network.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e6c6f63616c2e6e6574776f726b2e737461747573 = Show whether your journal is open to devices on your network.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e6f627365727665722e7061757365 = pause linked devices (not yet available).
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e70616972 = Start a pairing link, print join-ready credentials, optionally wait.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e707269766174652e6c696e6b2e64697361626c65 = Turn off private network.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e707269766174652e6c696e6b2e7365747570 = Set up private network.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e707269766174652e6c696e6b2e737461747573 = Show private network status.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e7365727665 = serve a paired journal over the local link bridge
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e7365742e6c6162656c = Set or clear the owner label for a paired device.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e737461747573 = Report enrollment, { "listen-WS" } state, active tunnel count, relay endpoint.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e746f702e6c6576656c2e737461747573 = show link status and observed remote journal version
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6c696e6b2e756e70616972 = Revoke a paired device. Next reconnect from that device fails at { "TLS" } handshake.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e6d6f7665642e6e61766967617465 = Moved to `{ "solstone journal navigate" }`.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e73657474696e67732e636f6e7665792e737461747573 = Show { "Convey" } network and dashboard URL status.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e73657474696e67732e6964656e746974792e736574 = Update journal owner identity.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e73657474696e67732e6964656e746974792e73686f77 = Show journal identity config.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e73657474696e67732e6b6579732e636c656172 = Clear an API key from journal config.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e73657474696e67732e6b6579732e736574 = Set an API key in journal config.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e73657474696e67732e6b6579732e73686f77 = Show configured API key status.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e73657474696e67732e6b6579732e76616c6964617465 = Validate all configured API keys without persisting by default.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e73657474696e67732e70726f63657373696e672e736574 = Set deferred-processing mode and drain window.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e73657474696e67732e70726f63657373696e672e73686f77 = Show effective deferred-processing settings.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e73657474696e67732e73686f77 = Show a summary of journal settings.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e73657474696e67732e7472616e7363726962652e7365742e6261636b656e64 = Set the transcription backend.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e73657474696e67732e7472616e7363726962652e73686f77 = Show transcription backend configuration.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6174747269627574652e7365676d656e74 = Run speaker attribution (Layers 1-3) on a single segment.{ "\u000a" }{ "\u000a" }Classifies each sentence using owner detection, structural heuristics,{ "\u000a" }and acoustic voiceprint matching.  Optionally writes { "speaker_labels.json" }{ "\u000a" }and accumulates high-confidence voiceprints.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6261636b66696c6c = Run speaker attribution across all segments with embeddings.{ "\u000a" }{ "\u000a" }Processes segments oldest-first for progressive voiceprint building.{ "\u000a" }Skips segments that already have { "speaker_labels.json" } (safe to re-run).
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6261636b66696c6c2e6c6173742e7365656e = Backfill { "last_seen_ts" } on existing voiceprint metadata rows.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6261636b66696c6c2e726573756d65 = Resume an interrupted or failed speaker attribution backfill operation.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6261636b66696c6c2e737461747573 = Show status of a speaker attribution backfill operation.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e626f6f747374726170 = Bootstrap voiceprints from single-speaker segments.{ "\u000a" }{ "\u000a" }Scans the full journal for segments where { "speakers.json" } lists exactly{ "\u000a" }one speaker. In those segments, all non-owner embeddings belong to that{ "\u000a" }speaker. Saves them as voiceprints using the owner centroid for{ "\u000a" }owner subtraction.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6275696c642e66726f6d2e74616773 = Build the owner voice centroid from validated manual owner tags.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e636f6e6669726d2e6f776e6572 = Confirm the owner voice candidate in the browser.{ "\u000a" }{ "\u000a" }Native { "confirm-owner" } does not save a centroid. Review and confirm candidates in the browser at { "/app/speakers/" }.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e636f7272656374 = Correct one speaker attribution immediately.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6461792e7365676d656e7473 = List speaker-review segments for a day.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e646574656374 = Run owner voice candidate detection.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e646973636f766572 = Discover recurring unknown speakers across segments.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6469736d6973732e636c7573746572 = Dismiss a current discovery cluster from listing surfaces.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6469736d697373616c73 = List folded speaker cluster dismissals.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6964656e74696679 = Identify a discovered unknown speaker cluster.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6964656e746966792e6f7065726174696f6e = Show one redacted speaker identify operation.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6964656e746966792e6f7065726174696f6e73 = List redacted speaker identify operations.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6964656e746966792e756e646f = Undo a committed speaker identify operation.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6b6565702e73657061726174652e6c697374 = List folded speaker keep-separate assertions.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6c696e6b2e696d706f7274 = Link an import participant name as an aka on an existing entity.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6d657267652e6e616d6573 = Merge a speaker name variant into a canonical entity.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e6f776e65722e7265616479 = Check if owner voice detection should be surfaced to the user.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e70726573656e6365 = Show who was around a discovered unknown voice cluster.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e70726f7061676174652e636f7272656374696f6e = Preview or apply scoped correction propagation.{ "\u000a" }{ "\u000a" }Reversal uses the same verb with the two speaker ids swapped.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e72656275696c642e6f776e6572 = Rebuild the owner voice centroid from current manual owner tags.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e72656a6563742e6f776e6572 = Reject the rendered owner voice candidate generation.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e726570616972 = Repair non-{ "Person" } speaker contamination without relearning from it.{ "\u000a" }{ "\u000a" }Surveys identities and voiceprints, removes non-{ "Person" } voiceprint contamination,{ "\u000a" }and updates segment labels using fresh attribution under current state.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e7265706169722e726573756d65 = Resume an interrupted or failed speaker repair operation.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e7265706169722e737461747573 = Show status of a speaker repair operation.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e7265736f6c76652e6e616d6573 = Resolve speaker name variants using voiceprint similarity.{ "\u000a" }{ "\u000a" }Compares voiceprint centroids between all entities. Pairs with cosine{ "\u000a" }similarity > 0.90 are flagged as the same person. Unambiguous variants{ "\u000a" }(short name is first word of full name) are auto-merged by adding the{ "\u000a" }short name as an aka on the canonical entity.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e736565642e66726f6d2e696d706f727473 = Seed voiceprints from import segments with speaker-attributed transcripts.{ "\u000a" }{ "\u000a" }Scans import streams for segments with both { "conversation_transcript.jsonl" }{ "\u000a" }(with speaker labels) and audio embeddings. Maps each embedding to a speaker{ "\u000a" }via time-based alignment, matches speakers to existing entities, and saves{ "\u000a" }embeddings as voiceprints with owner contamination guard.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e73656e74656e636573 = List sentence ids for one speaker-review source.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e737461747573 = Show speaker subsystem status as { "JSON" }.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e73756767657374 = Suggest speaker curation opportunities.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e7461672e6f776e6572 = Tag one sentence as the owner voice.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e737065616b6572732e77697065 = Move every speaker voice file in the journal to the trash.{ "\u000a" }{ "\u000a" }Without { "--commit" }, prints a report of what would be moved. With{ "\u000a" }{ "--commit" }, moves segment-embedding NPZs, speaker labels/corrections,{ "\u000a" }per-entity voiceprints, owner centroids, the owner-candidate snapshot{ "\u000a" }and the candidate pool to the trash, where they can be recovered until{ "\u000a" }they are erased. { "--erase" } erases them at once instead.{ "\u000a" }{ "\u000a" }With { "--erase" }, { "--from-backups" } also removes them from your backups and{ "\u000a" }{ "--not-from-backups" } leaves them there. Without either, the trash{ "\u000a" }setting decides.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7374617475732e746f702e6c6576656c = Show journal network status.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e636c6561722e6c6f63616c2e656e64706f696e74 = Clear the BYO local provider endpoint.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e636f6e666964656e7469616c2e64697361626c65 = Disable confidential processing.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e636f6e666964656e7469616c2e656e61626c65 = Enable confidential processing.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e636f6e666964656e7469616c2e7265636865636b = Recheck confidential processing.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e636f6e666964656e7469616c2e737461747573 = Show confidential processing status.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e6b6579732e636c656172 = Clear an AI key from journal config.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e6b6579732e736574 = Set an AI key in journal config.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e6b6579732e73686f77 = Show configured AI key status.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e6b6579732e76616c6964617465 = Validate configured AI keys.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e6c6f63616c2e617661696c6162696c697479 = Show local model availability.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e6c6f63616c2e626f6f747374726170 = Start local model setup.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e6c6f63616c2e626f6f7473747261702e63616e63656c = Cancel local model setup.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e6c6f63616c2e626f6f7473747261702e737461747573 = Show local setup status.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e6c6f63616c2e6d6f64656c73 = List local models.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e6c6f63616c2e72656164696e657373 = Show local provider readiness.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e6c6f63616c2e737461747573 = Show local provider status.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e70726f7669646572732e7365742e616374697665 = Set the provider and model used for all thinking.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e70726f7669646572732e73686f77 = Show provider configuration.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7468696e6b696e672e7365742e6c6f63616c2e656e64706f696e74 = Set the BYO local provider endpoint.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7472616e736372697074732e72656164 = Read transcript content for a day, segment, or time range.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7472616e736372697074732e7363616e = List transcript coverage ranges for a day.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7472616e736372697074732e7365676d656e7473 = List recording segments for a day.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7472616e736372697074732e737065616b657273 = List speaker correction rows for one transcript segment.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7472616e736372697074732e7374617473 = Show daily transcript coverage counts for a month.
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d6d616e642e7573616765 = Usage: { $syntax }
 
 m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d7075746572 = This computer
 
 m6a6f75726e616c2e636c692e736f6c2e68656c702e6a6f75726e616c = Your journal
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e6f7065726174696f6e = Operation: { $operation }
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d65746572_v636f756e74 = { $syntax } [count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d65746572_v6d756c7469706c65 = { $syntax } [multiple]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d65746572_v6d756c7469706c655f636f756e74 = { $syntax } [multiple, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d65746572_v7265717569726564 = { $syntax } [required]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d65746572_v72657175697265645f636f756e74 = { $syntax } [required, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d65746572_v72657175697265645f6d756c7469706c65 = { $syntax } [required, multiple]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d65746572_v72657175697265645f6d756c7469706c655f636f756e74 = { $syntax } [required, multiple, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c74_v706c61696e = { $syntax } [default: { $default_value }]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c74_v636f756e74 = { $syntax } [default: { $default_value }, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c74_v6d756c7469706c65 = { $syntax } [default: { $default_value }, multiple]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c74_v6d756c7469706c655f636f756e74 = { $syntax } [default: { $default_value }, multiple, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c74_v7265717569726564 = { $syntax } [required, default: { $default_value }]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c74_v72657175697265645f636f756e74 = { $syntax } [required, default: { $default_value }, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c74_v72657175697265645f6d756c7469706c65 = { $syntax } [required, default: { $default_value }, multiple]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c74_v72657175697265645f6d756c7469706c655f636f756e74 = { $syntax } [required, default: { $default_value }, multiple, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c742e666c6167_v706c61696e = { $syntax } [default: { $default_value }, flag value: { $flag_value }]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c742e666c6167_v636f756e74 = { $syntax } [default: { $default_value }, flag value: { $flag_value }, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c742e666c6167_v6d756c7469706c65 = { $syntax } [default: { $default_value }, flag value: { $flag_value }, multiple]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c742e666c6167_v6d756c7469706c655f636f756e74 = { $syntax } [default: { $default_value }, flag value: { $flag_value }, multiple, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c742e666c6167_v7265717569726564 = { $syntax } [required, default: { $default_value }, flag value: { $flag_value }]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c742e666c6167_v72657175697265645f636f756e74 = { $syntax } [required, default: { $default_value }, flag value: { $flag_value }, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c742e666c6167_v72657175697265645f6d756c7469706c65 = { $syntax } [required, default: { $default_value }, flag value: { $flag_value }, multiple]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e64656661756c742e666c6167_v72657175697265645f6d756c7469706c655f636f756e74 = { $syntax } [required, default: { $default_value }, flag value: { $flag_value }, multiple, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e666c6167_v706c61696e = { $syntax } [flag value: { $flag_value }]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e666c6167_v636f756e74 = { $syntax } [flag value: { $flag_value }, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e666c6167_v6d756c7469706c65 = { $syntax } [flag value: { $flag_value }, multiple]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e666c6167_v6d756c7469706c655f636f756e74 = { $syntax } [flag value: { $flag_value }, multiple, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e666c6167_v7265717569726564 = { $syntax } [required, flag value: { $flag_value }]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e666c6167_v72657175697265645f636f756e74 = { $syntax } [required, flag value: { $flag_value }, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e666c6167_v72657175697265645f6d756c7469706c65 = { $syntax } [required, flag value: { $flag_value }, multiple]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e706172616d657465722e666c6167_v72657175697265645f6d756c7469706c655f636f756e74 = { $syntax } [required, flag value: { $flag_value }, multiple, count]
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e73656374696f6e2e617267756d656e7473 = Arguments:
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e73656374696f6e2e636f6d6d616e6473 = Commands:
+
+m6a6f75726e616c2e636c692e736f6c2e68656c702e73656374696f6e2e6f7074696f6e73 = Options:
 
 m6a6f75726e616c2e636c692e736f6c2e68656c702e7469746c65 = { "solstone" } - your journal, from the command line
 

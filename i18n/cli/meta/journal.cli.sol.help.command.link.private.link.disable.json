@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call link private-link disable command.",
+  "context": "Rendered below the usage line for solstone call link private-link disable, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f03b748ec39e6427b8586137fd6e731b1d4062d1d66e2ab085723c366f90fc6e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone status command.",
+  "context": "Rendered below the usage line for solstone status, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fa5c0d16ad32bfe6075e70ae4f2b60686b87d45006d5466d71ddc2a5736fb7e0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

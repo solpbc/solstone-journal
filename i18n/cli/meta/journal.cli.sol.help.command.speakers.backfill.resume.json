@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers backfill-resume command.",
+  "context": "Rendered below the usage line for solstone call speakers backfill-resume, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d003acf898a5fb34b43732dfbafe4391482b84e7c22dda7f399179c014c39af4",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

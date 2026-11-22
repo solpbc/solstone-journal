@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call activities list command.",
+  "context": "Rendered below the usage line for solstone call activities list, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7984a7ea44f6bbb4ae407826e77efa79c62c038a03606523381b20685b2f3597",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call thinking local availability command.",
+  "context": "Rendered below the usage line for solstone call thinking local availability, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b0f398690f2f4f7915b6b08c4a9e0fcff60d9b060226e237eec2b3a3891a28d8",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

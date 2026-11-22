@@ -1,0 +1,23 @@
+{
+  "description": "Description of the solstone link join command.",
+  "context": "Rendered below the usage line for solstone link join, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d7e56ad47a6faf70120c8fb9982add0f3051862e1a6a9e9b7a5c31bce5725d1e",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

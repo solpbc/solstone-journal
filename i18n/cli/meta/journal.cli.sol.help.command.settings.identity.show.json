@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call settings identity show command.",
+  "context": "Rendered below the usage line for solstone call settings identity show, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55c22347a7b29e08b2c94e29aed9be0270898657047feb078e8ab48b72627827",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

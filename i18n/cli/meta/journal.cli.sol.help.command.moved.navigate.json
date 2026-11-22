@@ -1,0 +1,23 @@
+{
+  "description": "Description of the solstone call navigate command.",
+  "context": "Rendered below the usage line for solstone call navigate, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a07d1856b1b0125080a5ea7cdaad15c042cae8dc5d1822871e1f787aa3407ba9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal navigate"
+    }
+  ]
+}

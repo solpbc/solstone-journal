@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers day-segments command.",
+  "context": "Rendered below the usage line for solstone call speakers day-segments, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4d2520c688f5f9d5ff6f237004a6ddc2a88bd55beb478deef145eb9a0cea24ce",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

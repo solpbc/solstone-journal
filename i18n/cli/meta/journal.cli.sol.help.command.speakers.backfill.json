@@ -1,0 +1,28 @@
+{
+  "description": "Description of the solstone call speakers backfill command.",
+  "context": "Rendered below the usage line for solstone call speakers backfill, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fac7c33bd04193ffa917c326d56b7a4a7ec91df01bce9f7980fcde186ac84567",
+  "max_length": 272,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "labels_file",
+      "kind": "accepted-input",
+      "value": "speaker_labels.json"
+    }
+  ]
+}

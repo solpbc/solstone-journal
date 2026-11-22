@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call entities move command.",
+  "context": "Rendered below the usage line for solstone call entities move, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4f8c24a94077b3d810310b329ed04a4514c2d8c523752f7e28f368f72d137724",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

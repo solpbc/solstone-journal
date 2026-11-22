@@ -1,0 +1,23 @@
+{
+  "description": "Description of the solstone call settings convey status command.",
+  "context": "Rendered below the usage line for solstone call settings convey status, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0a4ebde5fe00c79a4bd3b3d28c345e98a0a45ad07e26f35384782e349e248f5f",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "convey",
+      "kind": "mark-word",
+      "value": "Convey"
+    }
+  ]
+}

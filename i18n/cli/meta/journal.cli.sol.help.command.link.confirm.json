@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone link confirm command.",
+  "context": "Rendered below the usage line for solstone link confirm, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64a5138119735aa1077e30454020bfecff63a838e5c650cbb7ad018999305ff7",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

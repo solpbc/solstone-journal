@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call entities observe command.",
+  "context": "Rendered below the usage line for solstone call entities observe, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ffc6815f184585e4ae8302d5c2b3e73e14c23a65a7069d592d0fb70fc46a6625",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

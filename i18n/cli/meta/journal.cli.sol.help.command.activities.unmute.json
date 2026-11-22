@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call activities unmute command.",
+  "context": "Rendered below the usage line for solstone call activities unmute, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0056f93d2e34c0b5fa58f7c4af62fe20c7f8c20ff8d2c375119d7dc1573d08e8",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

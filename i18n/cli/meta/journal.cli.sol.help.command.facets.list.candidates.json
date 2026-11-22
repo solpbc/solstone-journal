@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call facets list-candidates command.",
+  "context": "Rendered below the usage line for solstone call facets list-candidates, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f768ab3d0b6a707d1a0a6bdf57a0410a31337302f68fe729b3326f3713e5174a",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

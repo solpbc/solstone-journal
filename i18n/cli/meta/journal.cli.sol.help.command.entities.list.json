@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call entities list command.",
+  "context": "Rendered below the usage line for solstone call entities list, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aae566d8f189a5f93f4a61d74c735f1b1ed408b958137c7e45365e56022a5214",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

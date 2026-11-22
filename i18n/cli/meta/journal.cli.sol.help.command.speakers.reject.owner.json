@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers reject-owner command.",
+  "context": "Rendered below the usage line for solstone call speakers reject-owner, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be51e217e62a475fe78856f9183e75d124a124e9fc39f95e180913fd37794f71",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

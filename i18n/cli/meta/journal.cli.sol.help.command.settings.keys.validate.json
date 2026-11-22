@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call settings keys validate command.",
+  "context": "Rendered below the usage line for solstone call settings keys validate, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1e761153966ad5fe51bf8e17ba2c9446df66a48c1fc3baca8845d2b6c6c0d113",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

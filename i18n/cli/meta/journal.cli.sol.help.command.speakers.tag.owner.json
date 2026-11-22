@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers tag-owner command.",
+  "context": "Rendered below the usage line for solstone call speakers tag-owner, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b2c2994f289cdfaa76428f9814f7f43a80fc71832854b2224002cf42742c5e18",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

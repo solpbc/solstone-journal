@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call thinking providers set-active command.",
+  "context": "Rendered below the usage line for solstone call thinking providers set-active, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "188798d7f9cc8b861c50e3c42c5100dc48e5a981d84a1efa19a3be9691255bd9",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

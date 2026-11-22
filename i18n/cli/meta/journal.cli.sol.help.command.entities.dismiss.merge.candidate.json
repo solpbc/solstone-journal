@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call entities dismiss-merge-candidate command.",
+  "context": "Rendered below the usage line for solstone call entities dismiss-merge-candidate, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c310a9b892758384b1f618df2628dcc2e8d3629e2bffa1475f1768d7c9ddf469",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

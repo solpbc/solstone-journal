@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call thinking providers show command.",
+  "context": "Rendered below the usage line for solstone call thinking providers show, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8f029e8b534ac7ffa20a8cdaf69bda826f0f2a4a698b2a7aa1ffbe803d116034",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Description of the solstone call speakers resolve-names command.",
+  "context": "Rendered below the usage line for solstone call speakers resolve-names, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6b5ae66e9d09d542de96e119a07a4bdd8b1739045cb2049916dc2341b8cf1fcf",
+  "max_length": 418,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call entities ambiguities command.",
+  "context": "Rendered below the usage line for solstone call entities ambiguities, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "20805d0e4cccd554b1a5133692113c8c9a6b006738c5c6ebec318f5ab8c2ca79",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

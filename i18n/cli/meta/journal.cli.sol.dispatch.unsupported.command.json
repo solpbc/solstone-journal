@@ -1,0 +1,16 @@
+{
+  "description": "Shown when the command dispatcher cannot find a handler for the requested command.",
+  "context": "Terminal dispatch for call, link, import and status.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ba4beee2ab8c2e76457fd743e228d5cb53f27d7471ec348711ad123bafd169f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

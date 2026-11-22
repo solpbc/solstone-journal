@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call settings keys set command.",
+  "context": "Rendered below the usage line for solstone call settings keys set, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5683a10b05c4c033750ea967a0b562bf1e3838c48b32e09185dfd222c141c35c",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call thinking local status command.",
+  "context": "Rendered below the usage line for solstone call thinking local status, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2c67a39c9b55acf8a6787e20334d5df2b1db87702a33b2aac669698326c9eade",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

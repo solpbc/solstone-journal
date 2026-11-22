@@ -1,0 +1,33 @@
+{
+  "description": "Description of the solstone call speakers confirm-owner command.",
+  "context": "Rendered below the usage line for solstone call speakers confirm-owner, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d91c0d3a81776cf17a77f2a6b225ed31c46d863e82fef8422907a0e97e93dff0",
+  "max_length": 229,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "confirm_verb",
+      "kind": "command",
+      "value": "confirm-owner"
+    },
+    {
+      "name": "speakers_page",
+      "kind": "url",
+      "value": "/app/speakers/"
+    }
+  ]
+}

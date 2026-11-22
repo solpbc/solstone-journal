@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers identify-undo command.",
+  "context": "Rendered below the usage line for solstone call speakers identify-undo, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "122606301852d876d34f4166a72e1af6bcc08ba83167a4672269919e6bf39db1",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

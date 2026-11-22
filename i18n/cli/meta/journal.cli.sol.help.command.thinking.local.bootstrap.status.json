@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call thinking local bootstrap-status command.",
+  "context": "Rendered below the usage line for solstone call thinking local bootstrap-status, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "718f07eca8622d4871ac77a6a547095862112cb07c3cacc5fedc8bdf403ed1d5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

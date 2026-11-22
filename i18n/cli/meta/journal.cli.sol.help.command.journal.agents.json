@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call journal agents command.",
+  "context": "Rendered below the usage line for solstone call journal agents, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "09a8b52ea768647926842cbd22a76a09c48cbc58b57163d8c91ec168652d750f",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

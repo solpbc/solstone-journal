@@ -1,0 +1,28 @@
+{
+  "description": "Description of the solstone call speakers repair command.",
+  "context": "Rendered below the usage line for solstone call speakers repair, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b7009bf7fbbc939d393785627c1c407f11f87517a034d3985fe51720f28c15a0",
+  "max_length": 315,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "person_type",
+      "kind": "accepted-input",
+      "value": "Person"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

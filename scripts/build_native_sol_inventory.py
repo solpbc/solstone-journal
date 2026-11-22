@@ -358,6 +358,15 @@ def source_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
+def refresh_help_source(root: Path, entries: list[AuthorityEntry]) -> None:
+    """Record the authority wording reviewed for the independent terminal catalog."""
+    rows = sorted((e.surface, e.path, e.operation_id, e.help) for e in entries)
+    encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":")).encode()
+    stamp = root / "core/crates/solstone-core-sol-client-cli/src/help/authority-help.sha256"
+    stamp.write_text(hashlib.sha256(encoded).hexdigest() + "\n")
+    print(f"wrote {stamp}")
+
+
 def render(entries: list[AuthorityEntry], output: Path, digest: str) -> str:
     generated_dir = output.parent
     lines = [
@@ -467,7 +476,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--check", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true")
+    mode.add_argument(
+        "--refresh-help-source",
+        action="store_true",
+        help="record reviewed authority help after checking the terminal catalog",
+    )
     return parser.parse_args()
 
 
@@ -481,6 +496,9 @@ def main() -> int:
         for error in partition_errors:
             print(error)
         return 1
+    if args.refresh_help_source:
+        refresh_help_source(root, entries)
+        return 0
     rendered = rustfmt(render(entries, output, source_digest(root)), output.parent)
     if args.check:
         existing = output.read_text()

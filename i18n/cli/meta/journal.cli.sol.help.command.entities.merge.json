@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call entities merge command.",
+  "context": "Rendered below the usage line for solstone call entities merge, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2168a35c73c1d7cbedd3abe4c5815b87fef94e40aade246b0fbb7b6dafeb022",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call speakers suggest command.",
+  "context": "Rendered below the usage line for solstone call speakers suggest, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "37dd26e5167407c6c709ae2dacf5808dac67ba463714d72e706341d2a87aec46",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

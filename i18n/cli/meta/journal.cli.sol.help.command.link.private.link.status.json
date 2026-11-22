@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call link private-link status command.",
+  "context": "Rendered below the usage line for solstone call link private-link status, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "07dcc09c70bafc6cc57e9b599b6b00f11bf1d1d91e82c6b63aae3516d8133621",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "description": "Complete native command parameter line with its literal spellings and printable values. Select the shape of its annotations.",
+  "context": "Complete native command parameter line with its literal spellings and printable values. Select the shape of its annotations.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "shape",
+      "type": "string"
+    },
+    {
+      "name": "syntax",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "6442ce25ba7f675b4eadc198303889d7edde0704915dbc97841b94581cbbd7c9",
+  "max_length": 387,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "shape",
+    "type": "string",
+    "enum_values": [
+      "count",
+      "multiple",
+      "multiple_count",
+      "required",
+      "required_count",
+      "required_multiple",
+      "required_multiple_count"
+    ],
+    "enum_default": "count"
+  }
+}

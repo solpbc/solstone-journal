@@ -1,0 +1,28 @@
+{
+  "description": "Description of the solstone call journal facet create command.",
+  "context": "Rendered below the usage line for solstone call journal facet create, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e22963a010aa97d01143806c81b55ef904e4bff2ea16e05d6fcf4e6d8b547224",
+  "max_length": 331,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "consent_flag",
+      "kind": "flag",
+      "value": "--consent"
+    }
+  ]
+}

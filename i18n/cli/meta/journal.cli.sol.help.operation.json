@@ -1,0 +1,21 @@
+{
+  "description": "Operation identifier for the selected native command. The protocol identifier is literal.",
+  "context": "Operation identifier for the selected native command. The protocol identifier is literal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7316fb815406375baa2ee6fb55d08f0e0284e0890f2e4526ca884c274d062cfd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

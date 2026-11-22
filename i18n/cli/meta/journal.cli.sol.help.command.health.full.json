@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call health full command.",
+  "context": "Rendered below the usage line for solstone call health full, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ec65738afcf8016c7b505439f3dc0d7b1c45d8159f4bca3078ae53c0ee439c4b",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

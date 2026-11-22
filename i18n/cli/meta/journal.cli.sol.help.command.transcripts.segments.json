@@ -1,0 +1,16 @@
+{
+  "description": "Description of the solstone call transcripts segments command.",
+  "context": "Rendered below the usage line for solstone call transcripts segments, or beside the leaf in its parent command list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "241289fadb8c739c32f1964738d3cc5df16880149b0ef91b5d3b3642c0a109b0",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
