@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for skills publish rollback.",
+  "context": "Journal command-line text for skills publish rollback.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    },
+    {
+      "name": "restore",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a3030c2257d8630babc080f5fb5839c2e61f10619a919f53091293e8c156cd49",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills path absolute.",
+  "context": "Journal command-line text for skills path absolute.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6091da674d63dba95430a6f34b4caaec69d2e2c0e90e2bc49ba054710f33d149",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

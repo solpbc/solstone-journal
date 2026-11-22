@@ -9,15 +9,28 @@ const ROOT_CONTRACT_JSON: &str = include_str!("../../../fixtures/native-sol/root
 
 #[must_use]
 pub fn render_root_help() -> String {
+    render_root_help_for(solstone_core_cli_copy::ENGLISH)
+}
+
+#[must_use]
+pub fn render_root_help_for(locale: &str) -> String {
+    let text = |id: &str| solstone_core_cli_copy::render_for(locale, id, &[]);
     let contract = root_contract();
     let mut output = String::new();
-    push_line(&mut output, contract["header"].as_str().unwrap_or_default());
+    push_line(&mut output, &text("journal.cli.sol.help.title"));
     output.push('\n');
-    push_line(&mut output, contract["usage"].as_str().unwrap_or_default());
+    push_line(&mut output, &text("journal.cli.sol.usage"));
     output.push('\n');
     if let Some(groups) = contract["access_groups"].as_array() {
         for group in groups {
-            push_line(&mut output, group["heading"].as_str().unwrap_or_default());
+            push_line(
+                &mut output,
+                &text(
+                    group["heading_message"]
+                        .as_str()
+                        .expect("root command group has a catalog heading"),
+                ),
+            );
             if let Some(commands) = group["commands"].as_array() {
                 for command in commands {
                     push_line(
@@ -29,7 +42,7 @@ pub fn render_root_help() -> String {
             output.push('\n');
         }
     }
-    push_line(&mut output, "Apps (solstone call <app>):");
+    push_line(&mut output, &text("journal.cli.sol.help.apps"));
     for group in root_call_groups() {
         push_line(&mut output, &format!("  call {group}"));
     }

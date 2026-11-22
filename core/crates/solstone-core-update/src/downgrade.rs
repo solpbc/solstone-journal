@@ -184,18 +184,40 @@ pub fn check_target_admissibility(
     installed_version: &str,
     target_version: &str,
 ) -> Result<PathBuf, RollbackRefusal> {
+    check_target_admissibility_in(
+        solstone_core_cli_copy::ENGLISH,
+        prefix,
+        installed_version,
+        target_version,
+    )
+}
+
+pub fn check_target_admissibility_in(
+    locale: &str,
+    prefix: &Path,
+    installed_version: &str,
+    target_version: &str,
+) -> Result<PathBuf, RollbackRefusal> {
     let current_link = prefix.join("current");
     let current_dest = fs::read_link(&current_link)
         .map(|p| if p.is_absolute() { p } else { prefix.join(p) })
         .map_err(|_| RollbackRefusal {
             code: "downgrade-window".to_owned(),
-            message: "current version link is missing or unreadable".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.rollback.link",
+                &[],
+            ),
         })?;
 
     let installed_meta =
         parse_release_metadata(&current_dest.join(".release")).ok_or_else(|| RollbackRefusal {
             code: "compatibility-unknown".to_owned(),
-            message: "installed release metadata is unreadable".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.rollback.metadata",
+                &[],
+            ),
         })?;
 
     let receipt = crate::ownership::parse_install_receipt(&prefix.join("install-receipt"))
@@ -203,17 +225,22 @@ pub fn check_target_admissibility(
     if receipt.get("journal_state").map(String::as_str) != Some("present") {
         return Err(RollbackRefusal {
             code: "compatibility-unknown".to_owned(),
-            message:
-                "the installer cannot establish the state of your journal. nothing was changed."
-                    .to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.rollback.state",
+                &[],
+            ),
         });
     }
     let (Some(r_min), Some(r_max)) = (&installed_meta.reader_min, &installed_meta.reader_max)
     else {
         return Err(RollbackRefusal {
             code: "compatibility-unknown".to_owned(),
-            message: "the installed release has no declared reader range. nothing was changed."
-                .to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.rollback.range.absent",
+                &[],
+            ),
         });
     };
     if installed_meta.version != installed_version
@@ -228,9 +255,11 @@ pub fn check_target_admissibility(
     {
         return Err(RollbackRefusal {
             code: "compatibility-unknown".to_owned(),
-            message:
-                "the selected version is outside the declared reader range. nothing was changed."
-                    .to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.rollback.range.outside",
+                &[],
+            ),
         });
     }
     let candidates = collect_retained_candidates(prefix, &current_dest);
@@ -251,7 +280,11 @@ pub fn check_target_admissibility(
         None => {
             return Err(RollbackRefusal {
                 code: "downgrade-window".to_owned(),
-                message: "that build is not retained; reinstall the current version".to_owned(),
+                message: solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.rollback.retained",
+                    &[],
+                ),
             });
         }
     };
@@ -259,8 +292,11 @@ pub fn check_target_admissibility(
     if target_cand.meta.epoch != "journal-v2" || installed_meta.epoch != "journal-v2" {
         return Err(RollbackRefusal {
             code: "downgrade-epoch".to_owned(),
-            message: "install the current version or another release in this upgrade epoch"
-                .to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.rollback.epoch",
+                &[],
+            ),
         });
     }
 
@@ -269,15 +305,24 @@ pub fn check_target_admissibility(
     {
         return Err(RollbackRefusal {
             code: "retention-policy-unsupported".to_owned(),
-            message: "the current release has no supported retention policy".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.rollback.policy",
+                &[],
+            ),
         });
     }
 
     if !version_is_older(target_version, installed_version) {
         return Err(RollbackRefusal {
             code: "compatibility-unknown".to_owned(),
-            message: format!(
-                "target version {target_version} is not older than {installed_version}"
+            message: solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.sol.update.rollback.version",
+                [
+                    ("target_version", &(target_version)),
+                    ("installed_version", &(installed_version)),
+                ],
             ),
         });
     }
@@ -289,12 +334,24 @@ pub fn select_newest_admissible_rollback(
     prefix: &Path,
     installed_version: &str,
 ) -> Result<(String, PathBuf), RollbackRefusal> {
+    select_newest_admissible_rollback_in(solstone_core_cli_copy::ENGLISH, prefix, installed_version)
+}
+
+pub fn select_newest_admissible_rollback_in(
+    locale: &str,
+    prefix: &Path,
+    installed_version: &str,
+) -> Result<(String, PathBuf), RollbackRefusal> {
     let current_link = prefix.join("current");
     let current_dest = fs::read_link(&current_link)
         .map(|p| if p.is_absolute() { p } else { prefix.join(p) })
         .map_err(|_| RollbackRefusal {
             code: "downgrade-window".to_owned(),
-            message: "current version link is missing or unreadable".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.rollback.link",
+                &[],
+            ),
         })?;
 
     let candidates = collect_retained_candidates(prefix, &current_dest);
@@ -303,12 +360,19 @@ pub fn select_newest_admissible_rollback(
         if !version_is_older(&candidate.version, installed_version) {
             continue;
         }
-        match check_target_admissibility(prefix, installed_version, &candidate.version) {
+        match check_target_admissibility_in(locale, prefix, installed_version, &candidate.version) {
             Ok(path) => return Ok((candidate.version, path)),
             Err(error) => last_error = Some(error),
         }
     }
-    Err(last_error.unwrap_or(RollbackRefusal { code: "downgrade-window".to_owned(), message: "no eligible older build is retained. choose a platform version with --version, or reinstall the current release.".to_owned() }))
+    Err(last_error.unwrap_or(RollbackRefusal {
+        code: "downgrade-window".to_owned(),
+        message: solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.sol.update.rollback.no.older",
+            &[],
+        ),
+    }))
 }
 
 #[cfg(all(test, feature = "full-tests", target_os = "linux"))]

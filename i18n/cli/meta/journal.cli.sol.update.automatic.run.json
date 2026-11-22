@@ -1,0 +1,44 @@
+{
+  "description": "Journal command-line text for update automatic run.",
+  "context": "Journal command-line text for update automatic run.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "60e3fe6b80bcfff2e9ca433345a159343a9ed53835a0f7d1b5a2e11d804ff30b",
+  "max_length": 810,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "result",
+    "type": "string",
+    "enum_values": [
+      "up-to-date",
+      "installed",
+      "off",
+      "paused",
+      "held",
+      "hold-unknown",
+      "offline",
+      "metered",
+      "waiting-for-signed-installer",
+      "busy",
+      "not-eligible",
+      "failed"
+    ],
+    "enum_default": "failed"
+  }
+}

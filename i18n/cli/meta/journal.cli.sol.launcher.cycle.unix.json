@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for launcher cycle unix.",
+  "context": "Journal command-line text for launcher cycle unix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "04aae0c64f9ca206cc1e2593c18f1ae576ac4d5cf8df29127c96dbf545e4a7cd",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "sibling",
+      "kind": "command",
+      "value": "solstone-core-sol"
+    },
+    {
+      "name": "solstone_name",
+      "kind": "command",
+      "value": "solstone"
+    }
+  ]
+}

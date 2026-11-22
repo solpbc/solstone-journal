@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update receipt line pair.",
+  "context": "Journal command-line text for update receipt line pair.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2212e23295ae0abb13373ac6e670868f6d73095cba285d91089a6220ac08b47e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

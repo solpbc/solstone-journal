@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills symlink unsupported.",
+  "context": "Journal command-line text for skills symlink unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9df9ce56bd9c979a00103d110d1a1939055f052f6108ecf47203773677ae9429",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

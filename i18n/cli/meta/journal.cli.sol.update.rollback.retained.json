@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update rollback retained.",
+  "context": "Journal command-line text for update rollback retained.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f5049ac431dbac7d6942ef10c8f8588d6eb4b2df61904a1866dd245f1223640a",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

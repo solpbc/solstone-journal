@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update receipt native file.",
+  "context": "Journal command-line text for update receipt native file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4082691c25313aecc95991d434fcc08c87509ff6750922c9dec063291ce0348e",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "receipt_file",
+      "kind": "accepted-input",
+      "value": "install-receipt"
+    }
+  ]
+}

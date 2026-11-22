@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report available.",
+  "context": "Journal command-line text for update report available.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "49e781275e891397a5f41fbe2e6d2433a8100a43e4e429d687ec4a1a623f0743",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

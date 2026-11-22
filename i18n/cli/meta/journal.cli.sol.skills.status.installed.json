@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for skills status installed.",
+  "context": "Journal command-line text for skills status installed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    },
+    {
+      "name": "skill",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "459ff17ec9c1f991fc56edc39631324aa8a4c1b5cba779aafa8fa02d48648ab9",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update report owner unknown.",
+  "context": "Journal command-line text for update report owner unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "83bc30ce66a731e9789b7d388f9eb31ff9261982d9b78f358193a4816892c1de",
+  "max_length": 143,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

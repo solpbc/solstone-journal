@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for update argument mode conflict.",
+  "context": "Journal command-line text for update argument mode conflict.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a3e89dae2b04ef4dad13e83235f714cd647e89db6d65640cd0804b785e8f7581",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "check_flag",
+      "kind": "flag",
+      "value": "--check"
+    },
+    {
+      "name": "hold_flag",
+      "kind": "flag",
+      "value": "--hold"
+    },
+    {
+      "name": "unhold_flag",
+      "kind": "flag",
+      "value": "--unhold"
+    },
+    {
+      "name": "rollback_flag",
+      "kind": "flag",
+      "value": "--rollback"
+    }
+  ]
+}

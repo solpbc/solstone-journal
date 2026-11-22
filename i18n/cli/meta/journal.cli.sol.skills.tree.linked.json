@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills tree linked.",
+  "context": "Journal command-line text for skills tree linked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8b2826a802dff0162ee5c60eaa44c3a3b78872ee213bcf1b707001a572f7e5b0",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

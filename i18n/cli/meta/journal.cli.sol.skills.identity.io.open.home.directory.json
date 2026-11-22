@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for skills identity io open home directory.",
+  "context": "Journal command-line text for skills identity io open home directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c13ef5a1c9b7510e981ba043348c5a1ee12ac8638d1ef532961c4d38a2d30949",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

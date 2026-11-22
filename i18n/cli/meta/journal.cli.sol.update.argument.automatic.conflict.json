@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for update argument automatic conflict.",
+  "context": "Journal command-line text for update argument automatic conflict.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d23672a08ec8554f92678be0ca126d33bf4198e7717709096e2d5be9e19e96f",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "automatic_flag",
+      "kind": "flag",
+      "value": "--automatic"
+    },
+    {
+      "name": "unattended_flag",
+      "kind": "flag",
+      "value": "--unattended"
+    },
+    {
+      "name": "json_flag",
+      "kind": "flag",
+      "value": "--json"
+    }
+  ]
+}

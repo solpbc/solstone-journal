@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update receipt native schema.",
+  "context": "Journal command-line text for update receipt native schema.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "067e3096379b0c55aa5ec169072c0b5efea34aa39616f8245a2cfe94a4a2927a",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "schema_field",
+      "kind": "accepted-input",
+      "value": "schema_version"
+    }
+  ]
+}

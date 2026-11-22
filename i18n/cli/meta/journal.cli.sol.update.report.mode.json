@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report mode.",
+  "context": "Journal command-line text for update report mode.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8f6004fd7570421151cb034e303c04eeb09a3541b65a27a088267bb99904211b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

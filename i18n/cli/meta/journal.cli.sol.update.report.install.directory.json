@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report install directory.",
+  "context": "Journal command-line text for update report install directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a51485d8c9fcab401cc8f6169ba5cd4ee83f35a2450bc959b04c8ecc4000ecc7",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

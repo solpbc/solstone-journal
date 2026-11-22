@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report checkout.",
+  "context": "Journal command-line text for update report checkout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "47c285cc292db7ce304af39b027beb31155d1409be1b7a5319a64f4b587d1d64",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills journal absolute.",
+  "context": "Journal command-line text for skills journal absolute.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a6fbf2091aeb32dd790a03a4ca48b9cfc7983a7873e57191980f91e5260f4d38",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

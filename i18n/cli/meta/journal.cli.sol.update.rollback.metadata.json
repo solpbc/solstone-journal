@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update rollback metadata.",
+  "context": "Journal command-line text for update rollback metadata.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef28f396be5cb3d61e1687377294140941acd492c0b12b8e63e48fae1eb1bfc3",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

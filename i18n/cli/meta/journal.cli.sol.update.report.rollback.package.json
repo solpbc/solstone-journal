@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report rollback package.",
+  "context": "Journal command-line text for update report rollback package.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59b6057137202ada91e6c11a3c137951d23d2e2da94cb344e95cfc8da493b7cc",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

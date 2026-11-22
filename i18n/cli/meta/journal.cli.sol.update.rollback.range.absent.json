@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update rollback range absent.",
+  "context": "Journal command-line text for update rollback range absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f0938d90a998b2751f8eae95919978dce0d162798101f86e43b1da2cf7c201e6",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

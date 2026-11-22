@@ -19,6 +19,8 @@ full-tests = []
 update-test-origin = []
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
+solstone-core-window-catalog.workspace = true
 minisign.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

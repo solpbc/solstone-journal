@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for launcher missing unix.",
+  "context": "Journal command-line text for launcher missing unix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "06a1de01b1db1696107628540507d1c9bd3d3aa36b608627bb233a8c7f1a692f",
+  "max_length": 149,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "sibling",
+      "kind": "command",
+      "value": "solstone-core-sol"
+    },
+    {
+      "name": "solstone_name",
+      "kind": "command",
+      "value": "solstone"
+    }
+  ]
+}

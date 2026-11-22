@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for update report available package add.",
+  "context": "Journal command-line text for update report available package add.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a005227077b2b02eceacedab98f07f65fee33d75ebe4a867ea33df8bacb4e8bd",
+  "max_length": 175,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "package_url",
+      "kind": "url",
+      "value": "solstone.app/install#linux-packages"
+    },
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

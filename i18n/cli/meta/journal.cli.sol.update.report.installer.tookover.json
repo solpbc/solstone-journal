@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update report installer tookover.",
+  "context": "Journal command-line text for update report installer tookover.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "72d4db581e38d4f7cc52e84b2900d404603c2ac2b2a7127f1c56cb675210460b",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

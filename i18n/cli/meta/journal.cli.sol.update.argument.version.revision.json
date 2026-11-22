@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for update argument version revision.",
+  "context": "Journal command-line text for update argument version revision.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "938d6cf6f05f304d7c7b142726c2c75c70a3d285de6561c583c9b92496758b01",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

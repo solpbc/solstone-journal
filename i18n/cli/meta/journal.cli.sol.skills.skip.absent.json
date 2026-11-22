@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for skills skip absent.",
+  "context": "Journal command-line text for skills skip absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    },
+    {
+      "name": "skill",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8f4370b2c2fc369aed9a71b0a86857387bc8d3c52e8df8c4c076d74c4c4d2ebc",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

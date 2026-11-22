@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills identity storage file is not owned by the current user.",
+  "context": "Journal command-line text for skills identity storage file is not owned by the current user.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "455d429e3f87712661c10e679e7d914de7dbd2d48fac1871ec5091e7d3930f4a",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -63,7 +63,11 @@ pub(crate) enum ValidatedTool {
     Search(ValidatedSearch),
     Find(crate::jsonrpc::ToolName, ValidatedSearch),
     Fetch(ValidatedFetch),
-    ReadBatch(crate::jsonrpc::ToolName, Vec<String>),
+    ReadBatch {
+        tool: crate::jsonrpc::ToolName,
+        references: Vec<String>,
+        size: Option<crate::photo_picture::PictureSize>,
+    },
     ListTranscripts(ValidatedListTranscripts),
     GetTranscript(ValidatedGetTranscript),
     ListEntities(ValidatedListEntities),

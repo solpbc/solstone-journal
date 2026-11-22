@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for skills config not directory.",
+  "context": "Journal command-line text for skills config not directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f4b782b744187dd7c02a9e95af1cbc6284a543c33cfa985937c7a22d3cdb7daa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

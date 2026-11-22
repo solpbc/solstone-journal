@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills registry unknown.",
+  "context": "Journal command-line text for skills registry unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "97fc912275afe248aa765505c1dcc6bee6e8d7a3fdd7f9fcdbe4bd7dee77ffc0",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

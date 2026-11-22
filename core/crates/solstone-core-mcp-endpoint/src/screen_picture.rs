@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::dispatch::DispatchError;
-use crate::photo_picture::{Picture, bounded_picture, encode_picture};
+use crate::photo_picture::{Picture, PictureSize, bounded_picture, encode_picture};
 use crate::references::SegmentAddress;
 use crate::tools::ToolError;
 use serde_json::{Value, json};
@@ -45,9 +45,14 @@ fn unreadable() -> Reply {
     )
 }
 
-fn attached(picture: Picture) -> Reply {
+fn attached(picture: Picture, size: PictureSize) -> Reply {
     (
-        json!({"state":"attached","width":picture.width,"height":picture.height}),
+        json!({
+            "state": "attached",
+            "size": size.as_str(),
+            "width": picture.width,
+            "height": picture.height,
+        }),
         Some(picture.jpeg),
     )
 }
@@ -56,12 +61,16 @@ fn open(root: &Path, relative: &Path) -> Option<Arc<MediaDirectory>> {
     MediaDirectory::open(Arc::new(JournalRoot::open(root).ok()?), relative).ok()
 }
 
-fn still(dir: &MediaDirectory, names: impl IntoIterator<Item = String>) -> Reply {
+fn still(
+    dir: &MediaDirectory,
+    names: impl IntoIterator<Item = String>,
+    size: PictureSize,
+) -> Reply {
     for name in names {
         match dir.read_file_bounded(OsStr::new(&name), 64 * 1024 * 1024) {
             Ok(Some(file)) => {
-                return bounded_picture(&file.bytes)
-                    .map(attached)
+                return bounded_picture(&file.bytes, size)
+                    .map(|picture| attached(picture, size))
                     .unwrap_or_else(unreadable);
             }
             Ok(None) => (),
@@ -71,13 +80,14 @@ fn still(dir: &MediaDirectory, names: impl IntoIterator<Item = String>) -> Reply
     missing("the original screenshot is no longer kept in this journal")
 }
 
-pub(crate) fn imported(root: &Path, folder: &str) -> Reply {
+pub(crate) fn imported(root: &Path, folder: &str, size: PictureSize) -> Reply {
     let Some(dir) = open(root, &Path::new("chronicle").join(folder)) else {
         return unreadable();
     };
     still(
         &dir,
         ["png", "jpg", "jpeg", "webp", "gif"].map(|ext| format!("original.screenshot.{ext}")),
+        size,
     )
 }
 
@@ -179,6 +189,7 @@ pub(crate) fn moment(
             &dir,
             solstone_core_format::screenshots::SCREENSHOT_EXTENSIONS
                 .map(|ext| format!("{selected}.{ext}")),
+            PictureSize::Full,
         )
     } else {
         // Some screen headers name a WebM whose basename differs from the
@@ -221,9 +232,10 @@ fn recording(dir: &MediaDirectory, name: &str, offset: u32) -> Reply {
         solstone_core_grab::frame_at(file, offset)
     }) {
         Ok(Some(Ok(Some((at, rgb))))) => {
-            let (mut info, image) = encode_picture(image::DynamicImage::ImageRgb8(rgb))
-                .map(attached)
-                .unwrap_or_else(unreadable);
+            let (mut info, image) =
+                encode_picture(image::DynamicImage::ImageRgb8(rgb), PictureSize::Full)
+                    .map(|picture| attached(picture, PictureSize::Full))
+                    .unwrap_or_else(unreadable);
             info["frame_offset_ms"] = json!(at);
             (info, image)
         }

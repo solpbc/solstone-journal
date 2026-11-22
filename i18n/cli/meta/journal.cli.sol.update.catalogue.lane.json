@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for update catalogue lane.",
+  "context": "Journal command-line text for update catalogue lane.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "lane",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fad43d847daeb45097ce0d0e6299ba82fd47d6477b990bcea98b5b4953b6de29",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

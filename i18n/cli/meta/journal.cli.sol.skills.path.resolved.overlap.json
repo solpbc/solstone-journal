@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for skills path resolved overlap.",
+  "context": "Journal command-line text for skills path resolved overlap.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2a7adfd5d490cd0f10b1a71c8bbb8730c73715da6630eaa84861fc50297ad1ef",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

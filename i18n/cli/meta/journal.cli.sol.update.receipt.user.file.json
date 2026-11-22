@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update receipt user file.",
+  "context": "Journal command-line text for update receipt user file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6b62711565124b3b376d00f17313a2d2ff118cdc7ef45064b0f988f9f4b7cf2",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "config_file",
+      "kind": "accepted-input",
+      "value": "install.conf"
+    }
+  ]
+}

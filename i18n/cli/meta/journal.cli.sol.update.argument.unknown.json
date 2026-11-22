@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for update argument unknown.",
+  "context": "Journal command-line text for update argument unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "flag",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "340af9cc87b9549022c0516fe3a1d686c8461d6fe619d55d3ac29a04d40ccc52",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

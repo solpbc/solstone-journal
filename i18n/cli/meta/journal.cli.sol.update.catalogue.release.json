@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update catalogue release.",
+  "context": "Journal command-line text for update catalogue release.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "afcac366e5252c0cb0591e7150feb11679b91b673b95babb4310aab393ca076f",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

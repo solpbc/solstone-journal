@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for skills path inspect.",
+  "context": "Journal command-line text for skills path inspect.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c5ab19fed12545e68d800c3e15e3b9bdfb89846c1a8c74cc6b6f82a7a7010fbe",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

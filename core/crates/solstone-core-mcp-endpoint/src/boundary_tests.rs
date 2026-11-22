@@ -19777,3 +19777,389 @@ fn get_activity_sources_keeps_embedded_headings_in_one_unit_and_splits_real_kind
     assert!(body_text.contains("heart rate"), "{body_text}");
     assert!(body_text.contains("64 bpm"), "{body_text}");
 }
+
+#[test]
+fn photo_week_summaries_preserve_many_photos_chronological_order_times_and_clean_punctuation() {
+    let journal = fixture();
+    let root = journal.path();
+
+    let write_photo = |day: &str, seg: &str, title: &str, raw_desc: &str, meta: Option<&str>| {
+        let dir = root.join(format!("chronicle/{day}/import.image/{seg}"));
+        fs::create_dir_all(&dir).unwrap();
+        let escaped = solstone_core_format::markdown::literal_text(raw_desc);
+        let date = format!("{}-{}-{}", &day[0..4], &day[4..6], &day[6..8]);
+        let doc = format!(
+            "# {title}\n\n**Type:** Image\n**Format:** JPEG\n**Dimensions:** 1200×896\n**Date:** {date}\n\n---\n\n> [image description — model-derived]\n> {escaped}\n"
+        );
+        fs::write(dir.join("image_transcript.md"), doc).unwrap();
+        if let Some(meta) = meta {
+            fs::write(dir.join("image_meta.json"), meta).unwrap();
+        }
+    };
+
+    // Day 1 (20260308): 13 capture photos + 1 owner-timed photo + 1 upload_fallback photo = 15.
+    // Plus 1 imported screenshot that must stay excluded from photos.
+    let times = [
+        ("061500_0", "Dawn sill", "capture"),
+        ("071500_0", "Second light", "capture"),
+        ("084700_0", "Street walk", "capture"),
+        ("101500_0", "Desk ledger", "capture"),
+        ("111500_0", "Midday court", "owner"),
+        ("134400_0", "River ferry", "capture"),
+        ("141200_0", "Bookstall", "capture"),
+        ("150500_0", "Rain eaves", "capture"),
+        ("162800_0", "Lantern oil", "capture"),
+        ("163600_0", "Timber arch", "capture"),
+        ("164600_0", "Church bells", "capture"),
+        ("204000_0", "Hearth coals", "capture"),
+        ("215200_0", "Candle out", "capture"),
+        ("090000_0", "Bridge arch", "capture"),
+    ];
+    for (seg, title, source) in times {
+        let desc = if seg == "061500_0" {
+            "The desk at first light: pounce-box, other men's shoulders."
+        } else {
+            "A clear autumn frame, sharp and bright."
+        };
+        let meta = format!(r#"{{"schema":1,"time_source":"{source}","utc_offset_seconds":0}}"#);
+        write_photo("20260308", seg, title, desc, Some(&meta));
+    }
+    write_photo(
+        "20260308",
+        "120000_0",
+        "Undated print",
+        "An undated scan, placed at import time.",
+        Some(r#"{"schema":1,"time_source":"upload_fallback"}"#),
+    );
+    let shot_dir = root.join("chronicle/20260308/import.image/123000_0");
+    fs::create_dir_all(&shot_dir).unwrap();
+    fs::write(
+        shot_dir.join("screenshot_transcript.md"),
+        "# Desktop shot\n\n> [image description — model-derived]\n> A terminal window\\.\n",
+    )
+    .unwrap();
+
+    // Day 2 (20260309): one note to verify range prefetch covers notes too.
+    let note_dir = root.join("chronicle/20260309/import.text/100000_0");
+    fs::create_dir_all(&note_dir).unwrap();
+    fs::write(
+        note_dir.join("note_transcript.md"),
+        "# Packing list\n\nBoots and lantern.\n",
+    )
+    .unwrap();
+
+    // Day 3 (20260312): 52 photos to exercise the 50-per-day cap and `more: true`.
+    for i in 0..52 {
+        let hour = 8 + i / 6;
+        let minute = (i % 6) * 10;
+        let seg = format!("{hour:02}{minute:02}00_0");
+        write_photo(
+            "20260312",
+            &seg,
+            &format!("Frame {i:02}"),
+            "Part of a long day.",
+            Some(r#"{"schema":1,"time_source":"capture"}"#),
+        );
+    }
+
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec![
+                    "facets".into(),
+                    "transcripts".into(),
+                    "photos".into(),
+                    "notes".into(),
+                    "screen_text".into(),
+                ],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+
+    for args in [
+        json!({"week": "2026-03-08", "include": ["photos", "notes"]}),
+        json!({"day_from": "2026-03-08", "day_to": "2026-03-14", "include": ["photos", "notes"]}),
+    ] {
+        let week = probe(&journal, "get_week", args.clone()).unwrap();
+        let days = week["days"].as_array().unwrap();
+        let day_row = |d: &str| days.iter().find(|row| row["day"] == d).unwrap();
+
+        let d1 = &day_row("20260308")["summary"]["photos"];
+        assert_eq!(d1["count"], 15, "{args}: {d1}");
+        assert!(d1.get("more").is_none(), "{d1}");
+        let items = d1["items"].as_array().unwrap();
+        assert_eq!(items.len(), 15);
+        assert!(
+            items.iter().all(|item| item["title"] != "Desktop shot"),
+            "screenshot leaked into photos"
+        );
+        // Earliest to latest across the 14 timed photos, then the upload_fallback photo last.
+        assert_eq!(items[0]["title"], "Dawn sill");
+        assert_eq!(items[0]["time"], "06:15:00");
+        assert_eq!(items[0]["time_source"], "capture");
+        assert_eq!(
+            items[0]["description"],
+            "The desk at first light: pounce-box, other men's shoulders."
+        );
+        assert_eq!(items[3]["title"], "Bridge arch");
+        assert_eq!(items[3]["time"], "09:00:00");
+        assert_eq!(items[5]["title"], "Midday court");
+        assert_eq!(items[5]["time"], "11:15:00");
+        assert_eq!(items[5]["time_source"], "owner");
+        assert_eq!(items[13]["title"], "Candle out");
+        assert_eq!(items[13]["time"], "21:52:00");
+        assert_eq!(items[14]["title"], "Undated print");
+        assert!(items[14].get("time").is_none(), "{:?}", items[14]);
+        assert_eq!(items[14]["time_source"], "upload_fallback");
+
+        let d2_notes = &day_row("20260309")["summary"]["notes"];
+        assert_eq!(d2_notes["count"], 1);
+        assert_eq!(d2_notes["items"][0]["title"], "Packing list");
+
+        let d_empty = &day_row("20260310")["summary"]["photos"];
+        assert_eq!(d_empty["count"], 0);
+        assert_eq!(d_empty["items"], json!([]));
+
+        let d3 = &day_row("20260312")["summary"]["photos"];
+        assert_eq!(d3["count"], 52, "{d3}");
+        assert_eq!(d3["more"], true, "{d3}");
+        let d3_items = d3["items"].as_array().unwrap();
+        assert_eq!(d3_items.len(), crate::dispatch::MAX_WEEK_PHOTOS_PER_DAY);
+        assert_eq!(d3_items[0]["title"], "Frame 00");
+        assert_eq!(d3_items[0]["time"], "08:00:00");
+        assert_eq!(d3_items[49]["title"], "Frame 49");
+    }
+
+    // search(day, kind=["photos"]) also returns chronological order, clean punctuation, and time fields.
+    let searched = probe(
+        &journal,
+        "search",
+        json!({"day": "2026-03-08", "kind": ["photos"], "limit": 50}),
+    )
+    .unwrap();
+    let rows = searched["results"].as_array().unwrap();
+    assert_eq!(rows.len(), 15, "{searched}");
+    assert_eq!(rows[0]["title"], "Dawn sill");
+    assert_eq!(rows[0]["time"], "06:15:00");
+    assert_eq!(rows[0]["time_source"], "capture");
+    assert_eq!(
+        rows[0]["description"],
+        "The desk at first light: pounce-box, other men's shoulders."
+    );
+    assert_eq!(rows[13]["title"], "Candle out");
+    assert_eq!(rows[13]["time"], "21:52:00");
+    assert_eq!(rows[14]["title"], "Undated print");
+    assert!(rows[14].get("time").is_none());
+    assert_eq!(rows[14]["time_source"], "upload_fallback");
+
+    // fetch returns structured time + time_source on capture photos and omits time on upload_fallback.
+    let fetched_capture = probe(
+        &journal,
+        "fetch",
+        json!({"reference": rows[0]["reference"]}),
+    )
+    .unwrap();
+    assert_eq!(fetched_capture["time"], "06:15:00");
+    assert_eq!(fetched_capture["time_source"], "capture");
+
+    let fetched_fallback = probe(
+        &journal,
+        "fetch",
+        json!({"reference": rows[14]["reference"]}),
+    )
+    .unwrap();
+    assert!(fetched_fallback.get("time").is_none(), "{fetched_fallback}");
+    assert_eq!(fetched_fallback["time_source"], "upload_fallback");
+}
+
+#[test]
+fn fetch_size_returns_thumbnails_for_single_and_batched_photos_and_screenshots() {
+    let journal = fixture();
+    let root = journal.path();
+    let day = "20260308";
+
+    // Build a patterned 1200x900 RGB image so full vs thumb JPEG sizes differ markedly.
+    let pattern_png = |shift: u8| {
+        let mut img = image::RgbImage::new(1200, 900);
+        for (x, y, pixel) in img.enumerate_pixels_mut() {
+            let r = ((x.wrapping_mul(7) ^ y.wrapping_mul(13)) as u8).wrapping_add(shift);
+            let g = ((x / 3 + y / 5) as u8).wrapping_add(shift);
+            let b = ((x ^ y) as u8).wrapping_mul(3);
+            *pixel = image::Rgb([r, g, b]);
+        }
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        bytes
+    };
+
+    let p1 = root.join(format!("chronicle/{day}/import.image/080000_0"));
+    let p2 = root.join(format!("chronicle/{day}/import.image/090000_0"));
+    let shot = root.join(format!("chronicle/{day}/import.image/100000_0"));
+    let note = root.join(format!("chronicle/{day}/import.text/110000_0"));
+    for d in [&p1, &p2, &shot, &note] {
+        fs::create_dir_all(d).unwrap();
+    }
+    fs::write(
+        p1.join("image_transcript.md"),
+        "# First photo\n\n> [image description — model-derived]\n> First\\.\n",
+    )
+    .unwrap();
+    fs::write(p1.join("original.png"), pattern_png(10)).unwrap();
+    fs::write(
+        p2.join("image_transcript.md"),
+        "# Second photo\n\n> [image description — model-derived]\n> Second\\.\n",
+    )
+    .unwrap();
+    fs::write(p2.join("original.png"), pattern_png(90)).unwrap();
+    fs::write(
+        shot.join("screenshot_transcript.md"),
+        "# Shot\n\n> [image description — model-derived]\n> Shot\\.\n",
+    )
+    .unwrap();
+    fs::write(shot.join("original.screenshot.png"), pattern_png(170)).unwrap();
+    fs::write(
+        note.join("note_transcript.md"),
+        "# Plain note\n\nJust text.\n",
+    )
+    .unwrap();
+
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec![
+                    "photos".into(),
+                    "screen_text".into(),
+                    "screenshots".into(),
+                    "notes".into(),
+                    "transcripts".into(),
+                ],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+
+    let photo_rows = probe(
+        &journal,
+        "search",
+        json!({"day": day, "kind": ["photos"], "limit": 10}),
+    )
+    .unwrap();
+    let ref1 = photo_rows["results"][0]["reference"].clone();
+    let ref2 = photo_rows["results"][1]["reference"].clone();
+    let shot_rows = probe(
+        &journal,
+        "search",
+        json!({"day": day, "query": "Shot", "kind": ["screen_text"]}),
+    )
+    .unwrap();
+    let ref_shot = shot_rows["results"][0]["reference"].clone();
+    let note_rows = probe(&journal, "search", json!({"day": day, "kind": ["notes"]})).unwrap();
+    let ref_note = note_rows["results"][0]["reference"].clone();
+
+    let full_default = dispatch_output(&journal, "fetch", json!({"reference": ref1}));
+    assert_eq!(full_default.value["picture"]["state"], "attached");
+    assert_eq!(full_default.value["picture"]["size"], "full");
+    assert_eq!(full_default.value["picture"]["width"], 1024);
+    assert_eq!(full_default.value["picture"]["height"], 768);
+    let full_bytes = full_default.images[0].len();
+
+    let thumb_single = dispatch_output(
+        &journal,
+        "fetch",
+        json!({"reference": ref1, "size": "thumb"}),
+    );
+    assert_eq!(thumb_single.value["picture"]["state"], "attached");
+    assert_eq!(thumb_single.value["picture"]["size"], "thumb");
+    assert_eq!(thumb_single.value["picture"]["width"], 320);
+    assert_eq!(thumb_single.value["picture"]["height"], 240);
+    let decoded = image::load_from_memory(&thumb_single.images[0]).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (320, 240));
+    assert!(
+        thumb_single.images[0].len() * 3 < full_bytes,
+        "thumb {} B should be far smaller than full {} B",
+        thumb_single.images[0].len(),
+        full_bytes
+    );
+
+    // Batched fetch with size="thumb" returns thumbnails for both photos and screenshots and leaves notes intact.
+    let full_batch = dispatch_output(
+        &journal,
+        "fetch",
+        json!({"references": [&ref1, &ref2, &ref_shot, &ref_note]}),
+    );
+    let thumb_batch = dispatch_output(
+        &journal,
+        "fetch",
+        json!({"references": [&ref1, &ref2, &ref_shot, &ref_note], "size": "thumb"}),
+    );
+    assert_eq!(thumb_batch.images.len(), 3);
+    for idx in 0..3 {
+        assert_eq!(
+            thumb_batch.value["items"][idx]["result"]["picture"]["size"],
+            "thumb"
+        );
+        assert_eq!(
+            thumb_batch.value["items"][idx]["result"]["picture"]["width"],
+            320
+        );
+        assert_eq!(
+            thumb_batch.value["items"][idx]["image_content_index"],
+            idx + 1
+        );
+    }
+    assert!(
+        thumb_batch.value["items"][3]["result"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Just text.")
+    );
+    let thumb_batch_bytes: usize = thumb_batch.images.iter().map(Vec::len).sum();
+    let full_batch_bytes: usize = full_batch.images.iter().map(Vec::len).sum();
+    assert!(
+        thumb_batch_bytes * 3 < full_batch_bytes,
+        "thumb batch {thumb_batch_bytes} B vs full batch {full_batch_bytes} B"
+    );
+
+    // Omitted or null size defaults to full on both single and batched fetch.
+    let null_single = probe(&journal, "fetch", json!({"reference": &ref1, "size": null})).unwrap();
+    assert_eq!(null_single["picture"]["size"], "full");
+    let null_batch = probe(
+        &journal,
+        "fetch",
+        json!({"references": [&ref1], "size": null}),
+    )
+    .unwrap();
+    assert_eq!(null_batch["items"][0]["result"]["picture"]["size"], "full");
+
+    // Invalid size arguments are refused on both single and batched fetch, and never accepted on other batch tools.
+    for bad in [
+        json!({"reference": &ref1, "size": "huge"}),
+        json!({"reference": &ref1, "size": 320}),
+        json!({"references": [&ref1], "size": "huge"}),
+        json!({"references": [&ref1], "size": 320}),
+    ] {
+        assert_eq!(
+            probe(&journal, "fetch", bad.clone()),
+            Err(McpProbeError::InvalidInput),
+            "{bad}"
+        );
+    }
+    assert_eq!(
+        probe(
+            &journal,
+            "get_transcript",
+            json!({"references": ["missing"], "size": "thumb"})
+        ),
+        Err(McpProbeError::InvalidInput)
+    );
+}

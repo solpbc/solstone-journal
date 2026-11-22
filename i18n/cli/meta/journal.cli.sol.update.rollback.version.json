@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for update rollback version.",
+  "context": "Journal command-line text for update rollback version.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "target_version",
+      "type": "string"
+    },
+    {
+      "name": "installed_version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c379f87c267c05f0f9a0e20d0b9d411d420a495904f94778b39ab132b79b8ed1",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

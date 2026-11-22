@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for skills install done.",
+  "context": "Journal command-line text for skills install done.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    },
+    {
+      "name": "skill",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fe2fb7f42f06d37f551b3366b6b03f45a5bce9ceff0527ff7657ed2080a7cffd",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

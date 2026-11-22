@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills copy symlink.",
+  "context": "Journal command-line text for skills copy symlink.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0221cfb7120937524f75ec7b237a159d8b9f72c15ae5aa08746711a16785d255",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update rollback no older.",
+  "context": "Journal command-line text for update rollback no older.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d3720e6b161744d72b02bcbe3e1829b96c4815b60854493ac156ab28f05d317",
+  "max_length": 152,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "version_flag",
+      "kind": "flag",
+      "value": "--version"
+    }
+  ]
+}

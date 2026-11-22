@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update catalogue signature.",
+  "context": "Journal command-line text for update catalogue signature.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6a2332e0ba96894ef72b30a9856be4d6b37d6118f9952a8f60e47c1227f4e753",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

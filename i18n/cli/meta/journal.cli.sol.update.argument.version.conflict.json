@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for update argument version conflict.",
+  "context": "Journal command-line text for update argument version conflict.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59f18eceb1312f97915e58a14d0519f19d1ee80a2beca96f8c41daaacf95001a",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "version_flag",
+      "kind": "flag",
+      "value": "--version"
+    },
+    {
+      "name": "check_flag",
+      "kind": "flag",
+      "value": "--check"
+    },
+    {
+      "name": "hold_flag",
+      "kind": "flag",
+      "value": "--hold"
+    },
+    {
+      "name": "unhold_flag",
+      "kind": "flag",
+      "value": "--unhold"
+    }
+  ]
+}

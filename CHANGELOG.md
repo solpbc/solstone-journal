@@ -19,6 +19,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- an agent you've let see your photos or imported screenshots can now ask for thumbnails instead of the standard smaller copy, including in batches.
+- for an agent you've let see your photos, day summaries now include up to 50 photos per day, load faster across a date range, and list each day's photos from earliest to latest. when the agent browses photos without keywords, each day's photos appear in the same order unless that day sits at the edge of a page of results. day summaries, search results, and photo entries the agent reads include each photo's time, leaving it out when the photo is noted as placed at import time.
 - facets now have one picker for icons, emoji, or a color dot only, replacing the separate emoji and icon settings in facet appearance. the emoji tab includes a paste box that keeps joined emoji such as 🧑‍💻 whole and rejects digits or mixed text. adding a facet and adding a custom activity use the same picker. thanks @dvanduzer for the report and feedback (#427).
 - a facet's chosen icon or emoji now shows across settings, activities, entities, agents, and home. on home, facet titles and icons show on the time-in-each-facet chips, and on today's activity rows when you have more than one active facet.
 - adding a facet now includes an optional description field explaining how your journal uses it to tell facets apart. when you have more than one active facet, settings shows a note on any active facet missing a description.
@@ -30,6 +32,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- photo descriptions a connected agent reads in search and day summaries no longer carry stray spaces around punctuation.
 - if the last status update has no reliable time, health now explains why it can't tell whether your journal is caught up.
 - an entity's notes count, on its all-facets page and in the entities list, no longer includes notes in facets you've muted, and its all-facets page no longer lists those facets. a moment now shows only the day it came up, not the time your journal wrote it down. each of a person's saved voice samples now names where it came from, such as the device, instead of the recording's internal name, which shows when you hover over the device.
 - work an agent does on its own in a tmux session you've listed in `output_sessions` is now usually described as the agent's, such as "the agent in qa ran the tests", so your journal is less likely to credit it to you. thanks @dvanduzer for the report (#424).

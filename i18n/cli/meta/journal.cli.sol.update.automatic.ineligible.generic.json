@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update automatic ineligible generic.",
+  "context": "Journal command-line text for update automatic ineligible generic.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8d545ad636536cf25c6084031f9228bbaf99b48b37a5666c52c229d5df7cb62c",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

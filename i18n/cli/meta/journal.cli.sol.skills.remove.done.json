@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for skills remove done.",
+  "context": "Journal command-line text for skills remove done.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    },
+    {
+      "name": "skill",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3e8c354cc90d65f3ad2d7cbee0c5b1fd514a291e2971675eac49ecd5b469d0fa",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills identity installation identity is unsupported for android.",
+  "context": "Journal command-line text for skills identity installation identity is unsupported for android.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c1900a6753553aa7aa45d5ddcc54a81b6dcf565926e753bf289a3aacf6be5503",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

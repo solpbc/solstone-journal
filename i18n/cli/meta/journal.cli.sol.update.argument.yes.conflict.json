@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for update argument yes conflict.",
+  "context": "Journal command-line text for update argument yes conflict.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6212df9336faba34b49e5be4641e5cef5f3fade143c4ed73a07cfd5f0349118b",
+  "max_length": 122,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "yes_flag",
+      "kind": "flag",
+      "value": "--yes"
+    },
+    {
+      "name": "check_flag",
+      "kind": "flag",
+      "value": "--check"
+    },
+    {
+      "name": "hold_flag",
+      "kind": "flag",
+      "value": "--hold"
+    },
+    {
+      "name": "unhold_flag",
+      "kind": "flag",
+      "value": "--unhold"
+    }
+  ]
+}

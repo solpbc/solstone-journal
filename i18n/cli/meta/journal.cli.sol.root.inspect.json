@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for root inspect.",
+  "context": "Journal command-line text for root inspect.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "84af1762ea6593ac2921d2c04d8d1642d4ff3b42a586d4b60214c8234609f060",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_name",
+      "kind": "command",
+      "value": "solstone"
+    }
+  ]
+}

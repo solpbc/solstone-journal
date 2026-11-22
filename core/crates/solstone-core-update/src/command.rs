@@ -40,25 +40,21 @@ impl std::fmt::Display for CommandParseError {
 impl std::error::Error for CommandParseError {}
 
 pub fn render_help() -> String {
-    "usage: solstone update [--check] [--json] [--lane release|staging|dev] [--version VER] [--hold] [--unhold] [--rollback] [--yes] [--automatic on|off|status] [--help]\n\
-     \n\
-     update your installed solstone journal and apps.\n\
-     \n\
-     options:\n\
-     \x20 --check      check whether an update is available without changing anything\n\
-     \x20 --json       emit output as json\n\
-     \x20 --lane       release lane to track (release, staging, or dev)\n\
-     \x20 --version    specific target version to install\n\
-     \x20 --hold       hold updates so a later update does not install them\n\
-     \x20 --unhold     release update hold\n\
-     \x20 --rollback   roll back to an earlier retained installation\n\
-     \x20 --yes        accept unattended update prompts\n\
-     \x20 --automatic  on, off or status: whether your journal updates itself once a day\n\
-     \x20 --help       show this help message\n"
-        .to_owned()
+    render_help_in(solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn render_help_in(locale: &str) -> String {
+    format!(
+        "{}\n",
+        solstone_core_cli_copy::render_for(locale, "journal.cli.sol.update.help", &[])
+    )
 }
 
 pub fn parse_args(args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
+    parse_args_in(solstone_core_cli_copy::ENGLISH, args)
+}
+
+pub fn parse_args_in(locale: &str, args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
     let mut check = false;
     let mut json = false;
     let mut lane = None;
@@ -74,7 +70,11 @@ pub fn parse_args(args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
     let mut iter = args.iter().peekable();
     while let Some(arg) = iter.next() {
         let s = arg.to_str().ok_or_else(|| CommandParseError {
-            message: "arguments must be valid utf-8".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.argument.utf8",
+                &[],
+            ),
         })?;
 
         if s == "--help" || s == "-h" {
@@ -100,7 +100,11 @@ pub fn parse_args(args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
                     .next()
                     .and_then(|value| value.to_str())
                     .ok_or_else(|| CommandParseError {
-                        message: "--automatic requires on, off or status".to_owned(),
+                        message: solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.sol.update.argument.automatic.missing",
+                            &[],
+                        ),
                     })?
                     .to_owned(),
             };
@@ -110,21 +114,35 @@ pub fn parse_args(args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
                 "status" => CommandMode::AutomaticStatus,
                 _ => {
                     return Err(CommandParseError {
-                        message: format!("--automatic takes on, off or status, not '{value}'"),
+                        message: solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.sol.update.argument.automatic.value",
+                            [("value", &(value))],
+                        ),
                     });
                 }
             });
         } else if s == "--lane" {
             let next_val = iter.next().ok_or_else(|| CommandParseError {
-                message: "--lane requires a value".to_owned(),
+                message: solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.argument.lane.missing",
+                    &[],
+                ),
             })?;
             let lane_str = next_val.to_str().ok_or_else(|| CommandParseError {
-                message: "--lane must be valid utf-8".to_owned(),
+                message: solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.argument.lane.utf8",
+                    &[],
+                ),
             })?;
             if lane_str != "release" && lane_str != "staging" && lane_str != "dev" {
                 return Err(CommandParseError {
-                    message: format!(
-                        "invalid release lane '{lane_str}'; choose release, staging, or dev"
+                    message: solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.sol.update.argument.lane.value",
+                        [("lane", &(lane_str))],
                     ),
                 });
             }
@@ -132,27 +150,41 @@ pub fn parse_args(args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
         } else if let Some(lane_str) = s.strip_prefix("--lane=") {
             if lane_str != "release" && lane_str != "staging" && lane_str != "dev" {
                 return Err(CommandParseError {
-                    message: format!(
-                        "invalid release lane '{lane_str}'; choose release, staging, or dev"
+                    message: solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.sol.update.argument.lane.value",
+                        [("lane", &(lane_str))],
                     ),
                 });
             }
             lane = Some(lane_str.to_owned());
         } else if s == "--version" {
             let next_val = iter.next().ok_or_else(|| CommandParseError {
-                message: "--version requires a value".to_owned(),
+                message: solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.argument.version.missing",
+                    &[],
+                ),
             })?;
             let ver_str = next_val.to_str().ok_or_else(|| CommandParseError {
-                message: "--version must be valid utf-8".to_owned(),
+                message: solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.argument.version.utf8",
+                    &[],
+                ),
             })?;
-            validate_version_pattern(ver_str)?;
+            validate_version_pattern(locale, ver_str)?;
             version = Some(ver_str.to_owned());
         } else if let Some(ver_str) = s.strip_prefix("--version=") {
-            validate_version_pattern(ver_str)?;
+            validate_version_pattern(locale, ver_str)?;
             version = Some(ver_str.to_owned());
         } else {
             return Err(CommandParseError {
-                message: format!("unrecognized flag: {s}"),
+                message: solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.sol.update.argument.unknown",
+                    [("flag", &(s))],
+                ),
             });
         }
     }
@@ -171,7 +203,11 @@ pub fn parse_args(args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
         (check as usize) + (hold as usize) + (unhold as usize) + (rollback as usize);
     if mode_flags_count > 1 {
         return Err(CommandParseError {
-            message: "choose only one of --check, --hold, --unhold, or --rollback".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.argument.mode.conflict",
+                &[],
+            ),
         });
     }
 
@@ -183,7 +219,11 @@ pub fn parse_args(args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
             || (automatic.is_some() && unattended)
         {
             return Err(CommandParseError {
-                message: "--automatic and --unattended can only be combined with --json".to_owned(),
+                message: solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.argument.automatic.conflict",
+                    &[],
+                ),
             });
         }
         return Ok(UpdateArgs {
@@ -197,13 +237,21 @@ pub fn parse_args(args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
 
     if yes && (check || hold || unhold) {
         return Err(CommandParseError {
-            message: "--yes cannot be combined with --check, --hold, or --unhold".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.argument.yes.conflict",
+                &[],
+            ),
         });
     }
 
     if version.is_some() && (check || hold || unhold) {
         return Err(CommandParseError {
-            message: "--version cannot be combined with --check, --hold, or --unhold".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.argument.version.conflict",
+                &[],
+            ),
         });
     }
 
@@ -228,7 +276,7 @@ pub fn parse_args(args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
     })
 }
 
-fn validate_version_pattern(version: &str) -> Result<(), CommandParseError> {
+fn validate_version_pattern(locale: &str, version: &str) -> Result<(), CommandParseError> {
     let (base, revision) = match version.split_once("-r") {
         Some((b, r)) => (b, Some(r)),
         None => (version, None),
@@ -237,8 +285,10 @@ fn validate_version_pattern(version: &str) -> Result<(), CommandParseError> {
     let parts: Vec<&str> = base.split('.').collect();
     if parts.len() != 3 {
         return Err(CommandParseError {
-            message: format!(
-                "invalid version format '{version}'; must be MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-rN"
+            message: solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.sol.update.argument.version.format",
+                [("version", &(version))],
             ),
         });
     }
@@ -246,7 +296,11 @@ fn validate_version_pattern(version: &str) -> Result<(), CommandParseError> {
     for part in parts {
         if part.is_empty() || !part.chars().all(|c| c.is_ascii_digit()) {
             return Err(CommandParseError {
-                message: format!("invalid version format '{version}'; components must be numeric"),
+                message: solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.sol.update.argument.version.numeric",
+                    [("version", &(version))],
+                ),
             });
         }
     }
@@ -255,8 +309,10 @@ fn validate_version_pattern(version: &str) -> Result<(), CommandParseError> {
         && (rev.is_empty() || !rev.chars().all(|c| c.is_ascii_digit()))
     {
         return Err(CommandParseError {
-            message: format!(
-                "invalid platform revision in '{version}'; revision must be numeric digits"
+            message: solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.sol.update.argument.version.revision",
+                [("version", &(version))],
             ),
         });
     }

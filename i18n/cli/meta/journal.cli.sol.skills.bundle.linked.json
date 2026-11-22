@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills bundle linked.",
+  "context": "Journal command-line text for skills bundle linked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "de4177d2b8bfc458d4c4be37b85fd520b0670701b2721038c172fba0487a2178",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

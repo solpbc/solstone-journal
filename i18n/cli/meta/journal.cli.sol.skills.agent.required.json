@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for skills agent required.",
+  "context": "Journal command-line text for skills agent required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a03ce48d7fb964feb6ee5d98edd42e0cc4de1b0357c01b0d57a109481041b956",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "skill_command",
+      "kind": "command",
+      "value": "solstone skills"
+    },
+    {
+      "name": "agent_flag",
+      "kind": "flag",
+      "value": "--agent"
+    }
+  ]
+}

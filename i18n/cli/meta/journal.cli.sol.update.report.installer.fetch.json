@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report installer fetch.",
+  "context": "Journal command-line text for update report installer fetch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c7548d7a293193aec34674f38cecfc3e768d6f849844e70ca6309f4ce4f392c",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

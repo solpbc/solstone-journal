@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update automatic prefix.",
+  "context": "Journal command-line text for update automatic prefix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9ab9c973da189444b9af1960584653ba9a0ccb9df4556fc27badd83eb3ee5a1d",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

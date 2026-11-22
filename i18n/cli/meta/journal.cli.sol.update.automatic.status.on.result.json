@@ -1,0 +1,44 @@
+{
+  "description": "Journal command-line text for update automatic status on result.",
+  "context": "Journal command-line text for update automatic status on result.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "a6ba68ea4ada692a9ee817fe90a67552e7eb99267abf4720dcd9e5c3a6f48eae",
+  "max_length": 882,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "result",
+    "type": "string",
+    "enum_values": [
+      "up-to-date",
+      "installed",
+      "off",
+      "paused",
+      "held",
+      "hold-unknown",
+      "offline",
+      "metered",
+      "waiting-for-signed-installer",
+      "busy",
+      "not-eligible",
+      "failed"
+    ],
+    "enum_default": "failed"
+  }
+}

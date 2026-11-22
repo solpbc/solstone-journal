@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for skills identity io read namespace registry.",
+  "context": "Journal command-line text for skills identity io read namespace registry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "470254f371a1b35bb4394500a6a855b653396d4a28a6590057672029bbec2f2f",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

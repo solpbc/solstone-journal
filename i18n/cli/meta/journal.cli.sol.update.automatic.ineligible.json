@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update automatic ineligible.",
+  "context": "Journal command-line text for update automatic ineligible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f8f3628ed1fef980a65108436713ca6e573ca87daf930d0f8ddafc4ee05b1822",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "install_url",
+      "kind": "url",
+      "value": "https://solstone.app/install.sh"
+    }
+  ]
+}

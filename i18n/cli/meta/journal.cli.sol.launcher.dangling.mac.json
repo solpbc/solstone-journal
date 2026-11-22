@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for launcher dangling mac.",
+  "context": "Journal command-line text for launcher dangling mac.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e98b34f040886ed894dfb7bf695cb3a8378dc8c6d5c98762fb178299d2129c1d",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_name",
+      "kind": "command",
+      "value": "solstone"
+    }
+  ]
+}

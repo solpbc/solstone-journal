@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report hold changed.",
+  "context": "Journal command-line text for update report hold changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "340bf7ce3d6385c2dcf0107b71b7ded006a9b7415cd126cd042f9c66dce5caf0",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

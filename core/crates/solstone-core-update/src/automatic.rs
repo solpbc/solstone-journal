@@ -395,15 +395,39 @@ impl SwitchRefusal {
 /// The words for an install that can't update itself, which also say how a
 /// package install gets updates.
 pub fn ineligible_message(ownership: &OwnershipResult, has_repository: bool) -> String {
+    ineligible_message_in(solstone_core_cli_copy::ENGLISH, ownership, has_repository)
+}
+
+pub fn ineligible_message_in(
+    locale: &str,
+    ownership: &OwnershipResult,
+    has_repository: bool,
+) -> String {
     let package = matches!(
         ownership,
         OwnershipResult::Positive(pos)
             if matches!(pos.route_kind, RouteKind::PlatformPackage | RouteKind::PlatformMixed)
     );
     if package {
-        package_route_message(has_repository).to_owned()
+        if has_repository {
+            solstone_core_window_catalog::render(
+                locale,
+                "journal.window.shared.status.pane.window.explanation.installed.from.a.package.updates.come",
+                &[],
+            )
+        } else {
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.automatic.package.add",
+                &[],
+            )
+        }
     } else {
-        "this install can't update itself. automatic updates work on an install from https://solstone.app/install.sh.".to_owned()
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.sol.update.automatic.ineligible",
+            &[],
+        )
     }
 }
 
@@ -424,14 +448,34 @@ pub fn turn_on(
     home: &Path,
     systemctl: &dyn Systemctl,
 ) -> Result<(), SwitchRefusal> {
+    turn_on_in(
+        solstone_core_cli_copy::ENGLISH,
+        pos,
+        data_dir,
+        home,
+        systemctl,
+    )
+}
+
+pub fn turn_on_in(
+    locale: &str,
+    pos: &PositiveOwnership,
+    data_dir: &Path,
+    home: &Path,
+    systemctl: &dyn Systemctl,
+) -> Result<(), SwitchRefusal> {
     if !eligible(pos) {
         return Err(SwitchRefusal::new(
             "not-eligible",
-            "this install can't update itself.",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.automatic.ineligible.generic",
+                &[],
+            ),
         ));
     }
     let prefix = pos.prefix.as_deref().expect("eligible tree has a prefix");
-    turn_on_at(prefix, data_dir, home, systemctl)
+    turn_on_at_in(locale, prefix, data_dir, home, systemctl)
 }
 
 /// Turn automatic updates on for the tree at `prefix`.
@@ -441,10 +485,30 @@ pub fn turn_on_at(
     home: &Path,
     systemctl: &dyn Systemctl,
 ) -> Result<(), SwitchRefusal> {
+    turn_on_at_in(
+        solstone_core_cli_copy::ENGLISH,
+        prefix,
+        data_dir,
+        home,
+        systemctl,
+    )
+}
+
+pub fn turn_on_at_in(
+    locale: &str,
+    prefix: &Path,
+    data_dir: &Path,
+    home: &Path,
+    systemctl: &dyn Systemctl,
+) -> Result<(), SwitchRefusal> {
     let service = service_unit(&prefix.join("current/bin/solstone")).ok_or_else(|| {
         SwitchRefusal::new(
             "prefix-unsupported",
-            "the install directory's name can't go in a service file.",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.automatic.prefix",
+                &[],
+            ),
         )
     })?;
     let dir = unit_dir(home);
@@ -460,11 +524,23 @@ pub fn turn_on_at(
         remove_units(home, systemctl);
         return Err(SwitchRefusal::new(
             "systemd-unavailable",
-            "couldn't set up the daily update check. your systemd user session may not be running.",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.automatic.session",
+                &[],
+            ),
         ));
     }
-    write_choice(data_dir, Choice::On)
-        .map_err(|_| SwitchRefusal::new("write-failed", "couldn't save your choice."))?;
+    write_choice(data_dir, Choice::On).map_err(|_| {
+        SwitchRefusal::new(
+            "write-failed",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.automatic.choice",
+                &[],
+            ),
+        )
+    })?;
     // Turning it on is the owner trying again.
     let mut state = read_state(data_dir);
     state.paused = false;
@@ -480,9 +556,26 @@ pub fn turn_off(
     home: &Path,
     systemctl: &dyn Systemctl,
 ) -> Result<(), SwitchRefusal> {
+    turn_off_in(solstone_core_cli_copy::ENGLISH, data_dir, home, systemctl)
+}
+
+pub fn turn_off_in(
+    locale: &str,
+    data_dir: &Path,
+    home: &Path,
+    systemctl: &dyn Systemctl,
+) -> Result<(), SwitchRefusal> {
     remove_units(home, systemctl);
-    write_choice(data_dir, Choice::Off)
-        .map_err(|_| SwitchRefusal::new("write-failed", "couldn't save your choice."))
+    write_choice(data_dir, Choice::Off).map_err(|_| {
+        SwitchRefusal::new(
+            "write-failed",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.automatic.choice",
+                &[],
+            ),
+        )
+    })
 }
 
 /// Remove the units, the choice and the state, for a clean uninstall.

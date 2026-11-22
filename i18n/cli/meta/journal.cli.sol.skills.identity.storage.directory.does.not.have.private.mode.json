@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for skills identity storage directory does not have private mode.",
+  "context": "Journal command-line text for skills identity storage directory does not have private mode.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "56d202cb3691f16548df85fc9bd3f310013ca63d516b7cbc79b8ad90146f246d",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "mode",
+      "kind": "accepted-input",
+      "value": "0700"
+    }
+  ]
+}

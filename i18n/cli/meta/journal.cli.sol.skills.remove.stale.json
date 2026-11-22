@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for skills remove stale.",
+  "context": "Journal command-line text for skills remove stale.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    },
+    {
+      "name": "skill",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6fb9f166f27db12ba83928ee6131a0bdd2f23f991adf244408892bbea53ac7f7",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

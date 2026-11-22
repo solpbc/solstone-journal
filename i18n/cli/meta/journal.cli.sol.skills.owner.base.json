@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for skills owner base.",
+  "context": "Journal command-line text for skills owner base.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0f2b38f21b5601c2aa3b8405bc8998ef92a14eaf68d22a475183f7cb36cfc012",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

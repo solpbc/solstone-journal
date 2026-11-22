@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for help title.",
+  "context": "Journal command-line text for help title.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9dbbd43e70a816cc2074d0c3e8ef2ac4059c1017af0577abc3eb0dfb9379aba6",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_name",
+      "kind": "command",
+      "value": "solstone"
+    }
+  ]
+}

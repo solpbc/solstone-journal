@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update receipt native version.",
+  "context": "Journal command-line text for update receipt native version.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b857c63930bd670d64bee9ab65ed25b8c42952fba8994a197405e3fd73e038ac",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "journal_field",
+      "kind": "accepted-input",
+      "value": "journal_version"
+    }
+  ]
+}

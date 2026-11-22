@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for skills warning existing.",
+  "context": "Journal command-line text for skills warning existing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    },
+    {
+      "name": "skill",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0fb696e53b55ab963911143cbfba19ee89b6e7fe48f825e37d482186e16a7bd4",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

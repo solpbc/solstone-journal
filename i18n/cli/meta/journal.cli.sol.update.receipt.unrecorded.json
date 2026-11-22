@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for update receipt unrecorded.",
+  "context": "Journal command-line text for update receipt unrecorded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1df805a39e53d6407683b2943eb05465f41e85e4d194cfcb733bbaba28eb8027",
+  "max_length": 287,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "install_command",
+      "kind": "command",
+      "value": "curl -fsSL https://solstone.app/install.sh | sh -s -- --upgrade"
+    },
+    {
+      "name": "update_command",
+      "kind": "command",
+      "value": "solstone update"
+    },
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

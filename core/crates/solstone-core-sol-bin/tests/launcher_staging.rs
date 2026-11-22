@@ -90,6 +90,7 @@ fn cargo_build_stages_the_public_solstone_launcher_beside_its_native_sibling() {
 
     let output = Command::new(&launcher)
         .arg("--help")
+        .env_remove("SOLSTONE_LOCALE")
         .output()
         .expect("run staged launcher");
     assert!(

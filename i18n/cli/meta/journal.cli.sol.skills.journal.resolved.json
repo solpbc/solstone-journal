@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills journal resolved.",
+  "context": "Journal command-line text for skills journal resolved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d0094aa4a017edcf5a3feb97df4e7697b847c5edcdac49b3165870628f8542f",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

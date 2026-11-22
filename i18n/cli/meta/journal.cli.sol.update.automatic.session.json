@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update automatic session.",
+  "context": "Journal command-line text for update automatic session.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fa2da961f100c91d1baf936920cb671476212e16433aaae7f2700540b6c168bf",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

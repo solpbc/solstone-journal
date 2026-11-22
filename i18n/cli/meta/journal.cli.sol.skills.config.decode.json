@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for skills config decode.",
+  "context": "Journal command-line text for skills config decode.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "adcadf180301f1d7b2eec00127a75e129bff14426b446f98172c8e7b44134436",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

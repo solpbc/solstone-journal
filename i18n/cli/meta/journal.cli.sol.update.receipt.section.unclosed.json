@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update receipt section unclosed.",
+  "context": "Journal command-line text for update receipt section unclosed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7ece9a8bef3638d6f886f4fe1501febc94b3ff3331456ee6d5cdf4d122b72c04",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

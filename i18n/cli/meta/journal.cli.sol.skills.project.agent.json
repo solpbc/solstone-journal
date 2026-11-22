@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for skills project agent.",
+  "context": "Journal command-line text for skills project agent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2de578bcbcfd2551305a531648842fd4d351d8a9fa37b3ecb7d93b0a6c7b94a9",
+  "max_length": 148,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "claude_option",
+      "kind": "flag",
+      "value": "--agent claude"
+    },
+    {
+      "name": "all_option",
+      "kind": "flag",
+      "value": "--agent all"
+    },
+    {
+      "name": "agent_flag",
+      "kind": "flag",
+      "value": "--agent"
+    },
+    {
+      "name": "project_flag",
+      "kind": "flag",
+      "value": "--project"
+    }
+  ]
+}

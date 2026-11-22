@@ -1,0 +1,48 @@
+{
+  "description": "Journal command-line text for update automatic status paused result checked.",
+  "context": "Journal command-line text for update automatic status paused result checked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "03d8a1c56a087d40efdcb6d7a52dc66e1c56d5365144a53dd9f1d0e0063b3712",
+  "max_length": 1638,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "result",
+    "type": "string",
+    "enum_values": [
+      "up-to-date",
+      "installed",
+      "off",
+      "paused",
+      "held",
+      "hold-unknown",
+      "offline",
+      "metered",
+      "waiting-for-signed-installer",
+      "busy",
+      "not-eligible",
+      "failed"
+    ],
+    "enum_default": "failed"
+  }
+}

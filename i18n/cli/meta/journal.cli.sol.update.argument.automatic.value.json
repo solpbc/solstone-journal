@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for update argument automatic value.",
+  "context": "Journal command-line text for update argument automatic value.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0190cfbab74a3eeae39f38799289a193fa72efd174807152e5c0dfb0594fbc80",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "automatic_values",
+      "kind": "accepted-input",
+      "value": "on, off or status"
+    },
+    {
+      "name": "automatic_flag",
+      "kind": "flag",
+      "value": "--automatic"
+    }
+  ]
+}

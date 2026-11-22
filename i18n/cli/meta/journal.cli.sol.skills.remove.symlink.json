@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills remove symlink.",
+  "context": "Journal command-line text for skills remove symlink.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8450f7079f9e60d8b9649407c64a7c647897a084eea8b650b507935f53c69665",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

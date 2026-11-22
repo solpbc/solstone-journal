@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for skills home missing.",
+  "context": "Journal command-line text for skills home missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b954f01dbf959b7c4be5cf3c6acb0c8dc40fa3e427216c360ce7b8f8079ba28b",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone",
+      "kind": "command",
+      "value": "solstone"
+    },
+    {
+      "name": "home",
+      "kind": "accepted-input",
+      "value": "HOME"
+    }
+  ]
+}

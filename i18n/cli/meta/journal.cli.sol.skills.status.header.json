@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills status header.",
+  "context": "Journal command-line text for skills status header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aed6385dd9cd9f3beb9394fd3c0ad950ab328dd6fe81ec91cad777a1c1f60235",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

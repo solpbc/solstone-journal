@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for update automatic package add.",
+  "context": "Journal command-line text for update automatic package add.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "93f943fe2102d8a91917118fee4ed820c22fabac261ef4ec28f21e1b65854057",
+  "max_length": 151,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "package_url",
+      "kind": "url",
+      "value": "solstone.app/install#linux-packages"
+    },
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

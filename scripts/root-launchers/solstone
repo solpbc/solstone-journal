@@ -1,52 +1,71 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
-id=solstone
 
-# A mac's command line ships inside the journal app, so that is what to reinstall.
-reinstall() {
+# The shell can still report a missing executable on a damaged installation.
+launcher_error() {
     case $(uname -s) in
-        Darwin) printf 'Reinstall the journal app.' ;;
-        *) printf 'Reinstall solstone and solstone-core-sol.' ;;
+        Darwin) write_launcher_error mac "$@" ;;
+        *) write_launcher_error unix "$@" ;;
     esac
 }
 
-p=$0
-n=0
-while [ -L "$p" ]; do
-    n=$((n + 1))
-    if [ "$n" -gt 40 ]; then
-        printf '%s: native launcher symlink cycle detected. %s\n' "$id" "$(reinstall)" >&2
+launch() {
+    p=$0
+    n=0
+    while [ -L "$p" ]; do
+        n=$((n + 1))
+        if [ "$n" -gt 40 ]; then
+            launcher_error cycle
+            exit 78
+        fi
+        t=$(readlink -- "$p") || {
+            launcher_error dangling "$p"
+            exit 78
+        }
+        case $t in
+            /*) p=$t ;;
+            *) p=$(dirname -- "$p")/$t ;;
+        esac
+    done
+
+    if [ ! -f "$p" ]; then
+        launcher_error dangling "$p"
         exit 78
     fi
-    t=$(readlink -- "$p") || {
-        printf '%s: native launcher symlink is dangling: %s. %s\n' "$id" "$p" "$(reinstall)" >&2
+
+    d=$(cd -P -- "$(dirname -- "$p")" && pwd) || {
+        launcher_error dangling "$p"
         exit 78
     }
-    case $t in
-        /*) p=$t ;;
-        *) p=$(dirname -- "$p")/$t ;;
-    esac
-done
+    core=$d/solstone-core-sol
 
-if [ ! -f "$p" ]; then
-    printf '%s: native launcher symlink is dangling: %s. %s\n' "$id" "$p" "$(reinstall)" >&2
-    exit 78
-fi
+    if [ ! -e "$core" ]; then
+        launcher_error missing "$core"
+        exit 78
+    fi
+    if [ ! -f "$core" ] || [ ! -x "$core" ]; then
+        launcher_error executable "$core"
+        exit 78
+    fi
 
-d=$(cd -P -- "$(dirname -- "$p")" && pwd) || {
-    printf '%s: native launcher symlink is dangling: %s. %s\n' "$id" "$p" "$(reinstall)" >&2
-    exit 78
+    exec "$core" "$@"
 }
-core=$d/solstone-core-sol
 
-if [ ! -e "$core" ]; then
-    printf '%s: native solstone-core-sol sibling is missing: %s. %s\n' "$id" "$core" "$(reinstall)" >&2
-    exit 78
-fi
-if [ ! -f "$core" ] || [ ! -x "$core" ]; then
-    printf '%s: native solstone-core-sol sibling is not executable: %s. %s\n' "$id" "$core" "$(reinstall)" >&2
-    exit 78
-fi
+# Begin generated launcher messages
+write_launcher_error() {
+    language='en-US'
+    case "$language:$1:$2" in
+        'en-US:mac:cycle') printf '%s\n' 'solstone: native launcher symlink cycle detected. Reinstall the journal app.' >&2 ;;
+        'en-US:unix:cycle') printf '%s\n' 'solstone: native launcher symlink cycle detected. Reinstall solstone and solstone-core-sol.' >&2 ;;
+        'en-US:mac:dangling') printf '%s\n' 'solstone: native launcher symlink is dangling: '"$3"'. Reinstall the journal app.' >&2 ;;
+        'en-US:unix:dangling') printf '%s\n' 'solstone: native launcher symlink is dangling: '"$3"'. Reinstall solstone and solstone-core-sol.' >&2 ;;
+        'en-US:mac:missing') printf '%s\n' 'solstone: native solstone-core-sol sibling is missing: '"$3"'. Reinstall the journal app.' >&2 ;;
+        'en-US:unix:missing') printf '%s\n' 'solstone: native solstone-core-sol sibling is missing: '"$3"'. Reinstall solstone and solstone-core-sol.' >&2 ;;
+        'en-US:mac:executable') printf '%s\n' 'solstone: native solstone-core-sol sibling is not executable: '"$3"'. Reinstall the journal app.' >&2 ;;
+        'en-US:unix:executable') printf '%s\n' 'solstone: native solstone-core-sol sibling is not executable: '"$3"'. Reinstall solstone and solstone-core-sol.' >&2 ;;
+    esac
+}
+# End generated launcher messages
 
-exec "$core" "$@"
+launch "$@"

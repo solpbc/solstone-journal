@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for skills subcommand missing.",
+  "context": "Journal command-line text for skills subcommand missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e86d4bb5347279f1a95ee0c164c2f1149278ba24253d2d04c369ad4874ba575a",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "skill_command",
+      "kind": "command",
+      "value": "solstone skills"
+    }
+  ]
+}

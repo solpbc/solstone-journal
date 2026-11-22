@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for skills payload project.",
+  "context": "Journal command-line text for skills payload project.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7f611d7e3eed4583e5ce7e53ce63020e90c4b9736fd261a9cd56373edc98e7dc",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update automatic choice.",
+  "context": "Journal command-line text for update automatic choice.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bc7705e2d2055b253e661b4ea3771f8f37125a813e11453b76b8b44d04718012",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

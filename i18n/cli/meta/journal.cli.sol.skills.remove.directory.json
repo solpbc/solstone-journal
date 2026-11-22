@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills remove directory.",
+  "context": "Journal command-line text for skills remove directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4732d7fc665df7adf100524a2177c2b50c3d32627f499514c18e2d1e075e99e1",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

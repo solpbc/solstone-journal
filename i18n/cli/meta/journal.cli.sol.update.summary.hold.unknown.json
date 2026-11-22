@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update summary hold unknown.",
+  "context": "Journal command-line text for update summary hold unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3cb232885eef655e08996d4b270b143f0f97d1e0538c720083ef67db4cee364a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

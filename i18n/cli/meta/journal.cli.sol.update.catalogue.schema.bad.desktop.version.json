@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update catalogue schema bad desktop version.",
+  "context": "Journal command-line text for update catalogue schema bad desktop version.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "29e58dacc02dbf6da5b59c04d604a570d9c6b386fc5fc64ab7633b15e2e480f2",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

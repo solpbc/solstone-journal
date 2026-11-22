@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report unknown.",
+  "context": "Journal command-line text for update report unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a7442acd29a287682fddeb9ea3df2a383b26b8689f292fdb94125494676d5995",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

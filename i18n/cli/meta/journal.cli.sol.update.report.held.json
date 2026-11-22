@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update report held.",
+  "context": "Journal command-line text for update report held.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9f92793de3dd8750e6130b6e3daba10088308bb243619be396080fa0fa0b3f52",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "unhold_command",
+      "kind": "command",
+      "value": "solstone update --unhold"
+    }
+  ]
+}

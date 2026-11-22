@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for resident startup.",
+  "context": "Journal command-line text for resident startup.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "21b673fa9e4a4ffbacedfd61d404e542c3a6b0bfba7612ac2c2f33c531caa443",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_name",
+      "kind": "command",
+      "value": "solstone"
+    }
+  ]
+}

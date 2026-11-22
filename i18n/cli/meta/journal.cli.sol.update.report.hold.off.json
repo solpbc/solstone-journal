@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report hold off.",
+  "context": "Journal command-line text for update report hold off.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "15e5bf1be76e63e56cd12b116e69293e19d25a39aafe4fac2900697959ecb36c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

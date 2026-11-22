@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for update receipt claimed twice.",
+  "context": "Journal command-line text for update receipt claimed twice.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "component",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9310aa7f8f421c7cc92896e9cccc534901c49c87ec6c1b60161a4600806a6f0c",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -466,6 +466,11 @@ pub fn native_already_keeps_journal_probe(context: &SetupContext<'_>) -> Result<
 #[derive(Debug, Clone, PartialEq)]
 pub enum SetupText {
     Diagnostic(String),
+    ChildDisplay {
+        source: String,
+        locale: String,
+        display: String,
+    },
     Message(&'static str, Vec<(&'static str, String)>),
 }
 
@@ -477,6 +482,17 @@ impl SetupText {
     fn render(&self, locale: &str) -> String {
         match self {
             Self::Diagnostic(value) => value.clone(),
+            Self::ChildDisplay {
+                source,
+                locale: requested,
+                display,
+            } => {
+                if locale == requested {
+                    display.clone()
+                } else {
+                    source.clone()
+                }
+            }
             Self::Message(id, args) => {
                 let values: Vec<_> = args
                     .iter()
@@ -2634,6 +2650,7 @@ fn run_skill_step(
         result.reason = Some(SkipReason::SkipSkills.as_str().to_owned());
         return Ok(result);
     }
+    let locale = cli_locale();
     let output = context
         .runner
         .run(&CommandRequest {
@@ -2641,18 +2658,42 @@ fn run_skill_step(
             args,
             timeout_seconds: Some(context.args.step_timeout_seconds.max(0) as u64),
             idle_timeout_seconds: None,
-            env: Vec::new(),
+            env: vec![
+                (
+                    "SOLSTONE_LOCALE".into(),
+                    solstone_core_window_catalog::ENGLISH.into(),
+                ),
+                (
+                    solstone_core_skill_state::setup_failure::DISPLAY_LOCALE_ENV.into(),
+                    locale.into(),
+                ),
+            ],
         })
         .map_err(|message| StepExecutionError::Unhandled { message })?;
     let now = (context.now)();
     if output.timed_out || output.exit_code != 0 {
-        return Ok(subprocess_failure(
-            name,
-            paths,
-            now,
-            output,
-            context.args.step_timeout_seconds,
-        ));
+        let display = (!output.timed_out && locale != solstone_core_window_catalog::ENGLISH)
+            .then(|| {
+                solstone_core_skill_state::setup_failure::display(
+                    &output.stdout,
+                    &output.stderr,
+                    locale,
+                )
+            })
+            .flatten();
+        let mut result =
+            subprocess_failure(name, paths, now, output, context.args.step_timeout_seconds);
+        if let (Some(display), Some(StepErrorPayload::Failure(error))) =
+            (display, result.error.as_mut())
+            && let Some(display) = first_line(&display)
+        {
+            error.message = SetupText::ChildDisplay {
+                source: error.message.render(solstone_core_window_catalog::ENGLISH),
+                locale: locale.to_owned(),
+                display,
+            };
+        }
+        return Ok(result);
     }
     Ok(StepResult::new(name, StepStatus::Ok, paths, now))
 }
