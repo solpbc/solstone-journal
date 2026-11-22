@@ -103,11 +103,15 @@ window.solstoneJournalWebHost = {{\n\
     );
 
     let import = import_contract();
-    let js_text = format!("{js_text}\nwindow.solstoneImportContract = Object.freeze({import});\n");
+    let auth = auth_contract();
+    let js_text = format!(
+        "{js_text}\nwindow.solstoneImportContract = Object.freeze({import});\nwindow.solstoneAuthContract = Object.freeze({auth});\n"
+    );
     (host_bytes, js_text.into_bytes())
 }
 
 const IMPORT_CONTRACT: &str = "contracts/journal-web-host/import-host-contract.json";
+const AUTH_CONTRACT: &str = "contracts/journal-web-host/auth-host-contract.json";
 
 fn import_contract() -> Value {
     let mut contract: Value = serde_json::from_str(include_str!(
@@ -124,12 +128,58 @@ fn import_bytes() -> Vec<u8> {
     bytes
 }
 
+fn auth_contract() -> Value {
+    let mut contract: Value = serde_json::from_str(include_str!(
+        "../../../../../contracts/journal-web-host/auth.json"
+    ))
+    .expect("parse auth definition");
+    assert_eq!(
+        contract.get("version").and_then(Value::as_i64),
+        Some(2),
+        "auth contract must target version 2"
+    );
+    assert_eq!(
+        contract.get("capability").and_then(Value::as_str),
+        Some("solstoneJournalHost"),
+        "auth contract must ride on solstoneJournalHost"
+    );
+    for key in [
+        "prepare",
+        "prepared",
+        "authorize",
+        "result",
+        "cancel",
+        "unsupported",
+    ] {
+        assert!(
+            contract
+                .get(key)
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty()),
+            "auth contract missing string token for {key}"
+        );
+    }
+    contract.sort_all_objects();
+    contract
+}
+
+fn auth_bytes() -> Vec<u8> {
+    let mut bytes = serde_json::to_vec_pretty(&auth_contract()).expect("serialize auth definition");
+    bytes.push(b'\n');
+    bytes
+}
+
 #[test]
 fn generated_journal_web_host_artifacts_match_committed() {
     let root = repository_root();
     assert_eq!(
         fs::read(root.join(IMPORT_CONTRACT)).unwrap(),
         import_bytes()
+    );
+    assert_eq!(
+        fs::read(root.join(AUTH_CONTRACT)).unwrap(),
+        auth_bytes(),
+        "committed {AUTH_CONTRACT} differs from generated"
     );
     let (expected_host_json, expected_client_js) = generate_artifacts(SOURCE_JSON_STR);
 
@@ -149,10 +199,66 @@ fn generated_journal_web_host_artifacts_match_committed() {
 }
 
 #[test]
+fn auth_conformance_cases_match_auth_contract() {
+    let contract = auth_contract();
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../../../contracts/journal-web-host/conformance/auth-cases.json"
+    ))
+    .expect("parse auth conformance cases");
+    let prepare_type = contract["prepare"].as_str().unwrap();
+    let authorize_type = contract["authorize"].as_str().unwrap();
+    let cancel_type = contract["cancel"].as_str().unwrap();
+
+    assert_ne!(cases["unknown"]["type"].as_str(), Some(prepare_type));
+    assert_ne!(cases["unknown"]["type"].as_str(), Some(authorize_type));
+    assert_ne!(cases["unknown"]["type"].as_str(), Some(cancel_type));
+    assert_eq!(cases["prepare_all"]["type"].as_str(), Some(prepare_type));
+    assert_eq!(
+        cases["prepare_loopback_only"]["type"].as_str(),
+        Some(prepare_type)
+    );
+    assert_eq!(
+        cases["prepare_custom_scheme_only"]["type"].as_str(),
+        Some(prepare_type)
+    );
+    assert_eq!(
+        cases["prepare_invalid_host"]["type"].as_str(),
+        Some(prepare_type)
+    );
+    assert_eq!(
+        cases["prepare_invalid_path"]["type"].as_str(),
+        Some(prepare_type)
+    );
+    assert_eq!(
+        cases["prepare_empty_preferences"]["type"].as_str(),
+        Some(prepare_type)
+    );
+    assert_eq!(cases["authorize"]["type"].as_str(), Some(authorize_type));
+    assert_eq!(
+        cases["authorize_http"]["type"].as_str(),
+        Some(authorize_type)
+    );
+    assert_eq!(
+        cases["authorize_javascript"]["type"].as_str(),
+        Some(authorize_type)
+    );
+    assert_eq!(
+        cases["authorize_userinfo"]["type"].as_str(),
+        Some(authorize_type)
+    );
+    assert_eq!(
+        cases["authorize_unknown_session"]["type"].as_str(),
+        Some(authorize_type)
+    );
+    assert_eq!(cases["cancel"]["type"].as_str(), Some(cancel_type));
+}
+
+#[test]
 #[ignore = "writes committed contract artifacts; run explicitly when regenerating"]
 fn regenerate_journal_web_host_contract() {
     let root = repository_root();
     fs::write(root.join(IMPORT_CONTRACT), import_bytes()).unwrap();
+    fs::write(root.join(AUTH_CONTRACT), auth_bytes()).unwrap();
     let (host_json, client_js) = generate_artifacts(SOURCE_JSON_STR);
 
     let host_path = root.join(HOST_CONTRACT_REL_PATH);

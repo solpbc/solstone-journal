@@ -122,10 +122,17 @@ pub(crate) fn deny_member(member: &str, regular_file: bool) -> bool {
 // These shared backup exclusions protect installation credentials. A full
 // owner export retains them, while their runtime candidates and removal pivots
 // remain throwaway state. All other shared rules apply without modification.
+fn is_sign_in_credential_member(member: &str) -> bool {
+    member
+        .strip_prefix("config/")
+        .and_then(|rest| rest.split('/').next())
+        .is_some_and(|first| first.contains("-sign-in.json"))
+}
+
 fn portable_copy_excluded(member: &str) -> bool {
     if member == "mcp-endpoint"
         || member.starts_with("mcp-endpoint/")
-        || member.starts_with("config/chatgpt-sign-in.json")
+        || is_sign_in_credential_member(member)
     {
         return member.split('/').any(|part| {
             part.starts_with(".removing_")
@@ -288,6 +295,8 @@ mod tests {
             "mcp-endpoint/nested/.removing_old/key",
             "config/chatgpt-sign-in.json.tmp",
             "config/chatgpt-sign-in.json.lock",
+            "config/plaud-sign-in.json.tmp",
+            "config/plaud-sign-in.json.lock",
             "awareness/discovery_clusters.json",
             "awareness/activity_state.json",
             "health/heartbeat.log",
@@ -324,6 +333,9 @@ mod tests {
             "link",
             "config/chatgpt-sign-in.json",
             "config/chatgpt-sign-in.json.unreadable-1",
+            "config/plaud-sign-in.json",
+            "config/plaud-sign-in.json.renewal",
+            "config/plaud-sign-in.json.unreadable-1",
             "imports/batch/config/journal.json",
             "imports/item/config/journal.json",
             "imports/item/peers/original.txt",

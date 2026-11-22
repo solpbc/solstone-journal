@@ -1,0 +1,93 @@
+{
+  "unknown": {"type": "future.auth.example", "id": "auth-unknown-1", "future": 1},
+  "prepare_all": {
+    "type": "auth.prepare",
+    "id": "auth-prepare-all-1",
+    "preferences": [
+      {"mode": "loopback", "host": "127.0.0.1", "path": "/auth/callback", "port": 0},
+      {"mode": "custom_scheme", "uri": "solstone://oauth/callback"},
+      {"mode": "custom_scheme", "uri": "app.solstone:/callback"}
+    ],
+    "future": {"ignore": true}
+  },
+  "prepare_loopback_only": {
+    "type": "auth.prepare",
+    "id": "auth-prepare-loopback-1",
+    "preferences": [
+      {"mode": "loopback", "host": "127.0.0.1", "path": "/auth/callback", "port": 0}
+    ]
+  },
+  "prepare_custom_scheme_only": {
+    "type": "auth.prepare",
+    "id": "auth-prepare-scheme-1",
+    "preferences": [
+      {"mode": "custom_scheme", "uri": "solstone://oauth/callback"},
+      {"mode": "custom_scheme", "uri": "app.solstone:/callback"}
+    ]
+  },
+  "prepare_invalid_host": {
+    "type": "auth.prepare",
+    "id": "auth-prepare-bad-host-1",
+    "preferences": [
+      {"mode": "loopback", "host": "example.invalid", "path": "/auth/callback", "port": 0}
+    ]
+  },
+  "prepare_invalid_path": {
+    "type": "auth.prepare",
+    "id": "auth-prepare-bad-path-1",
+    "preferences": [
+      {"mode": "loopback", "host": "127.0.0.1", "path": "/auth/../callback", "port": 0}
+    ]
+  },
+  "prepare_empty_preferences": {
+    "type": "auth.prepare",
+    "id": "auth-prepare-empty-1",
+    "preferences": []
+  },
+  "authorize": {
+    "type": "auth.authorize",
+    "id": "auth-authorize-1",
+    "session_id": "",
+    "authorize_url": "https://example.invalid/authorize?response_type=code",
+    "expected_state": "conformance-state-token",
+    "timeout_seconds": 600,
+    "future": {"ignore": true}
+  },
+  "authorize_http": {
+    "type": "auth.authorize",
+    "id": "auth-authorize-http-1",
+    "session_id": "",
+    "authorize_url": "http://example.invalid/authorize",
+    "expected_state": "conformance-state-token",
+    "timeout_seconds": 60
+  },
+  "authorize_javascript": {
+    "type": "auth.authorize",
+    "id": "auth-authorize-js-1",
+    "session_id": "",
+    "authorize_url": "javascript:void(0)",
+    "expected_state": "conformance-state-token",
+    "timeout_seconds": 60
+  },
+  "authorize_userinfo": {
+    "type": "auth.authorize",
+    "id": "auth-authorize-userinfo-1",
+    "session_id": "",
+    "authorize_url": "https://user@example.invalid/authorize",
+    "expected_state": "conformance-state-token",
+    "timeout_seconds": 60
+  },
+  "authorize_unknown_session": {
+    "type": "auth.authorize",
+    "id": "auth-authorize-unknown-session-1",
+    "session_id": "nonexistent-session-id",
+    "authorize_url": "https://example.invalid/authorize",
+    "expected_state": "conformance-state-token",
+    "timeout_seconds": 60
+  },
+  "cancel": {
+    "type": "auth.cancel",
+    "id": "auth-cancel-1",
+    "session_id": ""
+  }
+}

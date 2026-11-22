@@ -28,6 +28,8 @@ func TestSnapshotSelectionActualEncryptedRestorePreservesOwnerFiles(t *testing.T
 		"owner.txt":                                           "owner record",
 		"owner/cache/record.txt":                              "owner directory named cache",
 		"owner/config/chatgpt-sign-in.json":                   "owner nested filename",
+		"owner/config/plaud-sign-in.json":                     "owner nested service credential name",
+		"config/sign-in.json":                                 "non-service sign-in file",
 		"health/durable.json":                                 "durable health record",
 		"imports/health-dedupe.sqlite/owner.txt":              "owner directory, not a database file",
 		"chronicle/20261015/indexer/120000_60.sqlite":         "owner raw recording name",
@@ -37,6 +39,10 @@ func TestSnapshotSelectionActualEncryptedRestorePreservesOwnerFiles(t *testing.T
 		"cache/private.txt":                                 "excluded cache payload",
 		"config/chatgpt-sign-in.json":                       "excluded credential payload",
 		"config/chatgpt-sign-in.json.tmp":                   "excluded credential candidate",
+		"config/plaud-sign-in.json":                         "excluded service credential payload",
+		"config/plaud-sign-in.json.lock":                    "excluded service credential lock",
+		"config/plaud-sign-in.json.renewal":                 "excluded service credential renewal",
+		"config/plaud-sign-in.json.unreadable-1":            "excluded unreadable service credential",
 		"health/nested/.removing_123/record.txt":            "excluded deletion pivot",
 		"imports/.health-dedupe.sqlite.rebuild":             "excluded live database",
 		"imports/.health-dedupe.sqlite.rebuild-wal":         "excluded live database WAL",
@@ -53,7 +59,7 @@ func TestSnapshotSelectionActualEncryptedRestorePreservesOwnerFiles(t *testing.T
 			}
 		}
 	}
-	policy, _ := json.Marshal([]string{"cache", "config/chatgpt-sign-in.json*", "**/.removing_*",
+	policy, _ := json.Marshal([]string{"cache", "config/*-sign-in.json*", "**/.removing_*",
 		"imports/.health-dedupe.sqlite.rebuild", "imports/.health-dedupe.sqlite.rebuild-wal",
 		"chronicle/20261015/indexer/transcripts.sqlite-shm"})
 	selection, status := parseSnapshotSelection(policy)

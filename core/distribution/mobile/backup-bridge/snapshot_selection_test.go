@@ -46,7 +46,7 @@ func TestSnapshotSelectionRefusesAmbiguousOrUnboundedPolicy(t *testing.T) {
 }
 
 func TestSnapshotSelectionUsesExactHeldSourceCoordinates(t *testing.T) {
-	selection, status := parseSnapshotSelection([]byte(`["cache","config/chatgpt-sign-in.json*","**/.removing_*","literal$VAR","🪁"]`))
+	selection, status := parseSnapshotSelection([]byte(`["cache","config/*-sign-in.json*","**/.removing_*","literal$VAR","🪁"]`))
 	if status != StatusOk {
 		t.Fatal("fixture policy refused", status)
 	}
@@ -54,8 +54,11 @@ func TestSnapshotSelectionUsesExactHeldSourceCoordinates(t *testing.T) {
 	for relative, want := range map[string]bool{
 		"": true, "cache": false, "cache/secret": false,
 		"owner/cache/notes": true, "owner/config/chatgpt-sign-in.json": true,
+		"owner/config/plaud-sign-in.json": true,
 		"config/chatgpt-sign-in.json": false, "config/chatgpt-sign-in.json.tmp": false,
 		"config/chatgpt-sign-in.json-owner-notes": false,
+		"config/plaud-sign-in.json": false, "config/plaud-sign-in.json.lock": false,
+		"config/plaud-sign-in.json.renewal": false, "config/plaud-sign-in.json.unreadable-1": false,
 		"config/sign-in.json":                     true, "health/durable.json": true,
 		"a/.removing_owned/file": false, "a/removing_owner.txt": true,
 		"literal$VAR": false, "literal": true, "🪁": false, "🪁-notes": true,

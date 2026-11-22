@@ -13,3 +13,4 @@ javascriptCapability: "solstoneJournalExternalNavigation",
 };
 
 window.solstoneImportContract = Object.freeze({"capability":"solstoneJournalHost","contextMaxBytes":16384,"drop":"solstone-journal-host-drop","event":"solstone-journal-host-status","pick":"import.pick","reply":"import.reply","status":"import.status","unsupported":"unsupported","version":2});
+window.solstoneAuthContract = Object.freeze({"authorize":"auth.authorize","cancel":"auth.cancel","capability":"solstoneJournalHost","prepare":"auth.prepare","prepared":"auth.prepared","result":"auth.result","unsupported":"unsupported","version":2});

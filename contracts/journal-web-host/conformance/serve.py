@@ -12,10 +12,12 @@ from urllib.parse import urlsplit
 
 
 class Fixtures(http.server.SimpleHTTPRequestHandler):
+    bootstrap_page = "index.html"
+
     def do_GET(self):
         if urlsplit(self.path).path == "/_bridge/bootstrap":
             self.send_response(303)
-            self.send_header("Location", "/conformance/index.html")
+            self.send_header("Location", f"/conformance/{self.bootstrap_page}")
             self.end_headers()
             return
         super().do_GET()
@@ -24,12 +26,19 @@ class Fixtures(http.server.SimpleHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--viewer", type=Path, help="installed Linux journal viewer launcher")
+    parser.add_argument(
+        "--page",
+        default="index.html",
+        choices=["index.html", "auth.html"],
+        help="conformance page to open on bootstrap",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
+    Fixtures.bootstrap_page = args.page
     handler = functools.partial(Fixtures, directory=str(root))
     with http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
         origin = f"http://127.0.0.1:{server.server_port}"
-        print(f"{origin}/conformance/index.html", flush=True)
+        print(f"{origin}/conformance/{args.page}", flush=True)
         if args.viewer is None:
             server.serve_forever()
             return

@@ -18,7 +18,7 @@ pub const COPY_EXCLUDES: &[&str] = &[
     "cache",
     ".cache",
     "mcp-endpoint",
-    "config/chatgpt-sign-in.json*",
+    "config/*-sign-in.json*",
     // Deletion pivots must never be restored, including ambiguous raw names.
     "**/.removing_*",
     // These namespaces are application-owned, unlike raw segment filenames.
@@ -251,7 +251,13 @@ mod tests {
             "chronicle/20260929/health/sense-day.lease",
             "health/sync/state",
             "mcp-endpoint/pop.ed25519.pk8",
+            "config/chatgpt-sign-in.json",
+            "config/chatgpt-sign-in.json.lock",
             "config/chatgpt-sign-in.json.unreadable-1",
+            "config/plaud-sign-in.json",
+            "config/plaud-sign-in.json.lock",
+            "config/plaud-sign-in.json.renewal",
+            "config/plaud-sign-in.json.unreadable-1",
             "config/.tmp_123_4.tmp",
             "config/_stage_123_4.tmp",
             "link/ca/.tmp_123_4.tmp",
@@ -265,6 +271,10 @@ mod tests {
         }
         for path in [
             "entities/cache/entity.json",
+            "config/journal.json",
+            "config/sign-in.json",
+            "config/plaud-notes.json",
+            "owner/config/plaud-sign-in.json",
             "facets/indexer/facet.json",
             "imports/item/source.key",
             "imports/item/cache/a.sqlite",

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Journal auth host conformance</title>
+<h1>Journal auth host conformance</h1>
+<p>Open this page in the test viewer. Run the checks in order. The browser run reports an absent host.</p>
+<button id="detect">Check capability &amp; frame isolation</button>
+<button id="wire">Check wire validation &amp; unsupported</button>
+<button id="prepare-cancel">Prepare &amp; cancel session</button>
+<button id="teardown-cancel">Teardown in-flight authorize via cancel</button>
+<button id="teardown-supersede">Teardown in-flight authorize via superseding prepare</button>
+<button id="authorize">Run interactive authorize round-trip</button>
+<label>Authorize URL: <input id="authorizeUrl" type="url" size="64" value="https://example.invalid/authorize?response_type=code"></label>
+<pre role="log" aria-live="polite" id="log"></pre>
+<script type="module">
+const [contract, cases] = await Promise.all(['../auth-host-contract.json', 'auth-cases.json'].map(async file => {
+  const response = await fetch(file);
+  if (!response.ok) throw Error(file);
+  return response.json();
+}));
+const host = window[contract.capability];
+const log = text => document.querySelector('#log').append(document.createTextNode(text + '\n'));
+function check(value, label) {
+  if (!value) throw Error(label);
+  log('PASS ' + label);
+}
+function button(id, action) {
+  document.getElementById(id).onclick = async () => {
+    try { await action(); } catch (error) { log('FAIL ' + error.message); }
+  };
+}
+async function send(request) {
+  const reply = await host.send(request);
+  check(reply && reply.id === request.id, 'reply matches ' + request.id);
+  return reply;
+}
+function assertReady(reply, label) {
+  check(
+    reply.type === contract.prepared &&
+    reply.outcome === 'ready' &&
+    typeof reply.session_id === 'string' && reply.session_id.length > 0 &&
+    (reply.mode === 'loopback' || reply.mode === 'custom_scheme') &&
+    typeof reply.redirect_uri === 'string' && reply.redirect_uri.length > 0,
+    label,
+  );
+  return reply;
+}
+window.addEventListener('message', event => {
+  const child = document.getElementById('authFrameFixture');
+  if (!child || event.source !== child.contentWindow || event.origin !== location.origin || event.data?.fixture !== 'auth-frame') return;
+  log((event.data.capability || event.data.hasAuth ? 'FAIL' : 'PASS') + ' embedded document auth capability isolation');
+});
+document.addEventListener('securitypolicyviolation', event => {
+  if (event.effectiveDirective === 'frame-src' && event.blockedURI === new URL('auth-frame.html', location.href).href)
+    log('PASS embedded document blocked by the viewer');
+});
+button('detect', () => {
+  const frame = document.createElement('iframe');
+  document.getElementById('authFrameFixture')?.remove();
+  frame.id = 'authFrameFixture';
+  frame.hidden = true;
+  frame.src = 'auth-frame.html';
+  document.body.append(frame);
+  if (!host) { log('Browser or older host. Verify fallback ladder applies.'); return; }
+  check(
+    window.top === window &&
+    host.version === contract.version &&
+    Array.isArray(host.types) &&
+    host.types.includes(contract.prepare) &&
+    host.types.includes(contract.authorize) &&
+    host.types.includes(contract.cancel) &&
+    typeof host.send === 'function',
+    'top document auth capability',
+  );
+});
+button('wire', async () => {
+  check((await send(cases.unknown)).type === contract.unsupported, 'unsupported message');
+  check((await send(cases.prepare_empty_preferences)).outcome === 'refused', 'empty preferences refused');
+  check((await send(cases.prepare_invalid_host)).outcome === 'refused', 'non-loopback host refused');
+  check((await send(cases.prepare_invalid_path)).outcome === 'refused', 'traversal path refused');
+  check((await send(cases.authorize_unknown_session)).outcome === 'refused', 'unknown session refused');
+
+  const prepared = assertReady(await send({...cases.prepare_all, id: 'wire-prep-1'}), 'prepare valid session');
+  try {
+    check((await send({...cases.authorize_http, session_id: prepared.session_id})).outcome === 'refused', 'http authorize_url refused');
+    check((await send({...cases.authorize_javascript, session_id: prepared.session_id})).outcome === 'refused', 'javascript authorize_url refused');
+    check((await send({...cases.authorize_userinfo, session_id: prepared.session_id})).outcome === 'refused', 'userinfo authorize_url refused');
+  } finally {
+    const cancelled = await send({...cases.cancel, id: 'wire-cancel-1', session_id: prepared.session_id});
+    check(cancelled.type === contract.result && cancelled.outcome === 'cancelled', 'cancel cleans up wire session');
+  }
+});
+button('prepare-cancel', async () => {
+  const prepared = assertReady(await send({...cases.prepare_all, id: 'prep-cancel-1'}), 'prepare ready');
+  const cancelled = await send({...cases.cancel, id: 'prep-cancel-2', session_id: prepared.session_id});
+  check(cancelled.type === contract.result && cancelled.outcome === 'cancelled', 'cancel prepared session');
+});
+button('teardown-cancel', async () => {
+  const prepared = assertReady(await send({...cases.prepare_all, id: 'td-cancel-prep'}), 'prepare for cancel teardown');
+  const authorizeId = 'td-cancel-auth';
+  const inflight = send({
+    ...cases.authorize,
+    id: authorizeId,
+    session_id: prepared.session_id,
+    authorize_url: document.getElementById('authorizeUrl').value,
+  });
+  const cancelled = await send({...cases.cancel, id: 'td-cancel-cmd', session_id: prepared.session_id});
+  check(cancelled.type === contract.result && cancelled.outcome === 'cancelled', 'auth.cancel reply cancelled');
+  const settled = await inflight;
+  check(settled.type === contract.result && settled.id === authorizeId && settled.outcome === 'cancelled', 'in-flight auth.authorize settled cancelled on auth.cancel');
+});
+button('teardown-supersede', async () => {
+  const first = assertReady(await send({...cases.prepare_all, id: 'td-super-prep-1'}), 'prepare first session');
+  const authorizeId = 'td-super-auth-1';
+  const inflight = send({
+    ...cases.authorize,
+    id: authorizeId,
+    session_id: first.session_id,
+    authorize_url: document.getElementById('authorizeUrl').value,
+  });
+  const second = assertReady(await send({...cases.prepare_all, id: 'td-super-prep-2'}), 'superseding auth.prepare ready');
+  check(second.session_id !== first.session_id, 'superseding prepare issued fresh session_id');
+  const settled = await inflight;
+  check(settled.type === contract.result && settled.id === authorizeId && settled.outcome === 'cancelled', 'in-flight auth.authorize settled cancelled on superseding auth.prepare');
+  const cleanup = await send({...cases.cancel, id: 'td-super-cleanup', session_id: second.session_id});
+  check(cleanup.type === contract.result && cleanup.outcome === 'cancelled', 'cleanup superseding session');
+});
+button('authorize', async () => {
+  const prepared = assertReady(await send({...cases.prepare_all, id: 'roundtrip-prep'}), 'prepare for authorize');
+  log('INFO redirect_uri=' + prepared.redirect_uri + ' mode=' + prepared.mode);
+  const reply = await send({
+    ...cases.authorize,
+    id: 'roundtrip-auth',
+    session_id: prepared.session_id,
+    authorize_url: document.getElementById('authorizeUrl').value,
+  });
+  check(reply.type === contract.result && ['callback', 'cancelled', 'timeout', 'refused', 'error'].includes(reply.outcome), 'authorize closed outcome ' + reply.outcome);
+  if (reply.outcome === 'callback') {
+    check(typeof reply.callback_url === 'string' && reply.callback_url.length > 0, 'callback_url present');
+  }
+});
+</script>
+</html>
