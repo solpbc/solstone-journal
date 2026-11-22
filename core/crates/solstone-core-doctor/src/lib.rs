@@ -91,6 +91,11 @@ fn apply_conflict_policy(results: &mut [CheckResult]) {
         }
     }
 }
+/// The context failure reported by the command-line dispatcher.
+pub fn context_error(error: &str) -> String {
+    copy::strings("journal.cli.doctor.context.failed", [("error", error)])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -721,9 +726,4 @@ mod tests {
         .unwrap();
         assert_eq!(result.status, Status::Fail);
     }
-}
-
-/// The context failure reported by the command-line dispatcher.
-pub fn context_error(error: &str) -> String {
-    copy::strings("journal.cli.doctor.context.failed", [("error", error)])
 }
