@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "25b83c8636b1c4f0193d949fb756459de1039d4dfccac432cd34e571c73468b1",
+  "cargo_lock_sha256": "852825c20e3b7eda00f1019b839203c5f776f1ff9aec6b695fce632e9c0e9ec2",
   "filter_platform": "aarch64-unknown-linux-gnu",
   "notice_texts": [
     {
@@ -5521,27 +5521,27 @@
       ]
     },
     {
-      "identity": "form_urlencoded@1.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+      "identity": "form_urlencoded@1.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "MIT OR Apache-2.0",
       "notice_references": [
         {
           "bytes": 10847,
           "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
           "source": {
-            "archive_sha256": "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf",
+            "archive_sha256": "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-APACHE",
-            "source_url": "https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.2.crate"
+            "source_url": "https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.3.crate"
           }
         },
         {
           "bytes": 1072,
           "sha256": "20c7855c364d57ea4c97889a5e8d98470a9952dade37bd9248b9a54431670e5e",
           "source": {
-            "archive_sha256": "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf",
+            "archive_sha256": "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-MIT",
-            "source_url": "https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.2.crate"
+            "source_url": "https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.3.crate"
           }
         }
       ]
@@ -17853,27 +17853,27 @@
       ]
     },
     {
-      "identity": "url@2.5.8 (registry+https://github.com/rust-lang/crates.io-index)",
+      "identity": "url@2.5.9 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "MIT OR Apache-2.0",
       "notice_references": [
         {
           "bytes": 10847,
           "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
           "source": {
-            "archive_sha256": "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed",
+            "archive_sha256": "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-APACHE",
-            "source_url": "https://static.crates.io/crates/url/url-2.5.8.crate"
+            "source_url": "https://static.crates.io/crates/url/url-2.5.9.crate"
           }
         },
         {
           "bytes": 1072,
           "sha256": "b38f11f6096706e6de553dabe2a7ed142d59b6fa8c97e290c67496154745cdd5",
           "source": {
-            "archive_sha256": "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed",
+            "archive_sha256": "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-MIT",
-            "source_url": "https://static.crates.io/crates/url/url-2.5.8.crate"
+            "source_url": "https://static.crates.io/crates/url/url-2.5.9.crate"
           }
         }
       ]
