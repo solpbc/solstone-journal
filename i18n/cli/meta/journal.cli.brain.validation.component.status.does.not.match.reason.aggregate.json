@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation component status does not match reason aggregate.",
+  "context": "Journal command-line text for validation component status does not match reason aggregate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "34a6ba62bddbbbfd74b78d3bfba8748fbb8335bb77ea8d55bd783b9875745dad",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

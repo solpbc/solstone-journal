@@ -128,16 +128,36 @@ impl ObservationFailure {
             WriterError::Fingerprint(_) => Self::Fingerprint,
             WriterError::Random => Self::Random,
             WriterError::Cancelled(_) => Self::Cancelled,
-            WriterError::Conflict(message) => match message.as_str() {
-                "credential rejection changed during refresh" => Self::CredentialChanged,
-                "brain refresh permit expired" => Self::PermitExpired,
-                "brain refresh checking marker is absent" => Self::CheckingAbsent,
-                "brain refresh record revision changed" => Self::RecordRevisionChanged,
-                "brain refresh run id changed" => Self::RunChanged,
-                "brain refresh revision changed" => Self::CheckingRevisionChanged,
-                "brain runtime failure marker changed" => Self::RuntimeMarkerChanged,
-                _ => Self::ConflictOther,
-            },
+            WriterError::Conflict(message) => {
+                let key = match message {
+                    crate::WriterDetail::Message(message) => (true, message.id()),
+                    crate::WriterDetail::Other(detail) => (false, detail.as_str()),
+                };
+                match key {
+                    (
+                        true,
+                        "journal.cli.brain.writer.credential.rejection.changed.during.refresh",
+                    )
+                    | (false, "credential rejection changed during refresh") => {
+                        Self::CredentialChanged
+                    }
+                    (true, "journal.cli.brain.writer.brain.refresh.permit.expired")
+                    | (false, "brain refresh permit expired") => Self::PermitExpired,
+                    (true, "journal.cli.brain.writer.brain.refresh.checking.marker.is.absent")
+                    | (false, "brain refresh checking marker is absent") => Self::CheckingAbsent,
+                    (true, "journal.cli.brain.writer.brain.refresh.record.revision.changed")
+                    | (false, "brain refresh record revision changed") => {
+                        Self::RecordRevisionChanged
+                    }
+                    (true, "journal.cli.brain.writer.brain.refresh.run.id.changed")
+                    | (false, "brain refresh run id changed") => Self::RunChanged,
+                    (true, "journal.cli.brain.writer.brain.refresh.revision.changed")
+                    | (false, "brain refresh revision changed") => Self::CheckingRevisionChanged,
+                    (true, "journal.cli.brain.writer.brain.runtime.failure.marker.changed")
+                    | (false, "brain runtime failure marker changed") => Self::RuntimeMarkerChanged,
+                    _ => Self::ConflictOther,
+                }
+            }
         }
     }
 }

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for ready unknown model.",
+  "context": "Journal command-line text for ready unknown model.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "model",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bfc65de66d46803ff0f1f0f8bc8b6fb9b45614602a698f1589f2deb9a921acab",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for ready other.",
+  "context": "Journal command-line text for ready other.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "lane",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8e5918a793e50c3fd32d600021e90d544db09d2217b9a5deae5d108e9aeddf8a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

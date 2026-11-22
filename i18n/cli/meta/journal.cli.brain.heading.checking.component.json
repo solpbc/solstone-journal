@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for heading checking component.",
+  "context": "Journal command-line text for heading checking component.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "component",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "92c9129d05c5d7f888df3c8853d9d7f06935c3877bbadc22a52d1b64e60b66b9",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer brain record changed during inspection.",
+  "context": "Journal command-line text for writer brain record changed during inspection.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bad6968aa62c5033f9fe74cf94dad39c059215b367f8acd0c9cc377e4981ad8d",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

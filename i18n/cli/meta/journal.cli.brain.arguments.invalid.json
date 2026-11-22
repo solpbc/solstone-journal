@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for arguments invalid.",
+  "context": "Journal command-line text for arguments invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "761f26be1c81996254fe80d0178da3e61c98964f77dc4e03a7e538b615066972",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal brain"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation checking aggregate requires matching checking marker.",
+  "context": "Journal command-line text for validation checking aggregate requires matching checking marker.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9ecda23a2639e9ece99f980b2698feaf7ead76383d9a7a6aac4bcb33beccdae6",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

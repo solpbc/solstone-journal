@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer brain refresh revision changed.",
+  "context": "Journal command-line text for writer brain refresh revision changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ecb539d1b603632c885144efb3c38bd42f1b52e41a55bdd6ab3240dd8077b70f",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

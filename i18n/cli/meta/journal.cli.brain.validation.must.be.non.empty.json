@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation must be non empty.",
+  "context": "Journal command-line text for validation must be non empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "53f66e74f2ab2720445cfb232c35ec0fe0a8dea9170a8197ef9334c2f21ab5da",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

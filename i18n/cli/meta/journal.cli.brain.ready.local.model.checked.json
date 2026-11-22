@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for ready local model checked.",
+  "context": "Journal command-line text for ready local model checked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "model",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1fbe553442b442be3e3140e5812450ca2cf5f01b5116485af7018f792a3c4691",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

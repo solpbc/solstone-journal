@@ -13,11 +13,28 @@ use crate::fixture::local_contract;
 pub struct ValidationError {
     pub path: String,
     pub reason: String,
+    pub(crate) reason_id: Option<&'static str>,
 }
 
 impl fmt::Display for ValidationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{}: {}", self.path, self.reason)
+    }
+}
+
+impl ValidationError {
+    pub fn render(&self, locale: &str) -> String {
+        let reason = self
+            .reason_id
+            .map(|id| solstone_core_cli_copy::render_for(locale, id, &[]));
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.brain.validation.detail",
+            [
+                ("field", &self.path),
+                ("reason", &reason.as_ref().unwrap_or(&self.reason)),
+            ],
+        )
     }
 }
 
@@ -63,9 +80,12 @@ pub(crate) fn parse_credential_observations(
     let Some(value) = value else {
         return Ok(BTreeMap::new());
     };
-    let object = value
-        .as_object()
-        .ok_or_else(|| failure("credential_observations", "must be an object"))?;
+    let object = value.as_object().ok_or_else(|| {
+        failure(
+            "credential_observations",
+            "journal.cli.brain.validation.must.be.an.object",
+        )
+    })?;
     let providers = ["openai", "anthropic", "google", "local"].map(str::to_owned);
     closed(object, &providers, "credential_observations.")?;
     let fields = ["binding_version", "credential_hmac", "observation_id"].map(str::to_owned);
@@ -75,14 +95,14 @@ pub(crate) fn parse_credential_observations(
             let path = format!("credential_observations.{provider}");
             let entry = value
                 .as_object()
-                .ok_or_else(|| failure(&path, "must be an object"))?;
+                .ok_or_else(|| failure(&path, "journal.cli.brain.validation.must.be.an.object"))?;
             closed(entry, &fields, &format!("{path}."))?;
             if entry.get("binding_version").and_then(Value::as_u64)
                 != Some(crate::CREDENTIAL_BINDING_VERSION as u64)
             {
                 return Err(failure(
                     &format!("{path}.binding_version"),
-                    "unsupported binding version",
+                    "journal.cli.brain.validation.unsupported.binding.version",
                 ));
             }
             let digest = |name| {
@@ -92,7 +112,10 @@ pub(crate) fn parse_credential_observations(
                     .filter(|value| is_sha256(value))
                     .map(str::to_owned)
                     .ok_or_else(|| {
-                        failure(&format!("{path}.{name}"), "must be a SHA-256 hex digest")
+                        failure(
+                            &format!("{path}.{name}"),
+                            "journal.cli.brain.validation.must.be.a.sha256.hex.digest",
+                        )
                     })
             };
             Ok((
@@ -114,9 +137,12 @@ pub(crate) fn parse_credential_holds(
     let Some(value) = value else {
         return Ok(BTreeMap::new());
     };
-    let object = value
-        .as_object()
-        .ok_or_else(|| failure("credential_holds", "must be an object"))?;
+    let object = value.as_object().ok_or_else(|| {
+        failure(
+            "credential_holds",
+            "journal.cli.brain.validation.must.be.an.object",
+        )
+    })?;
     let providers = ["openai", "anthropic", "google", "local"].map(str::to_owned);
     closed(object, &providers, "credential_holds.")?;
     let fields = [
@@ -132,20 +158,20 @@ pub(crate) fn parse_credential_holds(
             let path = format!("credential_holds.{provider}");
             let entry = value
                 .as_object()
-                .ok_or_else(|| failure(&path, "must be an object"))?;
+                .ok_or_else(|| failure(&path, "journal.cli.brain.validation.must.be.an.object"))?;
             closed(entry, &fields, &format!("{path}."))?;
             if entry.get("binding_version").and_then(Value::as_u64)
                 != Some(crate::CREDENTIAL_BINDING_VERSION as u64)
             {
                 return Err(failure(
                     &format!("{path}.binding_version"),
-                    "unsupported binding version",
+                    "journal.cli.brain.validation.unsupported.binding.version",
                 ));
             }
             if entry.get("reason_code").and_then(Value::as_str) != Some("provider_key_invalid") {
                 return Err(failure(
                     &format!("{path}.reason_code"),
-                    "must be provider_key_invalid",
+                    "journal.cli.brain.validation.must.be.provider.key.invalid",
                 ));
             }
             let digest = |name| {
@@ -155,7 +181,10 @@ pub(crate) fn parse_credential_holds(
                     .filter(|value| is_sha256(value))
                     .map(str::to_owned)
                     .ok_or_else(|| {
-                        failure(&format!("{path}.{name}"), "must be a SHA-256 hex digest")
+                        failure(
+                            &format!("{path}.{name}"),
+                            "journal.cli.brain.validation.must.be.a.sha256.hex.digest",
+                        )
                     })
             };
             Ok((
@@ -208,10 +237,23 @@ pub fn validate_brain_state_record(
                 unknown.sort_unstable();
                 return unknown
                     .first()
-                    .map(|key| failure(key, "unknown top-level field"))
-                    .map_or_else(|| Err(failure("record", "must be an object")), Err);
+                    .map(|key| failure(key, "journal.cli.brain.validation.unknown.top.level.field"))
+                    .map_or_else(
+                        || {
+                            Err(failure(
+                                "record",
+                                "journal.cli.brain.validation.must.be.an.object",
+                            ))
+                        },
+                        Err,
+                    );
             }
-            None => return Err(failure("record", "must be an object")),
+            None => {
+                return Err(failure(
+                    "record",
+                    "journal.cli.brain.validation.must.be.an.object",
+                ));
+            }
         },
     };
     let vocabulary = &local_contract().brain_state;
@@ -219,7 +261,10 @@ pub fn validate_brain_state_record(
 
     let schema_version = required_u64(object, "schema_version")?;
     if schema_version != vocabulary.schema_version {
-        return Err(failure("schema_version", "unsupported schema version"));
+        return Err(failure(
+            "schema_version",
+            "journal.cli.brain.validation.unsupported.schema.version",
+        ));
     }
     let revision = required_u64(object, "revision")?;
     let updated_at = required_time(object, "updated_at", now)?;
@@ -234,7 +279,7 @@ pub fn validate_brain_state_record(
     {
         return Err(failure(
             "fingerprint_sha256",
-            "must be a SHA-256 hex digest",
+            "journal.cli.brain.validation.must.be.a.sha256.hex.digest",
         ));
     }
     let diagnostic = diagnostic(
@@ -258,24 +303,27 @@ pub fn validate_brain_state_record(
     if aggregate_state == "ready" && reason_code.is_some() {
         return Err(failure(
             "reason_code",
-            "must be null when aggregate_state is ready",
+            "journal.cli.brain.validation.must.be.null.when.aggregate.state.is.ready",
         ));
     }
     if aggregate_state != "ready" {
         let reason = reason_code.as_deref().ok_or_else(|| {
             failure(
                 "reason_code",
-                "must be set when aggregate_state is not ready",
+                "journal.cli.brain.validation.must.be.set.when.aggregate.state.is.not.ready",
             )
         })?;
         if vocabulary.reason_to_aggregate.get(reason) != Some(&aggregate_state) {
-            return Err(failure("reason_code", "does not match aggregate_state"));
+            return Err(failure(
+                "reason_code",
+                "journal.cli.brain.validation.does.not.match.aggregate.state",
+            ));
         }
     }
     if (aggregate_state == "checking") != checking.is_some() {
         return Err(failure(
             "checking",
-            "checking aggregate requires matching checking marker",
+            "journal.cli.brain.validation.checking.aggregate.requires.matching.checking.marker",
         ));
     }
     if let Some(marker) = &runtime_failure_marker
@@ -286,7 +334,7 @@ pub fn validate_brain_state_record(
     {
         return Err(failure(
             "runtime_failure_marker.reason_code",
-            "must be evidence-recordable",
+            "journal.cli.brain.validation.must.be.evidence.recordable",
         ));
     }
 
@@ -318,7 +366,7 @@ pub(crate) fn parse_evidence(
     let vocabulary = &local_contract().brain_state;
     let object = value
         .and_then(Value::as_object)
-        .ok_or_else(|| failure("evidence", "must be an object"))?;
+        .ok_or_else(|| failure("evidence", "journal.cli.brain.validation.must.be.an.object"))?;
     closed(object, &vocabulary.record_fields.evidence, "evidence.")?;
     let mut result = BTreeMap::new();
     for component in &vocabulary.record_fields.evidence {
@@ -344,13 +392,13 @@ pub(crate) fn parse_evidence(
             let reason = causal_reason.ok_or_else(|| {
                 failure(
                     &format!("evidence.{name}.status"),
-                    "not_attempted requires a non-ok prerequisite",
+                    "journal.cli.brain.validation.not.attempted.requires.a.non.ok.prerequisite",
                 )
             })?;
             if component.reason.as_deref() != Some(reason) {
                 return Err(failure(
                     &format!("evidence.{name}.reason_code"),
-                    "not_attempted reason must repeat causal prerequisite reason",
+                    "journal.cli.brain.validation.not.attempted.reason.must.repeat.causal.prerequisite.reason",
                 ));
             }
         }
@@ -363,7 +411,7 @@ pub(crate) fn parse_evidence(
         {
             return Err(failure(
                 &format!("evidence.{name}.status"),
-                "not_attempted is only valid for generate",
+                "journal.cli.brain.validation.not.attempted.is.only.valid.for.generate",
             ));
         }
     }
@@ -498,7 +546,7 @@ pub(crate) fn parse_component(
     let path = format!("evidence.{component}");
     let object = value
         .as_object()
-        .ok_or_else(|| failure(&path, "must be an object"))?;
+        .ok_or_else(|| failure(&path, "journal.cli.brain.validation.must.be.an.object"))?;
     closed(
         object,
         &vocabulary.record_fields.component,
@@ -515,13 +563,13 @@ pub(crate) fn parse_component(
     if status == "ok" && reason.is_some() {
         return Err(failure(
             &format!("{path}.reason_code"),
-            "ok evidence requires null reason",
+            "journal.cli.brain.validation.ok.evidence.requires.null.reason",
         ));
     }
     if status != "ok" && reason.is_none() {
         return Err(failure(
             &format!("{path}.reason_code"),
-            "non-ok evidence requires reason",
+            "journal.cli.brain.validation.non.ok.evidence.requires.reason",
         ));
     }
     if status != "ok" && status != "not_attempted" {
@@ -533,14 +581,14 @@ pub(crate) fn parse_component(
         if !allowed.iter().any(|candidate| candidate == reason) {
             return Err(failure(
                 &format!("{path}.reason_code"),
-                "reason not allowed for evidence component",
+                "journal.cli.brain.validation.reason.not.allowed.for.evidence.component",
             ));
         }
         let expected = component_status_for_reason(reason)?;
         if status != expected {
             return Err(failure(
                 &format!("{path}.status"),
-                "component status does not match reason aggregate",
+                "journal.cli.brain.validation.component.status.does.not.match.reason.aggregate",
             ));
         }
     }
@@ -552,7 +600,7 @@ pub(crate) fn parse_component(
     if status == "ok" && expires_at.is_none() {
         return Err(failure(
             &format!("{path}.expires_at"),
-            "is required when status is ok",
+            "journal.cli.brain.validation.is.required.when.status.is.ok",
         ));
     }
     Ok(EvidenceComponent {
@@ -568,7 +616,7 @@ pub(crate) fn parse_checking(value: &Value, now: Timestamp) -> Result<Checking, 
     let vocabulary = &local_contract().brain_state;
     let object = value
         .as_object()
-        .ok_or_else(|| failure("checking", "must be an object"))?;
+        .ok_or_else(|| failure("checking", "journal.cli.brain.validation.must.be.an.object"))?;
     closed(object, &vocabulary.record_fields.checking, "checking.")?;
     Ok(Checking {
         started_at: required_time(object, "started_at", now)
@@ -591,9 +639,12 @@ pub(crate) fn parse_runtime_failure_marker(
     now: Timestamp,
 ) -> Result<RuntimeFailureMarker, ValidationError> {
     let vocabulary = &local_contract().brain_state;
-    let object = value
-        .as_object()
-        .ok_or_else(|| failure("runtime_failure_marker", "must be an object"))?;
+    let object = value.as_object().ok_or_else(|| {
+        failure(
+            "runtime_failure_marker",
+            "journal.cli.brain.validation.must.be.an.object",
+        )
+    })?;
     closed(
         object,
         &vocabulary.record_fields.runtime_failure_marker,
@@ -625,13 +676,13 @@ fn validate_reduction(record: &BrainStateRecord) -> Result<(), ValidationError> 
     if reason.as_deref() == Some("brain_record_invalid") {
         return Err(failure(
             "evidence",
-            "missing lane-applicable evidence without higher-priority cause",
+            "journal.cli.brain.validation.missing.lane.applicable.evidence.without.higher.priority.cause",
         ));
     }
     if record.aggregate_state != aggregate || record.reason_code.as_deref() != reason.as_deref() {
         return Err(failure(
             "aggregate_state",
-            "record aggregate/reason does not match evidence",
+            "journal.cli.brain.validation.record.aggregate.reason.does.not.match.evidence",
         ));
     }
     Ok(())
@@ -755,26 +806,29 @@ fn diagnostic(
         None | Some(Value::Null) => return Ok(BTreeMap::new()),
         Some(value) => value
             .as_object()
-            .ok_or_else(|| failure(path, "must be an object"))?,
+            .ok_or_else(|| failure(path, "journal.cli.brain.validation.must.be.an.object"))?,
     };
     let allowed = local_contract()
         .brain_state
         .diagnostic_metadata_schemas
         .get(reason_code.unwrap_or(""));
     for (key, value) in object {
-        let allowed_values = allowed
-            .and_then(|schema| schema.get(key))
-            .ok_or_else(|| failure(&format!("{path}.{key}"), "diagnostic key not allowed"))?;
+        let allowed_values = allowed.and_then(|schema| schema.get(key)).ok_or_else(|| {
+            failure(
+                &format!("{path}.{key}"),
+                "journal.cli.brain.validation.diagnostic.key.not.allowed",
+            )
+        })?;
         let value = value.as_str().ok_or_else(|| {
             failure(
                 &format!("{path}.{key}"),
-                "diagnostic value must be an enum string",
+                "journal.cli.brain.validation.diagnostic.value.must.be.an.enum.string",
             )
         })?;
         if !allowed_values.iter().any(|candidate| candidate == value) {
             return Err(failure(
                 &format!("{path}.{key}"),
-                "diagnostic enum value not allowed",
+                "journal.cli.brain.validation.diagnostic.enum.value.not.allowed",
             ));
         }
     }
@@ -794,7 +848,10 @@ fn closed(
         .filter(|key| !allowed.iter().any(|candidate| candidate == *key))
         .min()
     {
-        return Err(failure(&format!("{prefix}{key}"), "unknown field"));
+        return Err(failure(
+            &format!("{prefix}{key}"),
+            "journal.cli.brain.validation.unknown.field",
+        ));
     }
     Ok(())
 }
@@ -811,7 +868,7 @@ pub(crate) fn component_status_for_reason(reason: &str) -> Result<String, Valida
         Some("unknown") => Ok("unknown".to_owned()),
         _ => Err(failure(
             "reason_code",
-            "checking reason is not valid component evidence",
+            "journal.cli.brain.validation.checking.reason.is.not.valid.component.evidence",
         )),
     }
 }
@@ -821,7 +878,7 @@ fn required_string(object: &Map<String, Value>, key: &str) -> Result<String, Val
         .get(key)
         .and_then(Value::as_str)
         .map(str::to_owned)
-        .ok_or_else(|| failure(key, "must be a string"))
+        .ok_or_else(|| failure(key, "journal.cli.brain.validation.must.be.a.string"))
 }
 
 fn required_nonempty_string(
@@ -830,7 +887,10 @@ fn required_nonempty_string(
 ) -> Result<String, ValidationError> {
     let value = required_string(object, key)?;
     if value.is_empty() {
-        return Err(failure(key, "must be non-empty"));
+        return Err(failure(
+            key,
+            "journal.cli.brain.validation.must.be.non.empty",
+        ));
     }
     Ok(value)
 }
@@ -844,22 +904,24 @@ fn optional_string(
         Some(value) => value
             .as_str()
             .map(|value| Some(value.to_owned()))
-            .ok_or_else(|| failure(key, "must be a string or null")),
+            .ok_or_else(|| failure(key, "journal.cli.brain.validation.must.be.a.string.or.null")),
     }
 }
 
 fn required_u64(object: &Map<String, Value>, key: &str) -> Result<u64, ValidationError> {
-    object
-        .get(key)
-        .and_then(Value::as_u64)
-        .ok_or_else(|| failure(key, "must be a non-negative integer"))
+    object.get(key).and_then(Value::as_u64).ok_or_else(|| {
+        failure(
+            key,
+            "journal.cli.brain.validation.must.be.a.non.negative.integer",
+        )
+    })
 }
 
 fn required_i64(object: &Map<String, Value>, key: &str) -> Result<i64, ValidationError> {
     object
         .get(key)
         .and_then(Value::as_i64)
-        .ok_or_else(|| failure(key, "must be an integer"))
+        .ok_or_else(|| failure(key, "journal.cli.brain.validation.must.be.an.integer"))
 }
 
 fn optional_sha256(
@@ -868,7 +930,10 @@ fn optional_sha256(
 ) -> Result<Option<String>, ValidationError> {
     let value = optional_string(object, key)?;
     if value.as_deref().is_some_and(|value| !is_sha256(value)) {
-        return Err(failure(key, "expected SHA-256 hex string"));
+        return Err(failure(
+            key,
+            "journal.cli.brain.validation.expected.sha256.hex.string",
+        ));
     }
     Ok(value)
 }
@@ -882,7 +947,7 @@ fn required_known(
     if known.iter().any(|candidate| candidate == &value) {
         Ok(value)
     } else {
-        Err(failure(key, "unknown value"))
+        Err(failure(key, "journal.cli.brain.validation.unknown.value"))
     }
 }
 
@@ -897,7 +962,7 @@ fn optional_known(
     if known.iter().any(|candidate| candidate == &value) {
         Ok(Some(value))
     } else {
-        Err(failure(key, "unknown value"))
+        Err(failure(key, "journal.cli.brain.validation.unknown.value"))
     }
 }
 
@@ -919,14 +984,24 @@ fn optional_time(
         None => Ok(None),
         Some(value) => solstone_core_time::parse_rfc3339(&value)
             .map(|value| Some(value.timestamp()))
-            .map_err(|_| failure(key, "must be an ISO-8601 timestamp")),
+            .map_err(|_| {
+                failure(
+                    key,
+                    "journal.cli.brain.validation.must.be.an.iso8601.timestamp",
+                )
+            }),
     }
 }
 
 fn parse_time(value: &str, path: &str, _now: Timestamp) -> Result<Timestamp, ValidationError> {
     let parsed = solstone_core_time::parse_rfc3339(value)
         .map(|value| value.timestamp())
-        .map_err(|_| failure(path, "must be an ISO-8601 timestamp"))?;
+        .map_err(|_| {
+            failure(
+                path,
+                "journal.cli.brain.validation.must.be.an.iso8601.timestamp",
+            )
+        })?;
     Ok(parsed)
 }
 
@@ -937,14 +1012,15 @@ pub(crate) fn is_sha256(value: &str) -> bool {
 fn prefix_error(error: ValidationError, prefix: &str) -> ValidationError {
     ValidationError {
         path: format!("{prefix}.{}", error.path),
-        reason: error.reason,
+        ..error
     }
 }
 
-fn failure(path: &str, reason: &str) -> ValidationError {
+pub(crate) fn failure(path: &str, reason_id: &'static str) -> ValidationError {
     ValidationError {
         path: path.to_owned(),
-        reason: reason.to_owned(),
+        reason: solstone_core_cli_copy::render_for(solstone_core_cli_copy::ENGLISH, reason_id, &[]),
+        reason_id: Some(reason_id),
     }
 }
 

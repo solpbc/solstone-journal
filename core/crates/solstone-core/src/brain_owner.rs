@@ -10,7 +10,7 @@ use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_brain_owner::{
     BundledRuntimePrerequisiteAssessment, OwnerProbe, OwnerRefreshOptions, OwnerRefreshOutcome,
-    OwnerView, ProductionSppPrerequisite, human_text, json_text, owner_exit_code, owner_view,
+    OwnerView, ProductionSppPrerequisite, human_text_in, json_text, owner_exit_code, owner_view,
 };
 use solstone_core_cli::JournalBrainOwnerCommand;
 use solstone_core_generate::{ClientError, GenerateRequest, GenerateResponse, OneShotClient};
@@ -20,6 +20,10 @@ use crate::{EXIT_UNAVAILABLE, resolve_journal_config_path};
 struct DesktopProbe;
 
 impl OwnerProbe for DesktopProbe {
+    fn diagnostic_locale(&self) -> &str {
+        solstone_core_cli_copy::cli_locale()
+    }
+
     fn bundled_runtime_fingerprint(
         &self,
         journal: &Path,
@@ -96,7 +100,13 @@ fn journal() -> Result<(PathBuf, Map<String, Value>), ExitCode> {
     })?;
     let config = solstone_core_brain::read_journal_config(&line.path)
         .map_err(|error| {
-            eprintln!("thinking check failed: could not read journal config: {error}");
+            eprintln!(
+                "{}",
+                solstone_core_brain_owner::config_failure_in(
+                    error,
+                    solstone_core_cli_copy::cli_locale()
+                )
+            );
             ExitCode::from(EXIT_UNAVAILABLE)
         })?
         .config
@@ -135,6 +145,9 @@ fn render(view: &OwnerView, json_output: bool) {
     if json_output {
         println!("{}", json_text(view));
     } else {
-        println!("{}", human_text(view));
+        println!(
+            "{}",
+            human_text_in(view, solstone_core_cli_copy::cli_locale())
+        );
     }
 }

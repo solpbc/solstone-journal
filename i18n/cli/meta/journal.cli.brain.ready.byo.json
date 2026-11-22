@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for ready byo.",
+  "context": "Journal command-line text for ready byo.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "16e8a2475b738852c3cc37b3f59428e97eb265f4e439961c2e7d8530ba66b97e",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation checking reason is not valid component evidence.",
+  "context": "Journal command-line text for validation checking reason is not valid component evidence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3e932bd9fea76734a7d4f33ded03059e64c3d04bc78fbf114d35d5402a3d748e",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

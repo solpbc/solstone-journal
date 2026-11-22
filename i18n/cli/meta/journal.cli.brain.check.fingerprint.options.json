@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for check fingerprint options.",
+  "context": "Journal command-line text for check fingerprint options.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5a4e277507bc2de3cec367d14d8cbb7342e218c1131a5472d96b0400ea1778cc",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

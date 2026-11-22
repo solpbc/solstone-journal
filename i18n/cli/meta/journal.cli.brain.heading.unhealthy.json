@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for heading unhealthy.",
+  "context": "Journal command-line text for heading unhealthy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fa1c19984b7e239b6cc8773e8b0cc3fd0cf8528c4ff6ffc139da469c0cb19012",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation must be evidence recordable.",
+  "context": "Journal command-line text for validation must be evidence recordable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "270ef0cc8c70963b8f0f8c264015981c7f89bc7af6d2efba2d61775e99f2776e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

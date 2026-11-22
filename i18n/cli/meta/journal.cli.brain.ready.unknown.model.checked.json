@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for ready unknown model checked.",
+  "context": "Journal command-line text for ready unknown model checked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "model",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9d060faa54c0f32f0fc886a0a599d3d38b5ac9f065f7f91baf98c3c69a0f2398",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

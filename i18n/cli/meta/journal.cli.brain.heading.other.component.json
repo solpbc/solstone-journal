@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for heading other component.",
+  "context": "Journal command-line text for heading other component.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "state",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "component",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ded6e6af8603a73404af3638afbd489db0a7ff1e4d1b7389752d4bef1355e248",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

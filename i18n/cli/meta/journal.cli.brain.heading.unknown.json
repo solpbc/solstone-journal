@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for heading unknown.",
+  "context": "Journal command-line text for heading unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1d36a973466139d30dff1d8804242135008a56838d2448c9f9baabf593f50fdf",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

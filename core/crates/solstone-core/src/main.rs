@@ -678,29 +678,48 @@ fn main() -> ExitCode {
         Ok(Command::Brain(command)) => run_brain(command),
         Ok(Command::JournalBrainOwner(command)) => match command {
             JournalBrainOwnerCommand::Help => {
-                print!("{}", solstone_core_cli::BRAIN_OWNER_HELP);
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::text("journal.cli.brain.help.root")
+                );
                 ExitCode::SUCCESS
             }
             JournalBrainOwnerCommand::StatusHelp => {
-                print!("{}", solstone_core_cli::BRAIN_STATUS_HELP);
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::text("journal.cli.brain.help.status")
+                );
                 ExitCode::SUCCESS
             }
             JournalBrainOwnerCommand::RefreshHelp => {
-                print!("{}", solstone_core_cli::BRAIN_REFRESH_HELP);
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::text("journal.cli.brain.help.refresh")
+                );
                 ExitCode::SUCCESS
             }
             JournalBrainOwnerCommand::RenewPrerequisitesHelp => {
-                print!("{}", solstone_core_cli::BRAIN_RENEW_PREREQUISITES_HELP);
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::text("journal.cli.brain.help.renew")
+                );
                 ExitCode::SUCCESS
             }
             JournalBrainOwnerCommand::Bare => {
-                print!("{}", solstone_core_cli::BRAIN_OWNER_HELP);
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::text("journal.cli.brain.help.root")
+                );
                 ExitCode::from(2)
             }
-            JournalBrainOwnerCommand::Usage => render_usage_error(
-                solstone_core_cli::BRAIN_OWNER_USAGE,
-                "solstone journal brain",
-            ),
+            JournalBrainOwnerCommand::Usage => {
+                eprintln!(
+                    "{}\n{}",
+                    solstone_core_cli_copy::text("journal.cli.brain.usage"),
+                    solstone_core_cli_copy::text("journal.cli.brain.arguments.invalid")
+                );
+                ExitCode::from(2)
+            }
             command => run_brain_owner(command),
         },
         Ok(Command::Transcribe(options)) => run_transcribe(

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for validation expected sha 256 hex string.",
+  "context": "Journal command-line text for validation expected sha 256 hex string.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "beab21d6b4a82438d1bfb7d6bcd1e0542cf81066a47f0ebe3904ab3f734be07a",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_sha_256",
+      "kind": "accepted-input",
+      "value": "SHA-256"
+    }
+  ]
+}

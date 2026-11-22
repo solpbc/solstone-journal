@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for heading other.",
+  "context": "Journal command-line text for heading other.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "state",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f60ce79e741fb56c19af423567ba4daf83c85a088209eb66841761dc54ed3c59",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

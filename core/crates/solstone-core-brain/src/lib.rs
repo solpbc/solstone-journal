@@ -66,7 +66,7 @@ pub use transcription_verification::{
 pub use writer::{
     BeginPrerequisiteRenewal, BeginRefreshError, BrainRefreshPermit, CredentialRejectionCarrier,
     CredentialRejectionFailure, CredentialRejectionReceipt, CredentialValidationWitness,
-    REACHABLE_WRITE_CASES, RuntimeFailureResult, RuntimeRefusalCaller, WriterError,
+    REACHABLE_WRITE_CASES, RuntimeFailureResult, RuntimeRefusalCaller, WriterDetail, WriterError,
     abandon_prerequisite_renewal, abandon_prerequisite_renewal_checked, abandon_refresh,
     abandon_refresh_checked, begin_prerequisite_renewal, begin_prerequisite_renewal_checked,
     begin_refresh, begin_refresh_checked, capture_credential_validation_bound,

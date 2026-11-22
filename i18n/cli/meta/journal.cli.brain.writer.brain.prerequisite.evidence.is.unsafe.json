@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer brain prerequisite evidence is unsafe.",
+  "context": "Journal command-line text for writer brain prerequisite evidence is unsafe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a478d4aa652b1fb13887a356dbba79cf7f45c04798abd4f96145ac1248e9f3c7",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

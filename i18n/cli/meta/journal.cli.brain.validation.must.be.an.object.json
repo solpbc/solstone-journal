@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation must be an object.",
+  "context": "Journal command-line text for validation must be an object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e77f520755a938af3f928e0040f7867400aaa0820881d50013812563fd4082f0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

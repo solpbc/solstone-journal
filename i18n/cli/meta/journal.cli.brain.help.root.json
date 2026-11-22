@@ -1,0 +1,58 @@
+{
+  "description": "Journal command-line text for help root.",
+  "context": "Journal command-line text for help root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a1d8ea111696dc01402e2d0e9c4b912a77078fd6133225d7d773452750d3a10",
+  "max_length": 459,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal brain [-h] {status,refresh} ..."
+    },
+    {
+      "name": "syntax_continuation_5",
+      "kind": "accepted-input",
+      "value": "  {status,refresh}"
+    },
+    {
+      "name": "status",
+      "kind": "command",
+      "value": "status              "
+    },
+    {
+      "name": "refresh",
+      "kind": "command",
+      "value": "refresh             "
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "gap_10",
+      "kind": "whitespace",
+      "value": "          "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

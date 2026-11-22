@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for validation detail.",
+  "context": "Journal command-line text for validation detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "433101fafdf2f608f9028aec2fda8f70ca1855ce0b9eec1131f197241a66085f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

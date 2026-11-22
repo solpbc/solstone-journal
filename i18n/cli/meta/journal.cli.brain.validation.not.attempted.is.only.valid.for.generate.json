@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for validation not attempted is only valid for generate.",
+  "context": "Journal command-line text for validation not attempted is only valid for generate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6a64a8940dcb6d082d5a3bd905b8bceba67d43b6cfa275a4749451b955d7e7ad",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_not_attempted",
+      "kind": "accepted-input",
+      "value": "not_attempted"
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "description": "Journal command-line text for help refresh.",
+  "context": "Journal command-line text for help refresh.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e0ff78ad87a069c72daeb67b233545676e5dc7e6d1996b524827000a9893abf",
+  "max_length": 479,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal brain refresh [-h] [--json] [--expected-fingerprint EXPECTED_FINGERPRINT]"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                            [--expected-active-fingerprint]"
+    },
+    {
+      "name": "syntax_continuation_2",
+      "kind": "accepted-input",
+      "value": "                            [--expect-active-fingerprint-absent]"
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "gap_12",
+      "kind": "whitespace",
+      "value": "            "
+    },
+    {
+      "name": "json_option",
+      "kind": "accepted-input",
+      "value": "--json"
+    },
+    {
+      "name": "gap_16",
+      "kind": "whitespace",
+      "value": "                "
+    },
+    {
+      "name": "json_format",
+      "kind": "accepted-input",
+      "value": "JSON"
+    },
+    {
+      "name": "syntax_continuation_7",
+      "kind": "accepted-input",
+      "value": "  --expected-fingerprint EXPECTED_FINGERPRINT"
+    },
+    {
+      "name": "syntax_continuation_8",
+      "kind": "accepted-input",
+      "value": "  --expected-active-fingerprint"
+    },
+    {
+      "name": "syntax_continuation_9",
+      "kind": "accepted-input",
+      "value": "  --expect-active-fingerprint-absent"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

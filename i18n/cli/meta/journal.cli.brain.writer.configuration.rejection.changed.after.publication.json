@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer configuration rejection changed after publication.",
+  "context": "Journal command-line text for writer configuration rejection changed after publication.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "518dfd2217314fe0e894217fda3a249cac3c10264683add4f21c498137ead049",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

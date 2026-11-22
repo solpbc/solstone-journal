@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation missing lane applicable evidence without higher priority cause.",
+  "context": "Journal command-line text for validation missing lane applicable evidence without higher priority cause.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b34ae2020cb9c4a7754321e4f00ffaf4484a86c272c9b2c4751048541a7d1ca7",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

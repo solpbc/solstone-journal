@@ -2385,3 +2385,286 @@ journal.cli.offload.stopped.temporary.copy = offload stopped: making a temporary
 journal.cli.offload.stopped.tool.reason = offload stopped: { $reason }.
 
 journal.cli.offload.stopped.unfinished.work = offload stopped: your journal still has unfinished work.
+
+journal.cli.brain.arguments.invalid = { $command }: error: invalid arguments
+
+journal.cli.brain.busy = Thinking busy: a check is already running
+
+journal.cli.brain.check.config = thinking check failed: could not read journal config: { $detail }
+
+journal.cli.brain.check.failure = thinking check failed: { $detail }
+
+journal.cli.brain.check.key.missing = the provider needs a key, and your journal couldn't confirm the result was saved.
+
+journal.cli.brain.check.key.rejected = the provider rejected this key, and your journal couldn't confirm the result was saved.
+
+
+
+
+
+
+journal.cli.brain.help.refresh = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_12 }show this help message and exit{ $line_break }{ $indent_2 }{ $json_option }{ $gap_16 }Emit { $json_format } instead of plain output{ $line_break }{ $syntax_continuation_7 }{ $line_break }{ $syntax_continuation_8 }{ $line_break }{ $syntax_continuation_9 }
+
+journal.cli.brain.help.renew = usage: { $syntax }{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_2 }show this help message and exit
+
+journal.cli.brain.help.root = usage: { $syntax }{ $line_break }{ $line_break }Active-brain status and bounded refresh CLI.{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $syntax_continuation_5 }{ $line_break }    { $status }Show active-brain status{ $line_break }    { $refresh }Run one bounded active-brain check{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_10 }show this help message and exit
+
+journal.cli.brain.help.status = usage: { $syntax }{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_2 }show this help message and exit{ $line_break }{ $indent_2 }{ $json_option }{ $gap_6 }Emit { $json_format } instead of plain output
+
+journal.cli.brain.ready.byo = Thinking ready: your own model
+
+journal.cli.brain.ready.byo.checked = Thinking ready: your own model, checked { $age } ago
+
+journal.cli.brain.ready.byo.model = Thinking ready: your own model { $model }
+
+journal.cli.brain.ready.byo.model.checked = Thinking ready: your own model { $model }, checked { $age } ago
+
+journal.cli.brain.ready.local = Thinking ready: local thinking
+
+journal.cli.brain.ready.local.checked = Thinking ready: local thinking, checked { $age } ago
+
+journal.cli.brain.ready.local.model = Thinking ready: local thinking { $model }
+
+journal.cli.brain.ready.local.model.checked = Thinking ready: local thinking { $model }, checked { $age } ago
+
+journal.cli.brain.ready.other = Thinking ready: { $lane }
+
+journal.cli.brain.ready.other.checked = Thinking ready: { $lane }, checked { $age } ago
+
+journal.cli.brain.ready.other.model = Thinking ready: { $lane } { $model }
+
+journal.cli.brain.ready.other.model.checked = Thinking ready: { $lane } { $model }, checked { $age } ago
+
+journal.cli.brain.ready.spp = Thinking ready: confidential processing
+
+journal.cli.brain.ready.spp.checked = Thinking ready: confidential processing, checked { $age } ago
+
+journal.cli.brain.ready.spp.model = Thinking ready: confidential processing { $model }
+
+journal.cli.brain.ready.spp.model.checked = Thinking ready: confidential processing { $model }, checked { $age } ago
+
+journal.cli.brain.ready.unknown = Thinking ready: unknown
+
+journal.cli.brain.ready.unknown.checked = Thinking ready: unknown, checked { $age } ago
+
+journal.cli.brain.ready.unknown.model = Thinking ready: unknown { $model }
+
+journal.cli.brain.ready.unknown.model.checked = Thinking ready: unknown { $model }, checked { $age } ago
+
+journal.cli.brain.usage = usage: { $syntax }
+
+journal.cli.brain.check.open.directory = open flat-directory descendant failed for { $path }: { $reason }
+
+journal.cli.brain.check.random = could not generate secure random bytes
+
+journal.cli.brain.settlement.fingerprint.changed = protected fingerprint key changed after validation
+
+journal.cli.brain.settlement.publication.changed = credential validation changed after publication
+
+journal.cli.brain.settlement.root.changed = admitted journal path changed
+
+journal.cli.brain.settlement.selection.changed = credential selection changed during refresh
+
+journal.cli.brain.settlement.unconfirmed = credential validation publication was not confirmed
+
+journal.cli.brain.settlement.validation.changed = credential validation changed after refresh
+
+journal.cli.brain.heading.blocked = Thinking blocked: { $reason }
+
+journal.cli.brain.heading.blocked.component = Thinking blocked: { $reason } ({ $component })
+
+journal.cli.brain.heading.checking = Thinking checking: { $reason }
+
+journal.cli.brain.heading.checking.component = Thinking checking: { $reason } ({ $component })
+
+journal.cli.brain.heading.other = Thinking { $state }: { $reason }
+
+journal.cli.brain.heading.other.component = Thinking { $state }: { $reason } ({ $component })
+
+journal.cli.brain.heading.unhealthy = Thinking unhealthy: { $reason }
+
+journal.cli.brain.heading.unhealthy.component = Thinking unhealthy: { $reason } ({ $component })
+
+journal.cli.brain.heading.unknown = Thinking unknown: { $reason }
+
+journal.cli.brain.heading.unknown.component = Thinking unknown: { $reason } ({ $component })
+
+journal.cli.brain.validation.checking.aggregate.requires.matching.checking.marker = checking aggregate requires matching checking marker
+
+journal.cli.brain.validation.checking.reason.is.not.valid.component.evidence = checking reason is not valid component evidence
+
+journal.cli.brain.validation.component.status.does.not.match.reason.aggregate = component status does not match reason aggregate
+
+journal.cli.brain.validation.detail = { $field }: { $reason }
+
+journal.cli.brain.validation.diagnostic.enum.value.not.allowed = diagnostic enum value not allowed
+
+journal.cli.brain.validation.diagnostic.key.not.allowed = diagnostic key not allowed
+
+journal.cli.brain.validation.diagnostic.value.must.be.an.enum.string = diagnostic value must be an enum string
+
+journal.cli.brain.validation.does.not.match.aggregate.state = does not match { $token_aggregate_state }
+
+journal.cli.brain.validation.expected.sha256.hex.string = expected { $token_sha_256 } hex string
+
+journal.cli.brain.validation.is.required.when.status.is.ok = is required when status is ok
+
+journal.cli.brain.validation.missing.lane.applicable.evidence.without.higher.priority.cause = missing lane-applicable evidence without higher-priority cause
+
+journal.cli.brain.validation.must.be.a.non.negative.integer = must be a non-negative integer
+
+journal.cli.brain.validation.must.be.a.sha256.hex.digest = must be a { $token_sha_256 } hex digest
+
+journal.cli.brain.validation.must.be.a.string = must be a string
+
+journal.cli.brain.validation.must.be.a.string.or.null = must be a string or null
+
+journal.cli.brain.validation.must.be.an.integer = must be an integer
+
+journal.cli.brain.validation.must.be.an.iso8601.timestamp = must be an { $token_iso_8601 } timestamp
+
+journal.cli.brain.validation.must.be.an.object = must be an object
+
+journal.cli.brain.validation.must.be.evidence.recordable = must be evidence-recordable
+
+journal.cli.brain.validation.must.be.non.empty = must be non-empty
+
+journal.cli.brain.validation.must.be.null.when.aggregate.state.is.ready = must be null when { $token_aggregate_state } is ready
+
+journal.cli.brain.validation.must.be.provider.key.invalid = must be { $token_provider_key_invalid }
+
+journal.cli.brain.validation.must.be.set.when.aggregate.state.is.not.ready = must be set when { $token_aggregate_state } is not ready
+
+journal.cli.brain.validation.non.ok.evidence.requires.reason = non-ok evidence requires reason
+
+journal.cli.brain.validation.not.attempted.is.only.valid.for.generate = { $token_not_attempted } is only valid for generate
+
+journal.cli.brain.validation.not.attempted.reason.must.repeat.causal.prerequisite.reason = { $token_not_attempted } reason must repeat causal prerequisite reason
+
+journal.cli.brain.validation.not.attempted.requires.a.non.ok.prerequisite = { $token_not_attempted } requires a non-ok prerequisite
+
+journal.cli.brain.validation.ok.evidence.requires.null.reason = ok evidence requires null reason
+
+journal.cli.brain.validation.prerequisite.renewal.requires.ok.or.declared.failure = prerequisite renewal requires ok or declared failure
+
+journal.cli.brain.validation.reason.not.allowed.for.evidence.component = reason not allowed for evidence component
+
+journal.cli.brain.validation.record.aggregate.reason.does.not.match.evidence = record aggregate/reason does not match evidence
+
+journal.cli.brain.validation.unknown.field = unknown field
+
+journal.cli.brain.validation.unknown.top.level.field = unknown top-level field
+
+journal.cli.brain.validation.unknown.value = unknown value
+
+journal.cli.brain.validation.unsupported.binding.version = unsupported binding version
+
+journal.cli.brain.validation.unsupported.schema.version = unsupported schema version
+
+journal.cli.brain.writer.active.brain.fingerprint.is.unavailable = active brain fingerprint is unavailable
+
+journal.cli.brain.writer.brain.abandon.reason.is.not.recordable.evidence = brain abandon reason is not recordable evidence
+
+journal.cli.brain.writer.brain.fingerprint.changed = brain fingerprint changed
+
+journal.cli.brain.writer.brain.fingerprint.key.is.unavailable = brain fingerprint key is unavailable
+
+journal.cli.brain.writer.brain.lane.changed = brain lane changed
+
+journal.cli.brain.writer.brain.prerequisite.evidence.is.unsafe = brain prerequisite evidence is unsafe
+
+journal.cli.brain.writer.brain.record.changed.during.inspection = Brain record changed during inspection
+
+journal.cli.brain.writer.brain.refresh.checking.marker.is.absent = brain refresh checking marker is absent
+
+journal.cli.brain.writer.brain.refresh.permit.expired = brain refresh permit expired
+
+journal.cli.brain.writer.brain.refresh.record.revision.changed = brain refresh record revision changed
+
+journal.cli.brain.writer.brain.refresh.revision.changed = brain refresh revision changed
+
+journal.cli.brain.writer.brain.refresh.run.id.changed = brain refresh run id changed
+
+journal.cli.brain.writer.brain.runtime.failure.marker.changed = brain runtime failure marker changed
+
+journal.cli.brain.writer.configuration.rejection.changed.after.publication = configuration rejection changed after publication
+
+journal.cli.brain.writer.credential.authority.changed.during.inspection = credential authority changed during inspection
+
+journal.cli.brain.writer.credential.authority.changed.during.observation = credential authority changed during observation
+
+journal.cli.brain.writer.credential.authority.is.not.an.object = credential authority is not an object
+
+journal.cli.brain.writer.credential.authority.is.unreadable = credential authority is unreadable
+
+journal.cli.brain.writer.credential.binding.authority.could.not.be.read.error = credential binding authority could not be read: { $error }
+
+journal.cli.brain.writer.credential.hold.authority.changed = credential hold authority changed
+
+journal.cli.brain.writer.credential.hold.authority.is.not.an.object = credential hold authority is not an object
+
+journal.cli.brain.writer.credential.hold.authority.is.unreadable.error = credential hold authority is unreadable: { $error }
+
+journal.cli.brain.writer.credential.observation.authority.is.not.an.object = credential observation authority is not an object
+
+journal.cli.brain.writer.credential.observation.authority.is.unreadable = credential observation authority is unreadable
+
+journal.cli.brain.writer.credential.observation.changed.during.refresh = credential observation changed during refresh
+
+journal.cli.brain.writer.credential.observation.changed.during.work = credential observation changed during work
+
+journal.cli.brain.writer.credential.observation.identity.is.invalid = credential observation identity is invalid
+
+journal.cli.brain.writer.credential.observation.lacks.original.binding = credential observation lacks original binding
+
+journal.cli.brain.writer.credential.observations.are.not.an.object = credential observations are not an object
+
+journal.cli.brain.writer.credential.process.state.changed.during.inspection = credential process state changed during inspection
+
+journal.cli.brain.writer.credential.publication.reservation.is.absent = credential publication reservation is absent
+
+journal.cli.brain.writer.credential.rejection.changed.after.publication = credential rejection changed after publication
+
+journal.cli.brain.writer.credential.rejection.changed.during.refresh = credential rejection changed during refresh
+
+journal.cli.brain.writer.credential.rejection.changed.during.validation = credential rejection changed during validation
+
+journal.cli.brain.writer.field.must.be.an.object = { $field } must be an object
+
+journal.cli.brain.writer.protected.fingerprint.key.changed.after.rejection = protected fingerprint key changed after rejection
+
+journal.cli.brain.writer.protected.fingerprint.key.changed.during.admission = protected fingerprint key changed during admission
+
+journal.cli.brain.writer.protected.fingerprint.key.changed.during.inspection = protected fingerprint key changed during inspection
+
+journal.cli.brain.writer.protected.fingerprint.key.changed.during.validation = protected fingerprint key changed during validation
+
+journal.cli.brain.writer.protected.fingerprint.key.is.absent.while.credential.authority.exists = protected fingerprint key is absent while credential authority exists
+
+journal.cli.brain.writer.protected.fingerprint.key.is.unavailable = protected fingerprint key is unavailable
+
+journal.cli.brain.writer.reason.is.not.recordable.evidence = reason is not recordable evidence
+
+journal.cli.brain.writer.rejected.refresh.receipt.does.not.match.its.probe = rejected refresh receipt does not match its probe
+
+journal.cli.brain.writer.rejection.receipt.root.provider.changed = rejection receipt root/provider changed
+
+journal.cli.brain.writer.settled.credential.observation.changed.during.work = settled credential observation changed during work
+
+journal.cli.brain.writer.validation.result.does.not.match.its.credential = validation result does not match its credential
+
+journal.cli.brain.writer.validation.result.is.not.an.object = validation result is not an object
+
+journal.cli.brain.writer.protected.fingerprint.key.is.absent.while.a.credential.binding.exists = protected fingerprint key is absent while a credential binding exists
+
+journal.cli.brain.hold.capacity = credential hold capacity is unavailable
+
+journal.cli.brain.hold.invalid.provider = unsupported credential hold provider
+
+journal.cli.brain.hold.root.changed = admitted journal root changed
+
+journal.cli.brain.hold.superseded = credential validation was superseded
+
+journal.cli.brain.hold.unavailable = credential hold state is unavailable
+
+journal.cli.brain.check.fingerprint.options = expected active fingerprint and expected absence are mutually exclusive

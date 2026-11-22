@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for ready byo model.",
+  "context": "Journal command-line text for ready byo model.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "model",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c137a7746a145845e724258c15b587bdb8c8c540660c29f82d0415f014b63e93",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

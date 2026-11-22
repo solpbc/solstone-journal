@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for heading blocked component.",
+  "context": "Journal command-line text for heading blocked component.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "component",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2d29181f6824401afdfd12f00a8c42a10f7619bf6c1947fcaca3a3387825ba00",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

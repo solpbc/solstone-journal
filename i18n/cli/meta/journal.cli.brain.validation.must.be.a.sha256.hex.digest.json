@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for validation must be a sha 256 hex digest.",
+  "context": "Journal command-line text for validation must be a sha 256 hex digest.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9f5dcf733b049c986920dd243df5e1efb848cba1bf77e44705006ecce9205f8b",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_sha_256",
+      "kind": "accepted-input",
+      "value": "SHA-256"
+    }
+  ]
+}

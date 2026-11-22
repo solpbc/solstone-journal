@@ -15,6 +15,8 @@ workspace = true
 full-tests = []
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
+solstone-core-window-catalog.workspace = true
 jiff.workspace = true
 log.workspace = true
 serde_json.workspace = true

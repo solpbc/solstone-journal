@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer rejected refresh receipt does not match its probe.",
+  "context": "Journal command-line text for writer rejected refresh receipt does not match its probe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3c041a7d9963b2aa0b628da19a7b4c9ee945e9a9aae06f584b7ce091e308eedb",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

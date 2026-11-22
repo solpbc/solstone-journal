@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation prerequisite renewal requires ok or declared failure.",
+  "context": "Journal command-line text for validation prerequisite renewal requires ok or declared failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f0b0be263853ea5a6dfb37c63d1d48c5a2736dd442ea3990c124f6c827379aee",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

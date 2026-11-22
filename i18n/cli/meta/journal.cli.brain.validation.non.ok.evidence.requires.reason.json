@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation non ok evidence requires reason.",
+  "context": "Journal command-line text for validation non ok evidence requires reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d7a8cbcd89c7377d503f27e7d2f2200019c22acb8134cbdba646e832c3a04818",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for settlement publication changed.",
+  "context": "Journal command-line text for settlement publication changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef04ac22bfa9a8629e9b7d54e30a716cdda156e28f0fd12fef73485dfe63cc68",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

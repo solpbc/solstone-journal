@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer active brain fingerprint is unavailable.",
+  "context": "Journal command-line text for writer active brain fingerprint is unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59cf08ce87247aa247674534e4b58b5616987f44140dd0630370b8eda8a8591f",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

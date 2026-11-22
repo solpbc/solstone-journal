@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer brain refresh permit expired.",
+  "context": "Journal command-line text for writer brain refresh permit expired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b79e0b30adc55df4a6e08b9842987b012ba7dea538b044d2329c6c6ed2e5cd0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

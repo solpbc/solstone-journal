@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for validation must be null when aggregate state is ready.",
+  "context": "Journal command-line text for validation must be null when aggregate state is ready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f487c633e4f210a5295cedaf150ee0fa1d758cbe958143a55c0f8efa63801a2c",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_aggregate_state",
+      "kind": "accepted-input",
+      "value": "aggregate_state"
+    }
+  ]
+}

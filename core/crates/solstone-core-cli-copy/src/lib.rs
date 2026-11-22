@@ -66,6 +66,10 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
+    pub fn id(&self) -> &'static str {
+        self.id
+    }
+
     pub fn new<const N: usize>(
         id: &'static str,
         values: [(&'static str, &dyn std::fmt::Display); N],
