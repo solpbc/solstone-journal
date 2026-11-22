@@ -282,7 +282,8 @@ fn search_response_with_index_in(
                 } else {
                     agent_label(&hit.metadata.agent)
                 };
-                let readable = readable_record(&hit.text);
+                let shown_record = projected.as_deref().unwrap_or(&hit.text);
+                let readable = readable_record(shown_record);
                 // Fresh-eyes 3 #3: when the readable sentences hold no match
                 // the stored record becomes the excerpt, and sending it again
                 // as `record` printed the same JSON twice on one card.
@@ -307,7 +308,7 @@ fn search_response_with_index_in(
                     "record": readable
                         .as_ref()
                         .filter(|_| !excerpt_is_record)
-                        .map(|_| cap_words(&hit.text)),
+                        .map(|_| cap_words(shown_record)),
                     "stream": hit.metadata.stream,
                     "path": hit.metadata.path,
                     "idx": hit.metadata.idx,
@@ -475,6 +476,7 @@ async fn entry_response(
         let display = owner_display
             && locale != ENGLISH
             && (is_display_document(std::path::Path::new(&query.path))
+                || solstone_core_format::talent_display::indexed_path(&query.path)
                 || OwnerDisplay::calendar(&query.path));
         let (entry, stamp) = if display {
             read_owner_entry_for_display(
@@ -1080,6 +1082,7 @@ fn unescape_display_text<'a>(path: &str, text: &'a str) -> Cow<'a, str> {
 
 enum OwnerDisplay {
     Document(IndexedDisplay),
+    Talent(solstone_core_format::talent_display::IndexedTalent),
     Calendar(IndexedCalendarDisplay),
 }
 
@@ -1098,7 +1101,10 @@ impl OwnerDisplay {
         usage: DisplayUse,
         indices: impl Iterator<Item = i64>,
     ) -> Option<Self> {
-        if Self::calendar(path) {
+        if solstone_core_format::talent_display::indexed_path(path) {
+            solstone_core_format::talent_display::IndexedTalent::load(root, path, stamp, locale)
+                .map(Self::Talent)
+        } else if Self::calendar(path) {
             IndexedCalendarDisplay::load(root, path, stamp, locale, indices).map(Self::Calendar)
         } else {
             IndexedDisplay::load(root, path, stamp, locale, usage).map(Self::Document)
@@ -1107,6 +1113,7 @@ impl OwnerDisplay {
 
     fn get(&self, idx: i64, english: &str) -> Option<&str> {
         match self {
+            Self::Talent(display) => display.get(idx, english),
             Self::Calendar(display) => display.get(idx, english),
             Self::Document(display) => display.get(idx, english),
         }

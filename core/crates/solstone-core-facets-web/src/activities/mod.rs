@@ -301,6 +301,7 @@ async fn create(
 }
 
 async fn day_view(
+    locale: Option<axum::Extension<solstone_core_convey_http::coalesce::ResponseLocale>>,
     State((root, _)): State<(PathBuf, Clock)>,
     RoutePath(day): RoutePath<String>,
     RawQuery(query): RawQuery,
@@ -308,9 +309,10 @@ async fn day_view(
     if !crate::segments::is_day(&day) {
         return invalid_day_not_found();
     }
+    let locale = solstone_core_convey_http::window_catalog::response_locale(locale);
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::ActivitiesDayView,
-        move || match view::build_view(&root, &day, query.as_deref()) {
+        move || match view::build_view_in(&root, &day, query.as_deref(), locale) {
             Ok(val) => Json(val).into_response(),
             Err(err) => internal(err),
         },

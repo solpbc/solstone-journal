@@ -1,0 +1,16 @@
+{
+  "description": "Fallback for an unavailable activity Pulse.",
+  "context": "Fallback for an unavailable activity Pulse.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f2b0608690255e5658ef3b4c6efebff329f247ffd9d5cc40c1c816dcd055c67b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_cli_copy::MessageDetail;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -56,16 +57,41 @@ pub enum PreparedDailyAction {
     },
 }
 
-fn error(detail: impl Into<String>) -> StageError {
-    let detail = detail.into();
-    let phase = if detail.starts_with("conflict:") {
-        "conflict"
-    } else if detail.starts_with("validation:") {
-        "parse"
-    } else {
-        "publication"
+fn error(detail: impl Into<MessageDetail>) -> StageError {
+    let cause = detail.into();
+    let phase = match cause.catalog_fields().map(|(id, _)| id) {
+        Some(
+            "journal.cli.talent.daily.observer.entity.gone"
+            | "journal.cli.talent.daily.observer.conflict"
+            | "journal.cli.talent.daily.observer.changed"
+            | "journal.cli.talent.daily.maintenance.changed",
+        ) => "conflict",
+        Some(
+            "journal.cli.talent.daily.observer.validation"
+            | "journal.cli.talent.daily.validation.observer",
+        ) => "parse",
+        Some(_) => "publication",
+        None => {
+            // Older owner APIs return reason prefixes as their error contract.
+            let legacy = cause.to_string();
+            if legacy.starts_with("conflict:") {
+                "conflict"
+            } else if legacy.starts_with("validation:") {
+                "parse"
+            } else {
+                "publication"
+            }
+        }
     };
-    StageError::new(phase, "daily", "daily", detail)
+    StageError::new(phase, "daily", "daily", cause)
+}
+
+fn daily_owner_error(err: ReviewOwnerError) -> StageError {
+    if err.kind().is_some() {
+        StageError::new("conflict", "daily", "daily", err.into_message())
+    } else {
+        error(err.into_message())
+    }
 }
 
 fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, String> {
@@ -76,16 +102,19 @@ fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, String> {
     }
 }
 
-fn relative_output(root: &Path, path: &Path) -> Result<String, String> {
+fn relative_output(root: &Path, path: &Path) -> Result<String, MessageDetail> {
     let relative = path
         .strip_prefix(root)
-        .map_err(|_| "daily output is outside journal")?;
+        .map_err(|_| MessageDetail::message("journal.cli.talent.daily.output.outside", []))?;
     if relative
         .components()
         .any(|part| !matches!(part, std::path::Component::Normal(_)))
         || relative.as_os_str().is_empty()
     {
-        return Err("invalid daily output path".into());
+        return Err(MessageDetail::message(
+            "journal.cli.talent.daily.output.path",
+            [],
+        ));
     }
     Ok(relative.to_string_lossy().replace('\\', "/"))
 }
@@ -120,11 +149,11 @@ fn verify_frozen_facet(
             .get("_daily_facet_ids")
             .and_then(|map| map.get(facet))
             .and_then(Value::as_str)
-            .ok_or("missing frozen facet identity")?;
+            .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.facet.identity", []))?;
         if id != expected {
-            return Err(ReviewOwnerError::conflict(
+            return Err(ReviewOwnerError::conflict_message(
                 ReviewOwnerConflictKind::OwningFacetChanged,
-                "conflict: owning facet changed after prompt preparation",
+                MessageDetail::message("journal.cli.talent.daily.facet.changed", []),
             ));
         }
     }
@@ -139,7 +168,10 @@ pub(crate) fn bind_output_action(
 ) -> Result<PreparedDailyAction, ReviewOwnerError> {
     let path_string = relative_output(root, path)?;
     let facet_identity = if let Some(rest) = path_string.strip_prefix("facets/") {
-        let facet = rest.split('/').next().ok_or("invalid facet output path")?;
+        let facet = rest
+            .split('/')
+            .next()
+            .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.facet.path", []))?;
         let _guard = solstone_core_facets::hold_facet_trust_lock(root)
             .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
         let id = if observe_identity {
@@ -189,13 +221,17 @@ fn verify_artifact_before(
         .get("_daily_artifact_before")
         .and_then(Value::as_object)
         .and_then(|map| map.get(path))
-        .ok_or("missing frozen required-artifact snapshot")?;
-    let expected: Option<Vec<u8>> = serde_json::from_value(expected.clone())
-        .map_err(|e| format!("invalid frozen artifact snapshot: {e}"))?;
+        .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.artifact.snapshot", []))?;
+    let expected: Option<Vec<u8>> = serde_json::from_value(expected.clone()).map_err(|e| {
+        MessageDetail::message(
+            "journal.cli.talent.daily.artifact.snapshot.invalid",
+            [("error", &e)],
+        )
+    })?;
     if expected.as_deref() != actual {
-        return Err(ReviewOwnerError::conflict(
+        return Err(ReviewOwnerError::conflict_message(
             ReviewOwnerConflictKind::ArtifactBeforeChanged,
-            "conflict: required artifact changed after prompt preparation",
+            MessageDetail::message("journal.cli.talent.daily.artifact.before", []),
         ));
     }
     Ok(())
@@ -219,7 +255,7 @@ pub fn prepare_daily_output(
         output.as_bytes().to_vec(),
         prepared,
     )
-    .map_err(|e| error(e.to_string()))?;
+    .map_err(daily_owner_error)?;
     Ok(PreparedDailyPublication {
         actions: vec![action],
         no_output: false,
@@ -234,46 +270,55 @@ fn validate_model_intent(intent: &WriteIntent) -> Result<(), StageError> {
         WriteIntent::DailySchedule { output, .. } => (output, "maintenance"),
         _ => return Ok(()),
     };
-    let invalid = |message: &str| error(format!("validation: {message}"));
-    let value: Value = serde_json::from_str(output)
-        .map_err(|e| error(format!("validation: invalid {shape} JSON: {e}")))?;
+    let invalid = |id| StageError::new("parse", "daily", "daily", MessageDetail::message(id, []));
+    let value: Value = serde_json::from_str(output).map_err(|e| {
+        StageError::new(
+            "parse",
+            "daily",
+            "daily",
+            MessageDetail::message(
+                "journal.cli.talent.daily.validation.json",
+                [("shape", &shape), ("error", &e)],
+            ),
+        )
+    })?;
     match shape {
         "suggest" => {
             if !value.get("entities").is_some_and(Value::is_array) {
-                return Err(invalid("suggest entities must be an array"));
+                return Err(invalid("journal.cli.talent.daily.validation.suggest"));
             }
         }
         "observer" => {
             if !value.get("entities").is_some_and(Value::is_array) {
-                return Err(invalid(
-                    "entities:entity_observer requires an entities array",
-                ));
+                return Err(invalid("journal.cli.talent.daily.validation.observer"));
             }
         }
         "review" => {
             let promotions = value
                 .get("promotions")
                 .and_then(Value::as_array)
-                .ok_or_else(|| invalid("review promotions must be an array"))?;
+                .ok_or_else(|| invalid("journal.cli.talent.daily.validation.promotions"))?;
             if !value.get("merges").is_some_and(Value::is_array) {
-                return Err(invalid("review merges must be an array"));
+                return Err(invalid("journal.cli.talent.daily.validation.merges"));
             }
             if promotions.iter().any(|row| {
                 row.get("promote").and_then(Value::as_bool) == Some(true)
                     && !row.get("aliases").is_some_and(Value::is_array)
             }) {
-                return Err(invalid(
-                    "promoted review candidate must include aliases array",
-                ));
+                return Err(invalid("journal.cli.talent.daily.validation.aliases"));
             }
         }
         "maintenance" => {
             let primary = value
                 .get("primary")
                 .and_then(Value::as_str)
-                .ok_or_else(|| invalid("maintenance primary is missing"))?;
+                .ok_or_else(|| {
+                    invalid("journal.cli.talent.daily.validation.maintenance.missing")
+                })?;
             if jiff::civil::Time::strptime("%H:%M", primary).is_err() {
-                return Err(invalid("maintenance primary must be HH:MM"));
+                return Err(invalid(
+                    "journal.cli.talent.daily.validation.maintenance.time",
+                ));
             }
         }
         _ => unreachable!(),
@@ -307,7 +352,7 @@ pub fn prepare_daily_publication(
                     format!("{output}\n").into_bytes(),
                     prepared,
                 )
-                .map_err(|e| error(e.to_string()))?,
+                .map_err(daily_owner_error)?,
             );
         }
         CommitPlan::Write(WriteIntent::EntityObserver {
@@ -326,7 +371,7 @@ pub fn prepare_daily_publication(
                 .join(format!("{day}_observer_outcome.json"));
             // Owner drift must be classified before retryable model-reference errors.
             prepare_frozen_output_action(root, &path, Vec::new(), prepared)
-                .map_err(|e| error(e.to_string()))?;
+                .map_err(daily_owner_error)?;
             let (batches, outcome) = crate::entities::observer::prepare_publication(
                 root,
                 &output,
@@ -336,7 +381,7 @@ pub fn prepare_daily_publication(
                 &shown_observation_ids,
                 prepared,
             )
-            .map_err(|e| error(e.to_string()))?;
+            .map_err(error)?;
             actions.extend(
                 batches
                     .into_iter()
@@ -349,32 +394,44 @@ pub fn prepare_daily_publication(
                     format!("{outcome}\n").into_bytes(),
                     prepared,
                 )
-                .map_err(|e| error(e.to_string()))?,
+                .map_err(daily_owner_error)?,
             );
         }
         CommitPlan::Write(WriteIntent::DailySchedule {
             output,
             output_path,
         }) => {
-            let value: Value = serde_json::from_str(&output)
-                .map_err(|e| error(format!("invalid maintenance output: {e}")))?;
+            let value: Value = serde_json::from_str(&output).map_err(|e| {
+                error(MessageDetail::message(
+                    "journal.cli.talent.daily.maintenance.output",
+                    [("error", &e)],
+                ))
+            })?;
             let primary = value
                 .get("primary")
                 .and_then(Value::as_str)
-                .ok_or_else(|| error("maintenance output lacks primary"))?;
+                .ok_or_else(|| {
+                    error(MessageDetail::message(
+                        "journal.cli.talent.daily.maintenance.primary",
+                        [],
+                    ))
+                })?;
             let batch = solstone_core_system::schedule::prepare_daily_time(
                 &root.join("config/schedules.json"),
                 primary,
             )
             .map_err(error)?;
-            let expected = prepared
-                .config
-                .get("_daily_time_before")
-                .ok_or_else(|| error("missing frozen daily-time snapshot"))?;
+            let expected = prepared.config.get("_daily_time_before").ok_or_else(|| {
+                error(MessageDetail::message(
+                    "journal.cli.talent.daily.maintenance.snapshot",
+                    [],
+                ))
+            })?;
             if batch.before.as_ref().unwrap_or(&Value::Null) != expected {
-                return Err(error(
-                    "conflict: daily time changed after prompt preparation",
-                ));
+                return Err(error(MessageDetail::message(
+                    "journal.cli.talent.daily.maintenance.changed",
+                    [],
+                )));
             }
             actions.push(PreparedDailyAction::DailyTime { batch });
             if let Some(path) = output_path {
@@ -385,7 +442,7 @@ pub fn prepare_daily_publication(
                         output.into_bytes(),
                         prepared,
                     )
-                    .map_err(|e| error(e.to_string()))?,
+                    .map_err(daily_owner_error)?,
                 );
             }
         }
@@ -401,9 +458,9 @@ pub fn prepare_daily_publication(
             );
         }
         CommitPlan::Write(_) => {
-            return Err(error(format!(
-                "unsupported daily write contract for {}",
-                prepared.name
+            return Err(error(MessageDetail::message(
+                "journal.cli.talent.daily.write.contract",
+                [("talent", &prepared.name)],
             )));
         }
     }
@@ -426,7 +483,7 @@ pub fn prepare_daily_publication(
             if let Some(id) = &review_identity {
                 review_owner_error(id, e)
             } else {
-                error(e.to_string())
+                daily_owner_error(e)
             }
         })?;
     }
@@ -459,18 +516,16 @@ pub fn required_artifact_receipts(publication: &PreparedDailyPublication) -> Vec
 /// The caller checkpointed generated_result and this entire typed plan before
 /// entry. Each action starts durably, commits under its owner's lock, then
 /// checkpoints the receipt while both owner and unit authority remain held.
-fn review_owner_error(
+pub(crate) fn review_owner_error(
     identity: &solstone_core_journal_io::DailyUnitIdentity,
     error: ReviewOwnerError,
 ) -> StageError {
-    match error {
-        ReviewOwnerError::Conflict { kind, detail } => {
-            StageError::owner_conflict(identity, "daily_publication", kind, detail)
-        }
-        ReviewOwnerError::Failed { detail } => {
-            StageError::new("publication", "daily_publication", &identity.name, detail)
-                .with_identity(identity)
-        }
+    let kind = error.kind();
+    let detail = error.into_message();
+    match kind {
+        Some(kind) => StageError::owner_conflict(identity, "daily_publication", kind, detail),
+        None => StageError::new("publication", "daily_publication", &identity.name, detail)
+            .with_identity(identity),
     }
 }
 
@@ -490,9 +545,11 @@ pub fn publish_daily_publication(
         changed_paths,
         admission,
         &solstone_core_generate::Cancellation::never(),
+        None,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn publish_daily_publication_cancellable(
     authority: &mut DailyUnitAuthority,
     token: &str,
@@ -501,16 +558,19 @@ pub(crate) fn publish_daily_publication_cancellable(
     changed_paths: &mut Vec<String>,
     admission: Option<FileLock>,
     cancellation: &solstone_core_generate::Cancellation,
+    display: Option<&solstone_core_format::stored_markdown::Document>,
 ) -> Result<CommitDisposition, StageError> {
     super::check_cancellation(cancellation).map_err(error)?;
-    let record = authority
-        .record()
-        .cloned()
-        .ok_or_else(|| error("missing publication record"))?;
+    let record = authority.record().cloned().ok_or_else(|| {
+        error(MessageDetail::message(
+            "journal.cli.talent.daily.publication.record",
+            [],
+        ))
+    })?;
     let is_review = record.identity.name == "entities:entities_review";
-    let make_error = |detail: String| -> StageError {
+    let make_error = |detail: MessageDetail| -> StageError {
         if is_review {
-            review_owner_error(&record.identity, ReviewOwnerError::failed(detail))
+            review_owner_error(&record.identity, detail.into())
         } else {
             error(detail)
         }
@@ -519,31 +579,34 @@ pub(crate) fn publish_daily_publication_cancellable(
         if is_review {
             review_owner_error(&record.identity, err)
         } else {
-            error(err.to_string())
+            daily_owner_error(err)
         }
     };
 
     authority
         .require_token(token)
-        .map_err(|e| make_error(e.to_string()))?;
-    let serialized = serde_json::to_value(publication).map_err(|e| make_error(e.to_string()))?;
+        .map_err(|e| make_error(e.to_string().into()))?;
+    let serialized =
+        serde_json::to_value(publication).map_err(|e| make_error(e.to_string().into()))?;
     if record.generated_result.is_none() || record.action_plan.as_ref() != Some(&serialized) {
-        return Err(make_error(
-            "publication requires the retained generated result and exact prepared plan".into(),
-        ));
+        return Err(make_error(MessageDetail::message(
+            "journal.cli.talent.daily.publication.plan",
+            [],
+        )));
     }
     // Do not trust an in-memory assignment: checkpoint is required at entry,
     // before even the first start marker or owner action.
     authority
         .checkpoint()
-        .map_err(|e| make_error(e.to_string()))?;
+        .map_err(|e| make_error(e.to_string().into()))?;
     let admission = std::cell::RefCell::new(admission);
     for (index, action) in publication.actions.iter().enumerate() {
         super::check_cancellation(cancellation).map_err(error)?;
         authority
             .require_token(token)
-            .map_err(|e| make_error(e.to_string()))?;
-        let action_bytes = serde_json::to_vec(action).map_err(|e| make_error(e.to_string()))?;
+            .map_err(|e| make_error(e.to_string().into()))?;
+        let action_bytes =
+            serde_json::to_vec(action).map_err(|e| make_error(e.to_string().into()))?;
         let action_id = format!("{index}:{:x}", Sha256::digest(&action_bytes));
         let prior =
             authority.record().unwrap().receipts.iter().find(|receipt| {
@@ -566,7 +629,7 @@ pub(crate) fn publish_daily_publication_cancellable(
             authority.record_mut().as_mut().unwrap().receipts.push(json!({"kind":"owner_action","action_id":action_id,"token":token,"state":"started"}));
             authority
                 .checkpoint()
-                .map_err(|e| make_error(e.to_string()))?;
+                .map_err(|e| make_error(e.to_string().into()))?;
             drop(admission.borrow_mut().take());
         }
         let auth_cell = std::cell::RefCell::new(&mut *authority);
@@ -577,7 +640,10 @@ pub(crate) fn publish_daily_publication_cancellable(
             let receipts = &mut auth
                 .record_mut()
                 .as_mut()
-                .ok_or("missing publication record")?
+                .ok_or_else(|| {
+                    MessageDetail::message("journal.cli.talent.daily.publication.record", [])
+                        .to_string()
+                })?
                 .receipts;
             if !receipts
                 .iter()
@@ -600,7 +666,10 @@ pub(crate) fn publish_daily_publication_cancellable(
             let receipts = &mut auth
                 .record_mut()
                 .as_mut()
-                .ok_or("missing publication record")?
+                .ok_or_else(|| {
+                    MessageDetail::message("journal.cli.talent.daily.publication.record", [])
+                        .to_string()
+                })?
                 .receipts;
             if let Some(prior) = receipts
                 .iter_mut()
@@ -619,7 +688,7 @@ pub(crate) fn publish_daily_publication_cancellable(
         };
         let _facet_guard = if let Some((facet, id)) = action_facet(action) {
             let guard = solstone_core_facets::hold_facet_trust_lock(&context.journal)
-                .map_err(|e| make_error(e.to_string()))?;
+                .map_err(|e| make_error(e.to_string().into()))?;
             if is_review {
                 solstone_core_facets::require_observed_facet_write_identity(
                     &context.journal,
@@ -629,7 +698,7 @@ pub(crate) fn publish_daily_publication_cancellable(
                 .map_err(|error| make_review(error.into_review_owner_error()))?;
             } else {
                 solstone_core_facets::require_facet_write_identity(&context.journal, facet, id)
-                    .map_err(|error| make_error(error.to_string()))?;
+                    .map_err(|error| make_error(error.to_string().into()))?;
             }
             Some(guard)
         } else {
@@ -645,7 +714,7 @@ pub(crate) fn publish_daily_publication_cancellable(
                     || super::check_cancellation(cancellation),
                     receipt,
                 )
-                .map_err(make_error)?
+                .map_err(|e| make_error(e.into()))?
             }
             PreparedDailyAction::Identity { change, .. } => {
                 solstone_core_entity::publish_identity_change(
@@ -696,7 +765,7 @@ pub(crate) fn publish_daily_publication_cancellable(
                     || super::check_cancellation(cancellation),
                     receipt,
                 )
-                .map_err(make_error)?
+                .map_err(|e| make_error(e.into()))?
             }
             PreparedDailyAction::Output {
                 path,
@@ -709,6 +778,7 @@ pub(crate) fn publish_daily_publication_cancellable(
                     path,
                     before,
                     after,
+                    display.filter(|doc| doc.as_bytes() == after),
                     allow_before,
                     start,
                     receipt,
@@ -732,6 +802,7 @@ fn publish_output(
     relative: &str,
     before: &Option<Vec<u8>>,
     after: &[u8],
+    display: Option<&solstone_core_format::stored_markdown::Document>,
     allow_before: bool,
     start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
@@ -742,18 +813,32 @@ fn publish_output(
     let _lock = hold_lock(&path, LockOptions::default())
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     let current = read_optional(&path).map_err(ReviewOwnerError::failed)?;
-    if current.as_deref() != Some(after) {
-        if !allow_before || &current != before {
-            return Err(ReviewOwnerError::conflict(
-                ReviewOwnerConflictKind::OutputArtifactChanged,
-                "conflict: required output changed after preparation",
-            ));
-        }
+    let changed = current.as_deref() != Some(after);
+    if changed && (!allow_before || &current != before) {
+        return Err(ReviewOwnerError::conflict_message(
+            ReviewOwnerConflictKind::OutputArtifactChanged,
+            MessageDetail::message("journal.cli.talent.daily.artifact.changed", []),
+        ));
+    }
+    if changed {
         start().map_err(ReviewOwnerError::failed)?;
-        atomic_replace(&path, after, AtomicWriteOptions { mode: Some(0o600) })
-            .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
-        // Record the save before a fallible receipt. The caller attempts indexing
-        // after this owner lock has been released, including on receipt failure.
+    }
+    let write = || -> std::io::Result<bool> {
+        if changed {
+            atomic_replace(&path, after, AtomicWriteOptions { mode: Some(0o600) })
+                .map_err(std::io::Error::other)?;
+        }
+        Ok(changed)
+    };
+    let changed = if let Some((document, receipt_path)) = display.zip(
+        solstone_core_format::stored_markdown::talent_receipt_path(root, &path),
+    ) {
+        super::display_receipt::with_receipt(root, &receipt_path, document, write)
+    } else {
+        write()
+    }
+    .map_err(|error| ReviewOwnerError::failed(error.to_string()))?;
+    if changed {
         published();
     }
     receipt().map_err(ReviewOwnerError::failed)
@@ -774,6 +859,7 @@ mod tests {
             "saved.md",
             &None,
             b"saved before receipt failed",
+            None,
             true,
             || Ok(()),
             || Err("receipt write failed".into()),

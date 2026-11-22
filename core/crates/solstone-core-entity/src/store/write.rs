@@ -748,9 +748,12 @@ pub fn publish_identity_change(
         .get(&change.entity_id)
         .is_some_and(|dir| dir != &change.entity_dir)
     {
-        return Err(ReviewOwnerError::conflict(
+        return Err(ReviewOwnerError::conflict_message(
             ReviewOwnerConflictKind::IdentityMoved,
-            "conflict: promoted identity moved after preparation",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.talent.daily.owner.identity.moved",
+                [],
+            ),
         ));
     }
     // A merge or delete that landed after preparation retires the id; the
@@ -760,15 +763,21 @@ pub fn publish_identity_change(
             .map_err(ReviewOwnerError::failed)?
         {
             Some(super::retired::RetiredState::Merged { .. }) => {
-                return Err(ReviewOwnerError::conflict(
+                return Err(ReviewOwnerError::conflict_message(
                     ReviewOwnerConflictKind::IdentityMerged,
-                    "conflict: promoted identity was merged away after preparation",
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.talent.daily.owner.identity.merged",
+                        [],
+                    ),
                 ));
             }
             Some(super::retired::RetiredState::Deleted) => {
-                return Err(ReviewOwnerError::conflict(
+                return Err(ReviewOwnerError::conflict_message(
                     ReviewOwnerConflictKind::IdentityDeleted,
-                    "conflict: promoted identity was deleted after preparation",
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.talent.daily.owner.identity.deleted",
+                        [],
+                    ),
                 ));
             }
             None => {}
@@ -786,16 +795,22 @@ pub fn publish_identity_change(
         .as_ref()
         .is_some_and(|current| renames_hidden_entity(current, &after))
     {
-        return Err(ReviewOwnerError::conflict(
+        return Err(ReviewOwnerError::conflict_message(
             ReviewOwnerConflictKind::IdentityBlocked,
-            "conflict: the entity is hidden, so its names were not changed",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.talent.daily.owner.identity.blocked.hidden",
+                [],
+            ),
         ));
     }
     let needs_identity_write = current.as_ref() != Some(&after);
     if needs_identity_write && (!allow_before || current != change.before) {
-        return Err(ReviewOwnerError::conflict(
+        return Err(ReviewOwnerError::conflict_message(
             ReviewOwnerConflictKind::IdentityChanged,
-            "conflict: promoted identity changed after preparation",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.talent.daily.owner.identity.changed",
+                [],
+            ),
         ));
     }
     let needs_history_apply = planned.iter().any(|(_, _, outcome)| {
@@ -809,29 +824,35 @@ pub fn publish_identity_change(
             && change.before.is_none()
             && super::lifecycle::identity_is_principal(&after);
         if is_new_principal_grant {
-            let names = super::create::read_owner_names_for_principal_grant(root).map_err(
-                |_err| {
-                    ReviewOwnerError::failed(
-                        "the journal settings could not be read, so this person was not marked as the owner",
-                    )
-                },
-            )?;
+            let names =
+                super::create::read_owner_names_for_principal_grant(root).map_err(|_err| {
+                    ReviewOwnerError::from(solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.talent.daily.owner.principal.settings",
+                        [],
+                    ))
+                })?;
             let name = after
                 .get("name")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
             if !super::derived::entity_matches_identity_name(name, None, &names) {
-                return Err(ReviewOwnerError::conflict(
+                return Err(ReviewOwnerError::conflict_message(
                     ReviewOwnerConflictKind::PrincipalGrantRefused,
-                    "conflict: the configured owner name no longer matches this person",
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.talent.daily.owner.principal.grant.refused.name",
+                        [],
+                    ),
                 ));
             }
             if super::lifecycle::has_journal_principal(root)
                 .map_err(|e| ReviewOwnerError::failed(e.to_string()))?
             {
-                return Err(ReviewOwnerError::conflict(
+                return Err(ReviewOwnerError::conflict_message(
                     ReviewOwnerConflictKind::PrincipalGrantRefused,
-                    "conflict: a journal owner already exists, so this person is not marked",
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.talent.daily.owner.principal.grant.refused.exists",
+                        [],
+                    ),
                 ));
             }
         }

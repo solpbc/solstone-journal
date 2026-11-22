@@ -388,13 +388,14 @@ pub(crate) fn prepare_in(
     validate_config_in(locale, &composed).map_err(PrepareFailure::Refusal)?;
     // A request that replaces the output schema the model reads asks for a
     // body the talent's own source-word body was never measured against.
-    if mode == PrepareMode::Execute
-        && composed.get("json_schema") == talent_schema.as_ref()
-        && let Some(body) = crate::story::source_body(&name, &composed, &entry_sources)
-    {
+    let story_document = (mode == PrepareMode::Execute
+        && composed.get("json_schema") == talent_schema.as_ref())
+    .then(|| crate::story::source_document(&name, &composed, &entry_sources))
+    .flatten();
+    if let Some(body) = &story_document {
         composed.insert(
             crate::story::SOURCE_BODY_KEY.to_owned(),
-            Value::String(body),
+            Value::String(body.to_string()),
         );
     }
     if let Some(facet) = &import_facet {
@@ -423,6 +424,7 @@ pub(crate) fn prepare_in(
     };
     crate::product_names::prepare(&context.journal, &name, &mut composed, &entry_sources);
     let mut prepared = PreparedTalent::new(name, composed);
+    prepared.story_document = story_document;
     prepared.participation_floor = participation_floor;
     prepared.topic_input_kinds = topic_input_kinds;
     prepared.log_generate_input = logs_talent_requests(&context.journal);

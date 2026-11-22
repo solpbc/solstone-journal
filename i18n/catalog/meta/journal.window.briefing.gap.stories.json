@@ -1,0 +1,26 @@
+{
+  "description": "Recorded number of omitted activity stories.",
+  "context": "Morning briefing. Recorded number of omitted activity stories.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b2d91f59b3f36f5300d0b2783f4cfc41f2ec71b45ac04811fa5153ac566919dc",
+  "max_length": 333,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "count"
+  }
+}

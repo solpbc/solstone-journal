@@ -1,0 +1,16 @@
+{
+  "description": "Diagnostic saved when an entity talent produces an unusable result.",
+  "context": "Diagnostic saved when an entity talent produces an unusable result.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cb80ba78e5c0b9e0b5dae193d012d24189e882d2d439db6575f189f270917f3a",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

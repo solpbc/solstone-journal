@@ -9,6 +9,9 @@ use std::io::Read;
 use std::path::Path;
 
 use jiff::Timestamp;
+use solstone_core_format::stored_markdown::Document;
+use solstone_core_format::talent_display::Copy;
+const ENGLISH: &str = "en-US";
 use serde_json::{Map, Value, json};
 use solstone_core_facets::{
     load_activity_records, load_current, load_imports, load_recent_entity_names,
@@ -46,7 +49,7 @@ pub struct PulseWindowNote {
     input_segments: usize,
     input_activities: usize,
     since_ms: Value,
-    gaps: Vec<String>,
+    gaps: Vec<Copy>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -119,11 +122,7 @@ pub fn unavailable_commit(
     }
     let mut without_model = prepared.clone();
     without_model.config.insert("model".to_owned(), Value::Null);
-    let mut plan = commit(
-        ParsedOutput::Text(summary_value(&pulse.default).to_string()),
-        &without_model,
-        state,
-    )?;
+    let mut plan = commit(ParsedOutput::Text(String::new()), &without_model, state)?;
     if let CommitPlan::Write(WriteIntent::DayAccumulator { record, .. }) = &mut plan {
         record.remove("generated_at");
     }
@@ -193,7 +192,9 @@ pub fn commit(
             "expected text output",
         ));
     };
-    let summary = normalize_pulse(&output, &state.default);
+    let parsed = coerce_pulse(&output);
+    let fallback = parsed.is_none();
+    let summary = parsed.unwrap_or_else(|| state.default.clone());
     let day = state.day.clone();
     let mut record = summary_value(&summary).as_object().cloned().unwrap();
     record.insert(
@@ -212,10 +213,22 @@ pub fn commit(
         Value::from(Timestamp::now().as_millisecond()),
     );
     record.insert("window".to_owned(), window_value(&state.window));
+    let gaps: Vec<_> = state
+        .window
+        .gaps
+        .iter()
+        .map(|gap| {
+            let mut document = Document::default();
+            document.push_talent(gap.clone());
+            document.talent_receipt()
+        })
+        .collect();
+    let display = (fallback || !gaps.is_empty()).then(|| json!({"fallback":fallback,"gaps":gaps}));
     Ok(CommitPlan::Write(WriteIntent::DayAccumulator {
         day,
         agent: "pulse".to_owned(),
         record,
+        display,
     }))
 }
 
@@ -252,7 +265,9 @@ fn build_packet(
         Ok(Some(names)) => names,
         Ok(None) => Vec::new(),
         Err(error) => {
-            gaps.push(format!("could not read recent entities: {error}"));
+            gaps.push(Copy::RecentEntities {
+                error: error.to_string(),
+            });
             Vec::new()
         }
     };
@@ -269,7 +284,7 @@ fn build_packet(
             "(none)".to_owned()
         } else {
             gaps.iter()
-                .map(|gap| format!("- {gap}"))
+                .map(|gap| format!("- {}", gap.render(ENGLISH)))
                 .collect::<Vec<_>>()
                 .join("\n")
         },
@@ -290,7 +305,7 @@ fn pulse_day(prepared: &PreparedTalent, home: &HomeContext) -> String {
 fn completed_since(
     config: &Map<String, Value>,
     context: &ExecutionContext,
-    gaps: &mut Vec<String>,
+    gaps: &mut Vec<Copy>,
 ) -> (Value, PulseWindowNote) {
     let window = config.get("cadence_window").and_then(Value::as_object);
     let segment_units = window
@@ -325,7 +340,7 @@ fn completed_since(
     let mut activities = Vec::new();
     for (_, kind, unit) in units.into_iter().take(MAX_UNITS) {
         let Some(day) = unit.get("day").and_then(Value::as_str) else {
-            gaps.push("completed unit missing source day".to_owned());
+            gaps.push(Copy::MissingDay);
             continue;
         };
         if kind == "segment" {
@@ -365,11 +380,11 @@ fn read_segment_activity(
     day: &str,
     unit: &Map<String, Value>,
     context: &ExecutionContext,
-    gaps: &mut Vec<String>,
+    gaps: &mut Vec<Copy>,
 ) -> Option<Value> {
     let segment = string_or(unit.get("segment"), "");
     if segment.is_empty() {
-        gaps.push("completed segment missing segment id".to_owned());
+        gaps.push(Copy::MissingSegmentId);
         return None;
     }
     let stream = unit
@@ -378,13 +393,13 @@ fn read_segment_activity(
         .filter(|value| !value.is_empty());
     let Some(segment_dir) = find_segment_dir(&context.journal, day, &segment, stream.as_deref())
     else {
-        gaps.push(format!("could not find completed segment {segment}"));
+        gaps.push(Copy::MissingSegment { segment });
         return None;
     };
     let activity = match fs::read_to_string(segment_dir.join("talents/activity.md")) {
         Ok(text) if !text.trim().is_empty() => text.trim().to_owned(),
         _ => {
-            gaps.push(format!("no activity summary for segment {segment}"));
+            gaps.push(Copy::MissingSegmentSummary { segment });
             return None;
         }
     };
@@ -394,29 +409,35 @@ fn read_segment_activity(
     )
 }
 
-fn read_sense_evidence(segment_dir: &Path, segment: &str, gaps: &mut Vec<String>) -> Value {
-    let read = || -> Result<Value, String> {
+fn read_sense_evidence(segment_dir: &Path, segment: &str, gaps: &mut Vec<Copy>) -> Value {
+    let read = || -> Result<Value, Copy> {
+        let failure = |error: String| Copy::UnreadableSense {
+            segment: segment.into(),
+            error,
+        };
         let file = fs::File::open(segment_dir.join("talents/sense.json"))
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| failure(error.to_string()))?;
         let mut bytes = Vec::new();
         file.take((SENSE_BYTES_MAX + 1) as u64)
             .read_to_end(&mut bytes)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| failure(error.to_string()))?;
         if bytes.len() > SENSE_BYTES_MAX {
-            return Err("sense assessment exceeds the context limit".to_owned());
+            return Err(Copy::SenseLimit {
+                segment: segment.into(),
+            });
         }
-        serde_json::from_slice(&bytes).map_err(|error| error.to_string())
+        serde_json::from_slice(&bytes).map_err(|error| failure(error.to_string()))
     };
     let sense = match read() {
         Ok(Value::Object(sense)) => sense,
         Ok(_) => {
-            gaps.push(format!("invalid sense evidence for segment {segment}"));
+            gaps.push(Copy::InvalidSense {
+                segment: segment.into(),
+            });
             return Value::Null;
         }
         Err(error) => {
-            gaps.push(format!(
-                "could not read sense evidence for segment {segment}: {error}"
-            ));
+            gaps.push(error);
             return Value::Null;
         }
     };
@@ -468,25 +489,25 @@ fn read_activity(
     day: &str,
     unit: &Map<String, Value>,
     context: &ExecutionContext,
-    gaps: &mut Vec<String>,
+    gaps: &mut Vec<Copy>,
 ) -> Option<Value> {
     let facet = string_or(unit.get("facet"), "");
     let activity = string_or(unit.get("activity"), "");
     if facet.is_empty() || activity.is_empty() {
-        gaps.push(format!(
-            "completed activity missing facet or id: {}",
-            if activity.is_empty() {
-                "(none)"
-            } else {
-                &activity
-            }
-        ));
+        gaps.push(if activity.is_empty() {
+            Copy::MissingActivity
+        } else {
+            Copy::MissingActivityId { activity }
+        });
         return None;
     }
     let records = match load_activity_records(&context.journal, &facet, day, true) {
         Ok(records) => records,
         Err(error) => {
-            gaps.push(format!("could not load activities for {facet}: {error}"));
+            gaps.push(Copy::UnreadableActivities {
+                facet,
+                error: error.to_string(),
+            });
             return None;
         }
     };
@@ -494,7 +515,7 @@ fn read_activity(
         .into_iter()
         .find(|record| string_or(record.get("id"), "") == activity)
     else {
-        gaps.push(format!("activity record not found: {facet}/{activity}"));
+        gaps.push(Copy::ActivityNotFound { facet, activity });
         return None;
     };
     // Thinking's reading of a Strava workout is body data, which no talent reads.
@@ -510,13 +531,17 @@ fn read_activity(
     )
 }
 
-fn awareness_context(journal: &std::path::Path, gaps: &mut Vec<String>) -> Value {
+fn awareness_context(journal: &std::path::Path, gaps: &mut Vec<Copy>) -> Value {
     let current = load_current(journal).unwrap_or_else(|error| {
-        gaps.push(format!("could not read current awareness: {error}"));
+        gaps.push(Copy::CurrentAwareness {
+            error: error.to_string(),
+        });
         json!({})
     });
     let imports = load_imports(journal).unwrap_or_else(|error| {
-        gaps.push(format!("could not read import awareness: {error}"));
+        gaps.push(Copy::ImportAwareness {
+            error: error.to_string(),
+        });
         json!({})
     });
     json!({"current": current, "imports": imports})
@@ -524,45 +549,15 @@ fn awareness_context(journal: &std::path::Path, gaps: &mut Vec<String>) -> Value
 
 fn default_pulse() -> PulseSummary {
     PulseSummary {
-        title: "summary unavailable".to_owned(),
-        one_sentence: "your recent activity couldn't be summarized.".to_owned(),
-        full_details: "your recent activity couldn't be summarized.".to_owned(),
+        title: Copy::PulseTitle.render(ENGLISH),
+        one_sentence: Copy::PulseBody.render(ENGLISH),
+        full_details: Copy::PulseBody.render(ENGLISH),
         needs_you: Vec::new(),
     }
 }
 
 fn normalize_pulse(raw: &str, default: &PulseSummary) -> PulseSummary {
-    coerce_pulse(raw).unwrap_or_else(|| PulseSummary {
-        title: truncate(
-            &string_or(
-                Some(&Value::String(default.title.clone())),
-                "summary unavailable",
-            ),
-            TITLE_MAX,
-        ),
-        one_sentence: truncate(
-            &string_or(
-                Some(&Value::String(default.one_sentence.clone())),
-                "your recent activity couldn't be summarized.",
-            ),
-            SENTENCE_MAX,
-        ),
-        full_details: truncate(
-            &string_or(
-                Some(&Value::String(default.full_details.clone())),
-                "your recent activity couldn't be summarized.",
-            ),
-            DETAILS_MAX,
-        ),
-        needs_you: coerce_needs(&Value::Array(
-            default
-                .needs_you
-                .iter()
-                .cloned()
-                .map(Value::String)
-                .collect(),
-        )),
-    })
+    coerce_pulse(raw).unwrap_or_else(|| default.clone())
 }
 
 fn coerce_pulse(raw: &str) -> Option<PulseSummary> {
@@ -646,7 +641,7 @@ fn summary_value(summary: &PulseSummary) -> Value {
     json!({"full_details": summary.full_details, "needs_you": summary.needs_you, "one_sentence": summary.one_sentence, "title": summary.title})
 }
 fn window_value(window: &PulseWindowNote) -> Value {
-    json!({"segments": window.segments, "activities": window.activities, "input_segments": window.input_segments, "input_activities": window.input_activities, "since_ms": window.since_ms, "gaps": window.gaps})
+    json!({"segments": window.segments, "activities": window.activities, "input_segments": window.input_segments, "input_activities": window.input_activities, "since_ms": window.since_ms, "gaps": window.gaps.iter().map(|gap| gap.render(ENGLISH)).collect::<Vec<_>>()})
 }
 
 #[cfg(test)]
@@ -814,7 +809,12 @@ mod tests {
 
         fs::write(talents.join("sense.json"), vec![b' '; SENSE_BYTES_MAX + 1]).unwrap();
         assert!(read_sense_evidence(root.path(), "segment", &mut gaps).is_null());
-        assert!(gaps.last().unwrap().contains("exceeds the context limit"));
+        assert!(
+            gaps.last()
+                .unwrap()
+                .render(ENGLISH)
+                .contains("exceeds the context limit")
+        );
         fs::write(talents.join("sense.json"), b"{").unwrap();
         assert!(read_sense_evidence(root.path(), "segment", &mut gaps).is_null());
         fs::remove_file(talents.join("sense.json")).unwrap();

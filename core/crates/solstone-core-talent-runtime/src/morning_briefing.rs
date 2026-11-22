@@ -12,6 +12,7 @@ use solstone_core_home::{
     briefing::BriefingDates,
     readers::{enabled_facet_names, read_latest},
 };
+use solstone_core_window_catalog::{self as copy, ENGLISH};
 
 use crate::contract::{GateDecision, PrePostState};
 use crate::{
@@ -52,6 +53,15 @@ pub struct MorningBriefingPreState {
     pub values: Map<String, Value>,
     pub activities: Vec<DigestActivity>,
     pub initial_gaps: Vec<String>,
+    /// Authoritative preparation reasons. The English in the prompt and in
+    /// older frozen packets remains readable without this additive field.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "read_gap_reasons"
+    )]
+    pub(crate) gap_reasons: Option<Vec<Gap>>,
+
     pub counts: Value,
     pub generated: String,
     pub model: String,
@@ -151,7 +161,7 @@ pub fn apply_prompt_override(
     let mut include_activities = vec![true; n];
 
     let measure = |inc_acts: &[bool], inc_stories: &[bool]| -> (Map<String, Value>, u32) {
-        let mut current_gaps = briefing_state.initial_gaps.clone();
+        let mut current_gaps = briefing_state.gap_reasons.clone().unwrap_or_default();
         current_gaps.extend(omission_gaps(
             &briefing_state.activities,
             inc_acts,
@@ -165,7 +175,7 @@ pub fn apply_prompt_override(
             "generated": briefing_state.generated,
             "model": briefing_state.model,
             "sources": briefing_state.counts,
-            "gaps": current_gaps,
+            "gaps": gap_labels(&current_gaps),
             "coverage_preamble": coverage_preamble(&current_gaps),
         });
         values.insert("activity_digest".into(), Value::String(digest_text));
@@ -230,6 +240,13 @@ pub fn apply_prompt_override(
     if let Some(meta) = current_values.get("briefing_metadata").cloned() {
         prepared.config.insert("briefing_metadata".into(), meta);
     }
+    let mut reasons = briefing_state.gap_reasons.clone().unwrap_or_default();
+    reasons.extend(omission_gaps(
+        &briefing_state.activities,
+        &include_activities,
+        &include_stories,
+    ));
+    prepared.briefing_gaps = reasons;
     let inclusion = briefing_state
         .activities
         .iter()
@@ -306,7 +323,7 @@ fn build_briefing_state_in(
         })
         .collect::<Vec<_>>();
     if facets.is_empty() {
-        gaps.push("active facets".to_owned());
+        gaps.push(Gap::Facets);
     }
 
     let digest_activities = load_digest_activities(&facets, day, context, &mut gaps);
@@ -318,7 +335,7 @@ fn build_briefing_state_in(
         "generated": generated,
         "model": model,
         "sources": counts,
-        "gaps": gaps,
+        "gaps": gap_labels(&gaps),
         "coverage_preamble": coverage_preamble(&gaps),
     });
     let n = digest_activities.len();
@@ -363,7 +380,8 @@ fn build_briefing_state_in(
     Ok(MorningBriefingPreState {
         values,
         activities: digest_activities,
-        initial_gaps: gaps,
+        initial_gaps: gap_labels(&gaps),
+        gap_reasons: Some(gaps),
         counts,
         generated,
         model: model.to_owned(),
@@ -374,7 +392,7 @@ fn load_digest_activities(
     facets: &[(String, String)],
     day: &str,
     context: &ExecutionContext,
-    gaps: &mut Vec<String>,
+    gaps: &mut Vec<Gap>,
 ) -> Vec<DigestActivity> {
     let mut activities = Vec::new();
     let calendar = solstone_core_facets::calendar_on_day(&context.journal, day);
@@ -400,9 +418,9 @@ fn load_digest_activities(
                                 .is_none()
                         });
                     if has_unreadable_line {
-                        gaps.push(format!(
-                            "activities from {title} include a line that could not be read"
-                        ));
+                        gaps.push(Gap::UnreadableLine {
+                            facet: title.clone(),
+                        });
                     }
                 }
                 let mut has_unusable_id = false;
@@ -537,14 +555,16 @@ fn load_digest_activities(
                     ));
                 }
                 if has_unusable_id {
-                    gaps.push(format!(
-                        "activities from {title} include a record with no activity id"
-                    ));
+                    gaps.push(Gap::MissingId {
+                        facet: title.clone(),
+                    });
                 }
             }
             Err(error) => {
                 log::warn!("morning briefing: activities for {facet} {day} unreadable: {error}");
-                gaps.push(format!("activities from {title}, which couldn't be read"));
+                gaps.push(Gap::UnreadableFile {
+                    facet: title.clone(),
+                });
             }
         }
     }
@@ -725,7 +745,7 @@ fn generated_stamp(home: &HomeContext) -> String {
     home.now_local().strftime("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
-fn read_pulse(home: &HomeContext, day: &str, gaps: &mut Vec<String>) -> String {
+fn read_pulse(home: &HomeContext, day: &str, gaps: &mut Vec<Gap>) -> String {
     // A pulse is never made again: on a day that lost a recording to the
     // trash, or the day after it, it may still say what that recording held.
     let before = solstone_core_time::parse_day(day)
@@ -736,11 +756,11 @@ fn read_pulse(home: &HomeContext, day: &str, gaps: &mut Vec<String>) -> String {
             solstone_core_segment::day_has_tombstone(&home.journal_root, &before)
         })
     {
-        gaps.push("the latest pulse".into());
+        gaps.push(Gap::Pulse);
         return String::new();
     }
     let Some(record) = read_latest(home, day, "pulse", 0) else {
-        gaps.push("the latest pulse".into());
+        gaps.push(Gap::Pulse);
         return String::new();
     };
     let mut parts = Vec::new();
@@ -772,7 +792,7 @@ fn read_pulse(home: &HomeContext, day: &str, gaps: &mut Vec<String>) -> String {
     }
     let value = parts.join("\n\n");
     if value.is_empty() {
-        gaps.push("the latest pulse".into());
+        gaps.push(Gap::Pulse);
     }
     value
 }
@@ -789,9 +809,69 @@ fn render_facets(facets: &[(String, String)]) -> String {
     }
 }
 
-/// The owner's note on what this briefing could not draw on.
-const ACTIVITIES_OMITTED: &str = "activities omitted: ";
-const STORIES_OMITTED: &str = "activity stories omitted: ";
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum Gap {
+    Facets,
+    Pulse,
+    UnreadableLine { facet: String },
+    MissingId { facet: String },
+    UnreadableFile { facet: String },
+    Activities { count: usize },
+    Stories { count: usize },
+    Location { count: u32 },
+}
+
+fn read_gap_reasons<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<Gap>>, D::Error> {
+    use serde::Deserialize;
+    // Thawing an existing packet uses the frozen prompt. An unfamiliar
+    // display field must never prevent the worker from running it.
+    let value = Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).ok())
+}
+
+impl Gap {
+    pub(crate) fn label(&self) -> String {
+        match self {
+            Self::Facets => copy::text(ENGLISH, "journal.window.briefing.gap.facets"),
+            Self::Pulse => copy::text(ENGLISH, "journal.window.briefing.gap.pulse"),
+            Self::UnreadableLine { facet } => copy::strings(
+                ENGLISH,
+                "journal.window.briefing.gap.line",
+                [("facet", facet)],
+            ),
+            Self::MissingId { facet } => copy::strings(
+                ENGLISH,
+                "journal.window.briefing.gap.id",
+                [("facet", facet)],
+            ),
+            Self::UnreadableFile { facet } => copy::strings(
+                ENGLISH,
+                "journal.window.briefing.gap.file",
+                [("facet", facet)],
+            ),
+            Self::Activities { count } => {
+                counted("journal.window.briefing.gap.activities", *count as i64)
+            }
+            Self::Stories { count } => {
+                counted("journal.window.briefing.gap.stories", *count as i64)
+            }
+            Self::Location { count } => {
+                counted("journal.window.briefing.gap.location", i64::from(*count))
+            }
+        }
+    }
+}
+
+fn counted(id: &str, count: i64) -> String {
+    copy::render(ENGLISH, id, &[("count", copy::Value::Cardinal(count))])
+}
+
+pub(crate) fn gap_labels(gaps: &[Gap]) -> Vec<String> {
+    gaps.iter().map(Gap::label).collect()
+}
 
 /// Counts, not record ids: one gap per omitted record grows with the day, and a
 /// day with hundreds of activities could never fit the floor even with all of
@@ -800,7 +880,7 @@ pub(crate) fn omission_gaps(
     activities: &[DigestActivity],
     include_activities: &[bool],
     include_stories: &[bool],
-) -> Vec<String> {
+) -> Vec<Gap> {
     let omitted = include_activities.iter().filter(|kept| !**kept).count();
     let stories = activities
         .iter()
@@ -811,76 +891,59 @@ pub(crate) fn omission_gaps(
         .count();
     let mut gaps = Vec::new();
     if omitted > 0 {
-        gaps.push(format!("{ACTIVITIES_OMITTED}{omitted}."));
+        gaps.push(Gap::Activities { count: omitted });
     }
     if stories > 0 {
-        gaps.push(format!("{STORIES_OMITTED}{stories}."));
+        gaps.push(Gap::Stories { count: stories });
     }
     gaps
 }
 
-/// Whether `gap` is an omission gap, in the count form or the per-record form
-/// earlier packets stored.
-pub(crate) fn is_omission_gap(gap: &str, activities: &[DigestActivity]) -> bool {
-    gap.starts_with(ACTIVITIES_OMITTED)
-        || gap.starts_with(STORIES_OMITTED)
-        || activities.iter().any(|act| {
-            gap.strip_prefix("activity ")
-                .or_else(|| gap.strip_prefix("story for "))
-                == Some(act.id.as_str())
-        })
-}
-
-pub(crate) fn coverage_preamble(gaps: &[String]) -> String {
+pub(crate) fn coverage_preamble(gaps: &[Gap]) -> String {
     let mut parts = Vec::new();
-    let (mut activities, mut stories) = (0, 0);
-    let count = |gap: &str, prefix: &str| {
-        gap.strip_prefix(prefix)
-            .and_then(|rest| rest.strip_suffix('.'))
-            .and_then(|count| count.parse::<usize>().ok())
-    };
+    let mut activities = 0;
+    let mut stories = 0;
     for gap in gaps {
-        if let Some(omitted) = count(gap, ACTIVITIES_OMITTED) {
-            activities += omitted;
-        } else if let Some(omitted) = count(gap, STORIES_OMITTED) {
-            stories += omitted;
-        } else if gap.starts_with("story for ") {
-            stories += 1;
-        } else if gap.starts_with("activity ") {
-            activities += 1;
-        } else if let Some(count) = gap
-            .strip_prefix("location entries omitted: ")
-            .and_then(|rest| rest.strip_suffix('.'))
-        {
-            parts.push(if count == "1" {
-                "one location entry".to_owned()
-            } else {
-                format!("{count} location entries")
-            });
-        } else if gap == "the latest pulse" {
-            parts.push("the latest running summary".to_owned());
-        } else {
-            parts.push(gap.trim_end_matches('.').to_owned());
+        match gap {
+            Gap::Activities { count } => activities += count,
+            Gap::Stories { count } => stories += count,
+            Gap::Pulse => parts.push(copy::text(
+                ENGLISH,
+                "journal.window.briefing.coverage.pulse",
+            )),
+            Gap::Location { count } => parts.push(counted(
+                "journal.window.briefing.coverage.location",
+                i64::from(*count),
+            )),
+            other => parts.push(other.label()),
         }
     }
     if activities > 0 {
-        parts.push(if activities == 1 {
-            "one activity".to_owned()
-        } else {
-            format!("{activities} activities")
-        });
+        parts.push(counted(
+            "journal.window.briefing.coverage.activities",
+            activities as i64,
+        ));
     }
     if stories > 0 {
-        parts.push(if stories == 1 {
-            "the story of one activity".to_owned()
-        } else {
-            format!("the stories of {stories} activities")
-        });
+        parts.push(counted(
+            "journal.window.briefing.coverage.stories",
+            stories as i64,
+        ));
     }
-    if parts.is_empty() {
+    let Some(items) = parts.into_iter().reduce(|items, item| {
+        copy::strings(
+            ENGLISH,
+            "journal.window.briefing.coverage.list",
+            [("items", &items), ("item", &item)],
+        )
+    }) else {
         return String::new();
-    }
-    format!("Not in this briefing: {}.", parts.join("; "))
+    };
+    copy::strings(
+        ENGLISH,
+        "journal.window.briefing.coverage.note",
+        [("items", &items)],
+    )
 }
 
 fn string_or(value: Option<&Value>, fallback: &str) -> String {
@@ -908,7 +971,7 @@ mod tests {
     fn coverage_preamble_names_only_what_is_missing() {
         assert_eq!(coverage_preamble(&[]), "");
         assert_eq!(
-            coverage_preamble(&["the latest pulse".to_owned()]),
+            coverage_preamble(&[Gap::Pulse]),
             "Not in this briefing: the latest running summary."
         );
     }
@@ -916,13 +979,12 @@ mod tests {
     #[test]
     fn coverage_preamble_counts_omitted_records_without_their_ids() {
         let gaps = [
-            "the latest pulse",
-            "story for 20261019_meeting_1",
-            "activity 20261019_x",
-            "story for 20261019_y",
-            "location entries omitted: 3.",
-        ]
-        .map(str::to_owned);
+            Gap::Pulse,
+            Gap::Stories { count: 1 },
+            Gap::Activities { count: 1 },
+            Gap::Stories { count: 1 },
+            Gap::Location { count: 3 },
+        ];
         assert_eq!(
             coverage_preamble(&gaps),
             "Not in this briefing: the latest running summary; 3 location entries; \
@@ -1232,7 +1294,7 @@ mod tests {
         let omitted = gaps
             .iter()
             .filter_map(Value::as_str)
-            .find_map(|gap| gap.strip_prefix(ACTIVITIES_OMITTED))
+            .find_map(|gap| gap.strip_prefix("activities omitted: "))
             .and_then(|count| count.trim_end_matches('.').parse::<usize>().ok())
             .unwrap_or_else(|| panic!("{gaps:?}"));
         assert!(omitted >= 10, "omits enough to show the count: {gaps:?}");
@@ -1302,7 +1364,10 @@ mod tests {
             total_tokens <= budget,
             "tokens {total_tokens} must fit budget {budget}"
         );
-        assert!(prompt.contains(STORIES_OMITTED) || prompt.contains(ACTIVITIES_OMITTED));
+        assert!(
+            prompt.contains("activity stories omitted: ")
+                || prompt.contains("activities omitted: ")
+        );
         assert!(!prompt.contains(&huge_story));
         assert!(!prompt.contains(&huge_story[..100]));
     }
@@ -1485,6 +1550,9 @@ mod tests {
             values,
             activities: vec![act],
             initial_gaps: vec![initial_gap.clone()],
+            gap_reasons: Some(vec![Gap::UnreadableFile {
+                facet: "Work".into(),
+            }]),
             counts: json!({"segments": 0}),
             generated: "2026-10-20T07:00:00Z".into(),
             model: "test-model".into(),

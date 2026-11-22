@@ -110,6 +110,16 @@ fn read_latest_at(
     lookback_days: u32,
     latest: Option<i64>,
 ) -> Option<Value> {
+    latest_record(context, day, name, lookback_days, latest).map(|(_, _, row)| Value::Object(row))
+}
+
+fn latest_record(
+    context: &HomeContext,
+    day: &str,
+    name: &str,
+    lookback_days: u32,
+    latest: Option<i64>,
+) -> Option<(std::path::PathBuf, usize, Map<String, Value>)> {
     let start = solstone_core_time::parse_day(day)?;
     for offset in 0..=lookback_days {
         let probe = solstone_core_time::day_key(
@@ -133,8 +143,8 @@ fn read_latest_at(
             .max_by_key(|(index, row)| {
                 (row.get("ts").and_then(Value::as_i64).unwrap_or(0), *index)
             });
-        if let Some((_, row)) = row {
-            return Some(Value::Object(row));
+        if let Some((idx, row)) = row {
+            return Some((path, idx, row));
         }
     }
     None
@@ -150,9 +160,16 @@ pub(crate) fn load_pulse_narrative_at(
     day: &str,
     latest: Option<i64>,
 ) -> PulseNarrative {
-    let Some(record) = read_latest_at(context, day, "pulse", 0, latest) else {
+    let Some((path, idx, mut record)) = latest_record(context, day, "pulse", 0, latest) else {
         return empty_pulse();
     };
+    if context.locale() != "en-US"
+        && let Some(receipts) =
+            solstone_core_format::talent_display::read(context.journal_root(), &path)
+        && let Some(receipt) = receipts.get(idx.to_string())
+    {
+        solstone_core_format::talent_display::project_pulse(&mut record, receipt, context.locale());
+    }
     let Some(content) = record
         .get("full_details")
         .and_then(Value::as_str)
@@ -310,8 +327,7 @@ pub fn collect_activities(context: &HomeContext, day: &str, latest: Option<i64>)
     let day_records = all_facet_names(context)
         .into_iter()
         .flat_map(|facet| {
-            load_activity_records(context.journal_root(), &facet, day, false)
-                .unwrap_or_default()
+            displayed_activity_records(context, &facet, day)
                 .into_iter()
                 .filter(move |record| {
                     latest.is_none_or(|latest| {
@@ -413,14 +429,38 @@ fn day_source_labels(
     )
 }
 
+fn displayed_activity_records(
+    context: &HomeContext,
+    facet: &str,
+    day: &str,
+) -> Vec<Map<String, Value>> {
+    let mut records =
+        load_activity_records(context.journal_root(), facet, day, false).unwrap_or_default();
+    if context.locale() != "en-US" {
+        let path =
+            solstone_core_format::talent_display::activity_path(context.journal_root(), facet, day);
+        if let Some(receipts) =
+            solstone_core_format::talent_display::read(context.journal_root(), &path)
+        {
+            for record in &mut records {
+                solstone_core_format::talent_display::project_story(
+                    record,
+                    &receipts,
+                    context.locale(),
+                );
+            }
+        }
+    }
+    records
+}
+
 /// Collect enabled-facet activity records and use the native duration estimator.
 pub fn collect_top_activities_yesterday(context: &HomeContext) -> Vec<Value> {
     let day = context.yesterday();
     let day_records = enabled_facet_names(context)
         .into_iter()
         .flat_map(|facet| {
-            load_activity_records(context.journal_root(), &facet, &day, false)
-                .unwrap_or_default()
+            displayed_activity_records(context, &facet, &day)
                 .into_iter()
                 .map(move |record| (facet.clone(), record))
         })

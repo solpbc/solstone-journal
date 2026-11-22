@@ -613,6 +613,7 @@ async function main() {
 
   const openedWindows = [];
   const window = { createViewReady: () => () => {},
+    AppServices: {renderMarkdown: (text) => text},
     location: {
       hash: '',
       href: 'http://127.0.0.1:7658/app/thinking/',
@@ -888,7 +889,7 @@ async function main() {
   const mismatchedDay = deferred();
   const correctedDay = deferred();
   dayResponses.push(mismatchedDay.promise, correctedDay.promise);
-  thinking.state.runsCache.run.set('run:cached-id', {id: 'cached-id', day: '20260111', name: 'actual-talent', events: []});
+  thinking.state.runsCache.run.set('run:en-US:cached-id', {id: 'cached-id', day: '20260111', name: 'actual-talent', events: []});
   window.location.hash = '#runs/20260110/requested-talent/cached-id';
   thinking.routeThinkingHash('history');
   await settle();
@@ -915,7 +916,7 @@ async function main() {
   assert.strictEqual(document.activeElement, setupTab, 'arrow activation keeps focus on selected tab');
   thinking.state.runsFacet = 'work';
   thinking.state.runsFacetExplicit = true;
-  thinking.state.runsCache.run.set('run:use-id', {
+  thinking.state.runsCache.run.set('run:en-US:use-id', {
     id: 'use-id', day: '20260310', name: 'talent', events: [],
   });
   window.location.hash = '#runs/20260310/talent/use-id?facet=work';
@@ -1013,7 +1014,7 @@ async function main() {
 
   const deepDay = deferred();
   dayResponses.push(deepDay.promise);
-  outputResponses.push(Promise.resolve({content: 'saved output'}));
+  outputResponses.push(Promise.resolve({format: 'md', content: 'saved output', display_content: 'localized output'}));
   runResponses.push(Promise.resolve({id: 'with-output', day: '20260109', name: 'talent', output_file: 'saved.txt', events: []}));
   const deepDayRequests = requests.filter((url) => url.startsWith('/app/thinking/api/talents/20260109')).length;
   window.location.hash = '#runs/20260109/talent/with-output';
@@ -1031,7 +1032,8 @@ async function main() {
   assert.strictEqual(noOutput.hidden, true, 'a rendered output hides the no-output notice');
   outputTab.emit('click');
   await settle();
-  assert.strictEqual(oneByTag(nodes.get('thinkingRunsOutputPanel'), 'pre').textContent, 'saved output', 'newly visible output tab activates its panel');
+  assert.strictEqual(nodes.get('thinkingRunsOutputPanel').children[0].innerHTML, 'localized output', 'the document presents localized journal text');
+  assert.strictEqual(oneByTag(oneByTag(nodes.get('thinkingRunsOutputPanel'), 'details'), 'pre').textContent, 'saved output', 'newly visible output tab activates its panel');
   outputTab.emit('keydown', {key: 'ArrowLeft'});
   assert.strictEqual(logTab.attributes['aria-selected'], 'true', 'detail tabs rove after output becomes visible');
 
@@ -1047,12 +1049,12 @@ async function main() {
   thinking.routeThinkingHash('history');
   await settle();
   await settle();
-  const sameRunRequests = requests.filter((url) => url === '/app/thinking/api/run/same-run').length;
+  const sameRunRequests = requests.filter((url) => url === '/app/thinking/api/run/same-run?presentation=owner').length;
   nodes.get('thinkingRunsOutputPanel').textContent = 'same run output';
   thinking.routeThinkingHash('history');
   await settle();
   assert.strictEqual(thinking.state.runsDetail.id, 'same-run', 'same-run re-entry retains its selected record');
-  assert.strictEqual(requests.filter((url) => url === '/app/thinking/api/run/same-run').length, sameRunRequests, 'same-run re-entry uses the run cache without a refetch');
+  assert.strictEqual(requests.filter((url) => url === '/app/thinking/api/run/same-run?presentation=owner').length, sameRunRequests, 'same-run re-entry uses the run cache without a refetch');
   assert.strictEqual(nodes.get('thinkingRunsOutputPanel').textContent, 'same run output', 'same-run re-entry does not clear selected output state');
 
   window.location.hash = '#runs/20260113/talent-a';
@@ -1099,7 +1101,7 @@ async function main() {
   await settle();
   assert.strictEqual(nodes.get('thinkingRunsLogPanel').children[0].textContent, 'this run is still in progress.', 'active run renders progress instead of an empty detail');
   assert.strictEqual(nodes.get('thinkingRunsLogPanel').children[1].textContent, 'check back soon.');
-  assert.strictEqual(thinking.state.runsCache.run.has('run:active'), false, 'active response is not cached as a completed run');
+  assert.strictEqual(thinking.state.runsCache.run.has('run:en-US:active'), false, 'active response is not cached as a completed run');
   assert.strictEqual(thinking.state.runsDetail, null, 'active run clears the prior completed-run selection');
   nodes.get('thinkingRunsPrompt').emit('click');
   assert.strictEqual(promptModal.open, false, 'pending run cannot open the prior run prompt');
@@ -1167,8 +1169,8 @@ async function main() {
   firstRun.resolve({id: 'first', day: '20260106', name: 'stale-run', events: []});
   await settle();
   await settle();
-  assert.strictEqual(thinking.state.runsCache.run.has('run:first'), false, 'stale run response is not cached');
-  assert.strictEqual(thinking.state.runsCache.run.has('run:second'), true, 'current run response is cached');
+  assert.strictEqual(thinking.state.runsCache.run.has('run:en-US:first'), false, 'stale run response is not cached');
+  assert.strictEqual(thinking.state.runsCache.run.has('run:en-US:second'), true, 'current run response is cached');
   assert.strictEqual(nodes.get('thinkingRunsDetailHeading').textContent, 'current-run', 'stale run response does not replace the current render');
 
   const firstPrompt = deferred();
@@ -1211,8 +1213,8 @@ async function main() {
   firstOutput.resolve({content: 'stale output'});
   await settle();
   await settle();
-  assert.strictEqual(thinking.state.runsCache.output.has('output:20260107:first.txt'), false, 'stale output response is not cached');
-  assert.strictEqual(thinking.state.runsCache.output.get('output:20260108:second.txt').content, 'current output', 'current output response is cached');
+  assert.strictEqual(thinking.state.runsCache.output.has('output:en-US:20260107:first.txt'), false, 'stale output response is not cached');
+  assert.strictEqual(thinking.state.runsCache.output.get('output:en-US:20260108:second.txt').content, 'current output', 'current output response is cached');
   assert.strictEqual(oneByTag(nodes.get('thinkingRunsOutputPanel'), 'pre').textContent, 'current output', 'stale output response does not replace the current render');
   // --- night repairs: grouped + paged runs, readable labels, honest day and log ---
   thinking.state.runsFacet = '';

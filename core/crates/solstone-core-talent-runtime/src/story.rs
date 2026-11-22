@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Map, Value, json};
+use solstone_core_format::{stored_markdown::Document, talent_display::Copy};
 use solstone_core_transcripts::{EntrySource, OWNER_VOICE, VoiceNames};
 
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
@@ -19,7 +20,7 @@ pub(crate) const RELATIONS: &[&str] = &[
 ];
 
 /// Runtime-owned config key: a Story body made of the activity's own source
-/// words, set at preparation when [`source_body`] admits its source.
+/// words, set at preparation when [`source_document`] admits its source.
 pub(crate) const SOURCE_BODY_KEY: &str = "_source_body";
 /// Runtime-owned config key: the response says its request reached the model
 /// whole, with nothing fitted away.
@@ -43,11 +44,20 @@ pub(crate) const MAX_STORY_BODY_CHARS: usize = 1_800;
 /// recorded speech whose speakers are framed by the journal's voice gate.
 /// `None` for any other talent, source or request, which keeps the model's
 /// own body.
+#[cfg(test)]
 pub(crate) fn source_body(
     name: &str,
     config: &Map<String, Value>,
     sources: &[Option<EntrySource>],
 ) -> Option<String> {
+    source_document(name, config, sources).map(Document::into_text)
+}
+
+pub(crate) fn source_document(
+    name: &str,
+    config: &Map<String, Value>,
+    sources: &[Option<EntrySource>],
+) -> Option<Document> {
     if !SOURCE_BODY_TALENTS.contains(&name) || config.contains_key("messages") {
         return None;
     }
@@ -91,7 +101,7 @@ pub(crate) fn source_body(
             .concat(),
         _ => return None,
     };
-    let mut body = Vec::with_capacity(quotes.len());
+    let mut body = Document::default();
     for (framing, text) in quotes {
         let text = text.trim();
         if text.is_empty()
@@ -102,10 +112,48 @@ pub(crate) fn source_body(
         {
             return None;
         }
-        body.push(format!("{framing}: \"{text}\""));
+        if !body.is_empty() {
+            body.push_str(" ");
+        }
+        body.push_talent(framing.quotation(text));
     }
-    let body = body.join(" ");
     (body.chars().count() <= MAX_STORY_BODY_CHARS).then_some(body)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Framing {
+    OwnerMessage(String),
+    AgentMessage(String),
+    Owner,
+    Named(String),
+    Unknown,
+    Numbered(String),
+}
+
+impl Framing {
+    fn quotation(&self, text: &str) -> Copy {
+        let quote = text.into();
+        match self {
+            Self::OwnerMessage(date) => Copy::OwnerMessage {
+                date: date.clone(),
+                quote,
+            },
+            Self::AgentMessage(date) => Copy::AgentMessage {
+                date: date.clone(),
+                quote,
+            },
+            Self::Owner => Copy::OwnerSpeech { quote },
+            Self::Named(name) => Copy::NamedSpeech {
+                name: name.clone(),
+                quote,
+            },
+            Self::Unknown => Copy::UnknownSpeech { quote },
+            Self::Numbered(speaker) => Copy::NumberedSpeech {
+                speaker: speaker.clone(),
+                quote,
+            },
+        }
+    }
 }
 
 /// Each rendered line's framing and source words, or `None` when the file is
@@ -113,7 +161,7 @@ pub(crate) fn source_body(
 /// read only fixed headings and producer-written ids, never other text that
 /// could set the words' context: a screen frame's session and window names
 /// and its description can, so screen sources keep the model's body.
-fn quoted_lines(source: &EntrySource) -> Option<Vec<(String, &str)>> {
+fn quoted_lines(source: &EntrySource) -> Option<Vec<(Framing, &str)>> {
     let stream = source.stream.as_deref().unwrap_or_default();
     // The line rendered from this record, at this position.
     let rendered = |index: usize, record: &Map<String, Value>| -> Option<&str> {
@@ -169,9 +217,9 @@ fn quoted_lines(source: &EntrySource) -> Option<Vec<(String, &str)>> {
                     false,
                 )?;
                 let framing = match fields["is_owner"].as_bool()? {
-                    true => "You said",
+                    true => Framing::OwnerMessage,
                     false if record.get("speaker").and_then(Value::as_str) == Some("Assistant") => {
-                        "Your agent said"
+                        Framing::AgentMessage
                     }
                     false => return None,
                 };
@@ -198,7 +246,7 @@ fn quoted_lines(source: &EntrySource) -> Option<Vec<(String, &str)>> {
                     .parse::<jiff::Timestamp>()
                     .ok()?;
                 let sent = solstone_core_time::utc_z(sent, solstone_core_time::Precision::Millis);
-                Some((format!("{framing} in a message dated {sent}"), text))
+                Some((framing(sent), text))
             })
             .collect()
     } else {
@@ -210,7 +258,7 @@ fn quoted_lines(source: &EntrySource) -> Option<Vec<(String, &str)>> {
 /// in the owner's recognized voice, a person named by their voice, and
 /// otherwise a speaker the journal has not identified. A name the file itself
 /// carries is not voice evidence, and imported recordings keep the model body.
-fn spoken_lines(source: &EntrySource, alone: bool, numbered: bool) -> Option<Vec<(String, &str)>> {
+fn spoken_lines(source: &EntrySource, alone: bool, numbered: bool) -> Option<Vec<(Framing, &str)>> {
     let stream = source.stream.as_deref().unwrap_or_default();
     // A header record (the recording's file name) renders nothing; every other
     // record is a statement the model read.
@@ -255,22 +303,20 @@ fn spoken_lines(source: &EntrySource, alone: bool, numbered: bool) -> Option<Vec
             };
             let (label, framing) = match record.get("speaker") {
                 Some(Value::String(name)) if voiced && name == OWNER_VOICE => {
-                    (format!("{name}:"), "You said".to_owned())
+                    (format!("{name}:"), Framing::Owner)
                 }
-                Some(Value::String(name)) if voiced => (format!("{name}:"), format!("{name} said")),
-                Some(Value::Number(speaker)) if single => (
-                    format!("Speaker {speaker}:"),
-                    "An unidentified speaker said".to_owned(),
-                ),
+                Some(Value::String(name)) if voiced => {
+                    (format!("{name}:"), Framing::Named(name.clone()))
+                }
+                Some(Value::Number(speaker)) if single => {
+                    (format!("Speaker {speaker}:"), Framing::Unknown)
+                }
                 Some(Value::Number(speaker)) if numbered => (
                     format!("Speaker {speaker}:"),
-                    format!("Speaker {speaker}, whom the journal has not identified, said"),
+                    Framing::Numbered(speaker.to_string()),
                 ),
-                Some(Value::Number(speaker)) => (
-                    format!("Speaker {speaker}:"),
-                    "An unidentified speaker said".to_owned(),
-                ),
-                None if !single => (String::new(), "An unidentified speaker said".to_owned()),
+                Some(Value::Number(speaker)) => (format!("Speaker {speaker}:"), Framing::Unknown),
+                None if !single => (String::new(), Framing::Unknown),
                 _ => return None,
             };
             let shown = if label.is_empty() {
@@ -315,10 +361,9 @@ pub fn output(
         ParsedOutput::Json(mut value) => {
             // Source-note provenance is runtime-owned journal metadata, never
             // another model-facing Story field.
-            value
-                .as_object_mut()
-                .expect("parsed Story object")
-                .remove("_source_notes");
+            let object = value.as_object_mut().expect("parsed Story object");
+            object.remove("_source_notes");
+            object.remove("_body_display");
             Ok(value.to_string())
         }
         _ => Err(error(prepared, "story output is not JSON")),
@@ -420,8 +465,12 @@ pub fn parse(
     }
     // A valid Story over a short source carries the source's own words; its
     // topics, confidence and relations stay the model's.
-    let body = admitted_source_body(prepared).map_or(body, str::to_owned);
-    object.insert("body".into(), Value::String(body));
+    let source = admitted_source_body(prepared);
+    let mut document = source
+        .and(prepared.story_document.as_ref())
+        .cloned()
+        .unwrap_or_else(|| Document::plain(source.map_or(body, str::to_owned)));
+    object.insert("body".into(), Value::String(document.to_string()));
     object.insert("topics".into(), json!(&clean_topics));
     object.insert("confidence".into(), json!(clamped));
     if let Some(supplement) = prepared.story_messages.as_ref().and_then(|candidate| {
@@ -436,6 +485,7 @@ pub fn parse(
                 .is_ok_and(|validator| validator.is_valid(&Value::Object(proposed.clone())))
         });
         if valid {
+            document.append(&supplement.footer);
             *object = proposed;
             object.insert("_source_notes".into(), supplement.provenance);
         } else {
@@ -443,6 +493,9 @@ pub fn parse(
                 "story message details omitted: enriched body does not satisfy the Story schema"
             );
         }
+    }
+    if let Some(receipt) = document.talent_receipt() {
+        object.insert("_body_display".into(), receipt);
     }
     Ok(ParsedOutput::Json(value))
 }
@@ -690,7 +743,11 @@ pub(crate) fn apply_story_cancellable(
     }
     patch.insert("story".into(), story);
     patch.insert("relations".into(), Value::Array(relations));
-    solstone_core_facets::update_activity_record_checked(
+    // The outer enrichment guard still owns the exclusive facet trust lock.
+    // Retire the old attribution before an equal-worded model Story can replace it.
+    let path = solstone_core_format::talent_display::activity_path(root, facet, day);
+    let retired = std::cell::Cell::new(false);
+    let published = solstone_core_facets::update_activity_record_checked(
         root,
         facet,
         day,
@@ -699,10 +756,38 @@ pub(crate) fn apply_story_cancellable(
         "story",
         "",
         &solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
-        || crate::writers::check_cancellation(cancellation),
+        || {
+            crate::writers::check_cancellation(cancellation)?;
+            if !retired.get() {
+                solstone_core_format::talent_display::publish(root, &path, record_id, None)
+                    .map_err(|error| error.to_string())?;
+                retired.set(true);
+            }
+            Ok(())
+        },
     )
     .map_err(|error| error.to_string())?
     .ok_or("activity no longer exists")?;
+    let receipt = value.get("_body_display").and_then(|body| {
+        let end = value["body"]
+            .as_str()
+            .and_then(first_sentence)
+            .map(str::len);
+        solstone_core_format::talent_display::story_receipt(&published, body, end)
+    });
+    if let Some(receipt) = receipt {
+        match solstone_core_format::talent_display::publish(root, &path, record_id, Some(receipt)) {
+            Err(error) => log::warn!("could not publish Story display metadata: {error}"),
+            Ok(()) => {
+                // The activity store queues before its caller can publish display metadata.
+                if let Err(error) = solstone_core_indexer_store::todo::enqueue_path(root, &path) {
+                    crate::writers::index_warning(&format!(
+                        "Story search update could not be queued: {error}"
+                    ));
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1786,15 +1871,15 @@ mod tests {
         let lines = spoken_lines(&source, false, true).unwrap();
         let framing = lines
             .iter()
-            .map(|(framing, _)| framing.as_str())
+            .map(|(framing, _)| framing.clone())
             .collect::<Vec<_>>();
         assert_eq!(
             framing,
             [
-                "You said",
-                "Mina Okafor said",
-                "Speaker 3, whom the journal has not identified, said",
-                "An unidentified speaker said",
+                Framing::Owner,
+                Framing::Named("Mina Okafor".into()),
+                Framing::Numbered("3".into()),
+                Framing::Unknown,
             ]
         );
     }
@@ -1879,7 +1964,7 @@ mod tests {
             .into_iter()
             .map(|(framing, _)| framing)
             .collect::<Vec<_>>();
-        assert_eq!(framing, ["You said", "An unidentified speaker said"]);
+        assert_eq!(framing, [Framing::Owner, Framing::Unknown]);
     }
 
     #[test]
@@ -1897,13 +1982,7 @@ mod tests {
             .into_iter()
             .map(|(framing, _)| framing)
             .collect::<Vec<_>>();
-        assert_eq!(
-            framing,
-            [
-                "You said",
-                "Speaker 2, whom the journal has not identified, said"
-            ]
-        );
+        assert_eq!(framing, [Framing::Owner, Framing::Numbered("2".into())]);
     }
 
     #[test]
@@ -1911,7 +1990,7 @@ mod tests {
         let one = spoken("phone", &[(json!(1), "It shipped.")], &[]);
         assert_eq!(
             spoken_lines(&one, true, true).unwrap(),
-            [("An unidentified speaker said".to_owned(), "It shipped.")]
+            [(Framing::Unknown, "It shipped.")]
         );
     }
 }

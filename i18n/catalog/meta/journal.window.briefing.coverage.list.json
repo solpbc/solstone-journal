@@ -1,0 +1,25 @@
+{
+  "description": "Add an item to the list of omitted material.",
+  "context": "Morning briefing. Add an item to the list of omitted material.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "items",
+      "type": "string"
+    },
+    {
+      "name": "item",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "81442396828e14293b94826c8696f4bf78ed30798d9d8bdfc9a70815a987a16b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

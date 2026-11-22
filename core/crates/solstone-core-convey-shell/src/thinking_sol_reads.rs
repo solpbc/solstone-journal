@@ -144,6 +144,8 @@ pub(crate) async fn api_talents_day(
 
 pub(crate) async fn api_agent_run(
     AxumPath(use_id): AxumPath<String>,
+    Query(query): Query<BTreeMap<String, String>>,
+    headers: axum::http::HeaderMap,
     Extension(journal): Extension<Arc<JournalRoot>>,
 ) -> Response {
     let talents = journal.0.join("talents");
@@ -164,7 +166,20 @@ pub(crate) async fn api_agent_run(
         );
     }
     match read_run(&path, &journal.0, &use_id) {
-        Ok(run) => Json(run).into_response(),
+        Ok(mut run) => {
+            if query
+                .get("presentation")
+                .is_some_and(|view| view == "owner")
+            {
+                let locale = crate::window_catalog::request_locale(&headers);
+                if locale != "en-US" {
+                    present_daily_error(&mut run, &journal.0, &use_id, locale);
+                }
+                return ([(axum::http::header::VARY, "X-Solstone-Locale")], Json(run))
+                    .into_response();
+            }
+            Json(run).into_response()
+        }
         Err(RunError::Malformed) => error(
             "talent_run_malformed",
             "that run couldn't be read.",
@@ -177,6 +192,8 @@ pub(crate) async fn api_agent_run(
 
 pub(crate) async fn api_output_file(
     AxumPath((day, path)): AxumPath<(String, String)>,
+    Query(query): Query<BTreeMap<String, String>>,
+    headers: axum::http::HeaderMap,
     Extension(journal): Extension<Arc<JournalRoot>>,
 ) -> Response {
     if !day_key(&day) {
@@ -239,7 +256,30 @@ pub(crate) async fn api_output_file(
     } else {
         "md"
     };
-    Json(json!({"content": content, "format": format, "filename": resolved.file_name().and_then(|name| name.to_str()).unwrap_or_default()})).into_response()
+    let owner_view = query.get("presentation").is_some_and(|v| v == "owner");
+    let display = (format == "md" && owner_view)
+        .then(|| {
+            solstone_core_format::stored_markdown::project_talent_output(
+                &canonical_root,
+                &resolved,
+                &content,
+                crate::window_catalog::request_locale(&headers),
+            )
+        })
+        .flatten();
+    let mut result = json!({"content": content, "format": format, "filename": resolved.file_name().and_then(|name| name.to_str()).unwrap_or_default()});
+    if let Some(display) = display {
+        result["display_content"] = display.into();
+    }
+    if owner_view {
+        (
+            [(axum::http::header::VARY, "X-Solstone-Locale")],
+            Json(result),
+        )
+            .into_response()
+    } else {
+        Json(result).into_response()
+    }
 }
 
 pub(crate) async fn api_preview_prompt(
@@ -697,6 +737,36 @@ fn read_run(path: &Path, journal: &Path, use_id: &str) -> Result<Value, RunError
         "events": parsed.events,
         "day": run_day(&request, use_id, &zone),
     }))
+}
+
+fn present_daily_error(run: &mut Value, journal: &Path, use_id: &str, locale: &str) -> Option<()> {
+    let name = run.get("name")?.as_str()?;
+    let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+        run.get("day")?.as_str()?,
+        name,
+        run.get("facet").and_then(Value::as_str).map(str::to_owned),
+    );
+    let event = run
+        .get_mut("events")?
+        .as_array_mut()?
+        .iter_mut()
+        .rev()
+        .find(|event| {
+            matches!(
+                event.get("event").and_then(Value::as_str),
+                Some("error" | "finish")
+            )
+        })?;
+    if event.get("event")?.as_str()? != "error" {
+        return None;
+    }
+    let record = solstone_core_journal_io::observe_daily_unit_record(journal, &identity).ok()??;
+    let shown = solstone_core_journal_io::daily_error::recorded_stage_error(
+        &record, use_id, event, locale,
+    )?;
+    event["error"] = Value::String(shown.clone());
+    run["error_message"] = Value::String(shown.chars().take(200).collect());
+    Some(())
 }
 
 /// The day a run belongs to: the one it was asked for, else the day it was started.

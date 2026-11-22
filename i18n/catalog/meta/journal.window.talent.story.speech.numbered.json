@@ -1,0 +1,25 @@
+{
+  "description": "Attribution of verbatim source words in a short activity Story.",
+  "context": "Attribution of verbatim source words in a short activity Story.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "speaker",
+      "type": "string"
+    },
+    {
+      "name": "quote",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3f4a6830921beec1c356e4c1acc0e15ac5de62d449ee4e0985a9bf56fac4756d",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

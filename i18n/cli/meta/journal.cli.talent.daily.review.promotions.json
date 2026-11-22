@@ -1,0 +1,16 @@
+{
+  "description": "Diagnostic from the daily talent worker during preparation or publication of a journal record.",
+  "context": "Diagnostic from the daily talent worker during preparation or publication of a journal record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ac274ce631ed5adf11a813fdcce8ca0f3f828a2ac52a71491d1fb6ca66136abd",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

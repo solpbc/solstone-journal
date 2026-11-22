@@ -1,0 +1,16 @@
+{
+  "description": "Daily entity review diagnostic when a saved owner decision changed during preparation or publication.",
+  "context": "Daily entity review diagnostic when a saved owner decision changed during preparation or publication.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0eb250d14bbce79299bbf2ce22645caf844525d8dcf31b5d1dd3d60841daca91",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

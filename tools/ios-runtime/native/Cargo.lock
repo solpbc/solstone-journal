@@ -7383,6 +7383,7 @@ dependencies = [
  "solstone-core-time",
  "solstone-core-tokens",
  "solstone-core-transcripts",
+ "solstone-core-window-catalog",
  "unicode-general-category",
  "unicode-normalization",
 ]

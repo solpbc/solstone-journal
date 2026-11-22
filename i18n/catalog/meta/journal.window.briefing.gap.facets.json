@@ -1,0 +1,16 @@
+{
+  "description": "Missing source named in briefing preparation.",
+  "context": "Morning briefing. Missing source named in briefing preparation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "642a8722dbb7b76348daad3980d92e785c622564c731225aa095aa94fba699e2",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

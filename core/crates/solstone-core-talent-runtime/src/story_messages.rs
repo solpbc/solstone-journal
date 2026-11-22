@@ -11,14 +11,12 @@ use jiff::civil::Time;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use solstone_core_format::{stored_markdown::Document, talent_display::Copy};
 use solstone_core_transcripts::EntrySource;
 use unicode_general_category::{GeneralCategory, get_general_category};
 
 const MAX_VALUES: usize = 5;
 const MAX_BODY_CHARS: usize = 4_000;
-const HEADING: &str = "screen notes (unverified)";
-const RECORDED: &str = "recorded:";
-const NO_MESSAGE_DATE: &str = "message date unavailable";
 const ROOTS: &[&str] = &[
     "request", "review", "accept", "approv", "confirm", "cancel", "pend", "declin", "await",
 ];
@@ -80,6 +78,7 @@ pub(crate) struct Candidate {
 
 pub(crate) struct Supplement {
     pub(crate) body: String,
+    pub(crate) footer: Document,
     pub(crate) provenance: Value,
 }
 
@@ -282,7 +281,8 @@ impl Candidate {
         }
         let mut included = Vec::new();
         let mut withheld = Vec::new();
-        let mut footer = String::new();
+        let mut footer = Document::plain("\n\n".into());
+        footer.push_talent(Copy::ScreenNotes);
         for (index, topic_indices) in selected {
             let group = &self.groups[index];
             let witnesses = self
@@ -309,10 +309,8 @@ impl Candidate {
             {
                 continue;
             }
-            if !footer.is_empty() {
-                footer.push_str("\n\n");
-            }
-            footer.push_str(&render(group));
+            footer.push_str("\n\n");
+            render(group, &mut footer);
             included.push(
                 json!({"message":group.key.message,"parent":group.key.parent,"day":group.key.day,
                 "monitor":group.key.monitor,"aliases":group.aliases,"topic_indices":topic_indices}),
@@ -322,13 +320,14 @@ impl Candidate {
             log::debug!("story message details omitted: no usable unambiguous nomination");
             return None;
         }
-        let enriched = format!("{body}\n\n{HEADING}\n\n{footer}");
+        let enriched = format!("{body}{footer}");
         if enriched.chars().count() > MAX_BODY_CHARS {
             log::debug!("story message details omitted: complete footer exceeds body limit");
             return None;
         }
         Some(Supplement {
             body: enriched,
+            footer,
             provenance: json!({
                 "version":1,"authority":"unverified_screen_extraction","source_complete":false,
                 "selection":"cue_first_then_overlap_v3_floor","original_occurrences":self.occurrences,
@@ -507,33 +506,36 @@ fn quotation(text: &str) -> String {
             .join("\n")
     )
 }
-fn render(group: &Group) -> String {
+fn render(group: &Group, out: &mut Document) {
     let message = &group.key.message;
-    let mut out = format!(
-        "{RECORDED} {}",
-        caption(&format!(
-            "{} {}",
-            group.key.day, group.aliases[0].observation_clock
-        ))
-    );
-    if let Some(app) = &group.key.parent.app {
-        out.push_str(&format!(" · {}", caption(app)));
-    }
-    let mut captions = Vec::new();
-    if let Some(sender) = &message.sender {
-        captions.push(caption(sender));
-    }
-    match &message.timestamp {
-        Some(time) => captions.push(caption(time)),
-        None => captions.push(NO_MESSAGE_DATE.to_owned()),
-    }
-    if !captions.is_empty() {
-        out.push_str(&format!("\n\n{}", captions.join(" · ")));
+    let date = caption(&format!(
+        "{} {}",
+        group.key.day, group.aliases[0].observation_clock
+    ));
+    out.push_talent(match &group.key.parent.app {
+        Some(app) => Copy::RecordedApp {
+            date,
+            app: caption(app),
+        },
+        None => Copy::Recorded { date },
+    });
+    out.push_str("\n\n");
+    let sender = message.sender.as_deref().map(caption);
+    match (&message.timestamp, sender) {
+        (None, None) => out.push_talent(Copy::NoDate),
+        (None, Some(sender)) => out.push_talent(Copy::NoDateSender { sender }),
+        (Some(time), sender) => {
+            if let Some(sender) = sender {
+                out.push_str(&sender);
+                out.push_str(" · ");
+            }
+            out.push_str(&caption(time));
+        }
     }
     for value in [&message.subject, &message.text].into_iter().flatten() {
-        out.push_str(&format!("\n\n{}", quotation(value)));
+        out.push_str("\n\n");
+        out.push_str(&quotation(value));
     }
-    out
 }
 
 #[cfg(test)]

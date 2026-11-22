@@ -1,0 +1,16 @@
+{
+  "description": "Diagnostic from the daily talent worker during validation of a model response.",
+  "context": "Diagnostic from the daily talent worker during validation of a model response.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1ae2137e0f54f0e3b227cd7a34730014419699a8fce2ae15503ac444511fb0ed",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

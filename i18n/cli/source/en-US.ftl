@@ -7303,3 +7303,187 @@ journal.cli.doctor.device.day.listing.record.line = device streams unavailable: 
 journal.cli.doctor.device.day.listing.record.malformed = device streams unavailable: stream registry unreadable: malformed stream record { $record }: malformed data in { $path }
 
 journal.cli.doctor.device.day.listing.registry.error = device streams unavailable: stream registry unreadable: { $error }
+
+journal.cli.talent.daily.accepted.response = missing accepted response
+
+journal.cli.talent.daily.accepted.result = missing accepted daily result
+
+journal.cli.talent.daily.artifact.before = conflict: required artifact changed after prompt preparation
+
+journal.cli.talent.daily.artifact.changed = conflict: required output changed after preparation
+
+journal.cli.talent.daily.artifact.snapshot = missing frozen required-artifact snapshot
+
+journal.cli.talent.daily.artifact.snapshot.invalid = invalid frozen artifact snapshot: { $error }
+
+journal.cli.talent.daily.attempt.day = missing daily attempt day
+
+journal.cli.talent.daily.attempt.day.invalid = invalid daily attempt day
+
+journal.cli.talent.daily.attempt.mismatch = daily { $key } mismatch
+
+journal.cli.talent.daily.attempt.token = missing daily attempt token
+
+journal.cli.talent.daily.commit.observer = expected entity facts state
+
+journal.cli.talent.daily.commit.suggest = expected entity suggest state
+
+journal.cli.talent.daily.commit.text = expected text output
+
+journal.cli.talent.daily.facet.changed = conflict: owning facet changed after prompt preparation
+
+journal.cli.talent.daily.facet.identity = missing frozen facet identity
+
+journal.cli.talent.daily.facet.path = invalid facet output path
+
+journal.cli.talent.daily.maintenance.changed = conflict: daily time changed after prompt preparation
+
+journal.cli.talent.daily.maintenance.output = invalid maintenance output: { $error }
+
+journal.cli.talent.daily.maintenance.primary = maintenance output lacks primary
+
+journal.cli.talent.daily.maintenance.snapshot = missing frozen daily-time snapshot
+
+journal.cli.talent.daily.observer.changed = conflict: observation changed after prompt preparation
+
+journal.cli.talent.daily.observer.conflict = conflict: { $error }
+
+journal.cli.talent.daily.observer.entity.gone = conflict: observation entity disappeared
+
+journal.cli.talent.daily.observer.validation = validation: { $error }
+
+journal.cli.talent.daily.output.outside = daily output is outside journal
+
+journal.cli.talent.daily.output.path = invalid daily output path
+
+journal.cli.talent.daily.packet.absent = daily attempt has no frozen packet
+
+journal.cli.talent.daily.packet.digest = daily packet digest mismatch
+
+journal.cli.talent.daily.packet.scope = daily packet scope mismatch
+
+journal.cli.talent.daily.packet.talent = daily packet talent mismatch
+
+journal.cli.talent.daily.parse.entities = entities must be an array
+
+journal.cli.talent.daily.parse.output = could not parse output as JSON: { $error }
+
+journal.cli.talent.daily.publication.plan = publication requires the retained generated result and exact prepared plan
+
+journal.cli.talent.daily.publication.record = missing publication record
+
+journal.cli.talent.daily.response.malformed = retained daily response is malformed
+
+journal.cli.talent.daily.retry.scope = daily retry scope changed
+
+journal.cli.talent.daily.review.aliases = review promotion lacks aliases
+
+journal.cli.talent.daily.review.eligibility = missing frozen review eligibility
+
+journal.cli.talent.daily.review.hints = missing frozen review hints
+
+journal.cli.talent.daily.review.inputs = missing frozen review admission inputs
+
+journal.cli.talent.daily.review.merges = review output lacks merges
+
+journal.cli.talent.daily.review.name = frozen candidate lacks name
+
+journal.cli.talent.daily.review.owner = missing frozen review owner state
+
+journal.cli.talent.daily.review.promotion = missing frozen promotion owner state
+
+journal.cli.talent.daily.review.promotion.changed = conflict: promotion owner state changed after prompt preparation
+
+journal.cli.talent.daily.review.promotions = review output lacks promotions
+
+journal.cli.talent.daily.review.proposals = missing frozen proposal state
+
+journal.cli.talent.daily.review.proposals.changed = conflict: merge proposal changed after prompt preparation
+
+journal.cli.talent.daily.review.type = frozen candidate lacks type
+
+journal.cli.talent.daily.type = unsupported talent type: { $kind }
+
+journal.cli.talent.daily.validation.aliases = validation: promoted review candidate must include aliases array
+
+journal.cli.talent.daily.validation.json = validation: invalid { $shape } JSON: { $error }
+
+journal.cli.talent.daily.validation.maintenance.missing = validation: maintenance primary is missing
+
+journal.cli.talent.daily.validation.maintenance.time = validation: maintenance primary must be HH:MM
+
+journal.cli.talent.daily.validation.merges = validation: review merges must be an array
+
+journal.cli.talent.daily.validation.observer = validation: entities:entity_observer requires an entities array
+
+journal.cli.talent.daily.validation.promotions = validation: review promotions must be an array
+
+journal.cli.talent.daily.validation.suggest = validation: suggest entities must be an array
+
+journal.cli.talent.daily.write.contract = unsupported daily write contract for { $talent }
+
+journal.cli.talent.outcome.facet.write = FacetEntityWriteError: { $error }
+
+journal.cli.talent.outcome.object = result is not a JSON object
+
+journal.cli.talent.outcome.observation.write = ObservationWriteError: { $error }
+
+journal.cli.talent.outcome.observer.entities = entities is not a list
+
+journal.cli.talent.outcome.observer.parse = could not parse result as JSON
+
+journal.cli.talent.outcome.review.arrays = result missing expected arrays
+
+journal.cli.talent.outcome.review.candidate = EntityReviewCandidateError: { $error }
+
+journal.cli.talent.outcome.review.parse = invalid JSON
+
+journal.cli.talent.daily.owner.alias.claimed = conflict: promotion alias was claimed after preparation
+
+journal.cli.talent.daily.owner.alias.target.detached = conflict: alias target is no longer attached
+
+journal.cli.talent.daily.owner.identity.blocked.facet = conflict: promotion name hidden in this facet
+
+journal.cli.talent.daily.owner.identity.blocked.hidden = conflict: the entity is hidden, so its names were not changed
+
+journal.cli.talent.daily.owner.identity.blocked.identity = conflict: promotion identity hidden
+
+journal.cli.talent.daily.owner.identity.changed = conflict: promoted identity changed after preparation
+
+journal.cli.talent.daily.owner.identity.deleted = conflict: promoted identity was deleted after preparation
+
+journal.cli.talent.daily.owner.identity.disappeared = conflict: promotion identity disappeared
+
+journal.cli.talent.daily.owner.identity.map.group.lost = conflict: promotion { $name } matches { $directory }, which lost its identity-map group
+
+journal.cli.talent.daily.owner.identity.merged = conflict: promoted identity was merged away after preparation
+
+journal.cli.talent.daily.owner.identity.moved = conflict: promoted identity moved after preparation
+
+journal.cli.talent.daily.owner.identity.unreadable = conflict: promotion { $name } derives entity id { $slug }, whose identity { $directory } cannot be read
+
+journal.cli.talent.daily.owner.merge.proposals.changed = conflict: merge proposals changed after preparation
+
+journal.cli.talent.daily.owner.name.matches.multiple = conflict: promotion { $name } matches { $count } identities by name
+
+journal.cli.talent.daily.owner.no.usable.entity.id = conflict: promotion { $name } has no usable entity id
+
+journal.cli.talent.daily.owner.owning.facet.changed.absent = conflict: owning facet no longer exists
+
+journal.cli.talent.daily.owner.owning.facet.changed.invalid = conflict: owning facet has no valid stable identity
+
+journal.cli.talent.daily.owner.owning.facet.changed.replaced = conflict: owning facet was replaced after preparation
+
+journal.cli.talent.daily.owner.principal.grant.refused.exists = conflict: a journal owner already exists, so this person is not marked
+
+journal.cli.talent.daily.owner.principal.grant.refused.name = conflict: the configured owner name no longer matches this person
+
+journal.cli.talent.daily.owner.principal.settings = the journal settings could not be read, so this person was not marked as the owner
+
+journal.cli.talent.daily.owner.promoted.entity.blocked.hidden = conflict: promoted entity is hidden
+
+journal.cli.talent.daily.owner.promoted.entity.blocked.name = conflict: promoted entity { $name } is hidden
+
+journal.cli.talent.daily.owner.relationship.changed = conflict: promotion relationship changed after preparation
+
+journal.cli.talent.daily.owner.relationship.occupied = conflict: promotion { $name } needs relationship directory { $relationship_dir }, which is already occupied

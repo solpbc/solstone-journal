@@ -6,3 +6,8 @@ pub mod detection;
 pub mod observer;
 pub mod review;
 pub mod suggest;
+
+/// Entity outcome files carry source English for direct readers.
+fn outcome_error<const N: usize>(id: &str, args: [(&str, &dyn std::fmt::Display); N]) -> String {
+    solstone_core_cli_copy::display_for(solstone_core_cli_copy::ENGLISH, id, args)
+}

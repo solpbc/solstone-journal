@@ -96,9 +96,11 @@ pub enum ReviewOwnerError {
     Conflict {
         kind: ReviewOwnerConflictKind,
         detail: String,
+        copy: Option<solstone_core_cli_copy::MessageDetail>,
     },
     Failed {
         detail: String,
+        copy: Option<solstone_core_cli_copy::MessageDetail>,
     },
 }
 
@@ -107,12 +109,33 @@ impl ReviewOwnerError {
         Self::Conflict {
             kind,
             detail: detail.into(),
+            copy: None,
         }
     }
 
     pub fn failed(detail: impl Into<String>) -> Self {
         Self::Failed {
             detail: detail.into(),
+            copy: None,
+        }
+    }
+
+    pub fn conflict_message(
+        kind: ReviewOwnerConflictKind,
+        copy: solstone_core_cli_copy::MessageDetail,
+    ) -> Self {
+        Self::Conflict {
+            kind,
+            detail: copy.to_string(),
+            copy: Some(copy),
+        }
+    }
+
+    pub fn into_message(self) -> solstone_core_cli_copy::MessageDetail {
+        match self {
+            Self::Conflict { detail, copy, .. } | Self::Failed { detail, copy } => {
+                copy.unwrap_or_else(|| detail.into())
+            }
         }
     }
 
@@ -125,7 +148,7 @@ impl ReviewOwnerError {
 
     pub fn detail(&self) -> &str {
         match self {
-            Self::Conflict { detail, .. } | Self::Failed { detail } => detail,
+            Self::Conflict { detail, .. } | Self::Failed { detail, .. } => detail,
         }
     }
 }
@@ -137,6 +160,15 @@ impl fmt::Display for ReviewOwnerError {
 }
 
 impl std::error::Error for ReviewOwnerError {}
+
+impl From<solstone_core_cli_copy::MessageDetail> for ReviewOwnerError {
+    fn from(copy: solstone_core_cli_copy::MessageDetail) -> Self {
+        Self::Failed {
+            detail: copy.to_string(),
+            copy: Some(copy),
+        }
+    }
+}
 
 impl From<String> for ReviewOwnerError {
     fn from(detail: String) -> Self {

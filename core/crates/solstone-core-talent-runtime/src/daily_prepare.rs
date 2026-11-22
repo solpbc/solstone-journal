@@ -3,6 +3,7 @@
 
 //! Frozen, typed input to supported daily hook stages. Workers never rebuild it.
 
+use crate::morning_briefing::{Gap, coverage_preamble, gap_labels};
 use crate::{
     ExecutionContext, PreparedTalent, RuntimeOutcome, StageError,
     contract::{self, GateDecision, PrePostState, StageSpec},
@@ -98,6 +99,9 @@ pub fn freeze(
         }
     };
     attach_daily_location(&mut prepared, &mut state, context, &hook)?;
+    if let FrozenState::MorningBriefing(bs) = &mut state {
+        bs.gap_reasons = Some(std::mem::take(&mut prepared.briefing_gaps));
+    }
     prepared.config.remove("_briefing_inclusion");
     Ok(
         json!({"version":1,"prepared":{"name":prepared.name,"config":prepared.config},"hook":hook,"state":state}),
@@ -166,24 +170,6 @@ fn attach_daily_location(
                     .ok_or_else(|| {
                         failure(prepared, "missing briefing_metadata in config".to_owned())
                     })?;
-
-                let mut metadata: Value = serde_json::from_str(&curr_meta_str).map_err(|e| {
-                    failure(prepared, format!("invalid briefing_metadata JSON: {e}"))
-                })?;
-                let obj = metadata.as_object_mut().ok_or_else(|| {
-                    failure(prepared, "briefing_metadata must be an object".to_owned())
-                })?;
-
-                let mut gaps: Vec<String> = obj
-                    .get("gaps")
-                    .and_then(Value::as_array)
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(Value::as_str)
-                            .map(str::to_owned)
-                            .collect()
-                    })
-                    .unwrap_or_default();
 
                 let inclusion_arr = prepared
                     .config
@@ -279,12 +265,16 @@ fn attach_daily_location(
                         include_activities[drop_idx] = false;
                         include_stories[drop_idx] = false;
                     }
-                    gaps.retain(|gap| !crate::morning_briefing::is_omission_gap(gap, &activities));
-                    gaps.extend(crate::morning_briefing::omission_gaps(
-                        &activities,
-                        &include_activities,
-                        &include_stories,
-                    ));
+                    prepared
+                        .briefing_gaps
+                        .retain(|gap| !matches!(gap, Gap::Activities { .. } | Gap::Stories { .. }));
+                    prepared
+                        .briefing_gaps
+                        .extend(crate::morning_briefing::omission_gaps(
+                            &activities,
+                            &include_activities,
+                            &include_stories,
+                        ));
 
                     let new_digest = crate::morning_briefing::render_digest_activities(
                         &activities,
@@ -298,7 +288,7 @@ fn attach_daily_location(
                         }
                     }
 
-                    let new_preamble = crate::morning_briefing::coverage_preamble(&gaps);
+                    let new_preamble = coverage_preamble(&prepared.briefing_gaps);
                     let mut meta_val: Value =
                         serde_json::from_str(&curr_meta_str).map_err(|e| {
                             failure(prepared, format!("invalid briefing_metadata JSON: {e}"))
@@ -306,10 +296,7 @@ fn attach_daily_location(
                     let meta_obj = meta_val.as_object_mut().ok_or_else(|| {
                         failure(prepared, "briefing_metadata must be an object".to_owned())
                     })?;
-                    meta_obj.insert(
-                        "gaps".into(),
-                        Value::Array(gaps.iter().cloned().map(Value::String).collect()),
-                    );
+                    meta_obj.insert("gaps".into(), json!(gap_labels(&prepared.briefing_gaps)));
                     meta_obj.insert("coverage_preamble".into(), Value::String(new_preamble));
                     let new_meta_str = serde_json::to_string_pretty(&meta_obj).map_err(|e| {
                         failure(
@@ -402,28 +389,15 @@ fn attach_daily_location(
             .as_object_mut()
             .ok_or_else(|| failure(prepared, "briefing_metadata must be an object".to_owned()))?;
 
-        let mut gaps_vec: Vec<String> = obj
-            .get("gaps")
-            .and_then(Value::as_array)
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default();
-
         if omitted > 0 {
-            let actual_notice = format!("location entries omitted: {omitted}.");
-            if !gaps_vec.contains(&actual_notice) {
-                gaps_vec.push(actual_notice);
-            }
+            prepared
+                .briefing_gaps
+                .push(Gap::Location { count: omitted });
         }
-
-        let new_preamble = crate::morning_briefing::coverage_preamble(&gaps_vec);
+        let new_preamble = coverage_preamble(&prepared.briefing_gaps);
         obj.insert(
             "gaps".to_owned(),
-            Value::Array(gaps_vec.into_iter().map(Value::String).collect()),
+            json!(gap_labels(&prepared.briefing_gaps)),
         );
         obj.insert("coverage_preamble".to_owned(), Value::String(new_preamble));
         let new_meta_str = serde_json::to_string_pretty(&obj).map_err(|e| {
@@ -559,7 +533,8 @@ fn fit_location_part(
         return Ok((part, omitted));
     }
 
-    let worst_notice = format!("location entries omitted: {total}.");
+    let worst_gap = Gap::Location { count: total };
+    let worst_notice = worst_gap.label();
     let old_meta_str = prepared
         .config
         .get("briefing_metadata")
@@ -571,25 +546,10 @@ fn fit_location_part(
         .as_object_mut()
         .ok_or_else(|| "briefing_metadata must be an object".to_owned())?;
 
-    let mut worst_gaps: Vec<String> = meta_obj
-        .get("gaps")
-        .and_then(Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default();
-    if !worst_gaps.contains(&worst_notice) {
-        worst_gaps.push(worst_notice.clone());
-    }
-
-    let worst_preamble = crate::morning_briefing::coverage_preamble(&worst_gaps);
-    meta_obj.insert(
-        "gaps".into(),
-        Value::Array(worst_gaps.into_iter().map(Value::String).collect()),
-    );
+    let mut worst_gaps = prepared.briefing_gaps.clone();
+    worst_gaps.push(worst_gap);
+    let worst_preamble = coverage_preamble(&worst_gaps);
+    meta_obj.insert("gaps".into(), json!(gap_labels(&worst_gaps)));
     meta_obj.insert("coverage_preamble".into(), Value::String(worst_preamble));
     let worst_meta_str = serde_json::to_string_pretty(&meta_obj)
         .map_err(|e| format!("failed to serialize briefing_metadata: {e}"))?;
@@ -625,7 +585,7 @@ fn fit_location_part(
         if omitted == total {
             (Some(worst_notice), total)
         } else if omitted > 0 {
-            let actual_notice = format!("location entries omitted: {omitted}.");
+            let actual_notice = Gap::Location { count: omitted }.label();
             let text = if let Some(mut existing) = clipped_part {
                 if !existing.ends_with('\n') {
                     existing.push('\n');
@@ -814,18 +774,7 @@ fn review_owner_stage_failed(
             .and_then(Value::as_str)
             .map(str::to_owned),
     );
-    RuntimeOutcome::StageFailed(match error {
-        solstone_core_entity::ReviewOwnerError::Conflict { kind, detail } => {
-            StageError::owner_conflict(&identity, "daily_publication", kind, detail)
-        }
-        solstone_core_entity::ReviewOwnerError::Failed { detail } => StageError::new(
-            "publication",
-            "daily_publication",
-            identity.name.clone(),
-            detail,
-        )
-        .with_identity(&identity),
-    })
+    RuntimeOutcome::StageFailed(crate::writers::daily::review_owner_error(&identity, error))
 }
 
 fn capture_owner_expectations(
@@ -1603,8 +1552,12 @@ mod tests {
 
         let mut story_dropped_gaps = base_gaps.clone();
         story_dropped_gaps.push("activity stories omitted: 1.".into());
-        let story_dropped_preamble =
-            crate::morning_briefing::coverage_preamble(&story_dropped_gaps);
+        let mut reasons: Vec<Gap> = serde_json::from_value(
+            unpadded_packet["state"]["MorningBriefing"]["gap_reasons"].clone(),
+        )
+        .unwrap();
+        reasons.push(Gap::Stories { count: 1 });
+        let story_dropped_preamble = coverage_preamble(&reasons);
         let mut story_dropped_meta_val = orig_meta_val.clone();
         {
             let obj = story_dropped_meta_val.as_object_mut().unwrap();
@@ -1627,7 +1580,10 @@ mod tests {
 
         let mut final_gaps = story_dropped_gaps;
         final_gaps.push(expected_notice.clone());
-        let final_preamble = crate::morning_briefing::coverage_preamble(&final_gaps);
+        reasons.push(Gap::Location {
+            count: u32::try_from(total).unwrap(),
+        });
+        let final_preamble = coverage_preamble(&reasons);
         let mut final_meta_val = story_dropped_meta_val.clone();
         {
             let obj = final_meta_val.as_object_mut().unwrap();

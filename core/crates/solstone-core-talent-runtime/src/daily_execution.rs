@@ -3,6 +3,7 @@
 
 //! Execute the packet reserved by daily admission and resume its publication.
 
+use solstone_core_cli_copy::MessageDetail;
 use std::io::Write;
 
 use serde_json::{Map, Value, json};
@@ -17,8 +18,8 @@ use crate::contract::{CommitDisposition, CommitPlan, PrePostState, StageSpec};
 use crate::writers::PreparedDailyPublication;
 use crate::{ExecutionContext, PreparedTalent, RuntimeOutcome, StageError};
 
-fn failure(name: &str, error: impl std::fmt::Display) -> StageError {
-    StageError::new("write", "daily_publication", name, error.to_string())
+fn failure(name: &str, error: impl Into<MessageDetail>) -> StageError {
+    StageError::new("write", "daily_publication", name, error)
 }
 
 fn same_kind_family(
@@ -43,7 +44,13 @@ fn same_kind_family(
 
 fn apply_stage_failure(record: &mut DailyUnitRecord, error: &StageError) {
     let prev_kind = record.owner_conflict_kind.as_deref();
-    let prev_detail = record.error_detail.as_deref();
+    // Only unstamped, historical records can carry the retired calendar
+    // writer's conflict without its kind. A new opaque diagnostic may contain
+    // those same English words.
+    let prev_detail = record
+        .error_detail
+        .as_deref()
+        .filter(|_| record.error_copy.is_none());
     let next_kind = error.owner_conflict_kind();
     let reason = error.reason_code();
 
@@ -56,6 +63,14 @@ fn apply_stage_failure(record: &mut DailyUnitRecord, error: &StageError) {
         DailyUnitStatus::Failed
     };
     record.error_detail = Some(error.to_string());
+    record.error_copy = Some(solstone_core_journal_io::daily_error::stage_copy(
+        record.use_id.as_deref(),
+        error.phase,
+        error.stage,
+        &error.talent,
+        &error.detail,
+        error.detail_copy.as_ref(),
+    ));
     if kind_changed || reason_changed {
         record.failure_count = 0;
     }
@@ -66,11 +81,11 @@ fn apply_stage_failure(record: &mut DailyUnitRecord, error: &StageError) {
     }
 }
 
-fn retained_response(value: &Value) -> Result<crate::GeneratedTalentResponse, String> {
+fn retained_response(value: &Value) -> Result<crate::GeneratedTalentResponse, MessageDetail> {
     let response = value
         .get("response")
         .and_then(Value::as_str)
-        .ok_or_else(|| "retained daily response is malformed".to_owned())?;
+        .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.response.malformed", []))?;
     let optional = |key| {
         value
             .get(key)
@@ -81,15 +96,15 @@ fn retained_response(value: &Value) -> Result<crate::GeneratedTalentResponse, St
     Ok((response.to_owned(), optional("usage"), optional("degraded")))
 }
 
-fn finished(record: &DailyUnitRecord) -> Result<RuntimeOutcome, String> {
+fn finished(record: &DailyUnitRecord) -> Result<RuntimeOutcome, MessageDetail> {
     let accepted = record
         .accepted
         .as_ref()
-        .ok_or("missing accepted daily result")?;
+        .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.accepted.result", []))?;
     let result = accepted
         .generated_result
         .as_ref()
-        .ok_or("missing accepted response")?;
+        .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.accepted.response", []))?;
     let (response, usage, degraded) = retained_response(result)?;
     let output = result
         .get("output")
@@ -143,13 +158,22 @@ pub(crate) fn execute_with_paths(
         .and_then(Value::as_str)
         .filter(|v| !v.is_empty())
     else {
-        return RuntimeOutcome::StageFailed(failure(name, "missing daily attempt token"));
+        return RuntimeOutcome::StageFailed(failure(
+            name,
+            MessageDetail::message("journal.cli.talent.daily.attempt.token", []),
+        ));
     };
     let Some(day) = request.get("day").and_then(Value::as_str) else {
-        return RuntimeOutcome::StageFailed(failure(name, "missing daily attempt day"));
+        return RuntimeOutcome::StageFailed(failure(
+            name,
+            MessageDetail::message("journal.cli.talent.daily.attempt.day", []),
+        ));
     };
     if day.len() != 8 || solstone_core_time::parse_day(day).is_none() {
-        return RuntimeOutcome::StageFailed(failure(name, "invalid daily attempt day"));
+        return RuntimeOutcome::StageFailed(failure(
+            name,
+            MessageDetail::message("journal.cli.talent.daily.attempt.day.invalid", []),
+        ));
     }
     let facet = request
         .get("facet")
@@ -159,14 +183,14 @@ pub(crate) fn execute_with_paths(
     let _execution =
         match solstone_core_journal_io::claim_daily_execution(&context.journal, &identity) {
             Ok(claim) => claim,
-            Err(error) => return RuntimeOutcome::StageFailed(failure(name, error)),
+            Err(error) => return RuntimeOutcome::StageFailed(failure(name, error.to_string())),
         };
     let record = match with_daily_unit_authority(&context.journal, &identity, |authority| {
         authority.require_token(token)?;
         Ok(authority.record().expect("token requires record").clone())
     }) {
         Ok(record) => record,
-        Err(error) => return RuntimeOutcome::StageFailed(failure(name, error)),
+        Err(error) => return RuntimeOutcome::StageFailed(failure(name, error.to_string())),
     };
     for (key, expected) in [
         ("evidence_revision", record.evidence_revision.as_str()),
@@ -176,22 +200,37 @@ pub(crate) fn execute_with_paths(
             .get(key)
             .is_some_and(|v| v.as_str() != Some(expected))
         {
-            return RuntimeOutcome::StageFailed(failure(name, format!("daily {key} mismatch")));
+            return RuntimeOutcome::StageFailed(failure(
+                name,
+                MessageDetail::message(
+                    "journal.cli.talent.daily.attempt.mismatch",
+                    [("key", &key)],
+                ),
+            ));
         }
     }
     let Some(packet) = record.frozen_packet.as_ref() else {
-        return RuntimeOutcome::StageFailed(failure(name, "daily attempt has no frozen packet"));
+        return RuntimeOutcome::StageFailed(failure(
+            name,
+            MessageDetail::message("journal.cli.talent.daily.packet.absent", []),
+        ));
     };
     if record.packet_digest.as_deref() != Some(crate::daily_prepare::packet_digest(packet).as_str())
     {
-        return RuntimeOutcome::StageFailed(failure(name, "daily packet digest mismatch"));
+        return RuntimeOutcome::StageFailed(failure(
+            name,
+            MessageDetail::message("journal.cli.talent.daily.packet.digest", []),
+        ));
     }
     let (mut prepared, stage) = match crate::daily_prepare::thaw(packet) {
         Ok(value) => value,
         Err(error) => return RuntimeOutcome::StageFailed(failure(name, error)),
     };
     if prepared.name != name {
-        return RuntimeOutcome::StageFailed(failure(name, "daily packet talent mismatch"));
+        return RuntimeOutcome::StageFailed(failure(
+            name,
+            MessageDetail::message("journal.cli.talent.daily.packet.talent", []),
+        ));
     }
     // The owner's logging choice is read when the unit runs, never frozen into
     // its packet, so turning it on reaches daily talents already prepared.
@@ -200,7 +239,10 @@ pub(crate) fn execute_with_paths(
         || prepared.config.get("facet").and_then(Value::as_str)
             != request.get("facet").and_then(Value::as_str)
     {
-        return RuntimeOutcome::StageFailed(failure(name, "daily packet scope mismatch"));
+        return RuntimeOutcome::StageFailed(failure(
+            name,
+            MessageDetail::message("journal.cli.talent.daily.packet.scope", []),
+        ));
     }
     prepared
         .config
@@ -255,15 +297,18 @@ pub(crate) fn execute_with_paths(
                 reason: reason.into(),
             };
         }
-        Err(error) => return RuntimeOutcome::StageFailed(failure(name, error)),
+        Err(error) => return RuntimeOutcome::StageFailed(failure(name, error.to_string())),
     }
     if let Some(value) = request.get("_work_retry") {
-        let permission = (|| -> Result<(), String> {
+        let permission = (|| -> Result<(), MessageDetail> {
             use solstone_core_system::work_retry::{self, Attempt, Unit};
             let (unit, attempt): (Unit, Attempt) =
                 serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
             if work_retry::daily::identity(&unit)? != identity {
-                return Err("daily retry scope changed".into());
+                return Err(MessageDetail::message(
+                    "journal.cli.talent.daily.retry.scope",
+                    [],
+                ));
             }
             let evidence = match paths {
                 Some(paths) => work_retry::daily::evidence_with_roots(
@@ -284,12 +329,17 @@ pub(crate) fn execute_with_paths(
                 work_retry::DECLARED_FIXES,
                 &|| {
                     if cancellation.is_cancelled() {
-                        Err("thinking cancelled".into())
+                        Err(solstone_core_cli_copy::render_for(
+                            solstone_core_cli_copy::ENGLISH,
+                            "journal.cli.think.cancelled",
+                            &[],
+                        ))
                     } else {
                         Ok(())
                     }
                 },
             )
+            .map_err(MessageDetail::from)
         })();
         if let Err(error) = permission {
             return RuntimeOutcome::StageFailed(failure(name, error));
@@ -316,7 +366,7 @@ pub(crate) fn execute_with_paths(
         if talent_type != "generate" && !talent_type.is_empty() {
             return RuntimeOutcome::StageFailed(failure(
                 name,
-                format!("unsupported talent type: {talent_type}"),
+                MessageDetail::message("journal.cli.talent.daily.type", [("kind", &talent_type)]),
             ));
         }
         match crate::generate_response(&mut prepared, generate, writer) {
@@ -496,13 +546,13 @@ pub(crate) fn execute_with_paths(
                         None,
                     )
                 {
-                    return RuntimeOutcome::StageFailed(failure(name, error));
+                    return RuntimeOutcome::StageFailed(failure(name, error.to_string()));
                 }
             }
             outcome
         }
         Ok(Err(error)) => RuntimeOutcome::StageFailed(error),
-        Err(error) => RuntimeOutcome::StageFailed(failure(name, error)),
+        Err(error) => RuntimeOutcome::StageFailed(failure(name, error.to_string())),
     }
 }
 
@@ -553,36 +603,47 @@ fn publish(
             .as_mut()
             .expect("authority")
             .generated_result = Some(value);
-        authority.checkpoint().map_err(|e| failure(name, e))?;
+        authority
+            .checkpoint()
+            .map_err(|e| failure(name, e.to_string()))?;
         generated
     };
-    let publication: PreparedDailyPublication = if let Some(plan) =
-        authority.record().and_then(|r| r.action_plan.as_ref())
-    {
-        serde_json::from_value(plan.clone()).map_err(|e| failure(name, e))?
-    } else {
-        let publication = if skip {
-            crate::writers::prepare_daily_publication(CommitPlan::NoOutput, prepared, context)?
-        } else if let Some((spec, state)) = stage {
-            if let Some(commit) = spec.commit {
-                let parsed = (commit.parse)(&response, prepared, state)?;
-                let plan = (commit.commit)(parsed, prepared, state)?;
-                crate::writers::prepare_daily_publication(plan, prepared, context)?
+    let publication: PreparedDailyPublication =
+        if let Some(plan) = authority.record().and_then(|r| r.action_plan.as_ref()) {
+            serde_json::from_value(plan.clone()).map_err(|e| failure(name, e.to_string()))?
+        } else {
+            let publication = if skip {
+                crate::writers::prepare_daily_publication(CommitPlan::NoOutput, prepared, context)?
+            } else if let Some((spec, state)) = stage {
+                if let Some(commit) = spec.commit {
+                    let parsed = (commit.parse)(&response, prepared, state)?;
+                    let plan = (commit.commit)(parsed, prepared, state)?;
+                    crate::writers::prepare_daily_publication(plan, prepared, context)?
+                } else {
+                    crate::writers::prepare_daily_output(prepared, &response, context)?
+                }
             } else {
                 crate::writers::prepare_daily_output(prepared, &response, context)?
-            }
-        } else {
-            crate::writers::prepare_daily_output(prepared, &response, context)?
+            };
+            authority
+                .record_mut()
+                .as_mut()
+                .expect("authority")
+                .action_plan =
+                Some(serde_json::to_value(&publication).map_err(|e| failure(name, e.to_string()))?);
+            authority
+                .checkpoint()
+                .map_err(|e| failure(name, e.to_string()))?;
+            publication
         };
-        authority
-            .record_mut()
-            .as_mut()
-            .expect("authority")
-            .action_plan = Some(serde_json::to_value(&publication).map_err(|e| failure(name, e))?);
-        authority.checkpoint().map_err(|e| failure(name, e))?;
-        publication
-    };
     let mut changed_paths = Vec::new();
+    let configured_output = !skip && stage.is_none_or(|(spec, _)| spec.commit.is_none());
+    let display = (configured_output && !crate::partial_input::is_json(prepared)).then(|| {
+        crate::partial_input::markdown_document(
+            &response,
+            crate::partial_input::marker(prepared).as_ref(),
+        )
+    });
     let publication_result = crate::writers::publish_daily_publication_cancellable(
         authority,
         token,
@@ -591,10 +652,10 @@ fn publish(
         &mut changed_paths,
         admission.take(),
         cancellation,
+        display.as_ref(),
     );
     // This branch is the configured writer, as in preparation above. Derive
     // ownership from the stage contract rather than adding it to retained plans.
-    let configured_output = !skip && stage.is_none_or(|(spec, _)| spec.commit.is_none());
     let output_changed = if configured_output {
         for rel in &changed_paths {
             let full = context.journal.join(rel);
@@ -642,6 +703,7 @@ fn publish(
     record.status = status;
     record.reason_code = None;
     record.error_detail = None;
+    record.error_copy = None;
     record.updated_at_ms = jiff::Timestamp::now().as_millisecond();
     record.accepted = Some(AcceptedDailyResult {
         evidence_revision: record.evidence_revision.clone(),
@@ -652,7 +714,9 @@ fn publish(
         receipts,
         committed_at_ms: record.updated_at_ms,
     });
-    authority.checkpoint().map_err(|e| failure(name, e))?;
+    authority
+        .checkpoint()
+        .map_err(|e| failure(name, e.to_string()))?;
     Ok(RuntimeOutcome::Finished {
         output,
         disposition,
@@ -1900,6 +1964,23 @@ mod tests {
     }
 
     #[test]
+    fn only_a_legacy_calendar_conflict_uses_the_old_english_fallback() {
+        let identity = DailyUnitIdentity::new("20260910", "daily_schedule", None);
+        let mut record = DailyUnitRecord::new(identity, "E", "C");
+        let old_words = "conflict: calendar changed after prompt preparation";
+        let foreign = StageError::new("conflict", "daily", "daily", old_words);
+        let next = StageError::new("conflict", "daily", "daily", old_words)
+            .with_owner_conflict_kind("calendar_changed");
+        apply_stage_failure(&mut record, &foreign);
+        let mut legacy = record.clone();
+        legacy.error_copy = None;
+        apply_stage_failure(&mut legacy, &next);
+        assert_eq!(legacy.failure_count, 2);
+        apply_stage_failure(&mut record, &next);
+        assert_eq!(record.failure_count, 1);
+    }
+
+    #[test]
     fn every_owner_conflict_counts_toward_its_retry_budget() {
         let identity =
             DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
@@ -2975,6 +3056,25 @@ mod tests {
         )
         .unwrap();
         assert!(saved.contains("Left out:"));
+        let path = context
+            .journal
+            .join("chronicle/20260101/talents/morning_briefing.md");
+        let receipt =
+            solstone_core_format::stored_markdown::talent_receipt_path(&context.journal, &path)
+                .unwrap();
+        let metadata: Value = serde_json::from_slice(&fs::read(receipt).unwrap()).unwrap();
+        assert_eq!(metadata["spans"].as_array().unwrap().len(), 1);
+        let source = solstone_core_format::stored_markdown::project_talent_output(
+            &context.journal,
+            &path,
+            &saved,
+            "en-XA",
+        )
+        .expect("the retained generation supplied the clipped-input span");
+        let notice = solstone_core_format::stored_markdown::Message::PartialInput;
+        let (body, _) = saved.rsplit_once(&notice.render("en-US")).unwrap();
+        assert_eq!(source, format!("{body}{}\n", notice.render("en-XA")));
+
         let record = load_daily_unit_record(&context.journal, &identity)
             .unwrap()
             .unwrap();

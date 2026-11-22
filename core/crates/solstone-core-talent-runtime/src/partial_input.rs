@@ -4,7 +4,9 @@
 use crate::{PreparedTalent, contract::CommitPlan, writers::WriteIntent};
 use serde_json::{Map, Value, json};
 
+#[cfg(test)]
 use solstone_core_format::content::PARTIAL_INPUT_NOTICE as NOTICE;
+use solstone_core_format::stored_markdown::{Document, Message};
 
 pub(crate) fn marker(prepared: &PreparedTalent) -> Option<Value> {
     prepared
@@ -49,22 +51,32 @@ pub(crate) fn json_text(text: &str, marker: Option<&Value>) -> String {
     Value::Object(value).to_string()
 }
 
-pub(crate) fn markdown(text: &str, marker: Option<&Value>) -> String {
+fn append_markdown(document: &mut Document, marker: Option<&Value>) {
     if marker.is_some() {
-        format!("{}\n\n{NOTICE}\n", text.trim_end())
-    } else {
-        text.to_owned()
+        document.truncate(document.trim_end().len());
+        document.push_str("\n\n");
+        document.push_message(Message::PartialInput);
+        document.push_str("\n");
     }
+}
+
+pub(crate) fn markdown_document(text: &str, marker: Option<&Value>) -> Document {
+    let mut document = Document::plain(text.to_owned());
+    append_markdown(&mut document, marker);
+    document
+}
+
+pub(crate) fn is_json(prepared: &PreparedTalent) -> bool {
+    prepared.config.get("output").and_then(Value::as_str) == Some("json")
+        || prepared.config.contains_key("json_schema")
 }
 
 pub(crate) fn output(text: &str, prepared: &PreparedTalent) -> String {
     let marker = marker(prepared);
-    if prepared.config.get("output").and_then(Value::as_str) == Some("json")
-        || prepared.config.contains_key("json_schema")
-    {
+    if is_json(prepared) {
         json_text(text, marker.as_ref())
     } else {
-        markdown(text, marker.as_ref())
+        markdown_document(text, marker.as_ref()).into_text()
     }
 }
 
@@ -102,7 +114,7 @@ pub(crate) fn decorate(mut plan: CommitPlan, prepared: &PreparedTalent) -> Commi
                 document,
                 ..
             } => {
-                *body = markdown(body, partial.as_ref());
+                append_markdown(body, partial.as_ref());
                 *document = json_text(document, partial.as_ref());
             }
             // Possible names carry no model text; a clipped packet still
@@ -245,6 +257,7 @@ mod tests {
             let cases = [
                 (
                     WriteIntent::DayAccumulator {
+                        display: None,
                         day: "20260101".into(),
                         agent: "pulse".into(),
                         record: json!({"title":"Kept"}).as_object().unwrap().clone(),

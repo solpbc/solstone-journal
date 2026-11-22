@@ -11,6 +11,7 @@ use jiff::Timestamp;
 use jiff::civil::{Date, Weekday};
 use serde_json::{Value, json};
 use solstone_core_format::content::week_left_out::{LeftOut, read_left_out};
+use solstone_core_format::stored_markdown::week::{month_name, weekday_name};
 use solstone_core_journal_io::observation::FlatDirectoryEntry;
 use solstone_core_journal_io::read_relative_file_bounded;
 use solstone_core_journal_io::{JournalEntryKind, JournalRoot};
@@ -688,40 +689,6 @@ fn neighbors(journal: &Path, day: &str, require_readable_candidates: bool) -> We
 }
 
 // Private lowercase date formatting helpers
-fn month_name(month: i8, locale: &str) -> String {
-    let id = match month {
-        1 => "journal.window.home.week.month.january",
-        2 => "journal.window.home.week.month.february",
-        3 => "journal.window.home.week.month.march",
-        4 => "journal.window.home.week.month.april",
-        5 => "journal.window.home.week.month.may",
-        6 => "journal.window.home.week.month.june",
-        7 => "journal.window.home.week.month.july",
-        8 => "journal.window.home.week.month.august",
-        9 => "journal.window.home.week.month.september",
-        10 => "journal.window.home.week.month.october",
-        11 => "journal.window.home.week.month.november",
-        12 => "journal.window.home.week.month.december",
-        _ => return String::new(),
-    };
-    text(locale, id)
-}
-
-fn weekday_name(date: Date, locale: &str) -> String {
-    text(
-        locale,
-        match date.weekday() {
-            Weekday::Monday => "journal.window.home.week.day.long.monday",
-            Weekday::Tuesday => "journal.window.home.week.day.long.tuesday",
-            Weekday::Wednesday => "journal.window.home.week.day.long.wednesday",
-            Weekday::Thursday => "journal.window.home.week.day.long.thursday",
-            Weekday::Friday => "journal.window.home.week.day.long.friday",
-            Weekday::Saturday => "journal.window.home.week.day.long.saturday",
-            Weekday::Sunday => "journal.window.home.week.day.long.sunday",
-        },
-    )
-}
-
 fn short_weekday(date: Date, locale: &str) -> String {
     text(
         locale,

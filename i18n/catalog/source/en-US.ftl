@@ -20670,3 +20670,113 @@ journal.window.notes.transcript.removed.words = { $quantity ->
 journal.window.notes.transcript.renamed = renamed from { $path }
 
 journal.window.notes.transcript.source = Source: { $path }
+
+journal.window.briefing.coverage.activities = { $count ->
+    [one] one activity
+   *[other] { $count } activities
+}
+
+journal.window.briefing.coverage.list = { $items }; { $item }
+
+journal.window.briefing.coverage.location = { $count ->
+    [one] one location entry
+   *[other] { $count } location entries
+}
+
+journal.window.briefing.coverage.note = Not in this briefing: { $items }.
+
+journal.window.briefing.coverage.pulse = the latest running summary
+
+journal.window.briefing.coverage.stories = { $count ->
+    [one] the story of one activity
+   *[other] the stories of { $count } activities
+}
+
+journal.window.briefing.gap.activities = { $count ->
+    [one] activities omitted: { $count }.
+   *[other] activities omitted: { $count }.
+}
+
+journal.window.briefing.gap.facets = active facets
+
+journal.window.briefing.gap.file = activities from { $facet }, which couldn't be read
+
+journal.window.briefing.gap.id = activities from { $facet } include a record with no activity id
+
+journal.window.briefing.gap.line = activities from { $facet } include a line that could not be read
+
+journal.window.briefing.gap.location = { $count ->
+    [one] location entries omitted: { $count }.
+   *[other] location entries omitted: { $count }.
+}
+
+journal.window.briefing.gap.pulse = the latest pulse
+
+journal.window.briefing.gap.stories = { $count ->
+    [one] activity stories omitted: { $count }.
+   *[other] activity stories omitted: { $count }.
+}
+
+journal.window.briefing.section.attention = Needs Attention
+
+journal.window.briefing.section.empty = Nothing to report.
+
+journal.window.home.week.source.link = source
+
+journal.window.talent.pulse.body.unavailable = your recent activity couldn't be summarized.
+
+journal.window.talent.pulse.gap.activities.read = could not load activities for { $facet }: { $error }
+
+journal.window.talent.pulse.gap.activity.empty = completed activity missing facet or id: (none)
+
+journal.window.talent.pulse.gap.activity.id = completed activity missing facet or id: { $activity }
+
+journal.window.talent.pulse.gap.activity.missing = activity record not found: { $facet }/{ $activity }
+
+journal.window.talent.pulse.gap.awareness.current = could not read current awareness: { $error }
+
+journal.window.talent.pulse.gap.awareness.import = could not read import awareness: { $error }
+
+journal.window.talent.pulse.gap.day = completed unit missing source day
+
+journal.window.talent.pulse.gap.recent = could not read recent entities: { $error }
+
+journal.window.talent.pulse.gap.segment.id = completed segment missing segment id
+
+journal.window.talent.pulse.gap.segment.missing = could not find completed segment { $segment }
+
+journal.window.talent.pulse.gap.segment.summary = no activity summary for segment { $segment }
+
+journal.window.talent.pulse.gap.sense.invalid = invalid sense evidence for segment { $segment }
+
+journal.window.talent.pulse.gap.sense.limit = could not read sense evidence for segment { $segment }: sense assessment exceeds the context limit
+
+journal.window.talent.pulse.gap.sense.read = could not read sense evidence for segment { $segment }: { $error }
+
+journal.window.talent.pulse.title.unavailable = summary unavailable
+
+journal.window.talent.story.line.message.owner = Said in a message dated { $date }: "{ $quote }"
+
+journal.window.talent.story.line.owner = Said: "{ $quote }"
+
+journal.window.talent.story.message.agent = Your agent said in a message dated { $date }: "{ $quote }"
+
+journal.window.talent.story.message.owner = You said in a message dated { $date }: "{ $quote }"
+
+journal.window.talent.story.notes.date.missing = message date unavailable
+
+journal.window.talent.story.notes.date.missing.sender = { $sender } · message date unavailable
+
+journal.window.talent.story.notes.heading = screen notes (unverified)
+
+journal.window.talent.story.notes.recorded = recorded: { $date }
+
+journal.window.talent.story.notes.recorded.app = recorded: { $date } · { $app }
+
+journal.window.talent.story.speech.named = { $name } said: "{ $quote }"
+
+journal.window.talent.story.speech.numbered = Speaker { $speaker }, whom the journal has not identified, said: "{ $quote }"
+
+journal.window.talent.story.speech.owner = You said: "{ $quote }"
+
+journal.window.talent.story.speech.unknown = An unidentified speaker said: "{ $quote }"

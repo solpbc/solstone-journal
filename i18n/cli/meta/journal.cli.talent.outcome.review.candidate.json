@@ -1,0 +1,21 @@
+{
+  "description": "Diagnostic saved in an entity talent outcome. The underlying operation supplies the error detail.",
+  "context": "Diagnostic saved in an entity talent outcome. The underlying operation supplies the error detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2ca29958628b2c1b58be00205dd6c4f57f67b5d1c806aa52a2f4d445f1aa3385",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

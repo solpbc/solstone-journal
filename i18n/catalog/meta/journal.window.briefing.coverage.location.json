@@ -1,0 +1,26 @@
+{
+  "description": "Omitted location entries in the coverage list.",
+  "context": "Morning briefing. Omitted location entries in the coverage list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a9b8c14897a939d730b1a0f1fb9942ccdd14211f8c7c9a80b781362ba02fbd71",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "count"
+  }
+}

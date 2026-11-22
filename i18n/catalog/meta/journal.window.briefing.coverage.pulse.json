@@ -1,0 +1,16 @@
+{
+  "description": "Missing running summary in the coverage list.",
+  "context": "Morning briefing. Missing running summary in the coverage list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "394ef9390a370c5ea292fbe2fbfc9f1ffaa94922c4d68cda0113959b44197e47",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

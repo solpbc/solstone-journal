@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 //! Entity-review hook.
+use solstone_core_cli_copy::MessageDetail;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -879,7 +880,7 @@ pub fn commit(
             "commit",
             "entities:entities_review",
             prepared,
-            "expected text output",
+            MessageDetail::message("journal.cli.talent.daily.commit.text", []),
         ));
     };
     let (Some(facet), Some(day)) = (
@@ -907,29 +908,29 @@ pub fn prepare_publication(
     let promotions = data
         .get("promotions")
         .and_then(Value::as_array)
-        .ok_or("review output lacks promotions")?;
+        .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.review.promotions", []))?;
     let merges = data
         .get("merges")
         .and_then(Value::as_array)
-        .ok_or("review output lacks merges")?;
+        .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.review.merges", []))?;
     let inputs = prepared
         .config
         .get("_daily_review_inputs")
-        .ok_or("missing frozen review admission inputs")?;
+        .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.review.inputs", []))?;
     let owner_before = prepared
         .config
         .get("_daily_review_owner_before")
         .and_then(Value::as_object)
-        .ok_or("missing frozen review owner state")?;
+        .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.review.owner", []))?;
     let eligible = inputs
         .get("eligible")
         .and_then(Value::as_array)
-        .ok_or("missing frozen review eligibility")?;
+        .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.review.eligibility", []))?;
     let hints: Vec<(String, String)> = serde_json::from_value(
         inputs
             .get("hints")
             .cloned()
-            .ok_or("missing frozen review hints")?,
+            .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.review.hints", []))?,
     )
     .map_err(|e| e.to_string())?;
     let mut actions = Vec::new();
@@ -970,7 +971,7 @@ pub fn prepare_publication(
         let aliases = row
             .get("aliases")
             .and_then(Value::as_array)
-            .ok_or("review promotion lacks aliases")?
+            .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.review.aliases", []))?
             .iter()
             .filter_map(Value::as_str)
             .map(str::trim)
@@ -984,16 +985,16 @@ pub fn prepare_publication(
         let canonical_name = candidate
             .get("name")
             .and_then(Value::as_str)
-            .ok_or("frozen candidate lacks name")?;
-        let expected = owner_before
-            .get(&slug)
-            .ok_or("missing frozen promotion owner state")?;
+            .ok_or_else(|| MessageDetail::message("journal.cli.talent.daily.review.name", []))?;
+        let expected = owner_before.get(&slug).ok_or_else(|| {
+            MessageDetail::message("journal.cli.talent.daily.review.promotion", [])
+        })?;
         if &solstone_core_facets::review_promotion_snapshot(journal, facet, canonical_name)?
             != expected
         {
-            return Err(solstone_core_entity::ReviewOwnerError::conflict(
+            return Err(solstone_core_entity::ReviewOwnerError::conflict_message(
                 solstone_core_entity::ReviewOwnerConflictKind::PromotionOwnerState,
-                "conflict: promotion owner state changed after prompt preparation",
+                MessageDetail::message("journal.cli.talent.daily.review.promotion.changed", []),
             ));
         }
         let promotion = solstone_core_facets::prepare_review_promotion(
@@ -1002,11 +1003,15 @@ pub fn prepare_publication(
             candidate
                 .get("type")
                 .and_then(Value::as_str)
-                .ok_or("frozen candidate lacks type")?,
+                .ok_or_else(|| {
+                    MessageDetail::message("journal.cli.talent.daily.review.type", [])
+                })?,
             candidate
                 .get("name")
                 .and_then(Value::as_str)
-                .ok_or("frozen candidate lacks name")?,
+                .ok_or_else(|| {
+                    MessageDetail::message("journal.cli.talent.daily.review.name", [])
+                })?,
             description,
             &aliases,
             batch_principal_taken,
@@ -1099,7 +1104,9 @@ pub fn prepare_publication(
         let prior = inputs
             .get("prior")
             .and_then(Value::as_array)
-            .ok_or("missing frozen proposal state")?;
+            .ok_or_else(|| {
+                MessageDetail::message("journal.cli.talent.daily.review.proposals", [])
+            })?;
         let current = solstone_core_entity::load_merge_candidates(journal, Some(facet), None)
             .map_err(|e| e.to_string())?;
         for proposal in &proposals {
@@ -1118,9 +1125,9 @@ pub fn prepare_publication(
                 continue;
             }
             if actual != expected {
-                return Err(solstone_core_entity::ReviewOwnerError::conflict(
+                return Err(solstone_core_entity::ReviewOwnerError::conflict_message(
                     solstone_core_entity::ReviewOwnerConflictKind::MergeProposalPreparation,
-                    "conflict: merge proposal changed after prompt preparation",
+                    MessageDetail::message("journal.cli.talent.daily.review.proposals.changed", []),
                 ));
             }
         }
@@ -1180,16 +1187,22 @@ pub(crate) fn apply_result_cancellable(
     ]);
     let mut error = None;
     let result = (|| -> Result<(), String> {
-        let Value::Object(data) =
-            serde_json::from_str(output).map_err(|_| "invalid JSON".to_owned())?
+        let Value::Object(data) = serde_json::from_str(output)
+            .map_err(|_| super::outcome_error("journal.cli.talent.outcome.review.parse", []))?
         else {
-            return Err("result is not a JSON object".to_owned());
+            return Err(super::outcome_error(
+                "journal.cli.talent.outcome.object",
+                [],
+            ));
         };
         let (Some(promotions), Some(merges)) = (
             data.get("promotions").and_then(Value::as_array),
             data.get("merges").and_then(Value::as_array),
         ) else {
-            return Err("result missing expected arrays".to_owned());
+            return Err(super::outcome_error(
+                "journal.cli.talent.outcome.review.arrays",
+                [],
+            ));
         };
         let inputs = build_review_inputs(journal, facet, day)?;
         let eligible = inputs
@@ -1250,7 +1263,10 @@ pub(crate) fn apply_result_cancellable(
                 }
                 Err(error_value) => {
                     *counts.get_mut("errored").unwrap() += 1;
-                    error = Some(format!("FacetEntityWriteError: {error_value}"));
+                    error = Some(super::outcome_error(
+                        "journal.cli.talent.outcome.facet.write",
+                        [("error", &error_value)],
+                    ));
                     None
                 }
             };
@@ -1287,7 +1303,10 @@ pub(crate) fn apply_result_cancellable(
                     ) => *counts.get_mut("skipped").unwrap() += 1,
                     Err(error_value) => {
                         *counts.get_mut("errored").unwrap() += 1;
-                        error = Some(format!("FacetEntityWriteError: {error_value}"));
+                        error = Some(super::outcome_error(
+                            "journal.cli.talent.outcome.facet.write",
+                            [("error", &error_value)],
+                        ));
                     }
                 }
             }
@@ -1351,7 +1370,10 @@ pub(crate) fn apply_result_cancellable(
                 Ok(_) => *counts.get_mut("merges").unwrap() += 1,
                 Err(error_value) => {
                     *counts.get_mut("errored").unwrap() += 1;
-                    error = Some(format!("EntityReviewCandidateError: {error_value}"));
+                    error = Some(super::outcome_error(
+                        "journal.cli.talent.outcome.review.candidate",
+                        [("error", &error_value)],
+                    ));
                 }
             }
         }

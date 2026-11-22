@@ -2,20 +2,23 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, text};
 
 use super::{JsonObject, ProducedChunks, clean_value, recorded_chunk};
 
-const BRIEFING_ABSENT_TEXT: &str = "Nothing to report.";
 const SECTION_KEYS: [(&str, &str); 2] = [
-    ("yesterday", "Yesterday"),
-    ("needs_attention", "Needs Attention"),
+    ("yesterday", "journal.window.date.yesterday"),
+    (
+        "needs_attention",
+        "journal.window.briefing.section.attention",
+    ),
 ];
 
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     let chunks = records
         .first()
         .and_then(|briefing| {
-            let content = render_briefing(briefing);
+            let content = render_briefing(briefing, ENGLISH);
             (!content.is_empty()).then(|| recorded_chunk(content, 0, briefing))
         })
         .into_iter()
@@ -30,7 +33,15 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     }
 }
 
-fn render_briefing(briefing: &JsonObject) -> String {
+pub fn morning_briefing_presentations(bytes: &[u8], locale: &str) -> Option<(String, String)> {
+    let record: JsonObject = serde_json::from_slice(bytes).ok()?;
+    Some((
+        render_briefing(&record, ENGLISH),
+        render_briefing(&record, locale),
+    ))
+}
+
+fn render_briefing(briefing: &JsonObject, locale: &str) -> String {
     let mut lines = Vec::new();
     let preamble = briefing
         .get("metadata")
@@ -47,7 +58,8 @@ fn render_briefing(briefing: &JsonObject) -> String {
         }));
     }
 
-    for (key, heading) in SECTION_KEYS {
+    for (key, heading_id) in SECTION_KEYS {
+        let heading = text(locale, heading_id);
         if !lines.is_empty() {
             lines.push(String::new());
         }
@@ -55,7 +67,7 @@ fn render_briefing(briefing: &JsonObject) -> String {
         lines.push(String::new());
         let body = section_body(briefing, key);
         if body.is_empty() {
-            lines.push(BRIEFING_ABSENT_TEXT.to_string());
+            lines.push(text(locale, "journal.window.briefing.section.empty"));
         } else {
             lines.push(body);
         }
@@ -160,7 +172,7 @@ mod tests {
         assert_eq!(produced.chunks.len(), 1);
         let rendered = &produced.chunks[0].content;
         assert_eq!(rendered.matches("## ").count(), 2);
-        assert_eq!(rendered.matches(BRIEFING_ABSENT_TEXT).count(), 2);
+        assert_eq!(rendered.matches("Nothing to report.").count(), 2);
     }
 
     #[test]

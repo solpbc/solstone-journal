@@ -87,6 +87,7 @@ pub struct PreparedTalent {
     pub name: String,
     pub config: Map<String, Value>,
     preview_language: Option<PreviewLanguage>,
+    briefing_gaps: Vec<morning_briefing::Gap>,
     diagnostic_locale: Option<String>,
     /// Bound to the exact loaded text, before sparse notes or request fitting.
     pub(crate) passage_layout: Option<([u8; 32], solstone_core_transcripts::TranscriptLayout)>,
@@ -98,6 +99,7 @@ pub struct PreparedTalent {
     /// What participation floor sampling read and left out, emitted once with the run.
     pub(crate) participation_floor: Option<Value>,
     pub(crate) story_input: Option<story_input::Candidate>,
+    pub(crate) story_document: Option<solstone_core_format::stored_markdown::Document>,
     pub(crate) story_messages: Option<story_messages::Candidate>,
     pub(crate) story_input_used: bool,
     /// Preparation made the Story packet the input because the whole request
@@ -143,6 +145,7 @@ impl PreparedTalent {
             name,
             config,
             preview_language: None,
+            briefing_gaps: Vec::new(),
             diagnostic_locale: None,
             passage_layout: None,
             topic_input_kinds: None,
@@ -150,6 +153,7 @@ impl PreparedTalent {
             terminal_reading: None,
             participation_floor: None,
             story_input: None,
+            story_document: None,
             story_messages: None,
             story_input_used: false,
             story_input_fitted: false,
@@ -419,6 +423,7 @@ pub struct StageError {
     pub stage: &'static str,
     pub talent: String,
     pub detail: String,
+    detail_copy: Option<solstone_core_cli_copy::MessageDetail>,
     pub usage: Option<Box<Value>>,
     pub degraded: Option<Box<Value>>,
     extra: Option<Box<StageErrorExtra>>,
@@ -426,6 +431,10 @@ pub struct StageError {
 
 impl StageError {
     pub fn display_in(&self, locale: &str) -> String {
+        let detail = self
+            .detail_copy
+            .as_ref()
+            .map(|cause| cause.render_for_output(Some(locale)));
         solstone_core_cli_copy::display_for(
             locale,
             "journal.cli.talent.hook.failure",
@@ -433,7 +442,7 @@ impl StageError {
                 ("phase", &(self.phase)),
                 ("stage", &(self.stage)),
                 ("talent", &(self.talent)),
-                ("detail", &(self.detail)),
+                ("detail", &detail.as_deref().unwrap_or(&self.detail)),
             ],
         )
     }
@@ -469,13 +478,15 @@ impl StageError {
         phase: &'static str,
         stage: &'static str,
         talent: impl Into<String>,
-        detail: impl Into<String>,
+        detail: impl Into<solstone_core_cli_copy::MessageDetail>,
     ) -> Self {
+        let cause = detail.into();
         Self {
             phase,
             stage,
             talent: talent.into(),
-            detail: detail.into(),
+            detail: cause.to_string(),
+            detail_copy: cause.catalog_fields().is_some().then_some(cause),
             usage: None,
             degraded: None,
             extra: None,
@@ -486,13 +497,15 @@ impl StageError {
         identity: &solstone_core_journal_io::DailyUnitIdentity,
         stage: &'static str,
         kind: solstone_core_entity::ReviewOwnerConflictKind,
-        detail: impl Into<String>,
+        detail: impl Into<solstone_core_cli_copy::MessageDetail>,
     ) -> Self {
+        let cause = detail.into();
         Self {
             phase: "conflict",
             stage,
             talent: identity.name.clone(),
-            detail: detail.into(),
+            detail: cause.to_string(),
+            detail_copy: cause.catalog_fields().is_some().then_some(cause),
             usage: None,
             degraded: None,
             extra: Some(Box::new(StageErrorExtra {
@@ -530,11 +543,7 @@ impl StageError {
 
 impl std::fmt::Display for StageError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "{} hook '{}' for talent '{}': {}",
-            self.phase, self.stage, self.talent, self.detail
-        )
+        formatter.write_str(&self.display_in(solstone_core_cli_copy::ENGLISH))
     }
 }
 
@@ -2075,7 +2084,7 @@ pub fn stage_error(
     phase: &'static str,
     stage: &'static str,
     prepared: &PreparedTalent,
-    detail: impl Into<String>,
+    detail: impl Into<solstone_core_cli_copy::MessageDetail>,
 ) -> StageError {
     StageError::new(phase, stage, prepared.name.clone(), detail)
 }

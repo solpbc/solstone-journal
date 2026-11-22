@@ -1,0 +1,21 @@
+{
+  "description": "An activity record in this facet had no identifier.",
+  "context": "Morning briefing. An activity record in this facet had no identifier.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0c62f807303fca421456b9a7064339745e80d7fbb28bf46cbb5043311d6e5a35",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

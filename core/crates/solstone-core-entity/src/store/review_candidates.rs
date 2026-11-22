@@ -290,9 +290,12 @@ pub fn publish_merge_proposals(
                     .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
             }
             Rebase::Pending(_) | Rebase::Conflict => {
-                return Err(ReviewOwnerError::conflict(
+                return Err(ReviewOwnerError::conflict_message(
                     ReviewOwnerConflictKind::MergeProposalsChanged,
-                    "conflict: merge proposals changed after preparation",
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.talent.daily.owner.merge.proposals.changed",
+                        [],
+                    ),
                 ));
             }
         }

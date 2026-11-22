@@ -1,0 +1,26 @@
+{
+  "description": "Omitted activity stories in the coverage list.",
+  "context": "Morning briefing. Omitted activity stories in the coverage list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6d6b00ee13bd3b3e21792feb9dc273874dfcfe0f1bf63e4e29439b7f043f94d0",
+  "max_length": 294,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "count"
+  }
+}

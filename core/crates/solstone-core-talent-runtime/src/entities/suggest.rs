@@ -3,6 +3,7 @@
 
 //! Entity-suggest hook: gathers detection summaries and source evidence to generate candidate observations.
 
+use solstone_core_cli_copy::MessageDetail;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -147,7 +148,7 @@ pub fn parse(
             "parse",
             "entities:entity_suggest",
             talent,
-            format!("could not parse output as JSON: {error}"),
+            MessageDetail::message("journal.cli.talent.daily.parse.output", [("error", &error)]),
         )
     })?;
     let cleaned = clean_suggestions_output(&data, talent)?;
@@ -170,7 +171,7 @@ fn clean_suggestions_output(data: &Value, talent: &PreparedTalent) -> Result<Str
             "parse",
             "entities:entity_suggest",
             talent,
-            "entities must be an array",
+            MessageDetail::message("journal.cli.talent.daily.parse.entities", []),
         ));
     };
     let mut cleaned_entities = Vec::new();
@@ -223,7 +224,7 @@ pub fn commit(
             "commit",
             "entities:entity_suggest",
             talent,
-            "expected text output",
+            MessageDetail::message("journal.cli.talent.daily.commit.text", []),
         ));
     };
     let PrePostState::EntitySuggest(_state) = state else {
@@ -231,7 +232,7 @@ pub fn commit(
             "commit",
             "entities:entity_suggest",
             talent,
-            "expected entity suggest state",
+            MessageDetail::message("journal.cli.talent.daily.commit.suggest", []),
         ));
     };
     let facet = talent
@@ -243,11 +244,7 @@ pub fn commit(
                 "commit",
                 "entities:entity_suggest",
                 talent,
-                solstone_core_cli_copy::render_for(
-                    talent.stage_locale(),
-                    "journal.cli.talent.hook.facet.missing",
-                    &[],
-                ),
+                MessageDetail::message("journal.cli.talent.hook.facet.missing", []),
             )
         })?;
     let day = talent
@@ -259,11 +256,7 @@ pub fn commit(
                 "commit",
                 "entities:entity_suggest",
                 talent,
-                solstone_core_cli_copy::render_for(
-                    talent.stage_locale(),
-                    "journal.cli.talent.hook.day.missing",
-                    &[],
-                ),
+                MessageDetail::message("journal.cli.talent.hook.day.missing", []),
             )
         })?;
 

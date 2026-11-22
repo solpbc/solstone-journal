@@ -3223,7 +3223,13 @@ fn index_file(
         )
     });
     Ok(FileOutcome {
-        display_stamp: solstone_core_format::stored_markdown::index_stamp(journal, path, &text),
+        display_stamp: solstone_core_format::talent_display::index_stamp(
+            journal,
+            path,
+            rel,
+            text.as_bytes(),
+        )
+        .or_else(|| solstone_core_format::stored_markdown::index_stamp(journal, path, &text)),
         warnings,
         undecidable,
     })

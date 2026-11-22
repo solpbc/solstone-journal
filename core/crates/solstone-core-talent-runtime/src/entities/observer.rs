@@ -3,6 +3,7 @@
 
 //! Entity-observer hook: reconciles candidate suggestions against existing observations.
 
+use solstone_core_cli_copy::MessageDetail;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -780,7 +781,7 @@ pub fn parse(
             "parse",
             "entities:entity_observer",
             talent,
-            format!("could not parse output as JSON: {error}"),
+            MessageDetail::message("journal.cli.talent.daily.parse.output", [("error", &error)]),
         )
     })?;
     Ok(ParsedOutput::Text(output.to_owned()))
@@ -796,7 +797,7 @@ pub fn commit(
             "commit",
             "entities:entity_observer",
             talent,
-            "expected text output",
+            MessageDetail::message("journal.cli.talent.daily.commit.text", []),
         ));
     };
     let PrePostState::EntityObserver(state) = state else {
@@ -804,7 +805,7 @@ pub fn commit(
             "commit",
             "entities:entity_observer",
             talent,
-            "expected entity facts state",
+            MessageDetail::message("journal.cli.talent.daily.commit.observer", []),
         ));
     };
     let facet = talent
@@ -816,14 +817,21 @@ pub fn commit(
                 "commit",
                 "entities:entity_observer",
                 talent,
-                "missing facet",
+                MessageDetail::message("journal.cli.talent.hook.facet.missing", []),
             )
         })?;
     let day = talent
         .config
         .get("day")
         .and_then(Value::as_str)
-        .ok_or_else(|| stage_error("commit", "entities:entity_observer", talent, "missing day"))?;
+        .ok_or_else(|| {
+            stage_error(
+                "commit",
+                "entities:entity_observer",
+                talent,
+                MessageDetail::message("journal.cli.talent.hook.day.missing", []),
+            )
+        })?;
     Ok(CommitPlan::Write(WriteIntent::EntityObserver {
         output,
         facet: facet.to_owned(),
@@ -841,13 +849,20 @@ pub fn prepare_publication(
     served_ids: &BTreeSet<String>,
     shown_observation_ids: &BTreeMap<String, BTreeSet<u64>>,
     _prepared: &PreparedTalent,
-) -> Result<(Vec<solstone_core_facets::PreparedObservationBatch>, Value), String> {
+) -> Result<(Vec<solstone_core_facets::PreparedObservationBatch>, Value), MessageDetail> {
     let mut counts = empty_counts();
-    let data: Value = serde_json::from_str(output).map_err(|e| format!("validation: {e}"))?;
+    let data: Value = serde_json::from_str(output).map_err(|e| {
+        MessageDetail::message(
+            "journal.cli.talent.daily.observer.validation",
+            [("error", &e)],
+        )
+    })?;
     let entries = data
         .get("entities")
         .and_then(Value::as_array)
-        .ok_or("validation: entities:entity_observer requires an entities array")?;
+        .ok_or_else(|| {
+            MessageDetail::message("journal.cli.talent.daily.validation.observer", [])
+        })?;
 
     let (attached_ids, candidates) = attached_entities(journal, facet)?;
     let mut combined: BTreeMap<String, Vec<Value>> = BTreeMap::new();
@@ -916,7 +931,10 @@ pub fn prepare_publication(
                     entity_dir
                 }
                 solstone_core_facets::ObservationEntityResolution::NoSuchEntity => {
-                    return Err("conflict: observation entity disappeared".into());
+                    return Err(MessageDetail::message(
+                        "journal.cli.talent.daily.observer.entity.gone",
+                        [],
+                    ));
                 }
             };
         let expected = match frozen_observation_before.and_then(|map| map.get(&entity_id)) {
@@ -943,13 +961,19 @@ pub fn prepare_publication(
         )
         .map_err(|e| match e {
             solstone_core_facets::ObservationWriteError::Conflict { message } => {
-                format!("conflict: {message}")
+                MessageDetail::message(
+                    "journal.cli.talent.daily.observer.conflict",
+                    [("error", &message)],
+                )
             }
-            other => other.to_string(),
+            other => other.to_string().into(),
         })?;
 
         if batch.before.as_deref() != expected.as_deref() {
-            return Err("conflict: observation changed after prompt preparation".into());
+            return Err(MessageDetail::message(
+                "journal.cli.talent.daily.observer.changed",
+                [],
+            ));
         }
         merge_counts(&mut counts, &batch.counts);
         batches.push(batch);
@@ -1052,12 +1076,18 @@ pub(crate) fn apply_result_cancellable(
     let mut error = None;
     let result = (|| -> Result<(), String> {
         let Value::Object(data) = serde_json::from_str(output)
-            .map_err(|_| "could not parse result as JSON".to_owned())?
+            .map_err(|_| super::outcome_error("journal.cli.talent.outcome.observer.parse", []))?
         else {
-            return Err("result is not a JSON object".to_owned());
+            return Err(super::outcome_error(
+                "journal.cli.talent.outcome.object",
+                [],
+            ));
         };
         let Some(entries) = data.get("entities").and_then(Value::as_array) else {
-            return Err("entities is not a list".to_owned());
+            return Err(super::outcome_error(
+                "journal.cli.talent.outcome.observer.entities",
+                [],
+            ));
         };
         let (attached_ids, candidates) = attached_entities(journal, facet)?;
 
@@ -1132,7 +1162,10 @@ pub(crate) fn apply_result_cancellable(
                     *counts.entry("skip").or_default() += clean.len();
                 }
                 Err(write_error) => {
-                    error = Some(format!("ObservationWriteError: {write_error}"));
+                    error = Some(super::outcome_error(
+                        "journal.cli.talent.outcome.observation.write",
+                        [("error", &write_error)],
+                    ));
                     *counts.entry("refused").or_default() += clean.len();
                 }
             }
@@ -1590,6 +1623,7 @@ mod tests {
             &BTreeMap::new(),
             &talent,
         )
+        .map_err(|detail| detail.to_string())
     }
 
     #[test]

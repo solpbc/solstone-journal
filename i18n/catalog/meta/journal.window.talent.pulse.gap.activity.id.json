@@ -1,0 +1,21 @@
+{
+  "description": "Diagnostic retained with the Pulse source window.",
+  "context": "Diagnostic retained with the Pulse source window.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "activity",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f410837cc11c534d7522f13687acb56c518b3d057c7dc0222e8bf584151b13e2",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

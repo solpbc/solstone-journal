@@ -1,0 +1,16 @@
+{
+  "description": "Missing input named in the preparation metadata.",
+  "context": "Morning briefing. Missing input named in the preparation metadata.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3bfd01346a36374f2ebb0038b4bd82da629bd3ae72ce64de1d98edf9bac5bfcb",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

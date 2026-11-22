@@ -603,7 +603,10 @@ fn apply_detections(
             Ok(report) => counts.wrote += report.wrote,
             Err(upsert_error) => {
                 counts.errored += 1;
-                error = Some(format!("FacetEntityWriteError: {upsert_error}"));
+                error = Some(super::outcome_error(
+                    "journal.cli.talent.outcome.facet.write",
+                    [("error", &upsert_error)],
+                ));
             }
         }
     }

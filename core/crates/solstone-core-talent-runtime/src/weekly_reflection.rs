@@ -47,6 +47,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_facets::load_activity_records;
+use solstone_core_format::stored_markdown::{Document, Message};
 use solstone_core_home::{HomeContext, readers::enabled_facet_names};
 use solstone_core_journal_io::iter_segments;
 use solstone_core_segment::{is_body_only_dir, owner_deleted};
@@ -678,7 +679,7 @@ pub fn commit(
     }
 
     let (markdown, document) =
-        assemble_reflection(state, "model", Some(&model_str), &selected_candidates)?;
+        assemble_page(state, "model", Some(&model_str), &selected_candidates)?;
 
     Ok(CommitPlan::Write(WriteIntent::WeeklyReflection {
         start: state.start_day.clone(),
@@ -708,7 +709,7 @@ pub fn unavailable_commit(
             .filter_map(|slot| slot.candidates.first().cloned())
             .collect::<Vec<_>>();
         let (markdown, document) =
-            assemble_reflection(state, &kept.status, kept.model.as_deref(), &candidates)?;
+            assemble_page(state, &kept.status, kept.model.as_deref(), &candidates)?;
         return Ok(CommitPlan::Write(WriteIntent::WeeklyReflection {
             start: state.start_day.clone(),
             markdown,
@@ -717,7 +718,7 @@ pub fn unavailable_commit(
     }
 
     if reason == "zero_slots" {
-        let (markdown, document) = assemble_reflection(state, "none", None, &[])?;
+        let (markdown, document) = assemble_page(state, "none", None, &[])?;
         return Ok(CommitPlan::Write(WriteIntent::WeeklyReflection {
             start: state.start_day.clone(),
             markdown,
@@ -734,7 +735,7 @@ pub fn unavailable_commit(
     }
 
     let (markdown, document) =
-        assemble_reflection(state, "fallback", Some(&model_str), &fallback_candidates)?;
+        assemble_page(state, "fallback", Some(&model_str), &fallback_candidates)?;
 
     Ok(CommitPlan::Write(WriteIntent::WeeklyReflection {
         start: state.start_day.clone(),
@@ -1122,56 +1123,35 @@ pub fn normalize_markdown_text(text: &str) -> String {
     trimmed.to_owned()
 }
 
-fn english_weekday(weekday: Weekday) -> &'static str {
-    match weekday {
-        Weekday::Monday => "monday",
-        Weekday::Tuesday => "tuesday",
-        Weekday::Wednesday => "wednesday",
-        Weekday::Thursday => "thursday",
-        Weekday::Friday => "friday",
-        Weekday::Saturday => "saturday",
-        Weekday::Sunday => "sunday",
-    }
-}
-
-fn english_month(month: i8) -> &'static str {
-    match month {
-        1 => "january",
-        2 => "february",
-        3 => "march",
-        4 => "april",
-        5 => "may",
-        6 => "june",
-        7 => "july",
-        8 => "august",
-        9 => "september",
-        10 => "october",
-        11 => "november",
-        12 => "december",
-        _ => "unknown",
-    }
-}
-
 pub fn assemble_reflection(
     state: &WeeklyReflectionState,
     selection_status: &str,
     selection_model: Option<&str>,
     selected_candidates: &[Candidate],
 ) -> Result<(String, String), StageError> {
+    assemble_page(
+        state,
+        selection_status,
+        selection_model,
+        selected_candidates,
+    )
+    .map(|(markdown, document)| (markdown.into_text(), document))
+}
+
+fn assemble_page(
+    state: &WeeklyReflectionState,
+    selection_status: &str,
+    selection_model: Option<&str>,
+    selected_candidates: &[Candidate],
+) -> Result<(Document, String), StageError> {
     let mut sorted_candidates = selected_candidates.to_vec();
     sorted_candidates.sort_by(|a, b| a.day.cmp(&b.day));
 
     let n = sorted_candidates.len();
-    let sentence_storage;
-    let intro_sentence: Option<&str> = if n == 0 {
-        None
-    } else if n == 1 {
-        sentence_storage = "your week, a memory from one day.".to_owned();
-        Some(&sentence_storage)
-    } else {
-        sentence_storage = format!("your week, a memory from each of {n} days.");
-        Some(&sentence_storage)
-    };
+    let intro_message = (n > 0).then_some(Message::WeekMemories { count: n });
+    let intro_sentence = intro_message
+        .as_ref()
+        .map(|message| message.render(solstone_core_window_catalog::ENGLISH));
 
     let mut memory_items = Vec::new();
     let mut shown_contract_ids = Vec::new();
@@ -1197,7 +1177,7 @@ pub fn assemble_reflection(
         });
     }
 
-    let intro = if let Some(sentence) = intro_sentence {
+    let intro = if let Some(sentence) = intro_sentence.as_deref() {
         vec![JsonIntroItem {
             sentence,
             ids: shown_contract_ids.iter().map(String::as_str).collect(),
@@ -1273,57 +1253,57 @@ pub fn assemble_reflection(
         )
     })?;
 
-    let mut markdown_str = if n == 0 && state.said.is_empty() {
-        "nothing from this week is on this page.\n".to_owned()
-    } else if n == 0 {
-        String::new()
-    } else {
-        let mut md = String::new();
-        if let Some(intro_item) = doc.intro.first() {
-            md.push_str(intro_item.sentence);
-            md.push_str("\n\n");
-        }
-
+    let mut markdown_str = Document::default();
+    if n == 0 && state.said.is_empty() {
+        markdown_str.push_message(Message::WeekEmpty);
+        markdown_str.push_str("\n");
+    }
+    if let Some(message) = intro_message {
+        markdown_str.push_message(message);
+        markdown_str.push_str("\n\n");
         for (idx, cand) in sorted_candidates.iter().enumerate() {
             if idx > 0 {
-                md.push_str("\n\n");
+                markdown_str.push_str("\n\n");
             }
             let date = solstone_core_time::parse_day(&cand.day).unwrap_or(state.today);
-            let weekday = english_weekday(date.weekday());
-            let month = english_month(date.month());
-            let day_num = date.day();
-
-            let norm_text = normalize_markdown_text(&cand.text);
-            md.push_str(&format!("{weekday}, {month} {day_num}\n{norm_text}\n[source](sol://chronicle/{}/talents/morning_briefing)", cand.day));
+            markdown_str.push_message(Message::WeekDate { date });
+            markdown_str.push_str("\n");
+            markdown_str.push_str(&normalize_markdown_text(&cand.text));
+            append_source_link(&mut markdown_str, &doc.memories[idx].source.uri);
         }
-        md.push('\n');
-        md
-    };
+        markdown_str.push_str("\n");
+    }
 
     if !state.said.is_empty() {
         if !markdown_str.is_empty() {
-            markdown_str.push('\n');
+            markdown_str.push_str("\n");
         }
-        markdown_str.push_str("said by you");
+        markdown_str.push_message(Message::WeekSaid);
         let mut heading_day = "";
         for said in &state.said {
             if said.day != heading_day {
                 heading_day = &said.day;
                 let date = solstone_core_time::parse_day(&said.day).unwrap_or(state.today);
-                markdown_str.push_str(&format!(
-                    "\n\n{}, {} {}",
-                    english_weekday(date.weekday()),
-                    english_month(date.month()),
-                    date.day()
-                ));
+                markdown_str.push_str("\n\n");
+                markdown_str.push_message(Message::WeekDate { date });
             }
             let quote = normalize_markdown_text(&format!("\"{}\"", said.quote));
-            markdown_str.push_str(&format!("\n{quote}\n[source]({})", said_uri(said)));
+            markdown_str.push_str("\n");
+            markdown_str.push_str(&quote);
+            append_source_link(&mut markdown_str, &said_uri(said));
         }
-        markdown_str.push('\n');
+        markdown_str.push_str("\n");
     }
 
     Ok((markdown_str, document_str))
+}
+
+fn append_source_link(markdown: &mut Document, uri: &str) {
+    markdown.push_str("\n[");
+    markdown.push_message(Message::WeekSource);
+    markdown.push_str("](");
+    markdown.push_str(uri);
+    markdown.push_str(")");
 }
 
 fn said_uri(said: &Said) -> String {
@@ -1342,7 +1322,7 @@ pub fn write_page(
     write_page_with_sources(
         journal,
         start,
-        markdown,
+        &Document::plain(markdown.to_owned()),
         document,
         &[],
         &solstone_core_generate::Cancellation::never(),
@@ -1352,7 +1332,7 @@ pub fn write_page(
 pub(crate) fn write_page_with_sources(
     journal: &Path,
     start: &str,
-    markdown: &str,
+    markdown: &Document,
     document: &str,
     sources: &[solstone_core_format::content::ConsumedOriginal],
     cancellation: &solstone_core_generate::Cancellation,
@@ -1373,7 +1353,8 @@ pub(crate) fn write_page_with_sources(
     let md_path = target_dir.join(format!("{start}.md"));
     let json_path = target_dir.join(format!("{start}.json"));
 
-    crate::writers::write_output_with_sources_cancellable(
+    crate::writers::write_markdown_with_sources_cancellable(
+        journal,
         md_path.clone(),
         markdown,
         sources,
@@ -2939,7 +2920,7 @@ mod tests {
         let loaded_md = fs::read_to_string(&fixture_md_path).unwrap();
         let loaded_json = fs::read_to_string(&fixture_json_path).unwrap();
 
-        assert_eq!(markdown, loaded_md);
+        assert_eq!(&*markdown, loaded_md);
         assert_eq!(document, loaded_json);
     }
 

@@ -168,6 +168,10 @@ pub struct DailyUnitRecord {
     pub owner_conflict_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_detail: Option<String>,
+    /// Presentation of this attempt's terminal stage error. Kept opaque in
+    /// the unit schema so unfamiliar receipts cannot break recovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_copy: Option<serde_json::Value>,
     pub attempts: u32,
     #[serde(default)]
     pub failure_count: u32,
@@ -201,6 +205,7 @@ impl DailyUnitRecord {
             reason_code: None,
             owner_conflict_kind: None,
             error_detail: None,
+            error_copy: None,
             attempts: 0,
             failure_count: 0,
             environmental_retry_day: None,
@@ -878,6 +883,7 @@ mod tests {
             reason_code: None,
             owner_conflict_kind: None,
             error_detail: None,
+            error_copy: None,
             attempts: 1,
             failure_count: 0,
             environmental_retry_day: None,

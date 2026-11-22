@@ -1,0 +1,21 @@
+{
+  "description": "Disclosure of everything missing from the briefing.",
+  "context": "Morning briefing. Disclosure of everything missing from the briefing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "items",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d0c2ed69bdc388c087bca485ec3e62028dc361747303f9deda05fe20c80de247",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

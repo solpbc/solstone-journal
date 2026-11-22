@@ -837,9 +837,12 @@ pub fn prepare_review_promotion(
     let now = now_iso();
     let (entity_id, mut identity) = if let Some(existing) = existing {
         if existing.blocked {
-            return Err(ReviewOwnerError::conflict(
+            return Err(ReviewOwnerError::conflict_message(
                 ReviewOwnerConflictKind::PromotedEntityBlocked,
-                format!("conflict: promoted entity {name:?} is hidden"),
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.talent.daily.owner.promoted.entity.blocked.name",
+                    [("name", &format!("{name:?}"))],
+                ),
             ));
         }
         // The entity's own link, preferring the folder named by its id.
@@ -864,10 +867,14 @@ pub fn prepare_review_promotion(
                 };
                 if identity_name(identity.value()) == query {
                     if index != 0 {
-                        return Err(ReviewOwnerError::conflict(
+                        return Err(ReviewOwnerError::conflict_message(
                             ReviewOwnerConflictKind::IdentityMapGroupLost,
-                            format!(
-                                "conflict: promotion {name:?} matches {directory:?}, which lost its identity-map group"
+                            solstone_core_cli_copy::MessageDetail::message(
+                                "journal.cli.talent.daily.owner.identity.map.group.lost",
+                                [
+                                    ("name", &format!("{name:?}")),
+                                    ("directory", &format!("{directory:?}")),
+                                ],
                             ),
                         ));
                     }
@@ -884,11 +891,11 @@ pub fn prepare_review_promotion(
             // unpromotable; refusing when no member holds the id keeps the
             // ambiguity refusal where it is still the honest answer.
             let Some(index) = matches.iter().position(|(id, _)| *id == slug) else {
-                return Err(ReviewOwnerError::conflict(
+                return Err(ReviewOwnerError::conflict_message(
                     ReviewOwnerConflictKind::NameMatchesMultiple,
-                    format!(
-                        "conflict: promotion {name:?} matches {} identities by name",
-                        matches.len()
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.talent.daily.owner.name.matches.multiple",
+                        [("name", &format!("{name:?}")), ("count", &matches.len())],
                     ),
                 ));
             };
@@ -899,9 +906,12 @@ pub fn prepare_review_promotion(
         if let Some(found) = found {
             found
         } else if slug.is_empty() {
-            return Err(ReviewOwnerError::conflict(
+            return Err(ReviewOwnerError::conflict_message(
                 ReviewOwnerConflictKind::NoUsableEntityId,
-                format!("conflict: promotion {name:?} has no usable entity id"),
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.talent.daily.owner.no.usable.entity.id",
+                    [("name", &format!("{name:?}"))],
+                ),
             ));
         } else if let Some(directories) = groups.groups.get(&slug) {
             // The id namespace already holds this promotion.  `entity_slug` is
@@ -914,10 +924,15 @@ pub fn prepare_review_promotion(
             let directory = directories.first().ok_or("malformed identity group")?;
             let Some(owner) = read_entity_identity(root, directory).map_err(|e| e.to_string())?
             else {
-                return Err(ReviewOwnerError::conflict(
+                return Err(ReviewOwnerError::conflict_message(
                     ReviewOwnerConflictKind::IdentityUnreadable,
-                    format!(
-                        "conflict: promotion {name:?} derives entity id {slug:?}, whose identity {directory:?} cannot be read"
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.talent.daily.owner.identity.unreadable",
+                        [
+                            ("name", &format!("{name:?}")),
+                            ("slug", &format!("{slug:?}")),
+                            ("directory", &format!("{directory:?}")),
+                        ],
                     ),
                 ));
             };
@@ -941,9 +956,12 @@ pub fn prepare_review_promotion(
     };
 
     if identity.get("blocked") == Some(&Value::Bool(true)) {
-        return Err(ReviewOwnerError::conflict(
+        return Err(ReviewOwnerError::conflict_message(
             ReviewOwnerConflictKind::PromotedEntityBlocked,
-            "conflict: promoted entity is hidden",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.talent.daily.owner.promoted.entity.blocked.hidden",
+                [],
+            ),
         ));
     }
     if before_link
@@ -959,9 +977,12 @@ pub fn prepare_review_promotion(
     if before_link.is_none() {
         // A new link lives in the folder named by the entity's id.
         if !solstone_core_entity::facet_links::is_folder_name(&entity_id) {
-            return Err(ReviewOwnerError::conflict(
+            return Err(ReviewOwnerError::conflict_message(
                 ReviewOwnerConflictKind::NoUsableEntityId,
-                format!("conflict: promotion {name:?} has no usable entity id"),
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.talent.daily.owner.no.usable.entity.id",
+                    [("name", &format!("{name:?}"))],
+                ),
             ));
         }
         relationship_dir = entity_id.clone();
@@ -971,10 +992,14 @@ pub fn prepare_review_promotion(
         let actual =
             read_facet_entity_link(root, facet, &relationship_dir).map_err(|e| e.to_string())?;
         if actual.is_some() {
-            return Err(ReviewOwnerError::conflict(
+            return Err(ReviewOwnerError::conflict_message(
                 ReviewOwnerConflictKind::RelationshipOccupied,
-                format!(
-                    "conflict: promotion {name:?} needs relationship directory {relationship_dir:?}, which is already occupied"
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.talent.daily.owner.relationship.occupied",
+                    [
+                        ("name", &format!("{name:?}")),
+                        ("relationship_dir", &format!("{relationship_dir:?}")),
+                    ],
                 ),
             ));
         }
@@ -1082,23 +1107,32 @@ pub fn publish_review_attachment(
     )?;
     let map = read_identity_map(root).map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     let dir = map.resolved.get(&change.entity_id).ok_or_else(|| {
-        ReviewOwnerError::conflict(
+        ReviewOwnerError::conflict_message(
             ReviewOwnerConflictKind::IdentityDisappeared,
-            "conflict: promotion identity disappeared",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.talent.daily.owner.identity.disappeared",
+                [],
+            ),
         )
     })?;
     let identity = read_entity_identity(root, dir)
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?
         .ok_or_else(|| {
-            ReviewOwnerError::conflict(
+            ReviewOwnerError::conflict_message(
                 ReviewOwnerConflictKind::IdentityDisappeared,
-                "conflict: promotion identity disappeared",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.talent.daily.owner.identity.disappeared",
+                    [],
+                ),
             )
         })?;
     if identity.value().get("blocked") == Some(&Value::Bool(true)) {
-        return Err(ReviewOwnerError::conflict(
+        return Err(ReviewOwnerError::conflict_message(
             ReviewOwnerConflictKind::IdentityBlocked,
-            "conflict: promotion identity hidden",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.talent.daily.owner.identity.blocked.identity",
+                [],
+            ),
         ));
     }
     // The owner can hide the name in this facet between preparing the
@@ -1106,9 +1140,12 @@ pub fn publish_review_attachment(
     let hides = solstone_core_entity::hidden_names::facet_hidden_keys(root, &change.facet)
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     if hides.is_hidden(identity_name(identity.value()).as_str()) {
-        return Err(ReviewOwnerError::conflict(
+        return Err(ReviewOwnerError::conflict_message(
             ReviewOwnerConflictKind::IdentityBlocked,
-            "conflict: promotion name hidden in this facet",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.talent.daily.owner.identity.blocked.facet",
+                [],
+            ),
         ));
     }
     let current = read_facet_entity_link(root, &change.facet, &change.relationship_dir)
@@ -1116,9 +1153,12 @@ pub fn publish_review_attachment(
         .map(|s| s.value().clone());
     if current.as_ref() != Some(&change.after) {
         if !allow_before || current != change.before {
-            return Err(ReviewOwnerError::conflict(
+            return Err(ReviewOwnerError::conflict_message(
                 ReviewOwnerConflictKind::RelationshipChanged,
-                "conflict: promotion relationship changed after preparation",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.talent.daily.owner.relationship.changed",
+                    [],
+                ),
             ));
         }
         start().map_err(ReviewOwnerError::failed)?;
@@ -1170,9 +1210,12 @@ pub fn publish_review_aliases(
         .iter()
         .any(|entity| entity.entity_id == change.entity_id && !entity.detached && !entity.blocked)
     {
-        return Err(ReviewOwnerError::conflict(
+        return Err(ReviewOwnerError::conflict_message(
             ReviewOwnerConflictKind::AliasTargetDetached,
-            "conflict: alias target is no longer attached",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.talent.daily.owner.alias.target.detached",
+                [],
+            ),
         ));
     }
     let inherited = change
@@ -1197,9 +1240,12 @@ pub fn publish_review_aliases(
                         .iter()
                         .any(|aka| normalize_resolution_query(aka) == query))
         }) {
-            return Err(ReviewOwnerError::conflict(
+            return Err(ReviewOwnerError::conflict_message(
                 ReviewOwnerConflictKind::AliasClaimed,
-                "conflict: promotion alias was claimed after preparation",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.talent.daily.owner.alias.claimed",
+                    [],
+                ),
             ));
         }
     }

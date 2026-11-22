@@ -1,0 +1,16 @@
+{
+  "description": "Caption for unverified screen-extracted notes attached to a Work Story.",
+  "context": "Caption for unverified screen-extracted notes attached to a Work Story.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4f5ec1321ea8613c4cc38e817fd178a4dfe541c3e32aff27d66d8a640e66de0e",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

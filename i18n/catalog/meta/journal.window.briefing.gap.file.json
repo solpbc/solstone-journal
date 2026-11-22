@@ -1,0 +1,21 @@
+{
+  "description": "An activity file was unreadable.",
+  "context": "Morning briefing. An activity file was unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "be467b4a052d4360bc57960b098b0e0fcce0f9e5283e5d3484aa504763a78c81",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

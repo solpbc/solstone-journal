@@ -1,0 +1,25 @@
+{
+  "description": "Activity title and description taken from the owner's quoted words.",
+  "context": "Opening line of a Story chosen by the activity writer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "quote",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4ff352ec91fadbfdeba736e79a09fe68fd126bc2016cfa470d0360429d255b04",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

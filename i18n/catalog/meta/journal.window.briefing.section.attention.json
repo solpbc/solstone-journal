@@ -1,0 +1,16 @@
+{
+  "description": "Heading for items needing attention in a briefing.",
+  "context": "Morning briefing. Heading for items needing attention in a briefing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "68f51c520f3f46a4560e492f3f73952ff0fd409d9ec60a64565872838bc46510",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

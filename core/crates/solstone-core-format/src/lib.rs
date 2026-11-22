@@ -16,6 +16,7 @@ pub mod paths;
 pub mod screenshots;
 pub mod segment;
 pub mod stored_markdown;
+pub mod talent_display;
 
 #[cfg(test)]
 pub(crate) mod test_support;

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-mod daily;
+pub(crate) mod daily;
+mod display_receipt;
 pub use daily::{
     PreparedDailyAction, PreparedDailyPublication, prepare_daily_output, prepare_daily_publication,
     publish_daily_publication, required_artifact_receipts,
@@ -28,6 +29,7 @@ thread_local! {
 #[derive(Clone, Debug, PartialEq)]
 pub enum WriteIntent {
     DayAccumulator {
+        display: Option<Value>,
         day: String,
         agent: String,
         record: Map<String, Value>,
@@ -84,7 +86,7 @@ pub enum WriteIntent {
     },
     WeeklyReflection {
         start: String,
-        markdown: String,
+        markdown: solstone_core_format::stored_markdown::Document,
         document: String,
     },
     PossibleNames {
@@ -123,7 +125,16 @@ pub(crate) fn write_output_if_configured_cancellable(
     cancellation: &solstone_core_generate::Cancellation,
 ) -> Result<bool, String> {
     check_cancellation(cancellation)?;
-    let output = crate::partial_input::output(output, prepared);
+    let document = (!crate::partial_input::is_json(prepared)).then(|| {
+        crate::partial_input::markdown_document(
+            output,
+            crate::partial_input::marker(prepared).as_ref(),
+        )
+    });
+    let output = document.as_ref().map_or_else(
+        || crate::partial_input::output(output, prepared),
+        |document| document.to_string(),
+    );
     // Persist the worker's own source kinds in the same atomic Sense result.
     // Routing retries and continuations carry it with the same result.
     let sense_output = (prepared.name == "sense")
@@ -145,6 +156,15 @@ pub(crate) fn write_output_if_configured_cancellable(
         return Ok(false);
     };
     let path = PathBuf::from(path_str);
+    let write = |journal: &Path, path| {
+        let sources = trusted_sources(prepared);
+        if let Some(document) = document.as_ref().filter(|_| sense_output.is_none()) {
+            write_markdown_with_sources_cancellable(journal, path, document, &sources, cancellation)
+        } else {
+            write_output_with_sources_cancellable(path, output, &sources, cancellation)
+        }
+        .map_err(|error| error.to_string())
+    };
     let activity_owned = prepared.config.get("activity").is_some()
         || prepared.config.get("schedule").and_then(Value::as_str) == Some("activity")
         || prepared.config.get("destination_id").is_some();
@@ -174,16 +194,11 @@ pub(crate) fn write_output_if_configured_cancellable(
         if !contained.starts_with(&directory) {
             return Err("activity output is outside its destination facet".to_owned());
         }
-        return write_output_with_sources_cancellable(
-            contained,
-            output,
-            &trusted_sources(prepared),
-            cancellation,
-        )
-        .map_err(|error| error.to_string());
+        let journal = solstone_core_journal_io::realpath_non_strict(&context.journal)
+            .map_err(|error| error.to_string())?;
+        return write(&journal, contained);
     }
-    write_output_with_sources_cancellable(path, output, &trusted_sources(prepared), cancellation)
-        .map_err(|error| error.to_string())
+    write(&context.journal, path)
 }
 
 fn trusted_sources(prepared: &PreparedTalent) -> Vec<ConsumedOriginal> {
@@ -273,6 +288,28 @@ pub(crate) fn write_output_with_sources_cancellable(
     }
 }
 
+pub(crate) fn write_markdown_with_sources_cancellable(
+    root: &Path,
+    path: PathBuf,
+    document: &solstone_core_format::stored_markdown::Document,
+    sources: &[ConsumedOriginal],
+    cancellation: &solstone_core_generate::Cancellation,
+) -> std::io::Result<bool> {
+    use solstone_core_format::stored_markdown::talent_receipt_path;
+    let Some(receipt) = talent_receipt_path(root, &path) else {
+        return write_output_with_sources_cancellable(path, document, sources, cancellation);
+    };
+    check_cancellation(cancellation).map_err(std::io::Error::other)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let _lock = solstone_core_journal_io::hold_lock(&path, Default::default())
+        .map_err(std::io::Error::other)?;
+    display_receipt::with_receipt(root, &receipt, document, || {
+        write_output_with_sources_cancellable(path, document, sources, cancellation)
+    })
+}
+
 fn publish_sidecar(path: &Path, bytes: Option<&[u8]>) -> Result<(), std::io::Error> {
     match bytes {
         Some(bytes) => replace_output_bytes(path, bytes),
@@ -332,12 +369,14 @@ fn apply_with_sources(
             day,
             agent,
             mut record,
+            display,
         }) => {
             append_day_record_with_sources(
                 &context.journal,
                 &day,
                 &agent,
                 &mut record,
+                display.as_ref(),
                 sources,
                 cancellation,
             )?;
@@ -580,6 +619,7 @@ pub fn append_day_record(
         day,
         agent,
         record,
+        None,
         &[],
         &solstone_core_generate::Cancellation::never(),
     )
@@ -590,6 +630,7 @@ fn append_day_record_with_sources(
     day: &str,
     agent: &str,
     record: &mut Map<String, Value>,
+    display: Option<&Value>,
     sources: &[ConsumedOriginal],
     cancellation: &solstone_core_generate::Cancellation,
 ) -> Result<(), StageError> {
@@ -609,6 +650,23 @@ fn append_day_record_with_sources(
         .join(day)
         .join("talents")
         .join(format!("{agent}.jsonl"));
+    // Pulse is a read/replace accumulator. Its ordinal and receipt belong to
+    // the same publication, including when a raw writer appends literal text.
+    let _pulse_lock = if agent == "pulse" {
+        Some(
+            solstone_core_journal_io::hold_lock_checked(
+                &path,
+                solstone_core_journal_io::LockOptions {
+                    mode: Some(0o600),
+                    ..Default::default()
+                },
+                &|| check_cancellation(cancellation),
+            )
+            .map_err(|error| stage_error(agent, error.to_string()))?,
+        )
+    } else {
+        None
+    };
     let mut records: Vec<Value> =
         solstone_core_journal_io::durability::read_jsonl_durable::<Value>(
             solstone_core_journal_io::durability::ArtifactId::TalentDayAccumulator,
@@ -616,10 +674,30 @@ fn append_day_record_with_sources(
         )
         .map_err(|error| stage_error(agent, error.to_string()))?
         .records;
+    let pulse_key = if agent == "pulse" {
+        let key = records
+            .iter()
+            .filter(|value| value.is_object())
+            .count()
+            .to_string();
+        solstone_core_format::talent_display::publish(journal, &path, &key, None)
+            .map_err(|error| stage_error(agent, error.to_string()))?;
+        Some(key)
+    } else {
+        None
+    };
     records.push(Value::Object(record.clone()));
     check_cancellation(cancellation).map_err(|detail| stage_error(agent, detail))?;
     write_jsonl(&path, records, AtomicWriteOptions { mode: Some(0o600) })
         .map_err(|error| stage_error(agent, error.to_string()))?;
+    if let (Some(key), Some(fields)) = (pulse_key, display) {
+        let receipt = solstone_core_format::talent_display::pulse_receipt(record, fields);
+        if let Err(error) =
+            solstone_core_format::talent_display::publish(journal, &path, &key, Some(receipt))
+        {
+            log::warn!("could not publish Pulse display metadata: {error}");
+        }
+    }
     if let Err(error) = solstone_core_indexer_store::todo::enqueue_path(journal, &path) {
         index_warning(&format!(
             "talent accumulator search update could not be queued: {error}"
@@ -1123,6 +1201,57 @@ mod tests {
         .unwrap();
         assert_eq!(schedules["daily_time"], "03:00");
         assert!(schedules.get("fallback").is_none());
+    }
+
+    #[test]
+    fn concurrent_pulse_writers_keep_each_receipt_at_its_own_ordinal() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("chronicle/20260101/talents/pulse.jsonl");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            path.with_extension("jsonl.display"),
+            r#"{"0":{"old":true}}"#,
+        )
+        .unwrap();
+        let start = std::sync::Barrier::new(8);
+        std::thread::scope(|scope| {
+            for n in 0..8 {
+                let (root, start) = (root.path(), &start);
+                scope.spawn(move || {
+                    let mut row = Map::from_iter([("n".to_owned(), json!(n))]);
+                    let fields = json!({"fallback":true});
+                    start.wait();
+                    append_day_record_with_sources(
+                        root,
+                        "20260101",
+                        "pulse",
+                        &mut row,
+                        (n % 2 == 0).then_some(&fields),
+                        &[],
+                        &solstone_core_generate::Cancellation::never(),
+                    )
+                    .unwrap();
+                });
+            }
+        });
+        let rows: Vec<Map<String, Value>> =
+            read_jsonl(&path, Vec::new(), MalformedPolicy::Skip).unwrap();
+        assert_eq!(rows.len(), 8);
+        let receipts = solstone_core_format::talent_display::read(root.path(), &path).unwrap();
+        for (i, row) in rows.iter().enumerate() {
+            let receipt = receipts.get(i.to_string());
+            if row["n"].as_u64().unwrap() % 2 == 0 {
+                assert_eq!(
+                    receipt,
+                    Some(&solstone_core_format::talent_display::pulse_receipt(
+                        row,
+                        &json!({"fallback":true})
+                    ))
+                );
+            } else {
+                assert!(receipt.is_none());
+            }
+        }
     }
 
     #[test]

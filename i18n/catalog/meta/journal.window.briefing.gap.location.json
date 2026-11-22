@@ -1,0 +1,26 @@
+{
+  "description": "Recorded number of omitted location entries.",
+  "context": "Morning briefing. Recorded number of omitted location entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "87efb9b3aac743791c21e59bea0b1fddf79442aab25e45ca2fc13a46eb39d906",
+  "max_length": 333,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "count"
+  }
+}

@@ -6,6 +6,7 @@
 use jiff::SignedDuration;
 use jiff::civil::{Date, DateTime, Time};
 use serde_json::{Map, Value};
+use solstone_core_cli_copy::MessageDetail;
 use solstone_core_format::segment::{segment_key, segment_start_and_end_seconds};
 use solstone_core_journal_io::{PathOrDay, iter_segments};
 
@@ -81,7 +82,7 @@ pub fn commit(
             "commit",
             "daily_schedule",
             prepared,
-            "expected text output",
+            MessageDetail::message("journal.cli.talent.daily.commit.text", []),
         ));
     };
     Ok(CommitPlan::Write(WriteIntent::DailySchedule {

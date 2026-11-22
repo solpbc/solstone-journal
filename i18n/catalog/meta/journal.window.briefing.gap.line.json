@@ -1,0 +1,21 @@
+{
+  "description": "Some lines in this facet’s activity file were unreadable.",
+  "context": "Morning briefing. Some lines in this facet’s activity file were unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4be445aec65a31551c0aa9d770fd476ca48ae784810b4ba7b479ef9538d97be0",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

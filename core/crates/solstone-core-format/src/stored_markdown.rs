@@ -3,6 +3,8 @@
 
 //! Source-English Markdown with presentation identities for the words supplied by its writer.
 
+pub mod week;
+
 use std::path::Path;
 use std::sync::Arc;
 
@@ -79,6 +81,18 @@ pub fn project_screen_extractions(
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "message", rename_all = "snake_case")]
 pub enum Message<T = String> {
+    Talent {
+        copy: crate::talent_display::Copy<T>,
+    },
+    WeekMemories {
+        count: usize,
+    },
+    WeekEmpty,
+    WeekSaid,
+    WeekSource,
+    WeekDate {
+        date: jiff::civil::Date,
+    },
     NoteSource {
         path: T,
     },
@@ -129,6 +143,14 @@ pub enum Message<T = String> {
 impl<T> Message<T> {
     fn map_text<U>(&self, mut f: impl FnMut(&T) -> Option<U>) -> Option<Message<U>> {
         Some(match self {
+            Self::Talent { copy } => Message::Talent {
+                copy: copy.map_text(f)?,
+            },
+            Self::WeekMemories { count } => Message::WeekMemories { count: *count },
+            Self::WeekEmpty => Message::WeekEmpty,
+            Self::WeekSaid => Message::WeekSaid,
+            Self::WeekSource => Message::WeekSource,
+            Self::WeekDate { date } => Message::WeekDate { date: *date },
             Self::NoteSource { path } => Message::NoteSource { path: f(path)? },
             Self::NoteEdited => Message::NoteEdited,
             Self::NoteRenamed { path } => Message::NoteRenamed { path: f(path)? },
@@ -254,6 +276,31 @@ impl Message {
 
     fn render_at(&self, locale: &str, segment: Option<&str>) -> String {
         match self {
+            Self::WeekMemories { count } => solstone_core_window_catalog::render(
+                locale,
+                "journal.window.home.week.intro.memories",
+                &[
+                    (
+                        "quantity",
+                        solstone_core_window_catalog::Value::Cardinal(*count as i64),
+                    ),
+                    (
+                        "count",
+                        solstone_core_window_catalog::Value::String(&count.to_string()),
+                    ),
+                ],
+            ),
+            Self::WeekEmpty => {
+                solstone_core_window_catalog::text(locale, "journal.window.home.week.intro.empty")
+            }
+            Self::WeekSaid => {
+                solstone_core_window_catalog::text(locale, "journal.window.home.week.said.heading")
+            }
+            Self::WeekSource => {
+                solstone_core_window_catalog::text(locale, "journal.window.home.week.source.link")
+            }
+            Self::WeekDate { date } => week::date_heading(*date, locale),
+            Self::Talent { copy } => copy.render(locale),
             Self::NoteSource { path } => solstone_core_window_catalog::strings(
                 locale,
                 "journal.window.notes.transcript.source",
@@ -554,6 +601,99 @@ impl Document {
                 }),
         );
     }
+    pub fn append(&mut self, other: &Self) {
+        self.push_prefix(other, other.len());
+    }
+
+    pub fn push_talent(&mut self, copy: crate::talent_display::Copy) {
+        self.push_message(Message::Talent { copy });
+    }
+
+    pub fn talent_receipt(&self) -> Option<serde_json::Value> {
+        serde_json::from_slice(&self.display_receipt_bytes().ok()??).ok()
+    }
+
+    pub(crate) fn project_talent(
+        source: &str,
+        value: &serde_json::Value,
+        locale: &str,
+        accepts: impl Fn(&crate::talent_display::Copy<std::ops::Range<usize>>) -> bool,
+    ) -> Option<String> {
+        let receipt: Receipt<std::ops::Range<usize>> =
+            serde_json::from_value(value.clone()).ok()?;
+        if !receipt
+            .spans
+            .iter()
+            .all(|span| matches!(&span.copy, Message::Talent { copy } if accepts(copy)))
+        {
+            return None;
+        }
+        receipt.resolve(source)?.render(source, locale, None)
+    }
+
+    pub(crate) fn project_talent_prefix(
+        source: &str,
+        end: usize,
+        value: &serde_json::Value,
+        locale: &str,
+        line: &str,
+    ) -> Option<String> {
+        let receipt: Receipt<std::ops::Range<usize>> =
+            serde_json::from_value(value.clone()).ok()?;
+        let receipt = receipt.resolve(source)?;
+        if !receipt.valid(source) || !source.is_char_boundary(end) || end > source.len() {
+            return None;
+        }
+        let first = receipt.spans.first()?.start;
+        if first >= end {
+            return None;
+        }
+        // A model opening can precede a typed screen-note heading. Its saved
+        // activity line may omit its subject or auxiliary. Copy that published
+        // opening verbatim up to the first writer-attributed byte position.
+        let (mut projected, mut cursor) = if first > 0 {
+            let source_suffix = source.get(first..end)?;
+            (line.strip_suffix(source_suffix)?.to_owned(), first)
+        } else {
+            (String::new(), 0)
+        };
+        let compact_owner = first == 0 && source.get(..end)? != line;
+        for span in receipt.spans.iter().take_while(|span| span.start < end) {
+            let Message::Talent { copy } = &span.copy else {
+                return None;
+            };
+            projected.push_str(source.get(cursor..span.start)?);
+            if span.end <= end {
+                projected.push_str(&copy.line(locale, compact_owner && span.start == 0));
+                cursor = span.end;
+            } else {
+                // An opening sentence may end inside a verbatim quotation. Render only the
+                // part that reached the card; the rest of the quotation belongs to the Story.
+                let mut short = copy.clone();
+                use crate::talent_display::Copy;
+                let quote = match &mut short {
+                    Copy::OwnerMessage { quote, .. }
+                    | Copy::AgentMessage { quote, .. }
+                    | Copy::OwnerSpeech { quote }
+                    | Copy::NamedSpeech { quote, .. }
+                    | Copy::UnknownSpeech { quote }
+                    | Copy::NumberedSpeech { quote, .. } => quote,
+                    _ => return None,
+                };
+                let quote_end = span.end.checked_sub(1)?;
+                let quote_start = quote_end.checked_sub(quote.len())?;
+                if !(quote_start..=quote_end).contains(&end) {
+                    return None;
+                }
+                quote.truncate(end - quote_start);
+                projected.push_str(&short.line(locale, compact_owner && span.start == 0));
+                cursor = end;
+            }
+        }
+        projected.push_str(source.get(cursor..end)?);
+        Some(projected)
+    }
+
     pub fn push_screen_line(&mut self, line: &str) {
         crate::content::screen_text::append_screen_text_line(&mut self.text, line);
     }
@@ -649,6 +789,7 @@ impl Receipt {
         for span in self.spans.iter() {
             if span.start < end
                 || span.start >= span.end
+                || matches!(&span.copy, Message::WeekMemories { count } if !(1..=7).contains(count))
                 || matches!(&span.copy, Message::Object { frames, photos, .. }
                     if i32::try_from(*frames).is_err() || i32::try_from(*photos).is_err())
                 || matches!(&span.copy, Message::NoteRemovedWords { count } if i32::try_from(*count).is_err())
@@ -700,6 +841,18 @@ pub fn project_file(
         return None;
     }
     Some(receipt.render(source, locale, segment)?.trim().to_owned())
+}
+
+/// Render the complete saved Markdown for a caller displaying a talent result.
+pub fn project_talent_output(root: &Path, path: &Path, body: &str, locale: &str) -> Option<String> {
+    if locale == ENGLISH {
+        return None;
+    }
+    let (source, receipt) = read_document(root, directory(root, path)?, path, body.len(), None)?;
+    if source != body {
+        return None;
+    }
+    receipt.render(&source, locale, None)
 }
 
 pub fn project_sense_file(
@@ -808,18 +961,25 @@ pub fn display_receipt_path(source: &Path) -> std::path::PathBuf {
     }
 }
 
-fn receipt_directory(
-    root: &Path,
-    path: &Path,
-    source: Arc<MediaDirectory>,
-) -> Option<Arc<MediaDirectory>> {
-    if path
-        .file_name()
-        .is_some_and(|name| name == crate::obsidian::NOTE_TRANSCRIPT_FILE)
-    {
-        directory(root, &display_receipt_path(path))
+/// Locate the writer's receipt without accepting a companion supplied in a device upload.
+pub fn talent_receipt_path(root: &Path, path: &Path) -> Option<std::path::PathBuf> {
+    let relative = path.strip_prefix(root).ok()?;
+    let mut hash = Sha256::new();
+    for part in relative.components() {
+        let std::path::Component::Normal(name) = part else {
+            return None;
+        };
+        hash.update(name.to_str()?.as_bytes());
+        hash.update([0]);
+    }
+    if has_named_receipt(path) {
+        Some(display_receipt_path(path))
     } else {
-        Some(source)
+        Some(
+            root.join("talents")
+                .join(".display")
+                .join(format!("{:x}.json", hash.finalize())),
+        )
     }
 }
 
@@ -833,10 +993,9 @@ fn read_receipt(
 }
 
 fn receipt_bytes(retained: &MediaDirectory, path: &Path) -> Option<Vec<u8>> {
-    let sibling = path.with_extension("md.display");
     Some(
         retained
-            .read_file_bounded(sibling.file_name()?, MAX_RECEIPT)
+            .read_file_bounded(path.file_name()?, MAX_RECEIPT)
             .ok()??
             .bytes,
     )
@@ -849,8 +1008,9 @@ fn read_document(
     limit: usize,
     expected_stamp: Option<&str>,
 ) -> Option<(String, Receipt)> {
-    let companion = receipt_directory(root, path, Arc::clone(&retained))?;
-    let (receipt, stamp) = read_receipt(&companion, path)?;
+    let receipt_path = talent_receipt_path(root, path)?;
+    let companion = directory(root, &receipt_path)?;
+    let (receipt, stamp) = read_receipt(&companion, &receipt_path)?;
     if expected_stamp.is_some_and(|expected| expected != stamp) {
         return None;
     }
@@ -859,7 +1019,11 @@ fn read_document(
         .ok()??;
     // Equal English bytes can have different provenance (e.g. a literal speaker name).
     // A writer invalidates the old receipt before publishing its replacement.
-    if format!("{:x}", Sha256::digest(receipt_bytes(&companion, path)?)) != stamp {
+    if format!(
+        "{:x}",
+        Sha256::digest(receipt_bytes(&companion, &receipt_path)?)
+    ) != stamp
+    {
         return None;
     }
     let source = String::from_utf8(bytes.bytes).ok()?;
@@ -868,6 +1032,10 @@ fn read_document(
 }
 
 pub fn is_display_document(path: &Path) -> bool {
+    has_named_receipt(path) || path.extension().is_some_and(|extension| extension == "md")
+}
+
+fn has_named_receipt(path: &Path) -> bool {
     if path
         .file_name()
         .is_some_and(|name| name == crate::obsidian::NOTE_TRANSCRIPT_FILE)
@@ -898,8 +1066,9 @@ pub fn index_stamp(root: &Path, path: &Path, text: &str) -> Option<String> {
     if path.file_name().is_some_and(|name| name == "sense.json") {
         return Some(format!("{:x}", Sha256::digest(text.as_bytes())));
     }
-    let companion = receipt_directory(root, path, directory(root, path)?)?;
-    let (receipt, stamp) = read_receipt(&companion, path)?;
+    let receipt_path = talent_receipt_path(root, path)?;
+    let companion = directory(root, &receipt_path)?;
+    let (receipt, stamp) = read_receipt(&companion, &receipt_path)?;
     (receipt.version == 1
         && receipt.source_sha256 == format!("{:x}", Sha256::digest(text.as_bytes())))
     .then_some(stamp)
@@ -940,9 +1109,17 @@ impl IndexedDisplay {
         {
             return None;
         }
-        let path = root
-            .join("chronicle")
-            .join(rel.strip_prefix("chronicle").unwrap_or(rel));
+        let path = if rel
+            .components()
+            .next()?
+            .as_os_str()
+            .to_str()
+            .is_some_and(crate::segment::is_date_key)
+        {
+            root.join("chronicle").join(rel)
+        } else {
+            root.join(rel)
+        };
         let retained = directory(root, &path)?;
         if path.file_name().is_some_and(|name| name == "sense.json") {
             let bytes = retained

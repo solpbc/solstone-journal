@@ -24995,6 +24995,323 @@
       "selector": null
     },
     {
+      "id": "journal.window.briefing.coverage.activities",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e636f7665726167652e61637469766974696573",
+      "namespace": "journal.window.briefing.coverage",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "count",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.briefing.coverage.list",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e636f7665726167652e6c697374",
+      "namespace": "journal.window.briefing.coverage",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "items",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "item",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.briefing.coverage.location",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e636f7665726167652e6c6f636174696f6e",
+      "namespace": "journal.window.briefing.coverage",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "count",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.briefing.coverage.note",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e636f7665726167652e6e6f7465",
+      "namespace": "journal.window.briefing.coverage",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "items",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.briefing.coverage.pulse",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e636f7665726167652e70756c7365",
+      "namespace": "journal.window.briefing.coverage",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.briefing.coverage.stories",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e636f7665726167652e73746f72696573",
+      "namespace": "journal.window.briefing.coverage",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "count",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.briefing.gap.activities",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e6761702e61637469766974696573",
+      "namespace": "journal.window.briefing.gap",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "count",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.briefing.gap.facets",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e6761702e666163657473",
+      "namespace": "journal.window.briefing.gap",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.briefing.gap.file",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e6761702e66696c65",
+      "namespace": "journal.window.briefing.gap",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "facet",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.briefing.gap.id",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e6761702e6964",
+      "namespace": "journal.window.briefing.gap",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "facet",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.briefing.gap.line",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e6761702e6c696e65",
+      "namespace": "journal.window.briefing.gap",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "facet",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.briefing.gap.location",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e6761702e6c6f636174696f6e",
+      "namespace": "journal.window.briefing.gap",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "count",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.briefing.gap.pulse",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e6761702e70756c7365",
+      "namespace": "journal.window.briefing.gap",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.briefing.gap.stories",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e6761702e73746f72696573",
+      "namespace": "journal.window.briefing.gap",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "count",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.briefing.section.attention",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e73656374696f6e2e617474656e74696f6e",
+      "namespace": "journal.window.briefing.section",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.briefing.section.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e6272696566696e672e73656374696f6e2e656d707479",
+      "namespace": "journal.window.briefing.section",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.calendar.note.added",
       "resource": "m6a6f75726e616c2e77696e646f772e63616c656e6461722e6e6f74652e6164646564",
       "namespace": "journal.window.calendar.note",
@@ -72747,6 +73064,18 @@
       "id": "journal.window.home.week.said.unreadable",
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e736169642e756e7265616461626c65",
       "namespace": "journal.window.home.week.said",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.home.week.source.link",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e7765656b2e736f757263652e6c696e6b",
+      "namespace": "journal.window.home.week.source",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
@@ -146366,6 +146695,593 @@
           "value": "{day}"
         }
       ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.body.unavailable",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e626f64792e756e617661696c61626c65",
+      "namespace": "journal.window.talent.pulse.body",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.activities.read",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e616374697669746965732e72656164",
+      "namespace": "journal.window.talent.pulse.gap.activities",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "facet",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.activity.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e61637469766974792e656d707479",
+      "namespace": "journal.window.talent.pulse.gap.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.activity.id",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e61637469766974792e6964",
+      "namespace": "journal.window.talent.pulse.gap.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "activity",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.activity.missing",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e61637469766974792e6d697373696e67",
+      "namespace": "journal.window.talent.pulse.gap.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "facet",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "activity",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.awareness.current",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e61776172656e6573732e63757272656e74",
+      "namespace": "journal.window.talent.pulse.gap.awareness",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.awareness.import",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e61776172656e6573732e696d706f7274",
+      "namespace": "journal.window.talent.pulse.gap.awareness",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.day",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e646179",
+      "namespace": "journal.window.talent.pulse.gap",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.recent",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e726563656e74",
+      "namespace": "journal.window.talent.pulse.gap",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.segment.id",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e7365676d656e742e6964",
+      "namespace": "journal.window.talent.pulse.gap.segment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.segment.missing",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e7365676d656e742e6d697373696e67",
+      "namespace": "journal.window.talent.pulse.gap.segment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.segment.summary",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e7365676d656e742e73756d6d617279",
+      "namespace": "journal.window.talent.pulse.gap.segment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.sense.invalid",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e73656e73652e696e76616c6964",
+      "namespace": "journal.window.talent.pulse.gap.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.sense.limit",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e73656e73652e6c696d6974",
+      "namespace": "journal.window.talent.pulse.gap.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.gap.sense.read",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e6761702e73656e73652e72656164",
+      "namespace": "journal.window.talent.pulse.gap.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.pulse.title.unavailable",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e70756c73652e7469746c652e756e617661696c61626c65",
+      "namespace": "journal.window.talent.pulse.title",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.story.line.message.owner",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e73746f72792e6c696e652e6d6573736167652e6f776e6572",
+      "namespace": "journal.window.talent.story.line.message",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quote",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.story.line.owner",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e73746f72792e6c696e652e6f776e6572",
+      "namespace": "journal.window.talent.story.line",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "quote",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.story.message.agent",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e73746f72792e6d6573736167652e6167656e74",
+      "namespace": "journal.window.talent.story.message",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quote",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.story.message.owner",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e73746f72792e6d6573736167652e6f776e6572",
+      "namespace": "journal.window.talent.story.message",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quote",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.story.notes.date.missing",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e73746f72792e6e6f7465732e646174652e6d697373696e67",
+      "namespace": "journal.window.talent.story.notes.date",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.story.notes.date.missing.sender",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e73746f72792e6e6f7465732e646174652e6d697373696e672e73656e646572",
+      "namespace": "journal.window.talent.story.notes.date.missing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "sender",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.story.notes.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e73746f72792e6e6f7465732e68656164696e67",
+      "namespace": "journal.window.talent.story.notes",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.story.notes.recorded",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e73746f72792e6e6f7465732e7265636f72646564",
+      "namespace": "journal.window.talent.story.notes",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.story.notes.recorded.app",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e73746f72792e6e6f7465732e7265636f726465642e617070",
+      "namespace": "journal.window.talent.story.notes.recorded",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "app",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.story.speech.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e73746f72792e7370656563682e6e616d6564",
+      "namespace": "journal.window.talent.story.speech",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quote",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.story.speech.numbered",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e73746f72792e7370656563682e6e756d6265726564",
+      "namespace": "journal.window.talent.story.speech",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "speaker",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quote",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.story.speech.owner",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e73746f72792e7370656563682e6f776e6572",
+      "namespace": "journal.window.talent.story.speech",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "quote",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.talent.story.speech.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f772e74616c656e742e73746f72792e7370656563682e756e6b6e6f776e",
+      "namespace": "journal.window.talent.story.speech",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "quote",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
       "selector": null
     },
     {

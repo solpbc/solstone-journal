@@ -7075,6 +7075,7 @@ dependencies = [
  "solstone-core-time",
  "solstone-core-tokens",
  "solstone-core-transcripts",
+ "solstone-core-window-catalog",
  "tempfile",
  "unicode-general-category",
  "unicode-normalization",

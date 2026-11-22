@@ -490,6 +490,8 @@ Use the window catalog for stored backup diagnostics and for notices about backu
 
 Use the window catalog for device ingest notices and for journal-written labels in calendar and Obsidian entries. Keep the source event and the note text as received. For a new Obsidian transcript, store its display receipt in the segment’s `talents/note_transcript.md.display`. Read older transcripts as written.
 
+Use the window catalog for labels the journal adds to a briefing, Pulse, a Story or a weekly reflection. Keep model text and quotations as received. For a clipped Markdown result, mark only the notice the writer appended. In Thinking, show localized Markdown in the document view and the saved content under “stored text.”
+
 ### Journal command-line strings
 
 Put command-line help, progress and human-readable errors in

@@ -29,6 +29,7 @@ pub mod cli_diagnostics;
 pub mod copy_excludes;
 pub mod cortex_use;
 mod create_only_retry;
+pub mod daily_error;
 pub mod daily_unit;
 pub mod deconflict;
 pub mod durability;

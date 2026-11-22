@@ -1549,9 +1549,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
 
   function thinkingCacheKey(kind, values = {}) {
     if (kind === 'day') return `day:${values.day}:facet:${values.facet || ''}`;
-    if (kind === 'run') return `run:${values.useId}`;
+    const locale = document.documentElement?.lang || 'en-US';
+    if (kind === 'run') return `run:${locale}:${values.useId}`;
     if (kind === 'prompt') return `prompt:${values.talent}`;
-    if (kind === 'output') return `output:${values.day}:${values.file}`;
+    if (kind === 'output') return `output:${locale}:${values.day}:${values.file}`;
     return kind;
   }
 
@@ -2524,7 +2525,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     loadThinkingRequest(
       'run',
       key,
-      () => ctx.read(`/app/thinking/api/run/${encodeThinkingSegment(route.useId)}`),
+      () => ctx.read(`/app/thinking/api/run/${encodeThinkingSegment(route.useId)}?presentation=owner`),
       (run) => {
         if (run?.reason_code === 'talent_run_pending') {
           renderThinkingRunPending(route);
@@ -2556,7 +2557,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (payload.format === 'md') {
       const documentView = document.createElement('div');
       documentView.className = 'thinking-output-document';
-      const body = raw.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '');
+      const body = (payload.display_content ?? raw).replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '');
       documentView.innerHTML = window.AppServices.renderMarkdown(body);
       panel.appendChild(documentView);
       const source = document.createElement('details');
@@ -2587,7 +2588,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const encoded = String(run.output_file).split('/').map(encodeThinkingSegment).join('/');
     loadThinkingRequest(
       'output', key,
-      () => ctx.read(`/app/thinking/api/output/${run.day}/${encoded}`),
+      () => ctx.read(`/app/thinking/api/output/${run.day}/${encoded}?presentation=owner`),
       (payload) => renderThinkingOutput(panel, payload),
       () => { panel.textContent = window.JournalI18n.render('journal.window.thinking.visible.text.couldn.t.load.that.output'); },
     );

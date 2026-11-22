@@ -305,17 +305,26 @@ impl FacetIdentityError {
     pub fn into_review_owner_error(self) -> solstone_core_entity::ReviewOwnerError {
         use solstone_core_entity::{ReviewOwnerConflictKind, ReviewOwnerError};
         match self {
-            Self::Absent => ReviewOwnerError::conflict(
+            Self::Absent => ReviewOwnerError::conflict_message(
                 ReviewOwnerConflictKind::OwningFacetChanged,
-                "conflict: owning facet no longer exists",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.talent.daily.owner.owning.facet.changed.absent",
+                    [],
+                ),
             ),
-            Self::Invalid => ReviewOwnerError::conflict(
+            Self::Invalid => ReviewOwnerError::conflict_message(
                 ReviewOwnerConflictKind::OwningFacetChanged,
-                "conflict: owning facet has no valid stable identity",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.talent.daily.owner.owning.facet.changed.invalid",
+                    [],
+                ),
             ),
-            Self::Replaced => ReviewOwnerError::conflict(
+            Self::Replaced => ReviewOwnerError::conflict_message(
                 ReviewOwnerConflictKind::OwningFacetChanged,
-                "conflict: owning facet was replaced after preparation",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.talent.daily.owner.owning.facet.changed.replaced",
+                    [],
+                ),
             ),
             Self::Failed(detail) => ReviewOwnerError::failed(detail),
         }

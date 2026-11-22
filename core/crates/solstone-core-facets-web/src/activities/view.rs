@@ -211,7 +211,12 @@ fn map_facet_declaration(root: &Path, facet_name: &str, count: usize) -> Value {
     }
 }
 
-pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, String> {
+pub fn build_view_in(
+    root: &Path,
+    day: &str,
+    query: Option<&str>,
+    locale: &str,
+) -> Result<Value, String> {
     let declared = list_declared_facet_names(root).map_err(|e| e.to_string())?;
     // Body faces under this day and the day before (a night's), once per facet.
     let previous = solstone_core_time::parse_day(day)
@@ -338,12 +343,25 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
     });
     let spans_needed = faces_today || !near_faces.is_empty();
     let mut captures = Vec::new();
+    let mut receipts_by_facet = BTreeMap::new();
     for ((facet, row), course) in scoped_rows.iter().zip(courses) {
         let is_hidden = row.get("hidden").is_some_and(activity_value_truthy);
         if is_hidden && !include_hidden {
             continue;
         }
 
+        let mut displayed;
+        let row = if locale != "en-US"
+            && let Some(receipts) = receipts_by_facet.entry(facet).or_insert_with(|| {
+                let path = solstone_core_format::talent_display::activity_path(root, facet, day);
+                solstone_core_format::talent_display::read(root, &path)
+            }) {
+            displayed = row.clone();
+            solstone_core_format::talent_display::project_story(&mut displayed, receipts, locale);
+            &displayed
+        } else {
+            row
+        };
         let mut item = project_item(
             facet,
             row,

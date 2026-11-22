@@ -30,6 +30,7 @@ mod registry;
 pub mod topics;
 pub use registry::*;
 mod morning_briefing;
+pub use morning_briefing::morning_briefing_presentations;
 mod observations;
 mod projections;
 mod protected_video;
