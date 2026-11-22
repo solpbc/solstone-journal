@@ -6,6 +6,7 @@ use std::path::Path;
 use serde_json::{Map, Value, json};
 use solstone_core_indexer_query::{AdmittedCategory, ConnectionScope};
 
+use crate::audit::Reason;
 use crate::permissions::{ConnectionReadSnapshot, PermissionDecision};
 use crate::tools::search::MAX_QUERY_BYTES;
 use crate::tools::{DAY_DESCRIPTION, DAY_PATTERN, MAX_DAY_BYTES, MAX_OPAQUE_REFERENCE_BYTES};
@@ -25,6 +26,9 @@ pub(crate) struct ToolRequirement {
     /// Besides `read`, at least one of these, when any are named: a tool that
     /// reads transcripts or body windows by what each target is.
     pub(crate) one_of: &'static [AdmittedCategory],
+    /// Source wording for a missing group, and for the additional one-of check.
+    missing: Reason,
+    missing_alternative: Reason,
 }
 
 /// Everything schema generation may know about a connection.
@@ -57,6 +61,8 @@ const NOTHING: ToolRequirement = ToolRequirement {
     whole_journal: false,
     any_of: false,
     one_of: &[],
+    missing: Reason::OutsidePermission,
+    missing_alternative: Reason::OutsidePermission,
 };
 /// The kinds eligible for direct segment pages. Other kinds have index routes.
 pub(crate) const SEGMENT_KINDS: &[AdmittedCategory] = &[
@@ -74,18 +80,24 @@ const SEGMENT: ToolRequirement = ToolRequirement {
     whole_journal: false,
     any_of: true,
     one_of: &[],
+    missing: Reason::MissingSegment,
+    missing_alternative: Reason::OutsidePermission,
 };
 const ENTITIES: ToolRequirement = ToolRequirement {
     read: &[AdmittedCategory::Entities],
     whole_journal: false,
     any_of: false,
     one_of: &[],
+    missing: Reason::MissingEntities,
+    missing_alternative: Reason::OutsidePermission,
 };
 const FACETS: ToolRequirement = ToolRequirement {
     read: &[AdmittedCategory::Facets],
     whole_journal: false,
     any_of: false,
     one_of: &[],
+    missing: Reason::MissingFacets,
+    missing_alternative: Reason::OutsidePermission,
 };
 const FACETS_AND_SOURCE: ToolRequirement = ToolRequirement {
     read: &[AdmittedCategory::Facets],
@@ -96,12 +108,16 @@ const FACETS_AND_SOURCE: ToolRequirement = ToolRequirement {
         AdmittedCategory::Messages,
         AdmittedCategory::Body,
     ],
+    missing: Reason::MissingFacets,
+    missing_alternative: Reason::MissingActivitySource,
 };
 const WEEK: ToolRequirement = ToolRequirement {
     read: &[AdmittedCategory::Transcripts, AdmittedCategory::Facets],
     whole_journal: true,
     any_of: false,
     one_of: &[],
+    missing: Reason::MissingWeek,
+    missing_alternative: Reason::OutsidePermission,
 };
 const SEARCH: ToolRequirement = ToolRequirement {
     read: &[
@@ -119,6 +135,8 @@ const SEARCH: ToolRequirement = ToolRequirement {
     whole_journal: false,
     any_of: true,
     one_of: &[],
+    missing: Reason::MissingSearch,
+    missing_alternative: Reason::OutsidePermission,
 };
 const FETCH: ToolRequirement = SEARCH;
 const SUGGEST_CORRECTION: ToolRequirement = ToolRequirement {
@@ -131,6 +149,8 @@ const SUGGEST_CORRECTION: ToolRequirement = ToolRequirement {
     whole_journal: false,
     any_of: true,
     one_of: &[],
+    missing: Reason::MissingSuggestion,
+    missing_alternative: Reason::OutsidePermission,
 };
 
 /// The single registry used for advertisement, dispatch, validation, and auditing.
@@ -346,7 +366,7 @@ pub(crate) fn snapshot_allows(snapshot: &ConnectionReadSnapshot, entry: &ToolEnt
 pub(crate) fn requirement_refusal(
     snapshot: &ConnectionReadSnapshot,
     entry: &ToolEntry,
-) -> Option<String> {
+) -> Option<Reason> {
     if entry.requires.any_of {
         let admitted = entry
             .requires
@@ -354,16 +374,7 @@ pub(crate) fn requirement_refusal(
             .iter()
             .any(|category| snapshot.categories.contains(category));
         if !entry.requires.read.is_empty() && !admitted {
-            let names = entry
-                .requires
-                .read
-                .iter()
-                .map(category_token)
-                .collect::<Vec<_>>()
-                .join(" or ");
-            return Some(format!(
-                "this connection does not have the {names} category"
-            ));
+            return Some(entry.requires.missing);
         }
     } else {
         let missing = entry
@@ -371,13 +382,14 @@ pub(crate) fn requirement_refusal(
             .read
             .iter()
             .filter(|category| !snapshot.categories.contains(category))
-            .map(category_token)
+            .copied()
             .collect::<Vec<_>>();
         if !missing.is_empty() {
-            return Some(format!(
-                "this connection does not have the {} category",
-                missing.join(" and ")
-            ));
+            return Some(match missing.as_slice() {
+                [AdmittedCategory::Transcripts] => Reason::MissingTranscripts,
+                [AdmittedCategory::Facets] => Reason::MissingFacets,
+                _ => entry.requires.missing,
+            });
         }
     }
     if !entry.requires.one_of.is_empty()
@@ -387,22 +399,10 @@ pub(crate) fn requirement_refusal(
             .iter()
             .any(|category| snapshot.categories.contains(category))
     {
-        let names = entry
-            .requires
-            .one_of
-            .iter()
-            .map(category_token)
-            .collect::<Vec<_>>()
-            .join(" or ");
-        return Some(format!(
-            "this connection does not have the {names} category"
-        ));
+        return Some(entry.requires.missing_alternative);
     }
     if entry.requires.whole_journal && !matches!(snapshot.scope, ConnectionScope::WholeJournal) {
-        return Some(
-            "this connection can read a week or date range only with access to the whole journal."
-                .to_owned(),
-        );
+        return Some(Reason::WeekWhole);
     }
     None
 }

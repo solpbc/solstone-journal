@@ -6,6 +6,7 @@
 use std::net::IpAddr;
 use std::path::Path;
 
+use solstone_core_window_catalog::{html, packaged_locale, text};
 use tokio::sync::watch;
 
 #[cfg(all(test, not(feature = "full-tests")))]
@@ -116,20 +117,21 @@ pub(crate) async fn get_authorize(
     oauth: &OAuthRuntime,
     shutdown: &mut watch::Receiver<bool>,
 ) -> HttpResponse {
-    if let Err(response) = require_pairing_window(oauth) {
+    let locale = packaged_locale(request.header("X-Solstone-Locale").ok().flatten());
+    if let Err(response) = require_pairing_window(locale, oauth) {
         return response;
     }
     let Some(pairs) = parse_get_pairs(request) else {
-        return local_error("authorization request could not be started");
+        return local_error(locale, "journal.window.oauth.error.start");
     };
     let Some(client_id) = field(&pairs, "client_id").filter(|value| !value.is_empty()) else {
-        return local_error("authorization request could not be started");
+        return local_error(locale, "journal.window.oauth.error.start");
     };
     let client = match resolve_live(oauth, source, client_id, shutdown).await {
         Ok(client) => client,
-        Err(_) => return local_error("authorization request could not be started"),
+        Err(_) => return local_error(locale, "journal.window.oauth.error.start"),
     };
-    finish_authorize_get(request, &pairs, client, source, oauth)
+    finish_authorize_get(locale, request, &pairs, client, source, oauth)
 }
 
 /// GET `/authorize` with injected CIMD I/O.
@@ -142,21 +144,22 @@ pub(crate) async fn get_authorize_with_io<IO: CimdAttemptIo>(
     io: IO,
     random: &dyn RandomSource,
 ) -> HttpResponse {
-    if let Err(response) = require_pairing_window(oauth) {
+    let locale = packaged_locale(request.header("X-Solstone-Locale").ok().flatten());
+    if let Err(response) = require_pairing_window(locale, oauth) {
         return response;
     }
     let Some(pairs) = parse_get_pairs(request) else {
-        return local_error("authorization request could not be started");
+        return local_error(locale, "journal.window.oauth.error.start");
     };
     let Some(client_id) = field(&pairs, "client_id").filter(|value| !value.is_empty()) else {
-        return local_error("authorization request could not be started");
+        return local_error(locale, "journal.window.oauth.error.start");
     };
     let client =
         match resolve_authorize_client(oauth, source, client_id, shutdown, io, random).await {
             Ok(client) => client,
-            Err(_) => return local_error("authorization request could not be started"),
+            Err(_) => return local_error(locale, "journal.window.oauth.error.start"),
         };
-    finish_authorize_get(request, &pairs, client, source, oauth)
+    finish_authorize_get(locale, request, &pairs, client, source, oauth)
 }
 
 fn parse_get_pairs(request: &HttpRequest) -> Option<Vec<(String, String)>> {
@@ -170,25 +173,33 @@ fn parse_get_pairs(request: &HttpRequest) -> Option<Vec<(String, String)>> {
 /// Registration and authorization answer only while the owner has a pairing
 /// code open for this door. Outside that window nothing about the request is
 /// parsed, no client metadata is fetched and nothing is stored.
-fn require_pairing_window(oauth: &OAuthRuntime) -> Result<(), HttpResponse> {
+fn require_pairing_window(locale: &str, oauth: &OAuthRuntime) -> Result<(), HttpResponse> {
     match oauth.store.pairing_window_open(&oauth.binding()) {
         Ok(true) => Ok(()),
-        Ok(false) => Err(pairing_window_closed()),
-        Err(_) => Err(local_error("authorization is temporarily unavailable")),
+        Ok(false) => Err(pairing_window_closed(locale)),
+        Err(_) => Err(local_error(
+            locale,
+            "journal.window.oauth.error.unavailable",
+        )),
     }
 }
 
 /// The page a browser gets when no pairing code is open. It says nothing
 /// about the journal behind it.
-fn pairing_window_closed() -> HttpResponse {
+fn pairing_window_closed(locale: &str) -> HttpResponse {
     html_status(
         403,
         "Forbidden",
-        "<h1>nothing is waiting to connect here.</h1><p>to connect an agent, open your journal, go to agents › connect an agent, and make a pairing code first. then connect from your agent again.</p>",
+        &format!(
+            "<h1>{}</h1><p>{}</p>",
+            html(locale, "journal.window.oauth.closed.heading"),
+            html(locale, "journal.window.oauth.closed.instructions")
+        ),
     )
 }
 
 fn finish_authorize_get(
+    locale: &str,
     request: &HttpRequest,
     pairs: &[(String, String)],
     client: RegisteredClient,
@@ -196,10 +207,10 @@ fn finish_authorize_get(
     oauth: &OAuthRuntime,
 ) -> HttpResponse {
     let Some(redirect_uri) = field(pairs, "redirect_uri").filter(|value| !value.is_empty()) else {
-        return local_error("authorization request could not be started");
+        return local_error(locale, "journal.window.oauth.error.start");
     };
     if !redirect_uri_is_allowed(redirect_uri, &client.redirect_uris) {
-        return local_error("authorization request could not be started");
+        return local_error(locale, "journal.window.oauth.error.start");
     }
     let state = field(pairs, "state");
     let issuer = match oauth.published_origin(request) {
@@ -241,9 +252,10 @@ fn finish_authorize_get(
                     wrong_code: false,
                     incomplete: false,
                 },
-                Err(_) => return local_error("authorization is temporarily unavailable"),
+                Err(_) => return local_error(locale, "journal.window.oauth.error.unavailable"),
             };
             consent_page(
+                locale,
                 &client,
                 redirect_uri,
                 &transaction_id,
@@ -252,7 +264,7 @@ fn finish_authorize_get(
                 &ConsentSelection::initial(),
             )
         }
-        Err(OAuthStoreError::NoActivePairing) => pairing_window_closed(),
+        Err(OAuthStoreError::NoActivePairing) => pairing_window_closed(locale),
         Err(OAuthStoreError::Quota) => {
             error_redirect(redirect_uri, "temporarily_unavailable", state, &issuer)
         }
@@ -266,6 +278,7 @@ pub(crate) fn post_authorize(
     source: IpAddr,
     oauth: &OAuthRuntime,
 ) -> HttpResponse {
+    let locale = packaged_locale(request.header("X-Solstone-Locale").ok().flatten());
     if let Err(response) = reject_non_identity_encoding(request) {
         return response;
     }
@@ -273,14 +286,15 @@ pub(crate) fn post_authorize(
         return HttpResponse::error(
             413,
             "Payload Too Large",
-            "authorization request exceeds its size limit",
-        );
+            &text(locale, "journal.window.oauth.error.form.size"),
+        )
+        .with_header("Vary", "X-Solstone-Locale".to_owned());
     }
     let Ok(body) = std::str::from_utf8(&request.body) else {
-        return local_error("authorization is temporarily unavailable");
+        return local_error(locale, "journal.window.oauth.error.unavailable");
     };
     let Some(pairs) = parse_urlencoded_pairs(body) else {
-        return local_error("authorization is temporarily unavailable");
+        return local_error(locale, "journal.window.oauth.error.unavailable");
     };
     let transaction_id = field(&pairs, "transaction_id").unwrap_or("");
     let pairing_code = field(&pairs, "pairing_code").unwrap_or("");
@@ -288,18 +302,18 @@ pub(crate) fn post_authorize(
         || transaction_id.len() > MAX_CODE_BYTES
         || pairing_code.len() > MAX_CODE_BYTES
     {
-        return expired_error();
+        return expired_error(locale);
     }
     if pairing_code.is_empty() {
-        return post_verified_choice(&pairs, transaction_id, oauth);
+        return post_verified_choice(locale, &pairs, transaction_id, oauth);
     }
     let generation = match oauth.store.pairing_generation() {
         Ok(generation) => generation,
-        Err(_) => return local_error("authorization is temporarily unavailable"),
+        Err(_) => return local_error(locale, "journal.window.oauth.error.unavailable"),
     };
     oauth.pairing_limiter.prune_generation(generation);
     if oauth.pairing_limiter.is_limited(source, generation) {
-        return too_many_wrong_codes();
+        return too_many_wrong_codes(locale);
     }
     let categories = chosen_categories(&pairs);
     // Facet names are never read or resolved here: until the code verifies,
@@ -320,7 +334,7 @@ pub(crate) fn post_authorize(
         .classify_presented_code(pairing_code, &oauth.binding())
     {
         Ok(c) => c,
-        Err(_) => return local_error("authorization is temporarily unavailable"),
+        Err(_) => return local_error(locale, "journal.window.oauth.error.unavailable"),
     };
 
     match classification {
@@ -331,6 +345,7 @@ pub(crate) fn post_authorize(
             let has_scope_or_category = scope.is_some() || !categories.is_empty();
             if !is_reconnect || has_scope_or_category {
                 pending_page(
+                    locale,
                     transaction_id,
                     oauth,
                     ConsentStage::TargetedCode { wrong_code: false },
@@ -341,11 +356,13 @@ pub(crate) fn post_authorize(
                     .store
                     .verify_pairing(transaction_id, pairing_code, &oauth.binding())
                 {
-                    Ok(verified_id) => render_confirm_page(&verified_id, &target, oauth, None),
-                    Err(OAuthStoreError::PairingMismatch) => {
-                        local_error("authorization is temporarily unavailable")
+                    Ok(verified_id) => {
+                        render_confirm_page(locale, &verified_id, &target, oauth, None)
                     }
-                    Err(error) => pairing_error(error),
+                    Err(OAuthStoreError::PairingMismatch) => {
+                        local_error(locale, "journal.window.oauth.error.unavailable")
+                    }
+                    Err(error) => pairing_error(locale, error),
                 }
             }
         }
@@ -353,6 +370,7 @@ pub(crate) fn post_authorize(
             let Some(selected_scope) = scope.filter(|_| !categories.is_empty()) else {
                 return match oauth.store.code_step_open(transaction_id, &oauth.binding()) {
                     Ok(true) => pending_page(
+                        locale,
                         transaction_id,
                         oauth,
                         ConsentStage::Code {
@@ -361,8 +379,8 @@ pub(crate) fn post_authorize(
                         },
                         &selection,
                     ),
-                    Ok(false) => expired_error(),
-                    Err(_) => local_error("authorization is temporarily unavailable"),
+                    Ok(false) => expired_error(locale),
+                    Err(_) => local_error(locale, "journal.window.oauth.error.unavailable"),
                 };
             };
             let whole_journal = selected_scope == "whole_journal";
@@ -386,6 +404,7 @@ pub(crate) fn post_authorize(
                     .verify_pairing(transaction_id, pairing_code, &oauth.binding())
                     .map(|verified_id| {
                         pending_page(
+                            locale,
                             &verified_id,
                             oauth,
                             ConsentStage::Choose { incomplete: false },
@@ -400,13 +419,14 @@ pub(crate) fn post_authorize(
                         == PairingFailureRecord::JustTripped
                     {
                         let _ = oauth.store.lock_pairing_code();
-                        return too_many_wrong_codes();
+                        return too_many_wrong_codes(locale);
                     }
                     match oauth
                         .store
                         .pending_authorization(transaction_id, &oauth.binding())
                     {
                         Ok(Some(pending)) => consent_page(
+                            locale,
                             &pending.client,
                             &pending.redirect_uri,
                             transaction_id,
@@ -417,13 +437,11 @@ pub(crate) fn post_authorize(
                             },
                             &selection,
                         ),
-                        Ok(None) => local_error(
-                            "too many wrong codes for this request. connect from your agent again.",
-                        ),
-                        Err(_) => local_error("authorization is temporarily unavailable"),
+                        Ok(None) => local_error(locale, "journal.window.oauth.error.attempts"),
+                        Err(_) => local_error(locale, "journal.window.oauth.error.unavailable"),
                     }
                 }
-                Err(error) => pairing_error(error),
+                Err(error) => pairing_error(locale, error),
             }
         }
         CodeClassification::NoMatch => {
@@ -431,7 +449,7 @@ pub(crate) fn post_authorize(
             // wrong-code limit, whichever form it came from.
             let targeted_open = match oauth.store.open_pairing_is_targeted(&oauth.binding()) {
                 Ok(targeted) => targeted,
-                Err(_) => return local_error("authorization is temporarily unavailable"),
+                Err(_) => return local_error(locale, "journal.window.oauth.error.unavailable"),
             };
             let is_reconnect = field(&pairs, "reconnect") == Some("1") || targeted_open;
             if is_reconnect {
@@ -439,19 +457,20 @@ pub(crate) fn post_authorize(
                     .store
                     .verify_pairing(transaction_id, pairing_code, &oauth.binding())
                 {
-                    Ok(_) => local_error("authorization is temporarily unavailable"),
+                    Ok(_) => local_error(locale, "journal.window.oauth.error.unavailable"),
                     Err(OAuthStoreError::PairingMismatch) => {
                         if oauth.pairing_limiter.record_failure(source, generation)
                             == PairingFailureRecord::JustTripped
                         {
                             let _ = oauth.store.lock_pairing_code();
-                            return too_many_wrong_codes();
+                            return too_many_wrong_codes(locale);
                         }
                         match oauth
                             .store
                             .pending_authorization(transaction_id, &oauth.binding())
                         {
                             Ok(Some(pending)) => consent_page(
+                                locale,
                                 &pending.client,
                                 &pending.redirect_uri,
                                 transaction_id,
@@ -459,18 +478,17 @@ pub(crate) fn post_authorize(
                                 ConsentStage::TargetedCode { wrong_code: true },
                                 &selection,
                             ),
-                            Ok(None) => local_error(
-                                "too many wrong codes for this request. connect from your agent again.",
-                            ),
-                            Err(_) => local_error("authorization is temporarily unavailable"),
+                            Ok(None) => local_error(locale, "journal.window.oauth.error.attempts"),
+                            Err(_) => local_error(locale, "journal.window.oauth.error.unavailable"),
                         }
                     }
-                    Err(error) => pairing_error(error),
+                    Err(error) => pairing_error(locale, error),
                 }
             } else {
                 let Some(selected_scope) = scope.filter(|_| !categories.is_empty()) else {
                     return match oauth.store.code_step_open(transaction_id, &oauth.binding()) {
                         Ok(true) => pending_page(
+                            locale,
                             transaction_id,
                             oauth,
                             ConsentStage::Code {
@@ -479,8 +497,8 @@ pub(crate) fn post_authorize(
                             },
                             &selection,
                         ),
-                        Ok(false) => expired_error(),
-                        Err(_) => local_error("authorization is temporarily unavailable"),
+                        Ok(false) => expired_error(locale),
+                        Err(_) => local_error(locale, "journal.window.oauth.error.unavailable"),
                     };
                 };
                 let whole_journal = selected_scope == "whole_journal";
@@ -504,6 +522,7 @@ pub(crate) fn post_authorize(
                         .verify_pairing(transaction_id, pairing_code, &oauth.binding())
                         .map(|verified_id| {
                             pending_page(
+                                locale,
                                 &verified_id,
                                 oauth,
                                 ConsentStage::Choose { incomplete: false },
@@ -518,13 +537,14 @@ pub(crate) fn post_authorize(
                             == PairingFailureRecord::JustTripped
                         {
                             let _ = oauth.store.lock_pairing_code();
-                            return too_many_wrong_codes();
+                            return too_many_wrong_codes(locale);
                         }
                         match oauth
                             .store
                             .pending_authorization(transaction_id, &oauth.binding())
                         {
                             Ok(Some(pending)) => consent_page(
+                                locale,
                                 &pending.client,
                                 &pending.redirect_uri,
                                 transaction_id,
@@ -535,13 +555,11 @@ pub(crate) fn post_authorize(
                                 },
                                 &selection,
                             ),
-                            Ok(None) => local_error(
-                                "too many wrong codes for this request. connect from your agent again.",
-                            ),
-                            Err(_) => local_error("authorization is temporarily unavailable"),
+                            Ok(None) => local_error(locale, "journal.window.oauth.error.attempts"),
+                            Err(_) => local_error(locale, "journal.window.oauth.error.unavailable"),
                         }
                     }
-                    Err(error) => pairing_error(error),
+                    Err(error) => pairing_error(locale, error),
                 }
             }
         }
@@ -551,6 +569,7 @@ pub(crate) fn post_authorize(
 /// The second half of a facet-scoped consent: the pairing code already
 /// verified, and the requester now names the facets.
 fn post_verified_choice(
+    locale: &str,
     pairs: &[(String, String)],
     transaction_id: &str,
     oauth: &OAuthRuntime,
@@ -587,11 +606,13 @@ fn post_verified_choice(
                 None,
                 &oauth.binding(),
             ) {
-                Err(OAuthStoreError::InvalidGrant) => local_error(
-                    "this code no longer works for the agent it was made for. make a new one in the agents app, then connect from your agent again.",
-                ),
-                Err(error) => pairing_error(error),
-                Ok(_) => render_confirm_page(transaction_id, &target, oauth, Some(&selection)),
+                Err(OAuthStoreError::InvalidGrant) => {
+                    local_error(locale, "journal.window.oauth.error.agent.code")
+                }
+                Err(error) => pairing_error(locale, error),
+                Ok(_) => {
+                    render_confirm_page(locale, transaction_id, &target, oauth, Some(&selection))
+                }
             };
         }
         let scope = if selection.scope == Some("whole_journal") {
@@ -600,9 +621,7 @@ fn post_verified_choice(
             match resolve_permission_facet_names(&oauth.journal_root, &names) {
                 Ok(ids) => ReadScope::Facets { ids },
                 Err(_) => {
-                    return local_error(
-                        "the chosen facets could not be verified; return to your journal and try again",
-                    );
+                    return local_error(locale, "journal.window.oauth.error.facets");
                 }
             }
         };
@@ -613,11 +632,13 @@ fn post_verified_choice(
             &oauth.binding(),
         ) {
             Ok(Some(issued)) => success_redirect(&issued),
-            Ok(None) => render_confirm_page(transaction_id, &target, oauth, Some(&selection)),
-            Err(OAuthStoreError::InvalidGrant) => local_error(
-                "this code no longer works for the agent it was made for. make a new one in the agents app, then connect from your agent again.",
-            ),
-            Err(error) => pairing_error(error),
+            Ok(None) => {
+                render_confirm_page(locale, transaction_id, &target, oauth, Some(&selection))
+            }
+            Err(OAuthStoreError::InvalidGrant) => {
+                local_error(locale, "journal.window.oauth.error.agent.code")
+            }
+            Err(error) => pairing_error(locale, error),
         }
     } else {
         let incomplete = categories.is_empty()
@@ -625,6 +646,7 @@ fn post_verified_choice(
             || (selection.scope == Some("facets") && names.is_empty());
         if incomplete {
             return pending_page(
+                locale,
                 transaction_id,
                 oauth,
                 ConsentStage::Choose { incomplete: true },
@@ -637,9 +659,7 @@ fn post_verified_choice(
             match resolve_permission_facet_names(&oauth.journal_root, &names) {
                 Ok(ids) => ReadScope::Facets { ids },
                 Err(_) => {
-                    return local_error(
-                        "the chosen facets could not be verified; return to your journal and try again",
-                    );
+                    return local_error(locale, "journal.window.oauth.error.facets");
                 }
             }
         };
@@ -649,7 +669,7 @@ fn post_verified_choice(
             .complete_verified_pairing(transaction_id, permission, &oauth.binding())
         {
             Ok(issued) => success_redirect(&issued),
-            Err(error) => pairing_error(error),
+            Err(error) => pairing_error(locale, error),
         }
     }
 }
@@ -662,17 +682,21 @@ struct ConfirmTargetInfo {
 }
 
 fn resolve_confirm_target(
+    locale: &str,
     root: &Path,
     target: &str,
 ) -> Result<(ConfirmTargetInfo, ConsentSelection), HttpResponse> {
     let (hex, target_grant_id) = if let Some(id) = target.strip_prefix("oauth:") {
         let src = memory_source(root, target)
-            .map_err(|_| local_error("authorization is temporarily unavailable"))?;
+            .map_err(|_| local_error(locale, "journal.window.oauth.error.unavailable"))?;
         (src.component().to_string(), Some(id))
     } else if let Some(hex) = target.strip_prefix("source:") {
         (hex.to_string(), None)
     } else {
-        return Err(local_error("authorization is temporarily unavailable"));
+        return Err(local_error(
+            locale,
+            "journal.window.oauth.error.unavailable",
+        ));
     };
 
     let short_key = hex.chars().take(4).collect::<String>();
@@ -680,10 +704,10 @@ fn resolve_confirm_target(
 
     let live_tokens = TokenStore::open(root)
         .list()
-        .map_err(|_| local_error("authorization is temporarily unavailable"))?;
+        .map_err(|_| local_error(locale, "journal.window.oauth.error.unavailable"))?;
     let live_grants = OAuthStore::open(root)
         .list_grants()
-        .map_err(|_| local_error("authorization is temporarily unavailable"))?;
+        .map_err(|_| local_error(locale, "journal.window.oauth.error.unavailable"))?;
 
     let mut live_name = None;
     let mut live_holder = false;
@@ -712,9 +736,12 @@ fn resolve_confirm_target(
         }
     }
 
-    let name = live_name
-        .or(memory_label)
-        .unwrap_or_else(|| "an earlier agent".to_string());
+    let name = live_name.or(memory_label).unwrap_or_else(|| {
+        text(
+            solstone_core_window_catalog::ENGLISH,
+            "journal.window.agents.status.text.an.earlier.agent",
+        )
+    });
 
     let selection = if let Some(id) = target_grant_id {
         let perm_store = PermissionStore::open(root);
@@ -781,17 +808,20 @@ fn resolve_confirm_target(
 }
 
 fn render_confirm_page(
+    locale: &str,
     transaction_id: &str,
     target: &str,
     oauth: &OAuthRuntime,
     override_selection: Option<&ConsentSelection>,
 ) -> HttpResponse {
-    let (info, default_selection) = match resolve_confirm_target(&oauth.journal_root, target) {
-        Ok(res) => res,
-        Err(resp) => return resp,
-    };
+    let (info, default_selection) =
+        match resolve_confirm_target(locale, &oauth.journal_root, target) {
+            Ok(res) => res,
+            Err(resp) => return resp,
+        };
     let selection = override_selection.unwrap_or(&default_selection);
     pending_page(
+        locale,
         transaction_id,
         oauth,
         ConsentStage::Confirm {
@@ -819,6 +849,7 @@ fn chosen_categories(pairs: &[(String, String)]) -> Vec<String> {
 }
 
 fn pending_page(
+    locale: &str,
     transaction_id: &str,
     oauth: &OAuthRuntime,
     stage: ConsentStage,
@@ -833,6 +864,7 @@ fn pending_page(
         .pending_authorization(transaction_id, &oauth.binding())
     {
         Ok(Some(pending)) if pending.pairing_verified == requires_verified => consent_page(
+            locale,
             &pending.client,
             &pending.redirect_uri,
             transaction_id,
@@ -840,39 +872,38 @@ fn pending_page(
             stage,
             selection,
         ),
-        Ok(_) => expired_error(),
-        Err(_) => local_error("authorization is temporarily unavailable"),
+        Ok(_) => expired_error(locale),
+        Err(_) => local_error(locale, "journal.window.oauth.error.unavailable"),
     }
 }
 
 /// The code is locked after too many wrong guesses; only a new one helps.
-fn too_many_wrong_codes() -> HttpResponse {
+fn too_many_wrong_codes(locale: &str) -> HttpResponse {
     html_status(
         429,
         "Too Many Requests",
-        "<p>too many wrong codes were entered. make a new code in the agents app, then connect from your agent again.</p>",
-    )
-}
-
-fn expired_error() -> HttpResponse {
-    local_error(
-        "this request has expired or is no longer valid. connect from your agent again, with a new code from the agents app if yours is no longer open.",
-    )
-}
-
-fn pairing_error(error: OAuthStoreError) -> HttpResponse {
-    match error {
-        OAuthStoreError::PairingLocked => local_error(
-            "this pairing code no longer works. make a new one in the agents app, then connect from your agent again.",
+        &format!(
+            "<p>{}</p>",
+            html(locale, "journal.window.oauth.error.locked")
         ),
+    )
+}
+
+fn expired_error(locale: &str) -> HttpResponse {
+    local_error(locale, "journal.window.oauth.error.expired")
+}
+
+fn pairing_error(locale: &str, error: OAuthStoreError) -> HttpResponse {
+    match error {
+        OAuthStoreError::PairingLocked => local_error(locale, "journal.window.oauth.error.code"),
         OAuthStoreError::TransactionNotFound
         | OAuthStoreError::TransactionExpired
         | OAuthStoreError::TransactionExhausted
-        | OAuthStoreError::InvalidToken => expired_error(),
-        OAuthStoreError::NoActivePairing => local_error(
-            "there's no open pairing code. make one in the agents app, then connect from your agent again.",
-        ),
-        _ => local_error("authorization is temporarily unavailable"),
+        | OAuthStoreError::InvalidToken => expired_error(locale),
+        OAuthStoreError::NoActivePairing => {
+            local_error(locale, "journal.window.oauth.error.no.code")
+        }
+        _ => local_error(locale, "journal.window.oauth.error.unavailable"),
     }
 }
 
@@ -1006,192 +1037,21 @@ fn html_status_with_csp(
         ),
     )
     .with_header("Cache-Control", "no-store".to_owned())
+    .with_header("Vary", "X-Solstone-Locale".to_owned())
     .with_header("Content-Security-Policy", csp)
     .with_header("X-Frame-Options", "DENY".to_owned())
 }
 
-fn local_error(message: &str) -> HttpResponse {
+fn local_error(locale: &str, id: &str) -> HttpResponse {
     html_status(
         400,
         "Bad Request",
-        &format!("<p>{}</p>", html_escape(message)),
+        &format!("<p>{}</p>", html_escape(&text(locale, id))),
     )
 }
 
-fn consent_page(
-    client: &RegisteredClient,
-    redirect_uri: &str,
-    transaction_id: &str,
-    oauth: &OAuthRuntime,
-    stage: ConsentStage,
-    selection: &ConsentSelection,
-) -> HttpResponse {
-    let parsed = parse_redirect_uri(redirect_uri).ok();
-    let host = parsed
-        .as_ref()
-        .map(redirect_host_label)
-        .unwrap_or_else(|| "unknown".to_owned());
-    let callback_origin = parsed.as_ref().map(redirect_origin);
-    let client_label = client
-        .client_name
-        .as_deref()
-        .unwrap_or(client.client_id.as_str());
-    consent_page_named(
-        client_label,
-        &host,
-        callback_origin.as_deref(),
-        transaction_id,
-        oauth,
-        stage,
-        selection,
-    )
-}
-
-fn consent_page_named(
-    client_label: &str,
-    return_host: &str,
-    callback_origin: Option<&str>,
-    transaction_id: &str,
-    oauth: &OAuthRuntime,
-    stage: ConsentStage,
-    selection: &ConsentSelection,
-) -> HttpResponse {
-    let client = html_escape(client_label);
-    let transaction = html_escape(transaction_id);
-    let facets_hint = match stage {
-        ConsentStage::Code { .. } | ConsentStage::TargetedCode { .. } => {
-            "you'll choose them once your code matches. "
-        }
-        ConsentStage::Choose { .. } | ConsentStage::Confirm { .. } => "",
-    };
-    let choices = format!(
-        r#"<fieldset><label class="check"><input type="radio" name="scope" value="whole_journal" required{whole_checked}> <strong>your whole journal</strong><br><span class="muted">everything in your journal now, and anything added later, including facets you create later.</span></label><label class="check"><input type="radio" name="scope" value="facets" required{facets_checked}> <strong>only the facets you choose</strong><br><span class="muted">{facets_hint}just the facets you pick, now and as they grow. facets you create later are not included.</span></label></fieldset>{facet_list}<fieldset><legend>what kinds of material</legend>{kind_choices}</fieldset>"#,
-        whole_checked = checked(selection.scope == Some("whole_journal")),
-        facets_checked = checked(selection.scope == Some("facets")),
-        facet_list = match stage {
-            ConsentStage::Code { .. } | ConsentStage::TargetedCode { .. } => String::new(),
-            ConsentStage::Choose { .. } | ConsentStage::Confirm { .. } => {
-                facet_list(oauth, selection)
-            }
-        },
-        kind_choices = solstone_core_format::content::kinds::permission_kinds()
-            .map(|kind| {
-                use solstone_core_convey_http::window_catalog::{ENGLISH, text};
-                let copy = kind.permission_copy.expect("registered permissions have copy");
-                format!(
-                r#"<label class="check{}"><input type="checkbox" name="category" value="{}"{}> <strong>{}</strong><br><span class="muted">{}</span></label>"#,
-                if kind.option_of().is_some() { " option" } else { "" },
-                kind.stored_word,
-                checked(selection.categories.iter().any(|word| word == kind.stored_word)),
-                html_escape(&text(ENGLISH, copy.label_id)),
-                html_escape(&text(ENGLISH, copy.description_id)),
-                )
-            })
-            .collect::<String>(),
-    );
-    let body = match stage {
-        ConsentStage::Code {
-            wrong_code,
-            incomplete,
-        } => {
-            let wrong = if wrong_code {
-                "<p class=\"error\" role=\"alert\">that code didn't match. enter it again, or make a new one in the agents app, then connect from your agent again.</p>"
-            } else {
-                ""
-            };
-            let choose = if incomplete {
-                "<p class=\"error\" role=\"alert\">pick your whole journal or only the facets you choose, and at least one kind of material. your code hasn't been used, so enter it again below.</p>"
-            } else {
-                ""
-            };
-            format!(
-                r#"<h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>. it can save and recall its own agent memories. other journal reads stay within what you choose.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><h2>what {client} may see</h2>{choose}{choices}<h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">connect {client}</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form>"#,
-                host = html_escape(return_host),
-            )
-        }
-        ConsentStage::Choose { incomplete } => {
-            let notice = if incomplete {
-                "<p class=\"error\" role=\"alert\">choose your whole journal or at least one facet, and at least one kind of material.</p>"
-            } else {
-                ""
-            };
-            format!(
-                r#"<h1>choose what {client} may see.</h1><p>your code matched. {client} can save and recall its own agent memories. other journal reads stay within what you choose.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}">{notice}{choices}<button type="submit">connect {client}</button><p class="muted">changed your mind? close this tab. nothing is connected, and this code won't work again.</p></form>"#,
-            )
-        }
-        ConsentStage::TargetedCode { wrong_code } => {
-            let wrong = if wrong_code {
-                "<p class=\"error\" role=\"alert\">that code didn't match. enter it again, or make a new one in the agents app, then connect from your agent again.</p>"
-            } else {
-                ""
-            };
-            format!(
-                r#"<h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><input type="hidden" name="reconnect" value="1"><h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">continue</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form>"#,
-                host = html_escape(return_host),
-            )
-        }
-        ConsentStage::Confirm {
-            name,
-            short_key,
-            memory_count,
-            live_holder,
-        } => {
-            let agent = format!("{} · {}", html_escape(&name), html_escape(&short_key));
-            let recall = match memory_count {
-                0 => String::new(),
-                1 => " and can recall its 1 memory".to_owned(),
-                n => format!(" and can recall its {n} memories"),
-            };
-            let stops = if live_holder {
-                " the one connected now stops working."
-            } else {
-                ""
-            };
-            let may_see = if live_holder {
-                format!(
-                    "<p>here's what {agent} may see now. change them here or later in the agents app.</p>"
-                )
-            } else {
-                format!("<p>choose what {agent} may see.</p>")
-            };
-            format!(
-                r#"<h1>connect {agent} again?</h1><p>your code matched. you made it in your journal for this agent, so it connects as {agent} again{recall}.{stops}</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}">{may_see}{choices}<button type="submit">connect {agent} again</button><p class="muted">changed your mind? close this tab. nothing changes, and this code won't work again.</p></form>"#,
-            )
-        }
-    };
-    html_status_with_csp(200, "OK", &body, consent_csp(callback_origin))
-}
-
-/// The journal's facets as choices. Only a requester whose pairing code has
-/// verified is ever shown this.
-fn facet_list(oauth: &OAuthRuntime, selection: &ConsentSelection) -> String {
-    let facets =
-        solstone_core_facets::list_declared_facet_names(&oauth.journal_root).unwrap_or_default();
-    if facets.is_empty() {
-        return "<p class=\"muted\">your journal has no facets yet.</p>".to_owned();
-    }
-    let options = facets
-        .into_iter()
-        .map(|facet| {
-            let declaration = solstone_core_facets::read_facet_declaration(&oauth.journal_root, &facet)
-                .ok()
-                .flatten();
-            let title = declaration
-                .as_ref()
-                .map(|value| value.title.as_str())
-                .filter(|value| !value.is_empty())
-                .unwrap_or(&facet);
-            let color = declaration
-                .as_ref()
-                .map(|value| value.color.as_str())
-                .filter(|value| !value.is_empty())
-                .unwrap_or("#76746b");
-            let facet_checked = checked(selection.facets.contains(&facet));
-            format!("<label class=\"check\"><input type=\"checkbox\" name=\"facet\" value=\"{}\"{facet_checked}> <span style=\"color:{}\">●</span> {}</label>", html_escape(&facet), html_escape(color), html_escape(title))
-        })
-        .collect::<String>();
-    format!("<fieldset><legend>facets</legend>{options}</fieldset>")
-}
+mod page;
+use page::consent_page;
 
 fn redirect_host_label(parsed: &super::redirect::ParsedRedirectUri) -> String {
     let host = match parsed.host {
@@ -1643,7 +1503,10 @@ mod tests {
         assert!(!gemini_csp.contains("https://chatgpt.com"));
         assert!(!gemini_csp.contains("https://claude.ai"));
         assert_eq!(consent_csp(None), AUTHORIZE_CSP);
-        let error = local_error("authorization request could not be started");
+        let error = local_error(
+            solstone_core_window_catalog::ENGLISH,
+            "journal.window.oauth.error.start",
+        );
         assert_eq!(
             header(&error, "Content-Security-Policy"),
             Some(AUTHORIZE_CSP)
@@ -2035,7 +1898,7 @@ mod tests {
             SOURCE,
             &oauth,
         );
-        let expired = super::expired_error();
+        let expired = super::expired_error(solstone_core_window_catalog::ENGLISH);
         assert_eq!(repeated.status, expired.status);
         assert_eq!(body_text(&repeated), body_text(&expired));
         assert!(header(&repeated, "Location").is_none());
@@ -2802,11 +2665,17 @@ mod tests {
 
     #[test]
     fn consent_error_responses_omit_cli_command_references() {
-        let locked = super::pairing_error(super::OAuthStoreError::PairingLocked);
+        let locked = super::pairing_error(
+            solstone_core_window_catalog::ENGLISH,
+            super::OAuthStoreError::PairingLocked,
+        );
         let locked_body = body_text(&locked);
         assert!(!locked_body.contains("journal mcp pairing generate"));
 
-        let no_pairing = super::pairing_error(super::OAuthStoreError::NoActivePairing);
+        let no_pairing = super::pairing_error(
+            solstone_core_window_catalog::ENGLISH,
+            super::OAuthStoreError::NoActivePairing,
+        );
         let no_pairing_body = body_text(&no_pairing);
         assert!(!no_pairing_body.contains("journal mcp pairing generate"));
     }

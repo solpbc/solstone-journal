@@ -1,0 +1,34 @@
+{
+  "description": "Effect of reconnecting when saved memories are present.",
+  "context": "Browser authorization page for an agent connecting to the journal. Effect of reconnecting when saved memories are present.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "agent_name",
+      "type": "string"
+    },
+    {
+      "name": "memory_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e72bee9fa008b37ee683f859b15a0c18ae52de18220c6e4dfbf642accca014ff",
+  "max_length": 1008,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "quantity"
+  }
+}

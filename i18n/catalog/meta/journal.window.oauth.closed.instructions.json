@@ -1,0 +1,16 @@
+{
+  "description": "Recovery instructions when the pairing window is closed.",
+  "context": "Browser authorization page for an agent connecting to the journal. Recovery instructions when the pairing window is closed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a250ffff2f9ecd97359e58589db7a0338a9ef3ec40f049ed34a7d89b8318e034",
+  "max_length": 417,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

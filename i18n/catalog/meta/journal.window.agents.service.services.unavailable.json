@@ -1,0 +1,23 @@
+{
+  "description": "Saved solstone.me service status shown in the journal’s Agents view. services unavailable.",
+  "context": "Saved solstone.me service status shown in the journal’s Agents view. services unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9e7df85c3648c3bf0dd0c960b2b717d28ab80dec779338d6ee62ce4534169ec7",
+  "max_length": 288,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "url",
+      "value": "services.solstone.app"
+    }
+  ]
+}

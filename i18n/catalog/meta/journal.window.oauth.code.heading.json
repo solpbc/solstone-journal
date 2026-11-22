@@ -1,0 +1,16 @@
+{
+  "description": "Heading for the pairing code field.",
+  "context": "Browser authorization page for an agent connecting to the journal. Heading for the pairing code field.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "92e6be0dd9e3023223bad9dcf4424fc67ed5b3f6e692de42519db8d3e8283ea6",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

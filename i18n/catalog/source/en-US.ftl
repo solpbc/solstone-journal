@@ -20360,3 +20360,229 @@ journal.window.security.notice.device.body = the solstone app there is missing a
 journal.window.automatic.update.notice.paused.title = automatic updates stopped
 
 journal.window.automatic.update.notice.paused.body = your journal couldn't install an update twice in a row, so it stopped trying. the version you have keeps running.
+
+journal.window.agents.activity.reason.audit.unavailable = the audit record could not be written
+
+journal.window.agents.activity.reason.cursor.unavailable = memory cursor initialization is unavailable
+
+journal.window.agents.activity.reason.different.bytes = operation identifier is bound to different bytes
+
+journal.window.agents.activity.reason.empty.index = the search index is empty
+
+journal.window.agents.activity.reason.file.unreadable = a journal file could not be read
+
+journal.window.agents.activity.reason.index.absent = the search index does not exist
+
+journal.window.agents.activity.reason.index.locked = the search index was locked
+
+journal.window.agents.activity.reason.index.unreadable = the search index could not be read
+
+journal.window.agents.activity.reason.invalid.arguments = the request's arguments were not valid for this tool
+
+journal.window.agents.activity.reason.missing.activity.source = this connection does not have the transcripts or messages or body category
+
+journal.window.agents.activity.reason.missing.entities = this connection does not have the entities category
+
+journal.window.agents.activity.reason.missing.facets = this connection does not have the facets category
+
+journal.window.agents.activity.reason.missing.search = this connection does not have the transcripts or messages or screen_text or body or facets or notes or documents or calendar or places or photos category
+
+journal.window.agents.activity.reason.missing.segment = this connection does not have the screenshots or transcripts or messages or body or notes or documents or calendar or photos category
+
+journal.window.agents.activity.reason.missing.suggestion = this connection does not have the facets or entities or transcripts or body category
+
+journal.window.agents.activity.reason.missing.transcripts = this connection does not have the transcripts category
+
+journal.window.agents.activity.reason.missing.week = this connection does not have the transcripts and facets category
+
+journal.window.agents.activity.reason.no.read = this connection has no read permission
+
+journal.window.agents.activity.reason.not.indexed = the requested material is not indexed
+
+journal.window.agents.activity.reason.operation.conflict = an operation with this id was already processed with different arguments
+
+journal.window.agents.activity.reason.original.encoding = memory original is not valid UTF-8
+
+journal.window.agents.activity.reason.original.unconfirmed = memory originals could not be reconfirmed before release
+
+journal.window.agents.activity.reason.outside.permission = the request was outside this connection's permission
+
+journal.window.agents.activity.reason.outside.scope = the request named a category or facet outside this connection's permission
+
+journal.window.agents.activity.reason.paused = it was paused, so nothing was read or saved.
+
+journal.window.agents.activity.reason.permission.changed = this connection's permission changed while the response was being prepared
+
+journal.window.agents.activity.reason.person.or.activity = filtering by person or activity needs the facets permission
+
+journal.window.agents.activity.reason.read.body = this connection does not have permission to read body
+
+journal.window.agents.activity.reason.read.calendar = this connection does not have permission to read calendar
+
+journal.window.agents.activity.reason.read.documents = this connection does not have permission to read documents
+
+journal.window.agents.activity.reason.read.entities = this connection does not have permission to read entities
+
+journal.window.agents.activity.reason.read.facets = this connection does not have permission to read summaries
+
+journal.window.agents.activity.reason.read.messages = this connection does not have permission to read messages
+
+journal.window.agents.activity.reason.read.notes = this connection does not have permission to read notes
+
+journal.window.agents.activity.reason.read.photos = this connection does not have permission to read photos
+
+journal.window.agents.activity.reason.read.places = this connection does not have permission to read places
+
+journal.window.agents.activity.reason.read.profile.pics = this connection does not have permission to read profile pics
+
+journal.window.agents.activity.reason.read.screen.text = this connection does not have permission to read screen text
+
+journal.window.agents.activity.reason.read.screenshots = this connection needs permission to include screenshots
+
+journal.window.agents.activity.reason.read.transcripts = this connection does not have permission to read transcripts
+
+journal.window.agents.activity.reason.receipt.unconfirmed = memory receipt preparation could not be confirmed; retry the same operation
+
+journal.window.agents.activity.reason.record.read = memory record could not be read
+
+journal.window.agents.activity.reason.record.validation = memory record validation failed
+
+journal.window.agents.activity.reason.reference.missing = the reference did not resolve to anything this connection may read
+
+journal.window.agents.activity.reason.reservation.publication = memory reservation could not be published
+
+journal.window.agents.activity.reason.response.preparation = memory response could not be prepared
+
+journal.window.agents.activity.reason.response.serialization = memory response could not be serialized
+
+journal.window.agents.activity.reason.unenforceable = the stored permission for this connection could not be enforced by this build
+
+journal.window.agents.activity.reason.week.whole = this connection can read a week or date range only with access to the whole journal.
+
+journal.window.agents.activity.reason.whole.place = filtering by place needs whole-journal access
+
+journal.window.agents.connection.label.unnamed = connected agent
+
+journal.window.agents.notice.connected.body = if you connected it, there's nothing to do. if not, disconnect it in the agents app.
+
+journal.window.agents.notice.connected.named.title = "{ $agent_name }" can now reach your journal
+
+journal.window.agents.notice.connected.unnamed.title = a new agent can now reach your journal
+
+journal.window.agents.service.account.changed = { $slot1 } ties your address to another copy of this journal, so the address stays off here. this happens when a journal is restored or set up again. bring it back here, and the other copy stops using it.
+
+journal.window.agents.service.address.not.ready = your { $slot1 } address isn't ready yet. your journal keeps trying on its own.
+
+journal.window.agents.service.address.refused = { $slot1 } couldn't make sense of this journal's request. updating your journal may help. your journal keeps trying on its own.
+
+journal.window.agents.service.bootstrap.failed = your journal couldn't set up its { $slot1 } address from what it keeps on this computer. this usually needs a fix, not more time. your journal's log names the step that failed: run { $slot2 }.
+
+journal.window.agents.service.certificate.wait = the certificate authority's current allowance is used up. your journal is in line and will try again on its own. no action needed; you'll see it here when it's ready.
+
+journal.window.agents.service.not.accepted = { $slot1 } didn't accept this journal's request. if you haven't allowed { $slot1 } for this journal yet, turn { $slot1 } off and back on to do that. your journal keeps trying on its own.
+
+journal.window.agents.service.not.accepted.address.kept = { $slot1 } didn't accept this journal's request. if you haven't allowed { $slot1 } for this journal yet, turn { $slot1 } off and back on to do that. your address is kept, and your journal keeps trying on its own.
+
+journal.window.agents.service.offline = your journal is offline right now. your agents will get through when it's back
+
+journal.window.agents.service.retrying = the journal keeps trying on its own
+
+journal.window.agents.service.services.unavailable = this computer could not reach { $slot1 }; it will try again when the service restarts
+
+journal.window.agents.service.subscription = { $slot1 } isn't on yet. your journal keeps trying on its own. finish turning it on in the services portal.
+
+journal.window.agents.service.subscription.address.kept = { $slot1 } isn't on yet. your address is kept, and your journal keeps trying on its own. finish turning it on in the services portal.
+
+journal.window.agents.service.update.required = { $slot1 } needs a newer version of your journal. update your journal on the computer it runs on, and your address will turn on by itself.
+
+journal.window.oauth.cancel.after.code = changed your mind? close this tab. nothing is connected, and this code won't work again.
+
+journal.window.oauth.cancel.before.code = not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.
+
+journal.window.oauth.cancel.reconnect = changed your mind? close this tab. nothing changes, and this code won't work again.
+
+journal.window.oauth.closed.heading = nothing is waiting to connect here.
+
+journal.window.oauth.closed.instructions = to connect an agent, open your journal, go to agents › connect an agent, and make a pairing code first. then connect from your agent again.
+
+journal.window.oauth.code.explanation = being at your journal to read the code is what proves it's you. no password, no sign-in.
+
+journal.window.oauth.code.heading = pairing code
+
+journal.window.oauth.code.label = enter the code shown in your journal, under agents › connect an agent
+
+journal.window.oauth.connect.button = connect { $client_name }
+
+journal.window.oauth.connect.heading = { $client_name } wants to connect to your journal.
+
+journal.window.oauth.connect.return = when you're done, it returns to { $return_host }.
+
+journal.window.oauth.connect.return.and.scope = when you're done, it returns to { $return_host }. it can save and recall its own agent memories. other journal reads stay within what you choose.
+
+journal.window.oauth.error.agent.code = this code no longer works for the agent it was made for. make a new one in the agents app, then connect from your agent again.
+
+journal.window.oauth.error.attempts = too many wrong codes for this request. connect from your agent again.
+
+journal.window.oauth.error.code = this pairing code no longer works. make a new one in the agents app, then connect from your agent again.
+
+journal.window.oauth.error.expired = this request has expired or is no longer valid. connect from your agent again, with a new code from the agents app if yours is no longer open.
+
+journal.window.oauth.error.facets = the chosen facets could not be verified; return to your journal and try again
+
+journal.window.oauth.error.form.size = authorization request exceeds its size limit
+
+journal.window.oauth.error.locked = too many wrong codes were entered. make a new code in the agents app, then connect from your agent again.
+
+journal.window.oauth.error.no.code = there's no open pairing code. make one in the agents app, then connect from your agent again.
+
+journal.window.oauth.error.start = authorization request could not be started
+
+journal.window.oauth.error.unavailable = authorization is temporarily unavailable
+
+journal.window.oauth.facets.empty = your journal has no facets yet.
+
+journal.window.oauth.reconnect.body = your code matched. you made it in your journal for this agent, so it connects as { $agent_name } again.
+
+journal.window.oauth.reconnect.body.live = your code matched. you made it in your journal for this agent, so it connects as { $agent_name } again. the one connected now stops working.
+
+journal.window.oauth.reconnect.body.live.memories = { $quantity ->
+    [one] your code matched. you made it in your journal for this agent, so it connects as { $agent_name } again and can recall its { $memory_count } memory. the one connected now stops working.
+   *[other] your code matched. you made it in your journal for this agent, so it connects as { $agent_name } again and can recall its { $memory_count } memories. the one connected now stops working.
+}
+
+journal.window.oauth.reconnect.body.memories = { $quantity ->
+    [one] your code matched. you made it in your journal for this agent, so it connects as { $agent_name } again and can recall its { $memory_count } memory.
+   *[other] your code matched. you made it in your journal for this agent, so it connects as { $agent_name } again and can recall its { $memory_count } memories.
+}
+
+journal.window.oauth.reconnect.button = connect { $agent_name } again
+
+journal.window.oauth.reconnect.heading = connect { $agent_name } again?
+
+journal.window.oauth.reconnect.scope = choose what { $agent_name } may see.
+
+journal.window.oauth.reconnect.scope.live = here's what { $agent_name } may see now. change them here or later in the agents app.
+
+journal.window.oauth.scope.choose.detail = your code matched. { $client_name } can save and recall its own agent memories. other journal reads stay within what you choose.
+
+journal.window.oauth.scope.choose.heading = choose what { $client_name } may see.
+
+journal.window.oauth.scope.facets = only the facets you choose
+
+journal.window.oauth.scope.facets.after.code = you'll choose them once your code matches. just the facets you pick, now and as they grow. facets you create later are not included.
+
+journal.window.oauth.scope.facets.detail = just the facets you pick, now and as they grow. facets you create later are not included.
+
+journal.window.oauth.scope.heading = what { $client_name } may see
+
+journal.window.oauth.scope.kinds = what kinds of material
+
+journal.window.oauth.scope.required.after.code = choose your whole journal or at least one facet, and at least one kind of material.
+
+journal.window.oauth.scope.required.before.code = pick your whole journal or only the facets you choose, and at least one kind of material. your code hasn't been used, so enter it again below.
+
+journal.window.oauth.scope.whole = your whole journal
+
+journal.window.oauth.scope.whole.detail = everything in your journal now, and anything added later, including facets you create later.
+
+journal.window.oauth.wrong.code = that code didn't match. enter it again, or make a new one in the agents app, then connect from your agent again.

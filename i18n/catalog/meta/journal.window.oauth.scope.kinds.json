@@ -1,0 +1,16 @@
+{
+  "description": "Legend for the set of access permissions.",
+  "context": "Browser authorization page for an agent connecting to the journal. Legend for the set of access permissions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aa3de1575b50b658b8d5b7434fd7653d66404523f4fec414044aee13dc954ed8",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

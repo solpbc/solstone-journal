@@ -230,6 +230,19 @@ fn matches(entry: &ActivityEntry, query: &ActivityQuery) -> bool {
         && query.outcome.is_none_or(|wanted| entry.outcome == wanted)
 }
 
+fn display_reason(outcome: &OutcomeRecord, locale: &str) -> Option<String> {
+    use solstone_core_convey_http::window_catalog::ENGLISH;
+    let saved = outcome.reason.as_ref()?;
+    if locale != ENGLISH
+        && let Some(metadata) = outcome.reason_copy.as_ref()
+        && let Ok(reason) = <crate::audit::Reason as serde::Deserialize>::deserialize(metadata)
+        && reason.render(ENGLISH) == *saved
+    {
+        return Some(reason.render(locale));
+    }
+    Some(saved.clone())
+}
+
 /// Read one bounded page of the owner's agent-activity log, newest first.
 ///
 /// ⚠ "Newest" is by the **recorded timestamp**, which the returned page is
@@ -255,6 +268,18 @@ fn matches(entry: &ActivityEntry, query: &ActivityQuery) -> bool {
 pub fn read_activity(
     journal_root: &Path,
     query: &ActivityQuery,
+) -> Result<ActivityPage, ActivityReadError> {
+    read_activity_for_locale(
+        journal_root,
+        query,
+        solstone_core_convey_http::window_catalog::ENGLISH,
+    )
+}
+
+pub(crate) fn read_activity_for_locale(
+    journal_root: &Path,
+    query: &ActivityQuery,
+    locale: &str,
 ) -> Result<ActivityPage, ActivityReadError> {
     let limit = query.limit.max(1);
     let days = day_dirs(journal_root).map_err(ActivityReadError::Path)?;
@@ -321,7 +346,9 @@ pub fn read_activity(
                             .map_or(RecordedOutcome::Uncertain, |outcome| {
                                 RecordedOutcome::from_written(outcome.outcome)
                             }),
-                        reason: sibling.as_ref().and_then(|outcome| outcome.reason.clone()),
+                        reason: sibling
+                            .as_ref()
+                            .and_then(|outcome| display_reason(outcome, locale)),
                         result: sibling.as_ref().and_then(|outcome| outcome.result.clone()),
                         paused: sibling.as_ref().is_some_and(|outcome| outcome.paused),
                     };

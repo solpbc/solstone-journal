@@ -3,6 +3,9 @@
 
 //! Fail-closed audit publication and best-effort observation notification.
 
+mod reason;
+pub(crate) use reason::Reason;
+
 use std::path::Path;
 use std::time::Duration;
 
@@ -49,20 +52,26 @@ pub(crate) fn write_outcome(
     write_outcome_record(journal_root, coordinates, now, outcome, reason, result)
 }
 
-pub(crate) fn write_outcome_paused(
-    journal_root: &Path,
+pub(crate) fn write_described_outcome(
+    journal: &Path,
     coordinates: &AuditCoordinates,
     now: Timestamp,
-    reason: Option<&str>,
+    outcome: Outcome,
+    reason: Reason,
+    paused: bool,
 ) -> Result<(), AuditWriteError> {
-    solstone_core_mcp_audit::write_outcome_record_with_paused(
-        journal_root,
+    let english = reason.render(solstone_core_convey_http::window_catalog::ENGLISH);
+    solstone_core_mcp_audit::write_outcome_with_description(
+        journal,
         coordinates,
         now,
-        Outcome::Refused,
-        reason,
-        None,
-        true,
+        solstone_core_mcp_audit::OutcomeDescription {
+            outcome,
+            reason: Some(&english),
+            reason_copy: Some(serde_json::json!(reason)),
+            result: None,
+            paused,
+        },
     )
 }
 

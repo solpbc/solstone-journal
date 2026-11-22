@@ -3,6 +3,8 @@
 
 //! Shared, transport-independent execution of authenticated MCP tool calls.
 
+use crate::audit::Reason;
+use solstone_core_convey_http::window_catalog::ENGLISH;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
@@ -246,8 +248,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
                 &coordinates,
                 now,
                 Outcome::Refused,
-                Some(owner_denial_reason(reason)),
-                None,
+                owner_denial_reason(reason),
             );
             return Err(DispatchError::PermissionDenied(reason));
         }
@@ -266,14 +267,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
             recorded,
             Some(&snapshot),
         )?;
-        record_outcome(
-            journal_root,
-            &coordinates,
-            now,
-            Outcome::Refused,
-            Some(&refusal),
-            None,
-        );
+        record_outcome(journal_root, &coordinates, now, Outcome::Refused, refusal);
         return Err(missing_kind.map_or(
             DispatchError::PermissionDenied("no_permission"),
             DispatchError::KindDenied,
@@ -302,8 +296,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
                 &coordinates,
                 now,
                 Outcome::Error,
-                Some(owner_error_reason(error)),
-                None,
+                owner_error_reason(error),
             );
             return Err(error);
         }
@@ -317,8 +310,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
             &coordinates,
             now,
             Outcome::Refused,
-            Some("this connection's permission changed while the response was being prepared"),
-            None,
+            Reason::PermissionChanged,
         );
         return Err(DispatchError::PermissionDenied("no_permission"));
     }
@@ -417,10 +409,9 @@ fn record_outcome(
     coordinates: &AuditCoordinates,
     now: Timestamp,
     outcome: Outcome,
-    reason: Option<&str>,
-    result: Option<solstone_core_mcp_audit::ResultShape>,
+    reason: Reason,
 ) {
-    let _ = audit::write_outcome(journal_root, coordinates, now, outcome, reason, result);
+    let _ = audit::write_described_outcome(journal_root, coordinates, now, outcome, reason, false);
 }
 
 /// A named kind can be refused in words without revealing what the journal
@@ -431,7 +422,7 @@ fn scope_refusal(
     snapshot: &ConnectionReadSnapshot,
     entry: &ToolEntry,
     request: &ValidatedTool,
-) -> Option<(String, Option<AdmittedCategory>)> {
+) -> Option<(Reason, Option<AdmittedCategory>)> {
     let named = match request {
         ValidatedTool::GetTranscript(request)
             if request.offset_ms.is_some()
@@ -456,49 +447,47 @@ fn scope_refusal(
         _ => None,
     });
     if let Some(kind) = named {
-        return Some((kind_refusal(kind), Some(kind)));
+        return Some((kind_reason(kind), Some(kind)));
     }
     if let Some(reason) = requirement_refusal(snapshot, entry) {
         return Some((reason, None));
     }
     if let ValidatedTool::Search(request) | ValidatedTool::Find(_, request) = request {
         if request.place.is_some() && !matches!(snapshot.scope, ConnectionScope::WholeJournal) {
-            return Some((
-                "filtering by place needs whole-journal access".to_owned(),
-                None,
-            ));
+            return Some((Reason::WholePlace, None));
         }
         if (request.person.is_some() || request.activity.is_some())
             && !snapshot.categories.contains(&AdmittedCategory::Facets)
         {
-            return Some((
-                "filtering by person or activity needs the facets permission".to_owned(),
-                Some(AdmittedCategory::Facets),
-            ));
+            return Some((Reason::PersonOrActivity, Some(AdmittedCategory::Facets)));
         }
     }
     if !arguments_within_scope(snapshot, request) {
-        return Some((
-            "the request named a category or facet outside this connection's permission".to_owned(),
-            None,
-        ));
+        return Some((Reason::OutsideScope, None));
     }
     None
 }
 
 pub(crate) fn kind_refusal(kind: AdmittedCategory) -> String {
-    use solstone_core_convey_http::window_catalog::{ENGLISH, text};
-    if kind == AdmittedCategory::Screenshots {
-        return "this connection needs permission to include screenshots".to_owned();
+    kind_reason(kind).render(ENGLISH)
+}
+
+fn kind_reason(kind: AdmittedCategory) -> Reason {
+    match kind {
+        AdmittedCategory::Transcripts => Reason::ReadTranscripts,
+        AdmittedCategory::Messages => Reason::ReadMessages,
+        AdmittedCategory::Entities => Reason::ReadEntities,
+        AdmittedCategory::ProfilePics => Reason::ReadProfilePics,
+        AdmittedCategory::Facets => Reason::ReadFacets,
+        AdmittedCategory::ScreenText => Reason::ReadScreenText,
+        AdmittedCategory::Screenshots => Reason::ReadScreenshots,
+        AdmittedCategory::Body => Reason::ReadBody,
+        AdmittedCategory::Notes => Reason::ReadNotes,
+        AdmittedCategory::Documents => Reason::ReadDocuments,
+        AdmittedCategory::Calendar => Reason::ReadCalendar,
+        AdmittedCategory::Places => Reason::ReadPlaces,
+        AdmittedCategory::Photos => Reason::ReadPhotos,
     }
-    let copy = kind
-        .kind_spec()
-        .permission_copy
-        .expect("registered permissions have copy");
-    format!(
-        "this connection does not have permission to read {}",
-        text(ENGLISH, copy.label_id)
-    )
 }
 
 /// A reference follows its target's registered material category. An unresolved
@@ -554,12 +543,10 @@ fn fetch_target_missing_kind(
     Some(missing)
 }
 
-fn owner_denial_reason(reason: &'static str) -> &'static str {
+fn owner_denial_reason(reason: &'static str) -> Reason {
     match reason {
-        "unenforceable" => {
-            "the stored permission for this connection could not be enforced by this build"
-        }
-        _ => "this connection has no read permission",
+        "unenforceable" => Reason::Unenforceable,
+        _ => Reason::NoRead,
     }
 }
 
@@ -590,18 +577,16 @@ fn entry_title(day: &str) -> String {
 /// empty, when a full journal with an unbuilt search index reports exactly
 /// that. ✅ Name the mechanism — the search index — and leave the journal out
 /// of the compound.
-fn owner_error_reason(error: DispatchError) -> &'static str {
+fn owner_error_reason(error: DispatchError) -> Reason {
     match error {
-        DispatchError::Tool(ToolError::IndexAbsent) => "the search index does not exist",
-        DispatchError::Tool(ToolError::IndexUnreadable) => "the search index could not be read",
-        DispatchError::Tool(ToolError::IndexLocked) => "the search index was locked",
-        DispatchError::Tool(ToolError::EmptyIndex) => "the search index is empty",
-        DispatchError::Tool(ToolError::NotIndexed) => "the requested material is not indexed",
-        DispatchError::Tool(ToolError::FileUnreadable) => "a journal file could not be read",
-        DispatchError::Tool(ToolError::ReferenceNotFound) => {
-            "the reference did not resolve to anything this connection may read"
-        }
-        DispatchError::Tool(ToolError::AuditUnavailable) => "the audit record could not be written",
+        DispatchError::Tool(ToolError::IndexAbsent) => Reason::IndexAbsent,
+        DispatchError::Tool(ToolError::IndexUnreadable) => Reason::IndexUnreadable,
+        DispatchError::Tool(ToolError::IndexLocked) => Reason::IndexLocked,
+        DispatchError::Tool(ToolError::EmptyIndex) => Reason::EmptyIndex,
+        DispatchError::Tool(ToolError::NotIndexed) => Reason::NotIndexed,
+        DispatchError::Tool(ToolError::FileUnreadable) => Reason::FileUnreadable,
+        DispatchError::Tool(ToolError::ReferenceNotFound) => Reason::ReferenceMissing,
+        DispatchError::Tool(ToolError::AuditUnavailable) => Reason::AuditUnavailable,
         DispatchError::Tool(
             ToolError::InvalidInput
             | ToolError::SourceArguments
@@ -609,12 +594,10 @@ fn owner_error_reason(error: DispatchError) -> &'static str {
             | ToolError::TranscriptTimeArguments
             | ToolError::WeekRangeArguments,
         )
-        | DispatchError::InvalidInput => "the request's arguments were not valid for this tool",
-        DispatchError::Tool(ToolError::SuggestionOperationConflict) => {
-            "an operation with this id was already processed with different arguments"
-        }
+        | DispatchError::InvalidInput => Reason::InvalidArguments,
+        DispatchError::Tool(ToolError::SuggestionOperationConflict) => Reason::OperationConflict,
         DispatchError::PermissionDenied(_) | DispatchError::KindDenied(_) => {
-            "the request was outside this connection's permission"
+            Reason::OutsidePermission
         }
     }
 }
@@ -1307,7 +1290,7 @@ fn read_batch(
         ) {
             items.push(json!({
                 "index": index,
-                "error": {"code": "permission_denied", "message": message},
+                "error": {"code": "permission_denied", "message": message.render(ENGLISH)},
             }));
             continue;
         }

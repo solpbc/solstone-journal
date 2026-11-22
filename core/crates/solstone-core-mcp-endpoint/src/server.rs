@@ -63,19 +63,7 @@ impl<'a> MemoryAuthority<'a> {
         } else {
             Some(verified.agent_identity.clone())
         };
-        let mut safe = String::new();
-        for character in label.as_deref().unwrap_or("connected agent").trim().chars() {
-            if character.is_control() || matches!(character, '<' | '>') {
-                continue;
-            }
-            if safe.len() + character.len_utf8() > 256 {
-                break;
-            }
-            safe.push(character);
-        }
-        if safe.trim().is_empty() {
-            safe = "connected agent".into();
-        }
+        let safe = crate::suggestions::submit::sanitize_label(label.as_deref().unwrap_or_default());
         Ok(Self {
             verified,
             creation_label: safe,
@@ -791,11 +779,13 @@ fn post_json_rpc(
                 if let Ok(coordinates) =
                     crate::audit::write_admitted_interaction(journal_root, now, &admission)
                 {
-                    let _ = crate::audit::write_outcome_paused(
+                    let _ = crate::audit::write_described_outcome(
                         journal_root,
                         &coordinates,
                         now,
-                        Some("it was paused, so nothing was read or saved."),
+                        solstone_core_mcp_audit::Outcome::Refused,
+                        crate::audit::Reason::Paused,
+                        true,
                     );
                 }
                 let stamp = match pause {

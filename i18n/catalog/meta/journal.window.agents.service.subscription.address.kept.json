@@ -1,0 +1,23 @@
+{
+  "description": "Saved solstone.me service status shown in the journal’s Agents view. subscription address kept.",
+  "context": "Saved solstone.me service status shown in the journal’s Agents view. subscription address kept.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "62b45ff69f8bfb0f648f071a31dd3b04a25c081135b9b2a2df1a12874045d419",
+  "max_length": 402,
+  "risk": "payment",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "url",
+      "value": "solstone.me"
+    }
+  ]
+}

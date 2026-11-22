@@ -3,6 +3,7 @@
 
 //! The paired memory tools, reachable only through verified transport authority.
 
+use crate::audit::Reason;
 use std::path::Path;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -298,13 +299,13 @@ fn postcommit_failure(
     now: Timestamp,
     list_changed: bool,
 ) -> HttpResponse {
-    let _ = crate::audit::write_outcome(
+    let _ = crate::audit::write_described_outcome(
         journal,
         audit,
         now,
         Outcome::Error,
-        Some("memory receipt preparation could not be confirmed; retry the same operation"),
-        None,
+        Reason::ReceiptUnconfirmed,
+        false,
     );
     uncertain(request, operation, list_changed)
 }
@@ -499,13 +500,13 @@ fn recall_response(
         Err(_) => return error_response(request, "memory_audit_unavailable"),
     };
     let Some(codec) = REFERENCES.get_or_init(|| ReferenceCodec::new().ok()) else {
-        let _ = crate::audit::write_outcome(
+        let _ = crate::audit::write_described_outcome(
             journal,
             &audit,
             now,
             Outcome::Error,
-            Some("memory cursor initialization is unavailable"),
-            None,
+            Reason::CursorUnavailable,
+            false,
         );
         return error_response(request, "memory_response_unavailable");
     };
@@ -543,13 +544,13 @@ fn recall_response(
             "day":note.day, "origin":note.origin, "digest":note.ready.digest, "byte_count":note.bytes.len()}))
     }).collect::<Result<Vec<_>, _>>();
     let Ok(notes) = notes else {
-        let _ = crate::audit::write_outcome(
+        let _ = crate::audit::write_described_outcome(
             journal,
             &audit,
             now,
             Outcome::Error,
-            Some("memory original is not valid UTF-8"),
-            None,
+            Reason::OriginalEncoding,
+            false,
         );
         return error_response(
             request,
@@ -564,13 +565,13 @@ fn recall_response(
     let value = json!({"schema":1, "notes":notes, "continuation":page.continuation,
         "complete":page.complete, "reason":page.reason, "query_reason":page.query_reason, "self_resolution":page.self_resolution});
     if bounded_json(&value, MAX_PREPARED_BYTES).is_err() {
-        let _ = crate::audit::write_outcome(
+        let _ = crate::audit::write_described_outcome(
             journal,
             &audit,
             now,
             Outcome::Error,
-            Some("memory response could not be prepared"),
-            None,
+            Reason::ResponsePreparation,
+            false,
         );
         return error_response(request, "memory_response_unavailable");
     }
@@ -587,13 +588,13 @@ fn recall_response(
     let bytes = match response_bytes(request, value, list_changed) {
         Ok(bytes) => bytes,
         Err(()) => {
-            let _ = crate::audit::write_outcome(
+            let _ = crate::audit::write_described_outcome(
                 journal,
                 &audit,
                 now,
                 Outcome::Error,
-                Some("memory response could not be serialized"),
-                None,
+                Reason::ResponseSerialization,
+                false,
             );
             return error_response(request, "memory_response_unavailable");
         }
@@ -601,13 +602,13 @@ fn recall_response(
     #[cfg(all(test, feature = "full-tests"))]
     faults::before_terminal(journal, &audit, None, authority.id());
     if !page.notes.is_empty() && !page_is_live(journal, source, &page, deadline) {
-        let _ = crate::audit::write_outcome(
+        let _ = crate::audit::write_described_outcome(
             journal,
             &audit,
             now,
             Outcome::Error,
-            Some("memory originals could not be reconfirmed before release"),
-            None,
+            Reason::OriginalUnconfirmed,
+            false,
         );
         return error_response(
             request,

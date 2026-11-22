@@ -131,6 +131,16 @@ fn with_byo_routes(router: Router) -> Router {
         .route("/app/agents/api/byo/dns-check", post(byo_dns_check))
 }
 
+tokio::task_local! {
+    static OWNER_RESPONSE_LOCALE: &'static str;
+}
+
+pub(crate) fn owner_response_locale() -> &'static str {
+    OWNER_RESPONSE_LOCALE
+        .try_with(|locale| *locale)
+        .unwrap_or(solstone_core_window_catalog::ENGLISH)
+}
+
 async fn admit_owner(request: Request<Body>, next: Next) -> Response {
     let is_owner = request
         .extensions()
@@ -140,7 +150,11 @@ async fn admit_owner(request: Request<Body>, next: Next) -> Response {
     if !is_owner {
         return StatusCode::NOT_FOUND.into_response();
     }
-    next.run(request).await
+    let locale = request
+        .extensions()
+        .get::<solstone_core_convey_http::coalesce::ResponseLocale>()
+        .map_or(solstone_core_window_catalog::ENGLISH, |locale| locale.0);
+    OWNER_RESPONSE_LOCALE.scope(locale, next.run(request)).await
 }
 
 pub(crate) fn refusal(code: &'static str, detail: impl ToString, status: StatusCode) -> Response {
@@ -157,8 +171,17 @@ pub(crate) fn refusal(code: &'static str, detail: impl ToString, status: StatusC
 }
 
 async fn state(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
-    match state_value(&journal) {
-        Ok(value) => Json(value).into_response(),
+    let locale = owner_response_locale();
+    match state_value_with_iface(
+        &journal,
+        &solstone_core_sol_link::pairing::addresses::SystemInterfaceSource,
+        locale,
+    ) {
+        Ok(value) => (
+            [(axum::http::header::VARY, "X-Solstone-Locale")],
+            Json(value),
+        )
+            .into_response(),
         Err(detail) => refusal(
             "agents_state_unavailable",
             detail,
@@ -167,16 +190,19 @@ async fn state(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn state_value(root: &std::path::Path) -> Result<Value, String> {
     state_value_with_iface(
         root,
         &solstone_core_sol_link::pairing::addresses::SystemInterfaceSource,
+        solstone_core_convey_http::window_catalog::ENGLISH,
     )
 }
 
 pub(crate) fn state_value_with_iface(
     root: &std::path::Path,
     iface_source: &dyn solstone_core_sol_link::pairing::addresses::RawInterfaceSource,
+    locale: &str,
 ) -> Result<Value, String> {
     let config = read_journal_config(root).map_err(|error| error.to_string())?;
     let enabled = matches!(
@@ -287,7 +313,7 @@ pub(crate) fn state_value_with_iface(
         })
         .collect::<Result<Vec<_>, String>>()?;
     let certificate = certificate_posture(root);
-    let owner_state = crate::read_mcp_owner_state(root);
+    let owner_state = crate::owner_state::read_owner_state_for_display(root, locale);
     let certificate_current = certificate.get("current").and_then(Value::as_bool) == Some(true);
     let renewal_due = certificate.get("renewal_due").and_then(Value::as_bool) == Some(true);
     let status = if !enabled {
@@ -3095,7 +3121,8 @@ async fn activity(
         limit: 100,
         start_after: None,
     };
-    match read_activity(&journal, &query) {
+    let locale = owner_response_locale();
+    match crate::activity::read_activity_for_locale(&journal, &query, locale) {
         Ok(page) => {
             let counts = tally(&page.entries);
             let side_store_fault = crate::agent_state::read_store(&journal).is_err();
@@ -3140,7 +3167,7 @@ async fn activity(
                                         &journal,
                                         source.component(),
                                     );
-                                    Value::String(label.unwrap_or_else(|| "an earlier agent".to_string()))
+                                    Value::String(label.unwrap_or_else(|| solstone_core_convey_http::window_catalog::text(locale, "journal.window.agents.status.text.an.earlier.agent")))
                                 } else {
                                     Value::Null
                                 };
@@ -3159,7 +3186,7 @@ async fn activity(
                     })
                 })
                 .collect();
-            Json(json!({"entries": entries, "counts": counts, "examined": page.examined, "examination_complete": page.examination_complete, "unreadable": page.unreadable, "next": page.next.map(|next| json!({"day": next.day, "segment": next.segment}))})).into_response()
+            ([(axum::http::header::VARY, "X-Solstone-Locale")], Json(json!({"entries": entries, "counts": counts, "examined": page.examined, "examination_complete": page.examination_complete, "unreadable": page.unreadable, "next": page.next.map(|next| json!({"day": next.day, "segment": next.segment}))}))).into_response()
         }
         Err(error) => refusal(
             "activity_read_failed",
@@ -4207,7 +4234,12 @@ mod tests {
             Some(addr_states.clone()),
         );
 
-        let val1 = state_value_with_iface(journal_root, &mock_iface).unwrap();
+        let val1 = state_value_with_iface(
+            journal_root,
+            &mock_iface,
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        )
+        .unwrap();
         assert_eq!(val1["lan_door"]["enabled"], true);
         assert_eq!(val1["lan_door"]["listening"], false); // no leaf -> door not listening
         assert_eq!(val1["lan_door"]["addresses"][0]["address"], "192.168.1.50");
@@ -4233,7 +4265,12 @@ mod tests {
             Some(addr_states),
         );
 
-        let val2 = state_value_with_iface(journal_root, &mock_iface).unwrap();
+        let val2 = state_value_with_iface(
+            journal_root,
+            &mock_iface,
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        )
+        .unwrap();
         assert_eq!(val2["lan_door"]["enabled"], true);
         assert_eq!(val2["lan_door"]["listening"], true);
         assert_eq!(val2["lan_door"]["fingerprint"], expected_leaf_fp);
@@ -4303,7 +4340,12 @@ mod tests {
         let state_bytes_before =
             std::fs::read(journal_root.join(crate::lan_door::LAN_DOOR_STATE_PATH)).unwrap();
 
-        let val = state_value_with_iface(journal_root, &FailingInterfaceSource).unwrap();
+        let val = state_value_with_iface(
+            journal_root,
+            &FailingInterfaceSource,
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        )
+        .unwrap();
         assert_eq!(val["lan_door"]["listening"], false);
         assert_eq!(val["lan_door"]["reason"], "enumeration_failed");
         assert_eq!(val["lan_door"]["addresses"], json!([]));

@@ -1,0 +1,16 @@
+{
+  "description": "Heading when the pairing window is closed.",
+  "context": "Browser authorization page for an agent connecting to the journal. Heading when the pairing window is closed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "408c19c98eb962f5b756fc7fdcc80adc830075531aede6c8b4ebf279ddcc8908",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

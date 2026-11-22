@@ -1,0 +1,16 @@
+{
+  "description": "Saved solstone.me service status shown in the journal’s Agents view. retrying.",
+  "context": "Saved solstone.me service status shown in the journal’s Agents view. retrying.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1387e467c764e1a966ffdc67387f089ceaed753dba2ed8aa3ca6e2855ee912be",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

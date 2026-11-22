@@ -1,0 +1,21 @@
+{
+  "description": "Owner notice title after the first access grant to a named agent. The agent supplies its display name.",
+  "context": "Owner notice title after the first access grant to a named agent. The agent supplies its display name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0a1b4aabd458acb328c8d9526a2d35390359b2b1a4255f39b02326b5a1500ae0",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

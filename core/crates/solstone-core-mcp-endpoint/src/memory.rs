@@ -3,6 +3,7 @@
 
 //! Private connection-owned memory append state machine.
 
+use crate::audit::Reason;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
@@ -39,8 +40,6 @@ const MAX_SEGMENT_ATTEMPTS: usize = 128;
 const NOTE_FILE: &str = "note.txt";
 const ORIGIN_FILE: &str = "origin.json";
 const READY_FILE: &str = "ready.json";
-const RECORD_VALIDATION_REASON: &str = "memory record validation failed";
-const RECORD_READ_REASON: &str = "memory record could not be read";
 
 /// Result of one append attempt. Memory content is never returned.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -100,11 +99,18 @@ pub(crate) fn prepare_connection_memory(
 
 /// A validation or pre-publication failure.
 #[derive(Debug)]
-pub(crate) struct AppendError(&'static str);
+pub(crate) enum AppendError {
+    Storage(&'static str),
+    Recorded(Reason),
+}
 
 impl fmt::Display for AppendError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.0)
+        match self {
+            Self::Storage(detail) => formatter.write_str(detail),
+            Self::Recorded(reason) => formatter
+                .write_str(&reason.render(solstone_core_convey_http::window_catalog::ENGLISH)),
+        }
     }
 }
 
@@ -112,7 +118,7 @@ impl Error for AppendError {}
 
 impl AppendError {
     pub(crate) fn wire_reason(&self) -> &'static str {
-        if self.0 == "operation identifier is bound to different bytes" {
+        if matches!(self, Self::Recorded(Reason::DifferentBytes)) {
             "memory_operation_conflict"
         } else {
             "memory_save_unavailable"
@@ -232,7 +238,7 @@ trait AppendStore {
         &mut self,
         location: &AuditLocation,
         outcome: Outcome,
-        reason: Option<&str>,
+        reason: Option<Reason>,
         result: Option<ResultShape>,
         now: jiff::Timestamp,
     ) -> Publication;
@@ -305,21 +311,21 @@ fn append_with_source<S: AppendStore>(
 ) -> Result<AppendResult, AppendError> {
     let note = text.as_bytes();
     if note.is_empty() || note.len() > MAX_NOTE_BYTES {
-        return Err(AppendError(
+        return Err(AppendError::Storage(
             "memory text length is outside the accepted range",
         ));
     }
     validate_operation_id(operation_id)
-        .map_err(|_| AppendError("invalid memory operation identifier"))?;
+        .map_err(|_| AppendError::Storage("invalid memory operation identifier"))?;
     validate_creation_label(source_input.creation_label)
-        .map_err(|_| AppendError("invalid memory creation label"))?;
+        .map_err(|_| AppendError::Storage("invalid memory creation label"))?;
 
     let source = source_input.source;
     let address = OperationAddress::new(source, operation_id);
     let note_digest = digest(note);
     store
         .hold_source(source.component())
-        .map_err(|_| AppendError("memory source lock could not be acquired"))?;
+        .map_err(|_| AppendError::Storage("memory source lock could not be acquired"))?;
 
     let audit = match store.admit(
         source_input.verified_id,
@@ -336,14 +342,16 @@ fn append_with_source<S: AppendStore>(
             });
         }
         Err(AdmissionFailure::NotPublished) => {
-            return Err(AppendError("memory audit admission could not be published"));
+            return Err(AppendError::Storage(
+                "memory audit admission could not be published",
+            ));
         }
     };
 
     let loaded = match store.load_operation(&address) {
         Ok(value) => value,
         Err(_) => {
-            return terminal_error(store, &audit, now, RECORD_READ_REASON, operation_id);
+            return terminal_error(store, &audit, now, Reason::RecordRead, operation_id);
         }
     };
     let (mut record, was_ready, is_new) = match loaded {
@@ -355,7 +363,7 @@ fn append_with_source<S: AppendStore>(
                         store,
                         &audit,
                         now,
-                        RECORD_VALIDATION_REASON,
+                        Reason::RecordValidation,
                         operation_id,
                     );
                 }
@@ -370,7 +378,7 @@ fn append_with_source<S: AppendStore>(
                         store,
                         &audit,
                         now,
-                        "operation identifier is bound to different bytes",
+                        Reason::DifferentBytes,
                         operation_id,
                     );
                 }
@@ -379,7 +387,7 @@ fn append_with_source<S: AppendStore>(
                         store,
                         &audit,
                         now,
-                        RECORD_VALIDATION_REASON,
+                        Reason::RecordValidation,
                         operation_id,
                     );
                 }
@@ -392,7 +400,7 @@ fn append_with_source<S: AppendStore>(
             let coordinate = match store.choose_coordinate(&stream, now) {
                 Ok(coordinate) => coordinate,
                 Err(_) => {
-                    return terminal_error(store, &audit, now, RECORD_READ_REASON, operation_id);
+                    return terminal_error(store, &audit, now, Reason::RecordRead, operation_id);
                 }
             };
             (
@@ -428,7 +436,7 @@ fn append_with_source<S: AppendStore>(
                     store,
                     &audit,
                     now,
-                    "memory reservation could not be published",
+                    Reason::ReservationPublication,
                     operation_id,
                 );
             }
@@ -462,14 +470,14 @@ fn append_with_source<S: AppendStore>(
             });
         }
         SegmentObservation::Missing if record.phase != Readiness::Reserved => {
-            return terminal_error(store, &audit, now, RECORD_READ_REASON, operation_id);
+            return terminal_error(store, &audit, now, Reason::RecordRead, operation_id);
         }
         SegmentObservation::Missing | SegmentObservation::Live => {}
     }
 
     let origin = origin_for(&record, source);
     let origin_bytes = serde_json::to_vec(&origin)
-        .map_err(|_| AppendError("memory origin could not be serialized"))?;
+        .map_err(|_| AppendError::Storage("memory origin could not be serialized"))?;
 
     if was_ready {
         let complete = file_equals(store, &record.coordinate, NOTE_FILE, note)
@@ -482,7 +490,7 @@ fn append_with_source<S: AppendStore>(
                     && ready_matches(store, &record.coordinate, &record, source, note)?)
             });
         if !matches!(complete, Ok(true)) {
-            return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
+            return terminal_error(store, &audit, now, Reason::RecordValidation, operation_id);
         }
         let receipt = receipt(&record, source);
         let result = result_shape_for(&receipt);
@@ -504,7 +512,7 @@ fn append_with_source<S: AppendStore>(
         });
     }
     if store.bind_stream(source, &record.coordinate).is_err() {
-        return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
+        return terminal_error(store, &audit, now, Reason::RecordValidation, operation_id);
     }
 
     if record.phase == Readiness::Reserved {
@@ -516,7 +524,7 @@ fn append_with_source<S: AppendStore>(
                         store,
                         &audit,
                         now,
-                        RECORD_VALIDATION_REASON,
+                        Reason::RecordValidation,
                         operation_id,
                     );
                 }
@@ -543,7 +551,7 @@ fn append_with_source<S: AppendStore>(
         file_equals(store, &record.coordinate, ORIGIN_FILE, &origin_bytes),
         Ok(true)
     ) {
-        return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
+        return terminal_error(store, &audit, now, Reason::RecordValidation, operation_id);
     }
 
     if record.phase == Readiness::Noted {
@@ -562,7 +570,7 @@ fn append_with_source<S: AppendStore>(
         });
         record.phase = Readiness::Chained;
         if validate_record(&record, source, operation_id, note).is_err() {
-            return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
+            return terminal_error(store, &audit, now, Reason::RecordValidation, operation_id);
         }
         match save_record(store, &address, &record, false) {
             Publication::Confirmed => {}
@@ -579,13 +587,13 @@ fn append_with_source<S: AppendStore>(
         let chain_matches = matches!((actual_chain, record.chain.as_ref()), (Ok(Some(actual)), Some(expected))
             if actual.seq == expected.seq && actual.prev_day == expected.prev_day && actual.prev_segment == expected.prev_segment);
         if !chain_matches {
-            return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
+            return terminal_error(store, &audit, now, Reason::RecordValidation, operation_id);
         }
         let ready_bytes = ready_bytes(&record, source)?;
         match store.publish_file(&record.coordinate, READY_FILE, &ready_bytes) {
             FilePublication::Confirmed => {}
             FilePublication::Conflict => {
-                return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
+                return terminal_error(store, &audit, now, Reason::RecordValidation, operation_id);
             }
             FilePublication::PublishedUnconfirmed | FilePublication::NotPublished => {
                 return Ok(AppendResult::UncertainRetry {
@@ -637,18 +645,18 @@ fn file_equals<S: AppendStore>(
     store
         .read_file(coordinate, name)
         .map(|actual| actual.as_deref() == Some(expected))
-        .map_err(|_| AppendError("memory file could not be read"))
+        .map_err(|_| AppendError::Storage("memory file could not be read"))
 }
 
 fn terminal_error<S: AppendStore>(
     store: &mut S,
     audit: &AuditLocation,
     now: jiff::Timestamp,
-    reason: &'static str,
+    reason: Reason,
     operation_id: &str,
 ) -> Result<AppendResult, AppendError> {
     match write_terminal(store, audit, now, Outcome::Error, Some(reason), None) {
-        Publication::Confirmed => Err(AppendError(reason)),
+        Publication::Confirmed => Err(AppendError::Recorded(reason)),
         Publication::PublishedUnconfirmed | Publication::NotPublished => {
             Ok(AppendResult::UncertainRetry {
                 operation_id: operation_id.to_owned(),
@@ -662,7 +670,7 @@ fn write_terminal<S: AppendStore>(
     audit: &AuditLocation,
     now: jiff::Timestamp,
     outcome: Outcome,
-    reason: Option<&str>,
+    reason: Option<Reason>,
     result: Option<ResultShape>,
 ) -> Publication {
     store.write_outcome(audit, outcome, reason, result, now)
@@ -699,9 +707,9 @@ fn result_shape_for(receipt: &AppendReceipt) -> ResultShape {
 
 fn ready_bytes(record: &OperationRecord, source: &SourceKey) -> Result<Vec<u8>, AppendError> {
     let document = ready_document(record, source)
-        .map_err(|_| AppendError("memory readiness could not be serialized"))?;
+        .map_err(|_| AppendError::Storage("memory readiness could not be serialized"))?;
     serde_json::to_vec(&document)
-        .map_err(|_| AppendError("memory readiness could not be serialized"))
+        .map_err(|_| AppendError::Storage("memory readiness could not be serialized"))
 }
 
 fn ready_matches<S: AppendStore>(
@@ -713,19 +721,19 @@ fn ready_matches<S: AppendStore>(
 ) -> Result<bool, AppendError> {
     let Some(bytes) = store
         .read_file(coordinate, READY_FILE)
-        .map_err(|_| AppendError("memory file could not be read"))?
+        .map_err(|_| AppendError::Storage("memory file could not be read"))?
     else {
         return Ok(false);
     };
     let actual: ReadyDocument = serde_json::from_slice(&bytes)
-        .map_err(|_| AppendError("memory readiness could not be read"))?;
+        .map_err(|_| AppendError::Storage("memory readiness could not be read"))?;
     validate_ready_document(&actual, source, note)
-        .map_err(|_| AppendError("memory readiness could not be validated"))?;
+        .map_err(|_| AppendError::Storage("memory readiness could not be validated"))?;
     let expected = ready_document(record, source)
-        .map_err(|_| AppendError("memory readiness could not be serialized"))?;
+        .map_err(|_| AppendError::Storage("memory readiness could not be serialized"))?;
     let chain = store
         .read_chain(coordinate)
-        .map_err(|_| AppendError("memory chain could not be read"))?;
+        .map_err(|_| AppendError::Storage("memory chain could not be read"))?;
     Ok(actual == expected
         && chain.is_some_and(|chain| {
             chain.seq == actual.chain.seq
@@ -1195,7 +1203,7 @@ impl AppendStore for JournalStore<'_> {
         &mut self,
         location: &AuditLocation,
         outcome: Outcome,
-        reason: Option<&str>,
+        reason: Option<Reason>,
         result: Option<ResultShape>,
         now: jiff::Timestamp,
     ) -> Publication {
@@ -1216,7 +1224,18 @@ impl AppendStore for JournalStore<'_> {
             stream: location.stream.clone(),
             segment: location.segment.clone(),
         };
-        match write_outcome_record(self.journal, &coordinates, now, outcome, reason, result) {
+        let written = match reason {
+            Some(reason) => crate::audit::write_described_outcome(
+                self.journal,
+                &coordinates,
+                now,
+                outcome,
+                reason,
+                false,
+            ),
+            None => write_outcome_record(self.journal, &coordinates, now, outcome, None, result),
+        };
+        match written {
             Ok(()) => Publication::Confirmed,
             Err(AuditWriteError::PublishedUnconfirmed { .. }) => Publication::PublishedUnconfirmed,
             Err(_) => Publication::NotPublished,
@@ -1332,6 +1351,8 @@ pub fn append_connection_memory_test_hook(
 )]
 mod tests {
     use std::collections::{HashMap, VecDeque};
+
+    use crate::audit::Reason;
 
     use solstone_core_format::agent_memory::{
         Coordinate, OperationRecord, Readiness, SourceKey, digest,
@@ -1536,12 +1557,13 @@ mod tests {
             &mut self,
             _: &AuditLocation,
             outcome: Outcome,
-            reason: Option<&str>,
+            reason: Option<Reason>,
             _: Option<ResultShape>,
             _: jiff::Timestamp,
         ) -> Publication {
             self.events.push("outcome".into());
             if let Some(reason) = reason {
+                let reason = reason.render(solstone_core_convey_http::window_catalog::ENGLISH);
                 for forbidden in [
                     "served",
                     "empty",

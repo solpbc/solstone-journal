@@ -51,6 +51,7 @@ serde_json.workspace = true
 socket2.workspace = true
 solstone-core-callosum.workspace = true
 solstone-core-convey-http.workspace = true
+solstone-core-window-catalog.workspace = true
 solstone-core-indexer-query.workspace = true
 rusqlite.workspace = true
 russh.workspace = true

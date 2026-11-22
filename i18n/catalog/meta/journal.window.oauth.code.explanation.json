@@ -1,0 +1,16 @@
+{
+  "description": "Explanation of the pairing code.",
+  "context": "Browser authorization page for an agent connecting to the journal. Explanation of the pairing code.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f18af399f575fbc0fd62b22a8a746da99afc40b3d126708cf4e519179f970a7",
+  "max_length": 264,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

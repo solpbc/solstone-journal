@@ -118,16 +118,25 @@ fn announce_agent_access(oauth: &OAuthRuntime, client_id: &str, name: Option<&st
 }
 
 fn agent_access_notice(client_id: &str, name: Option<&str>) -> serde_json::Value {
+    use solstone_core_convey_http::window_catalog::{ENGLISH, strings, text};
+
     let title = match name.and_then(notice_name) {
-        Some(name) => format!("\"{name}\" can now reach your journal"),
-        None => "a new agent can now reach your journal".to_owned(),
+        Some(name) => strings(
+            ENGLISH,
+            "journal.window.agents.notice.connected.named.title",
+            [("agent_name", name)],
+        ),
+        None => text(
+            ENGLISH,
+            "journal.window.agents.notice.connected.unnamed.title",
+        ),
     };
     serde_json::json!({
         "tract": "owner_notice",
         "event": "raise",
         "key": format!("access:agent:{client_id}"),
         "title": title,
-        "message": "if you connected it, there's nothing to do. if not, disconnect it in the agents app.",
+        "message": text(ENGLISH, "journal.window.agents.notice.connected.body"),
         "action": "/app/agents",
     })
 }

@@ -1,0 +1,21 @@
+{
+  "description": "Heading for choosing what the client can access.",
+  "context": "Browser authorization page for an agent connecting to the journal. Heading for choosing what the client can access.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "client_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "be370dd98fa5578d5824b5c8cda764070546913f0abba46fb10339ec25fe5948",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

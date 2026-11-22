@@ -1,0 +1,21 @@
+{
+  "description": "The return host appears in bold after code entry.",
+  "context": "Browser authorization page for an agent connecting to the journal. The return host appears in bold after code entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "return_host",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "513740356464b3b6216ba2979f5f2eea88cefdf86db40ff0e6ea7f741c3811ec",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Heading naming the client requesting access.",
+  "context": "Browser authorization page for an agent connecting to the journal. Heading naming the client requesting access.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "client_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eada6a38566d8a2e93b8e6fdd54845332b944e6f3cf598f24e3b64916aecc8d9",
+  "max_length": 150,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

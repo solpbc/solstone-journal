@@ -1,0 +1,16 @@
+{
+  "description": "Missing choices for the requested permission after confirming the pairing code.",
+  "context": "Browser authorization page for an agent connecting to the journal. Missing choices for the requested permission after confirming the pairing code.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f4242052bcc8af019df1d9d56cb56a3efa5aed5c4714302f980ef0c9d443f1af",
+  "max_length": 249,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Consequence of declining before the code is used.",
+  "context": "Browser authorization page for an agent connecting to the journal. Consequence of declining before the code is used.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7147c00f7a487726ffdfcd805400ecf03ecb769c92922e6532d0e4b23ec5e805",
+  "max_length": 309,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

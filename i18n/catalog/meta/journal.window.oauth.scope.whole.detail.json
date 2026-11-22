@@ -1,0 +1,16 @@
+{
+  "description": "Explanation of whole-journal permission.",
+  "context": "Browser authorization page for an agent connecting to the journal. Explanation of whole-journal permission.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "075b97fd431d0e45afe5d7228983a811da46a51d9fbf70fed19d1944efeb544c",
+  "max_length": 276,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

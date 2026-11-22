@@ -1,0 +1,21 @@
+{
+  "description": "Consent disclosure identifying the return host and describing agent memory and read access.",
+  "context": "Browser authorization page for an agent connecting to the journal. Consent disclosure identifying the return host and describing agent memory and read access.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "return_host",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8941c3eec28821fc2143419a4e9bfbf53a4b250536dfa1fdc28430004f6de1fa",
+  "max_length": 435,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

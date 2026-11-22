@@ -1,0 +1,34 @@
+{
+  "description": "Effect of replacing a live connection that has saved memories.",
+  "context": "Browser authorization page for an agent connecting to the journal. Effect of replacing a live connection that has saved memories.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "agent_name",
+      "type": "string"
+    },
+    {
+      "name": "memory_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "66fbcdd8fc91244556e572ad67df6d3ac5fb23bf36318b11322da19230f69eaa",
+  "max_length": 1230,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "quantity"
+  }
+}

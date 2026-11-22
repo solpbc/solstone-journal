@@ -281,6 +281,10 @@ pub struct OutcomeRecord {
     /// which stays closed and indistinguishable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// Optional presentation identity for a reason written by the journal.
+    /// Keep unrecognized metadata opaque so all readers can still open the outcome.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_copy: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<ResultShape>,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -515,6 +519,42 @@ pub fn write_outcome_record_with_paused(
     result: Option<ResultShape>,
     paused: bool,
 ) -> Result<(), AuditWriteError> {
+    write_outcome_with_description(
+        journal_root,
+        coordinates,
+        now,
+        OutcomeDescription {
+            outcome,
+            reason,
+            reason_copy: None,
+            result,
+            paused,
+        },
+    )
+}
+
+/// Presentation metadata and the original fields of one terminal outcome.
+pub struct OutcomeDescription<'a> {
+    pub outcome: Outcome,
+    pub reason: Option<&'a str>,
+    pub reason_copy: Option<Value>,
+    pub result: Option<ResultShape>,
+    pub paused: bool,
+}
+
+pub fn write_outcome_with_description(
+    journal_root: &Path,
+    coordinates: &AuditCoordinates,
+    now: Timestamp,
+    description: OutcomeDescription<'_>,
+) -> Result<(), AuditWriteError> {
+    let OutcomeDescription {
+        outcome,
+        reason,
+        reason_copy,
+        result,
+        paused,
+    } = description;
     let day_key = solstone_core_time::day_key(coordinates.day);
     let segment_directory = segment_path(
         journal_root,
@@ -529,6 +569,7 @@ pub fn write_outcome_record_with_paused(
         timestamp: now,
         outcome,
         reason: reason.map(str::to_owned),
+        reason_copy,
         result,
         paused,
     };
@@ -737,6 +778,7 @@ mod tests {
             timestamp: at,
             outcome: Outcome::Stored,
             reason: None,
+            reason_copy: None,
             result: Some(result),
             paused: false,
         };
