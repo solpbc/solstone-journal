@@ -43,7 +43,7 @@ mod tests {
         let text = format!("kept\n{}\nalso kept", "x".repeat(2049));
         assert_eq!(
             bound_extraction_markdown(&text).0,
-            format!("kept\nalso kept{}", &*EXTRACTION_BOUND_MARKER)
+            format!("kept\nalso kept{}", *EXTRACTION_BOUND_MARKER)
         );
         assert_eq!(
             EXTRACTION_BOUND_MARKER.as_str(),

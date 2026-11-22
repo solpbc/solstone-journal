@@ -65,7 +65,7 @@ if [ -n "${SOLSTONE_CI_CARGO_ENV_LOG:-}" ]; then
     printf '%s|%s|%s\n' "${CARGO_INCREMENTAL-unset}" "${CARGO_PROFILE_DEV_DEBUG-unset}" "${CARGO_TARGET_DIR-unset}" >> "$SOLSTONE_CI_CARGO_ENV_LOG"
 fi
 case "$*" in
-  run\ *'--manifest-path tools/i18n/Cargo.toml '*)
+  run\ *'--manifest-path tools/i18n/Cargo.toml '*' --out '*)
     while [ "$1" != --out ]; do shift; done
     mkdir -p "$2"
     ;;
