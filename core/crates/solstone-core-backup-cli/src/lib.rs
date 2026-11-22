@@ -545,7 +545,10 @@ fn run_cli_with(
         return success(usage_for_scope(&args));
     }
     let Some((command, rest)) = args.split_first() else {
-        return usage_error("");
+        return missing_command_error(
+            "journal.cli.backup.help.root",
+            "journal.cli.backup.usage.missing.root",
+        );
     };
     match command.as_str() {
         "status" if no_positionals(rest) => {
@@ -622,6 +625,12 @@ fn destination_command(
     services: &BackupServices<'_>,
     executable: &Path,
 ) -> CliRun {
+    if args.is_empty() {
+        return missing_command_error(
+            "journal.cli.backup.help.destination",
+            "journal.cli.backup.usage.missing.destination",
+        );
+    }
     let (options, positionals) = split_terminator(args);
     if !positionals.is_empty() {
         return destination_usage_error(&args.join(" "));
@@ -645,6 +654,12 @@ fn destination_command(
 }
 
 fn recovery_key_command(args: &[String], journal: &Path, services: &BackupServices<'_>) -> CliRun {
+    if args.is_empty() {
+        return missing_command_error(
+            "journal.cli.backup.help.recovery.key",
+            "journal.cli.backup.usage.missing.recovery.key",
+        );
+    }
     let (options, positionals) = split_terminator(args);
     if !positionals.is_empty() {
         return recovery_key_usage_error(&args.join(" "));
@@ -1334,7 +1349,10 @@ fn restore_result(result: RestoreOutcome, json_output: bool) -> CliRun {
 
 fn offload_command(args: &[String], journal: &Path, services: &BackupServices<'_>) -> CliRun {
     let Some((command, options)) = args.split_first() else {
-        return offload_usage_error("");
+        return missing_command_error(
+            "journal.cli.backup.help.offload",
+            "journal.cli.backup.usage.missing.offload",
+        );
     };
     match command.as_str() {
         "status" => offload_status(options, journal),
@@ -2235,6 +2253,14 @@ fn runtime_error(message: String) -> CliRun {
         exit_code: 1,
     }
 }
+fn missing_command_error(help_id: &'static str, error_id: &'static str) -> CliRun {
+    CliRun {
+        stdout: String::new(),
+        stderr: format!("{}\n{}\n", copy::text(help_id), copy::text(error_id)),
+        exit_code: 2,
+    }
+}
+
 fn usage_error(arguments: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
@@ -2594,6 +2620,47 @@ mod tests {
         assert_eq!(
             output.output().1,
             "usage: solstone journal backup <command> [options]\nsolstone journal backup: error: unrecognized arguments: wat\n"
+        );
+    }
+
+    #[test]
+    fn missing_subcommand_reports_required_command_instead_of_empty_unrecognized_args() {
+        for (argv, scope) in [
+            (vec![], "solstone journal backup"),
+            (vec!["-v".into()], "solstone journal backup"),
+            (vec!["offload".into()], "solstone journal backup offload"),
+            (
+                vec!["destination".into()],
+                "solstone journal backup destination",
+            ),
+            (
+                vec!["destination".into(), "-v".into()],
+                "solstone journal backup destination",
+            ),
+            (
+                vec!["recovery-key".into()],
+                "solstone journal backup recovery-key",
+            ),
+        ] {
+            let output = run_cli(&argv, Path::new("/unused"));
+            let (stdout, stderr, exit_code) = output.output();
+            assert_eq!(exit_code, 2, "argv={argv:?}");
+            assert_eq!(stdout, "", "argv={argv:?}");
+            assert_eq!(
+                stderr,
+                format!(
+                    "usage: {scope} <command> [options]\n{scope}: error: the following arguments are required: command\n"
+                ),
+                "argv={argv:?}"
+            );
+            assert!(!stderr.contains("unrecognized arguments"), "argv={argv:?}");
+        }
+
+        let terminator = run_cli(&["destination".into(), "--".into()], Path::new("/unused"));
+        assert_eq!(terminator.output().2, 2);
+        assert_eq!(
+            terminator.output().1,
+            "usage: solstone journal backup destination <command> [options]\nsolstone journal backup destination: error: unrecognized arguments: --\n"
         );
     }
 

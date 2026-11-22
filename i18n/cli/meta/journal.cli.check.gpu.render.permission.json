@@ -1,0 +1,33 @@
+{
+  "description": "Readiness report: gpu render permission.",
+  "context": "Readiness report: gpu render permission.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "095629511ce9315ac16cfa041b465b8a8c9582dcf4f9714b8269505095443efd",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "path",
+      "kind": "accepted-input",
+      "value": "/dev/dri"
+    },
+    {
+      "name": "repair",
+      "kind": "accepted-input",
+      "value": "sudo usermod -aG render $USER"
+    },
+    {
+      "name": "command",
+      "kind": "accepted-input",
+      "value": "solstone journal check"
+    }
+  ]
+}

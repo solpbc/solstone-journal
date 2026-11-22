@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for marker blocked.",
+  "context": "Journal command-line text for marker blocked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9e0b91caeda05a64566161102b880af3f7178e424554d6457dd56c4757bc2563",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

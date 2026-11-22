@@ -1,0 +1,23 @@
+{
+  "description": "Readiness report: overall warning.",
+  "context": "Readiness report: overall warning.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7acb34a2ec0d6e985a8474e66af3726c32a7dce3748d287be593764db950899d",
+  "max_length": 115,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "file",
+      "kind": "accepted-input",
+      "value": "INSTALL.md"
+    }
+  ]
+}

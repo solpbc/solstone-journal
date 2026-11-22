@@ -1,0 +1,21 @@
+{
+  "description": "Readiness report: gpu readiness unknown.",
+  "context": "Readiness report: gpu readiness unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "74bbd4ff621cdb7dcdf6a8869ff66e01eb51c7f00ba97f28f3a3d6122ea0cb3f",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

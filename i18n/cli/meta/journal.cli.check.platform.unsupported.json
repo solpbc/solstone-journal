@@ -1,0 +1,25 @@
+{
+  "description": "Readiness report: platform unsupported.",
+  "context": "Readiness report: platform unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "os",
+      "type": "string"
+    },
+    {
+      "name": "arch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b7050b6cb71ae1dd71fbaec75090faa80c1ea3a4a61efeccd03a2ea43b9e78df",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

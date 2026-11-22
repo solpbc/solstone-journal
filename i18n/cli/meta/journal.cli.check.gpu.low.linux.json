@@ -1,0 +1,25 @@
+{
+  "description": "Readiness report: gpu low linux.",
+  "context": "Readiness report: gpu low linux.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "gpu",
+      "type": "string"
+    },
+    {
+      "name": "gb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0b8eb68f28bd1e397e6583682e20ca904aada6f9e26d4a84aab152c79d782056",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

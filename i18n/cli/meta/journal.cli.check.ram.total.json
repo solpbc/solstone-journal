@@ -1,0 +1,21 @@
+{
+  "description": "Readiness report: ram total.",
+  "context": "Readiness report: ram total.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "gb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4adfaf04765a0124f77ee64c7c006565d6c23ef4d8a167b96bf312c4d84edc09",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

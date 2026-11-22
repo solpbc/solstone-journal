@@ -1,0 +1,21 @@
+{
+  "description": "Readiness report: feedback.",
+  "context": "Readiness report: feedback.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "url",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aa75624322332fdfd2b652df36053ed56ca7d4eb8caa19140ec93fa942d9b703",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

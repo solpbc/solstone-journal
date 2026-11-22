@@ -1,0 +1,21 @@
+{
+  "description": "Readiness report: gpu nvidia cpu.",
+  "context": "Readiness report: gpu nvidia cpu.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "gb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9f6ff230c822781f9fc21a532ab8ee3757a40f6bab3f8ee17ccb8cf2f23dcdd6",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

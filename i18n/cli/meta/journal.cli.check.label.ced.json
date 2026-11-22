@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for label ced.",
+  "context": "Journal command-line text for label ced.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "96faa054711f39008a78a1e0d757db8bf6775cc2d74a728ec0abca73fee04f9e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

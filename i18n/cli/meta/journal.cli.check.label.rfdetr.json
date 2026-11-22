@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for label rfdetr.",
+  "context": "Journal command-line text for label rfdetr.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2096af2b50192413288e63a4df33f16fff3f4ffb6cc396318393480259ea069d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

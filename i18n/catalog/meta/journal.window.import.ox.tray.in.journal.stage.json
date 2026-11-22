@@ -1,0 +1,21 @@
+{
+  "description": "Import OX live handoff tray and review flow in the journal window.",
+  "context": "Shown on /app/import/ or /app/import/<id> during app handoff, preview, confirmation, discard, or expiry recovery.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "stage",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "328015ad2bb1df2af26174599c938a11a42c5551b1720c9b2e10287e706f1df3",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

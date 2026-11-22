@@ -103,8 +103,20 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             let oldest = report.oldest_day.as_deref().unwrap_or(&missing_date);
             let newest = report.newest_day.as_deref().unwrap_or(&missing_date);
             (
-                match (report.complete, fresh) {
-                    (true, true) => context.report_form.counted(
+                match (report.complete, fresh, report.holds.is_empty()) {
+                    (true, true, true) => context.report_form.counted(
+                        "journal.cli.doctor.backlog.inventory.whole.current.clear",
+                        &[("quantity", report.days_total as u64)],
+                        &[
+                            ("inspected", &report.days_inspected),
+                            ("total", &report.days_total),
+                            ("oldest", &oldest),
+                            ("newest", &newest),
+                            ("as_of", &report.as_of_ms),
+                            ("bands", &bands),
+                        ],
+                    ),
+                    (true, true, false) => context.report_form.counted(
                         "journal.cli.doctor.backlog.inventory.whole.current",
                         &[("quantity", report.days_total as u64)],
                         &[
@@ -117,7 +129,19 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                             ("holds", &holds),
                         ],
                     ),
-                    (true, false) => context.report_form.counted(
+                    (true, false, true) => context.report_form.counted(
+                        "journal.cli.doctor.backlog.inventory.whole.last.clear",
+                        &[("quantity", report.days_total as u64)],
+                        &[
+                            ("inspected", &report.days_inspected),
+                            ("total", &report.days_total),
+                            ("oldest", &oldest),
+                            ("newest", &newest),
+                            ("as_of", &report.as_of_ms),
+                            ("bands", &bands),
+                        ],
+                    ),
+                    (true, false, false) => context.report_form.counted(
                         "journal.cli.doctor.backlog.inventory.whole.last",
                         &[("quantity", report.days_total as u64)],
                         &[
@@ -130,7 +154,19 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                             ("holds", &holds),
                         ],
                     ),
-                    (false, true) => context.report_form.counted(
+                    (false, true, true) => context.report_form.counted(
+                        "journal.cli.doctor.backlog.inventory.partial.current.clear",
+                        &[("quantity", report.days_total as u64)],
+                        &[
+                            ("inspected", &report.days_inspected),
+                            ("total", &report.days_total),
+                            ("oldest", &oldest),
+                            ("newest", &newest),
+                            ("as_of", &report.as_of_ms),
+                            ("bands", &bands),
+                        ],
+                    ),
+                    (false, true, false) => context.report_form.counted(
                         "journal.cli.doctor.backlog.inventory.partial.current",
                         &[("quantity", report.days_total as u64)],
                         &[
@@ -143,7 +179,19 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                             ("holds", &holds),
                         ],
                     ),
-                    (false, false) => context.report_form.counted(
+                    (false, false, true) => context.report_form.counted(
+                        "journal.cli.doctor.backlog.inventory.partial.last.clear",
+                        &[("quantity", report.days_total as u64)],
+                        &[
+                            ("inspected", &report.days_inspected),
+                            ("total", &report.days_total),
+                            ("oldest", &oldest),
+                            ("newest", &newest),
+                            ("as_of", &report.as_of_ms),
+                            ("bands", &bands),
+                        ],
+                    ),
+                    (false, false, false) => context.report_form.counted(
                         "journal.cli.doctor.backlog.inventory.partial.last",
                         &[("quantity", report.days_total as u64)],
                         &[

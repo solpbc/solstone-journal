@@ -1,0 +1,25 @@
+{
+  "description": "Readiness report: gpu low windows.",
+  "context": "Readiness report: gpu low windows.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "gpu",
+      "type": "string"
+    },
+    {
+      "name": "gb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "716625c12e6a2f6245bd4f04d48ee6eff53876da98ee8536e6935a1a0f381186",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

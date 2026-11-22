@@ -1,0 +1,21 @@
+{
+  "description": "Readiness report: platform windows.",
+  "context": "Readiness report: platform windows.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "arch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "13a1a87bb89fd03d536e9d0bc3b72c11afe1a1a7ad4713ad4e3912c8466cc1af",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

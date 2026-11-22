@@ -1,0 +1,25 @@
+{
+  "description": "Readiness report: disk error.",
+  "context": "Readiness report: disk error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "message",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "70e5109b5edb6112039cc512d6d64b99ee90c36e1bf89b3d37be6e91f300fb1a",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

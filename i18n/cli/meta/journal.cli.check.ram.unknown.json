@@ -1,0 +1,16 @@
+{
+  "description": "Readiness report: ram unknown.",
+  "context": "Readiness report: ram unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b4aadcd1ddcb4cb04732c3d44392f3aab6fc041074c0c47979c25a14f1442397",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,9 +1,9 @@
 {
-  "cargo_lock_sha256": "4d4b127c4bdd05ec590a7f8ed7d76e28b5062e3bd8c5edaa85cf114a824c6b2e",
+  "cargo_lock_sha256": "852825c20e3b7eda00f1019b839203c5f776f1ff9aec6b695fce632e9c0e9ec2",
   "dependency_source_companion": {
-    "bytes": 104461325,
-    "filename": "windows-rust-dependencies-4d4b127c4bdd05ec.tar.gz",
-    "sha256": "57daabb895c05855dadce2768c5124c1d37ca41b916db9034367eb31839c0d00"
+    "bytes": 104458767,
+    "filename": "windows-rust-dependencies-852825c20e3b7eda.tar.gz",
+    "sha256": "b7cdd7671cdc8d247c1547533ebd452e8a7bd4bce02223e6d4347129c7c1e53f"
   },
   "notice_texts": [
     {
@@ -8366,8 +8366,8 @@
       "windows_notice_population": true
     },
     {
-      "archive_sha256": "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf",
-      "identity": "form_urlencoded@1.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+      "archive_sha256": "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e",
+      "identity": "form_urlencoded@1.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "MIT OR Apache-2.0",
       "name": "form_urlencoded",
       "notice_references": [
@@ -8375,20 +8375,20 @@
           "bytes": 10847,
           "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
           "source": {
-            "archive_sha256": "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf",
+            "archive_sha256": "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-APACHE",
-            "source_url": "https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.2.crate"
+            "source_url": "https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.3.crate"
           }
         },
         {
           "bytes": 1072,
           "sha256": "20c7855c364d57ea4c97889a5e8d98470a9952dade37bd9248b9a54431670e5e",
           "source": {
-            "archive_sha256": "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf",
+            "archive_sha256": "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-MIT",
-            "source_url": "https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.2.crate"
+            "source_url": "https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.3.crate"
           }
         }
       ],
@@ -8397,12 +8397,11 @@
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "vcs": {
         "git": {
-          "dirty": true,
-          "sha1": "91377f48bf35011d042aa5abef9e7f2a0a625aaa"
+          "sha1": "ad1c66cbff6e318393d872641e30589ff9687b9c"
         },
         "path_in_vcs": "form_urlencoded"
       },
-      "version": "1.2.2",
+      "version": "1.2.3",
       "windows_notice_population": true
     },
     {
@@ -26153,8 +26152,8 @@
       "windows_notice_population": true
     },
     {
-      "archive_sha256": "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed",
-      "identity": "url@2.5.8 (registry+https://github.com/rust-lang/crates.io-index)",
+      "archive_sha256": "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a",
+      "identity": "url@2.5.9 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "MIT OR Apache-2.0",
       "name": "url",
       "notice_references": [
@@ -26162,20 +26161,20 @@
           "bytes": 10847,
           "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
           "source": {
-            "archive_sha256": "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed",
+            "archive_sha256": "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-APACHE",
-            "source_url": "https://static.crates.io/crates/url/url-2.5.8.crate"
+            "source_url": "https://static.crates.io/crates/url/url-2.5.9.crate"
           }
         },
         {
           "bytes": 1072,
           "sha256": "b38f11f6096706e6de553dabe2a7ed142d59b6fa8c97e290c67496154745cdd5",
           "source": {
-            "archive_sha256": "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed",
+            "archive_sha256": "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-MIT",
-            "source_url": "https://static.crates.io/crates/url/url-2.5.8.crate"
+            "source_url": "https://static.crates.io/crates/url/url-2.5.9.crate"
           }
         }
       ],
@@ -26184,11 +26183,11 @@
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "vcs": {
         "git": {
-          "sha1": "d6ea13c5f8e7e6e627f6390161b3e185bda5e5ce"
+          "sha1": "ad1c66cbff6e318393d872641e30589ff9687b9c"
         },
         "path_in_vcs": "url"
       },
-      "version": "2.5.8",
+      "version": "2.5.9",
       "windows_notice_population": true
     },
     {
@@ -29667,14 +29666,14 @@
     "metadata_feature_scope": "workspace unified; conservative inclusion, not exact PE link graph",
     "notices": "non-dev dependency closure from Windows inventory binary roots in Windows-filtered Cargo metadata",
     "query": "cargo metadata --manifest-path core/Cargo.toml --locked --offline --format-version 1 --filter-platform x86_64-pc-windows-msvc --features solstone-core/journal-mcp-endpoint; inventory roots; follow non-dev dependency edges",
-    "query_utc": "2026-11-20T09:17:37.839932+00:00",
+    "query_utc": "2026-11-22T19:35:48.563803+00:00",
     "shipped_feature_arguments": [
       "--features",
       "solstone-core/journal-mcp-endpoint"
     ],
     "source": "complete Cargo.lock external-source set",
     "source_package_count": 580,
-    "source_sha256": "e6ffd4018e5a725b6d9266dfe1b00ec8e146632e847be7a27076d119f51d616e",
+    "source_sha256": "5123b0587e1009b1dee9be78047cbfa4eb8d52ba96a875bc3c054b5740436c7c",
     "windows_notice_package_count": 514,
     "windows_notice_path_package_count": 1
   },

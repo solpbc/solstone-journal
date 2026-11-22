@@ -4147,3 +4147,56 @@ fn whole_journal_progress_requires_fresh_complete_inspection_and_reports_each_ba
     report.publish(&context.journal_path).unwrap();
     assert_eq!(status("journal_caught_up", &context), Status::Warn);
 }
+
+#[test]
+fn journal_caught_up_omits_set_aside_when_holds_are_empty_and_shows_it_when_present() {
+    let context = fixture();
+    let now_ms = context.now.as_millisecond();
+    for (complete, fresh, expected_tail) in [
+        (true, true, "whole-journal inspection"),
+        (true, false, "whole-journal inspection; last known progress"),
+        (false, true, "incomplete inspection"),
+        (false, false, "incomplete inspection; last known progress"),
+    ] {
+        let report = solstone_core_system::work_inventory::WorkInventory {
+            as_of_ms: if fresh { now_ms } else { now_ms - 180_001 },
+            complete,
+            ..Default::default()
+        };
+        report.publish(&context.journal_path).unwrap();
+        let row = result("journal_caught_up", &context);
+        assert!(
+            !row.detail.contains("set aside:"),
+            "complete={complete} fresh={fresh} detail={}",
+            row.detail
+        );
+        assert!(
+            row.detail.ends_with(expected_tail),
+            "complete={complete} fresh={fresh} detail={}",
+            row.detail
+        );
+    }
+
+    let report_with_hold = solstone_core_system::work_inventory::WorkInventory {
+        as_of_ms: now_ms,
+        complete: true,
+        holds: vec![solstone_core_system::work_inventory::WorkHold {
+            day: "20260101".to_owned(),
+            segment: None,
+            stream: None,
+            band: solstone_core_journal_config::work_priority::WorkBand::Recent,
+            reason: "waiting_for_model".to_owned(),
+            retry_unit: None,
+        }],
+        ..Default::default()
+    };
+    report_with_hold.publish(&context.journal_path).unwrap();
+    let row = result("journal_caught_up", &context);
+    assert_eq!(row.status, Status::Warn);
+    assert!(
+        row.detail
+            .ends_with("whole-journal inspection; set aside: 20260101: waiting_for_model"),
+        "detail={}",
+        row.detail
+    );
+}

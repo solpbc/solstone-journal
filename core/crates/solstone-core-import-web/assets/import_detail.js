@@ -25,6 +25,9 @@
     const next = value === true ? '' : String(value);
     if (el.getAttribute(name) !== next) el.setAttribute(name, next);
   }
+  function writeHidden(el, hidden) {
+    if (el && el.hidden !== !!hidden) el.hidden = !!hidden;
+  }
 
   // --- owner-facing strings ---
   const strings = Object.freeze({
@@ -112,6 +115,26 @@
     untimed_notice: window.JournalI18n.render('journal.window.import.strings.untimed.notice.no.turn.times.found.in.this'),
     untimed_ask: window.JournalI18n.render('journal.window.import.strings.untimed.ask.ask.us.to.add.it'),
     delete_import: window.JournalI18n.render('journal.window.import.strings.delete.import.delete.this.import'),
+    ready_to_review: window.JournalI18n.render('journal.window.import.ox.status.ready.to.review'),
+    try_preview_again: window.JournalI18n.render('journal.window.import.ox.detail.try.preview.again'),
+    found_heading: window.JournalI18n.render('journal.window.import.ox.detail.found.heading'),
+    space_insufficient: window.JournalI18n.render('journal.window.import.ox.detail.space.insufficient'),
+    nothing_new: window.JournalI18n.render('journal.window.import.ox.detail.nothing.new'),
+    facet_label: window.JournalI18n.render('journal.window.import.ox.detail.facet.label'),
+    notebook_label: window.JournalI18n.render('journal.window.import.handoff.notebook'),
+    context_label: window.JournalI18n.render('journal.window.import.ox.detail.context.label'),
+    context_hint: window.JournalI18n.render('journal.window.import.ox.detail.context.hint'),
+    expiry_note: window.JournalI18n.render('journal.window.import.ox.detail.expiry.note'),
+    discard_button: window.JournalI18n.render('journal.window.import.ox.detail.discard.button'),
+    discard_title: window.JournalI18n.render('journal.window.import.ox.detail.discard.title'),
+    discard_body: window.JournalI18n.render('journal.window.import.ox.detail.discard.body'),
+    discard_confirm: window.JournalI18n.render('journal.window.import.ox.detail.discard.confirm'),
+    discard_cancel: window.JournalI18n.render('journal.window.import.ox.detail.discard.cancel'),
+    discard_failed: window.JournalI18n.render('journal.window.import.response.error.your.journal.couldn.t.finish.that'),
+    expired_badge: window.JournalI18n.render('journal.window.import.ox.detail.expired.badge'),
+    expired_body: window.JournalI18n.render('journal.window.import.ox.detail.expired.body'),
+    expired_recovery: window.JournalI18n.render('journal.window.import.ox.detail.expired.recovery'),
+    back_to_imports: window.JournalI18n.render('journal.window.import.ox.detail.back.to.imports'),
     file_size_units: Object.freeze(['b', 'kb', 'mb', 'gb'])
   });
   // --- end owner-facing strings ---
@@ -197,8 +220,8 @@
     return `${values[0]} - ${values[1]}`;
   }
 
-  function quantityArgs(count, name = 'count', quantity = 'quantity') {
-    return [[quantity, window.JournalI18n.cardinalQuantity(count)], [name, String(count)]];
+  function quantityArgs(count, name = 'count', quantity = 'quantity', display = String(count)) {
+    return [[quantity, window.JournalI18n.cardinalQuantity(count)], [name, String(display)]];
   }
 
   function formatCount(value, message) {
@@ -247,7 +270,7 @@
   }
 
   function statusClass(code) {
-    return ['success', 'failed', 'running', 'unconfirmed', 'unavailable'].includes(code) ? code : 'pending';
+    return ['success', 'failed', 'running', 'unconfirmed', 'unavailable', 'review'].includes(code) ? code : 'pending';
   }
 
   function deriveStatus(data) {
@@ -304,7 +327,7 @@
       return { code: 'running', status: strings.running, chipText: '', chipTone: '', open: false };
     }
     if (data?.saved_start?.state === 'eligible' && !savedFlows.get(data?.timestamp)?.revoked) {
-      return { code: 'saved', status: strings.saved, chipText: strings.not_started, chipTone: '', open: false };
+      return { code: 'review', status: strings.ready_to_review, chipText: strings.ready_to_review, chipTone: '', open: false };
     }
     if (data?.saved_start?.active === true) {
       return { code: 'running', status: strings.running, chipText: strings.starting, chipTone: '', open: false };
@@ -320,7 +343,7 @@
     const derived = deriveStatus(data);
 
     if (derived.body) return data?.body_words || derived.status;
-    if (derived.code === 'saved') return strings.not_started;
+    if (derived.code === 'saved' || derived.code === 'review') return strings.ready_to_review;
     if (derived.code === 'start_unknown') return strings.start_unknown_detail;
     if (data?.saved_start?.active === true && data?.status !== 'running') return strings.starting;
 
@@ -717,6 +740,14 @@
   // Import's dispose: a flow keeps its markup and its page's refresh, so a
   // gone page's flows go with it, as a page load ended them.
   function forgetSavedStarts() {
+    for (const flow of savedFlows.values()) {
+      flow.controller?.abort?.();
+      flow.controller = null;
+      if (flow.escapeHandler && typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+        document.removeEventListener('keydown', flow.escapeHandler);
+        flow.escapeHandler = null;
+      }
+    }
     savedFlows.clear();
   }
 
@@ -724,7 +755,7 @@
     const metadata = data?.import_json || {};
     return JSON.stringify([data?.timestamp, metadata.import_id, metadata.file_path,
       metadata.source_hash, metadata.file_size, metadata.folder_snapshot,
-      metadata.source_timestamp, metadata.setting]);
+      metadata.source_timestamp, metadata.setting, metadata.body_facet, metadata.notebook]);
   }
 
   // A saved file has its size; a copied folder has none, but its own copied tree and snapshot.
@@ -752,42 +783,230 @@
       && !['running', 'success', 'failed', 'unconfirmed', 'unavailable'].includes(data?.status));
   }
 
-  function previewSummary(size) {
-    if (!size || !Number.isSafeInteger(size.recordings) || size.recordings < 0
+  function sourceHintOf(data) {
+    const m = data?.import_json || {};
+    return String(m.source_hint || m.source || data?.source_type || '').trim().toLowerCase();
+  }
+
+  function appleStatsFrom(held) {
+    const stats = [];
+    const pushCount = (val, key) => {
+      if (Number.isSafeInteger(val) && val > 0) {
+        stats.push({
+          value: Number(val).toLocaleString(),
+          label: window.JournalI18n.render(key, quantityArgs(val, 'count', 'quantity', Number(val).toLocaleString())).replace(/^[0-9,.\s]+/, '').trim(),
+        });
+      }
+    };
+    pushCount(held.workouts, 'journal.window.import.preview.apple.workouts');
+    pushCount(held.nights, 'journal.window.import.preview.apple.nights');
+    pushCount(held.readings, 'journal.window.import.preview.apple.readings');
+    if (stats.length < 3) pushCount(held.mindful_sessions, 'journal.window.import.preview.apple.mindful');
+    if (stats.length < 3) pushCount(held.daily_totals, 'journal.window.import.preview.apple.daily.totals');
+    if (stats.length < 3) pushCount(held.logged, 'journal.window.import.preview.apple.logged');
+    if (Array.isArray(held.span) && held.span.length >= 2 && held.span[0] && held.span[1]) {
+      const range = window.JournalI18n.render('journal.window.import.preview.date.range', [
+        ['first_date', String(held.span[0])], ['last_date', String(held.span[1])],
+      ]);
+      const y1 = String(held.span[0]).slice(0, 4);
+      const y2 = String(held.span[1]).slice(0, 4);
+      stats.push({
+        value: y1 && y2 && y1 !== y2 ? `${y1}–${y2}` : (y1 || range),
+        label: range,
+      });
+    }
+    return stats;
+  }
+
+  function previewSummary(replyOrSize) {
+    const isEnvelope = replyOrSize && typeof replyOrSize === 'object' && 'size' in replyOrSize;
+    const size = isEnvelope ? replyOrSize.size : replyOrSize;
+    const space = isEnvelope ? replyOrSize.space : null;
+    if (!size || typeof size !== 'object') throw new Error('invalid Preview');
+
+    if (size.schema === 'solstone.import.evernote.preview.v1') {
+      const ready = size.ready === true;
+      const lines = Array.isArray(size.lines) ? size.lines.filter(Boolean).map(String) : [];
+      return {
+        kind: 'evernote',
+        ready,
+        summary: lines.length ? lines.join(' ') : (ready ? '' : strings.nothing_new),
+        notebook: typeof size.notebook === 'string' ? size.notebook : '',
+        needsBodyConfirm: Boolean(size.go_ahead),
+        spaceFits: true,
+        spaceLine: '',
+        stats: [],
+        extraLines: [],
+      };
+    }
+
+    if (size.schema === 'solstone.import.audio-archive.size.v1') {
+      if (!['members', 'source_bytes', 'days', 'tiles'].every(k => Number.isSafeInteger(size[k]) && size[k] >= 0)) {
+        throw new Error('invalid Preview');
+      }
+      const ready = size.tiles > 0;
+      const parts = [
+        window.JournalI18n.render('journal.window.import.preview.archive.source.files', quantityArgs(size.members)),
+        window.JournalI18n.render('journal.window.import.preview.archive.days', quantityArgs(size.days)),
+      ];
+      return {
+        kind: 'audio_archive',
+        ready,
+        summary: ready ? parts.join(' · ') : strings.nothing_new,
+        notebook: '',
+        needsBodyConfirm: Boolean(size.go_ahead),
+        spaceFits: true,
+        spaceLine: '',
+        stats: [],
+        extraLines: [],
+      };
+    }
+
+    if (!Number.isSafeInteger(size.recordings) || size.recordings < 0
         || !Number.isSafeInteger(size.days) || size.days < 0) throw new Error('invalid Preview');
     const other = size.other_units;
     if (other !== null && other !== undefined
         && (!Array.isArray(other) || typeof other[0] !== 'string'
           || !Number.isSafeInteger(other[1]) || other[1] < 0)) throw new Error('invalid Preview');
-    const ready = size.recordings > 0 || (other && other[1] > 0);
+
+    if (size.apple_health && typeof size.apple_health === 'object') {
+      const held = size.apple_health;
+      const tally = (message, value) => window.JournalI18n.render(message,
+        quantityArgs(value, 'count', 'quantity', Number(value).toLocaleString()));
+      const parts = [];
+      if (held.span) {
+        parts.push(window.JournalI18n.render('journal.window.import.preview.date.range', [
+          ['first_date', String(held.span[0])], ['last_date', String(held.span[1])],
+        ]));
+      }
+      if (held.workouts) parts.push(tally('journal.window.import.preview.apple.workouts', held.workouts));
+      if (held.nights) parts.push(tally('journal.window.import.preview.apple.nights', held.nights));
+      if (held.mindful_sessions) parts.push(tally('journal.window.import.preview.apple.mindful', held.mindful_sessions));
+      if (held.readings) parts.push(tally('journal.window.import.preview.apple.readings', held.readings));
+      if (held.daily_totals) parts.push(tally('journal.window.import.preview.apple.daily.totals', held.daily_totals));
+      if (held.logged) parts.push(tally('journal.window.import.preview.apple.logged', held.logged));
+      const extraLines = [];
+      const left = Object.keys(held.not_read || {}).length;
+      if (left) extraLines.push(tally('journal.window.import.preview.apple.left.out', left));
+      if (size.listed_moves?.count) {
+        const moved = size.listed_moves.count;
+        const moveText = typeof window.JournalI18n.renderEnglish === 'function'
+          ? window.JournalI18n.renderEnglish('journal.window.import.preview.apple.move.listed', quantityArgs(moved, 'count', 'quantity', Number(moved).toLocaleString()))
+          : window.JournalI18n.render('journal.window.import.preview.apple.move.listed', quantityArgs(moved, 'count', 'quantity', Number(moved).toLocaleString()));
+        extraLines.push(moveText);
+      }
+      const spaceFits = !space || space.fits !== false;
+      let spaceLine = '';
+      if (space) {
+        spaceLine = spaceFits
+          ? window.JournalI18n.render('journal.window.import.ox.detail.space.available', [
+              ['need', String(space.need_words || '')],
+              ['free', String(space.free_words || '')],
+            ])
+          : strings.space_insufficient;
+      }
+      const hasItems = Boolean(other?.[1]) || Boolean(held.workouts) || Boolean(held.nights)
+        || Boolean(held.readings) || Boolean(held.daily_totals) || Boolean(held.logged) || Boolean(held.mindful_sessions);
+      return {
+        kind: 'apple_health',
+        ready: hasItems && spaceFits,
+        summary: hasItems ? parts.join(' · ') : strings.nothing_new,
+        notebook: '',
+        needsBodyConfirm: true,
+        spaceFits,
+        spaceLine,
+        stats: appleStatsFrom(held),
+        extraLines,
+      };
+    }
+
+    const ready = size.recordings > 0 || (other && other[1] > 0) || Boolean(size.listed_moves?.count);
     const recordings = window.JournalI18n.render('journal.window.import.detail.preview.recordings', [
       ...quantityArgs(size.recordings, 'recordings', 'recording_quantity'), ...quantityArgs(size.days, 'days', 'day_quantity'),
     ]);
-    const summary = other ? [recordings, window.JournalI18n.render('journal.window.import.detail.preview.other.units', [
-      ['count', String(other[1])], ['unit', String(other[0])],
-    ])].join(' · ') : recordings;
-    return { ready: Boolean(ready), summary: ready ? summary : strings.nothing_to_import };
+    const parts = [recordings];
+    if (other) {
+      parts.push(window.JournalI18n.render('journal.window.import.detail.preview.other.units', [
+        ['count', String(other[1])], ['unit', String(other[0])],
+      ]));
+    }
+    const extraLines = [];
+    if (size.listed_moves?.count && Array.isArray(size.listed_moves.from)) {
+      extraLines.push(window.JournalI18n.render('journal.window.import.preview.workouts.move.listed', [
+        ...quantityArgs(size.listed_moves.count), ['sources', String(size.listed_moves.from.join(', '))],
+      ]));
+    }
+    return {
+      kind: 'size',
+      ready: Boolean(ready),
+      summary: ready ? parts.join(' · ') : strings.nothing_new,
+      notebook: '',
+      needsBodyConfirm: Boolean(size.go_ahead),
+      spaceFits: true,
+      spaceLine: '',
+      stats: [],
+      extraLines,
+    };
   }
 
-  function mountSavedStart(root, data, refresh, restoreFocus = false, originals = null) {
+  function isDefiniteStartRefusal(err) {
+    if (!err || typeof err !== 'object') return false;
+    const status = err.status;
+    const code = err.reasonCode || err.payload?.reason_code || '';
+    const kind = err.payload?.kind || '';
+    if (status === 400) return true;
+    if (status === 409 && (code === 'body_space' || code === 'import_preview_required' || kind === 'source_changed')) {
+      return true;
+    }
+    return false;
+  }
+
+  function errorTextFrom(err, fallback) {
+    return (err && (err.serverMessage || err.payload?.error || (err.status ? err.message : ''))) || fallback;
+  }
+
+  function mountSavedStart(root, data, refresh, restoreFocus = false, options = null) {
     const slot = root.querySelector('[data-saved-start-slot]');
     const id = data.timestamp;
+    const originals = options && typeof options.render === 'function' ? options : (options?.originals || null);
+    const bodyFacetApi = options?.bodyFacet || null;
+    const onDiscard = typeof options?.onDiscard === 'function' ? options.onDiscard : null;
+    const autoPreview = options?.autoPreview !== false;
+
     let flow = savedFlows.get(id);
     const binding = savedBinding(data);
     if (!flow) {
       if (!slot) return;
-      flow = { id, binding, phase: 'idle', token: null, summary: '', error: '', revision: 0, revoked: false, inFlight: false };
+      flow = {
+        id, binding, phase: 'idle', token: null, preview: null, summary: '', error: '',
+        revision: 0, revoked: false, inFlight: false, autoAttempted: false,
+        controller: null, discardOpen: false, discardInFlight: false, discardError: '',
+        escapeHandler: null, facetState: null, facetLoaded: false, facetPending: false,
+        settingDraft: String(data?.import_json?.setting || ''),
+        notebookDraft: String(data?.import_json?.notebook || ''),
+        metaRevision: 0,
+        lastPreviewHtml: '', lastOptionsHtml: '', lastDiscardHtml: '',
+      };
       savedFlows.set(id, flow);
-    } else if (flow.binding !== binding || (!savedEligible(data) && ['idle', 'ready', 'previewing'].includes(flow.phase))) {
+    } else if (flow.binding !== binding || (!savedEligible(data) && ['idle', 'ready', 'previewing', 'failed'].includes(flow.phase))) {
       flow.revision += 1;
+      flow.controller?.abort?.();
+      flow.controller = null;
       flow.binding = binding;
       flow.token = null;
+      flow.preview = null;
       flow.summary = '';
+      flow.autoAttempted = false;
+      flow.settingDraft = String(data?.import_json?.setting || '');
+      flow.notebookDraft = String(data?.import_json?.notebook || '');
       if (!['starting', 'unknown'].includes(flow.phase)) flow.phase = 'idle';
     }
     if (!savedEligible(data)) {
       flow.revoked = true;
+      flow.controller?.abort?.();
+      flow.controller = null;
       flow.token = null;
+      flow.preview = null;
       flow.summary = '';
       flow.phase = 'unknown';
     }
@@ -797,10 +1016,326 @@
     flow.slot = slot;
     flow.refresh = refresh;
 
+    const hint = sourceHintOf(data);
+    const isBodySource = hint === 'apple_health' || hint === 'strava';
+    const isEvernote = hint === 'evernote';
+
     function current() {
       return flow.root.isConnected !== false && flow.slot.isConnected !== false
         && savedFlows.get(id) === flow;
     }
+
+    function querySlot(sel) {
+      const found = flow.slot.querySelector(sel);
+      return found && found !== flow.slot.querySelector('[data-saved-start-action]') ? found : null;
+    }
+
+    function facetBlocking() {
+      return Boolean(isBodySource && flow.facetState?.offer && String(flow.facetState.offer.state).startsWith('ask_'));
+    }
+
+    function renderFoundMarkup() {
+      const p = flow.preview;
+      if (!p) return '';
+      let html = `<h3 class="import-review-heading">${escapeHtml(strings.found_heading)}</h3>`;
+      if (p.stats && p.stats.length) {
+        html += '<div class="import-preview-grid">'
+          + p.stats.map(s => `<div class="import-preview-stat"><b>${escapeHtml(s.value)}</b><span>${escapeHtml(s.label)}</span></div>`).join('')
+          + '</div>';
+      } else if (p.summary) {
+        html += `<p class="import-preview-summary">${escapeHtml(p.summary)}</p>`;
+      }
+      if (p.extraLines && p.extraLines.length) {
+        html += p.extraLines.map(line => `<p class="import-preview-extra">${escapeHtml(line)}</p>`).join('');
+      }
+      if (p.spaceLine) {
+        html += p.spaceFits
+          ? `<p class="import-preview-space">${escapeHtml(p.spaceLine)}</p>`
+          : `<div class="import-preview-space-warn" role="alert">${escapeHtml(p.spaceLine)}</div>`;
+      }
+      return html;
+    }
+
+    function renderOptionsBox() {
+      const box = querySlot('[data-saved-start-options]');
+      if (!box || typeof box.querySelector !== 'function') return;
+      if (flow.phase === 'unknown' || !savedEligible(flow.data)) {
+        if (flow.lastOptionsHtml) {
+          box.innerHTML = '';
+          flow.lastOptionsHtml = '';
+        }
+        return;
+      }
+
+      // Build facet / notebook / context controls without clobbering focused inputs.
+      const focusInside = typeof document !== 'undefined' && box.contains && box.contains(document.activeElement);
+      if (focusInside) return;
+
+      const pieces = [];
+      if (isBodySource && flow.facetState?.offer) {
+        const offer = flow.facetState.offer;
+        const copy = flow.facetState.copy || {};
+        const facetTitle = name => ((flow.facetState.facets || []).find(f => f.name === name)?.title || name || '');
+        if (String(offer.state).startsWith('ask_')) {
+          const q = offer.state === 'ask_existing'
+            ? (typeof window.JournalI18n.renderEnglish === 'function'
+                ? window.JournalI18n.renderEnglish(`journal.window.import.body.facet.${hint === 'apple_health' ? 'apple' : 'shared'}.ask.named`, [['facet_name', facetTitle(offer.facet)]])
+                : String(copy[offer.state] || ''))
+            : String(copy[offer.state] || '');
+          pieces.push(
+            `<div class="import-option-group" data-review-facet-ask>`
+            + `<p class="import-option-question">${escapeHtml(q)}</p>`
+            + (copy.no_means ? `<p class="import-field-hint">${escapeHtml(copy.no_means)}</p>` : '')
+            + `<div class="import-action-row">`
+            + `<button type="button" class="import-secondary-btn" data-review-facet-answer="yes">${escapeHtml(copy.yes || 'yes')}</button>`
+            + `<button type="button" class="import-secondary-btn" data-review-facet-answer="no">${escapeHtml(copy.no || 'no')}</button>`
+            + `</div></div>`
+          );
+        } else {
+          const metaFacet = flow.data?.import_json?.body_facet;
+          const currentChoice = metaFacet?.choice === 'none'
+            ? ''
+            : (metaFacet?.choice === 'facet' ? String(metaFacet.facet || '') : (offer.state === 'chosen' ? String(offer.facet || '') : ''));
+          const opts = (flow.facetState.facets || []).map(item =>
+            `<option value="${escapeHtml(item.name)}"${item.name === currentChoice ? ' selected' : ''}>${escapeHtml(item.title)}</option>`
+          );
+          opts.push(`<option value=""${currentChoice ? '' : ' selected'}>${escapeHtml(copy.none_option || 'no facet')}</option>`);
+          pieces.push(
+            `<div class="import-option-group">`
+            + `<label for="detailFacetSelect">${escapeHtml(strings.facet_label)}</label>`
+            + `<select id="detailFacetSelect" data-review-facet-select>${opts.join('')}</select>`
+            + `</div>`
+          );
+        }
+      }
+
+      if (isEvernote) {
+        const nbVal = flow.notebookDraft || flow.preview?.notebook || '';
+        pieces.push(
+          `<div class="import-option-group">`
+          + `<label for="detailNotebookInput">${escapeHtml(strings.notebook_label)}</label>`
+          + `<input id="detailNotebookInput" type="text" autocomplete="off" data-review-notebook value="${escapeHtml(nbVal)}">`
+          + `</div>`
+        );
+      }
+
+      if (!isBodySource && !isEvernote) {
+        pieces.push(
+          `<div class="import-option-group">`
+          + `<label for="detailContextInput">${escapeHtml(strings.context_label)}</label>`
+          + `<input id="detailContextInput" type="text" autocomplete="off" data-review-context value="${escapeHtml(flow.settingDraft)}" placeholder="${escapeHtml(strings.context_hint)}">`
+          + `</div>`
+        );
+      }
+
+      if (isBodySource) {
+        pieces.push(`<p class="import-expiry-note">${escapeHtml(strings.expiry_note)}</p>`);
+      }
+
+      const nextHtml = pieces.join('');
+      if (flow.lastOptionsHtml !== nextHtml) {
+        flow.lastOptionsHtml = nextHtml;
+        box.innerHTML = nextHtml;
+        box.querySelectorAll?.('[data-review-facet-answer]')?.forEach(btn => {
+          btn.onclick = () => answerFacet(btn.getAttribute('data-review-facet-answer'));
+        });
+        const sel = box.querySelector?.('[data-review-facet-select]');
+        if (sel) {
+          sel.onchange = () => updateMetaAndRepreview({
+            body_facet: sel.value ? { choice: 'facet', facet: sel.value } : { choice: 'none' },
+          });
+        }
+        const nb = box.querySelector?.('[data-review-notebook]');
+        if (nb) {
+          nb.oninput = () => { flow.notebookDraft = nb.value; };
+          nb.onchange = () => { flow.notebookDraft = nb.value; };
+        }
+        const ctxIn = box.querySelector?.('[data-review-context]');
+        if (ctxIn) {
+          ctxIn.oninput = () => { flow.settingDraft = ctxIn.value; };
+          ctxIn.onchange = () => {
+            const trimmed = ctxIn.value.trim();
+            flow.settingDraft = trimmed;
+            if (trimmed !== String(flow.data?.import_json?.setting || '')) {
+              return updateMetaAndRepreview({ setting: trimmed });
+            }
+          };
+        }
+      }
+    }
+
+    async function loadFacetIfNeeded() {
+      if (!isBodySource || !bodyFacetApi || flow.facetLoaded || flow.facetPending) return;
+      flow.facetPending = true;
+      try {
+        const res = await bodyFacetApi.load(hint);
+        if (!current()) return;
+        flow.facetState = res && res.offer ? res : null;
+        flow.facetLoaded = true;
+      } catch (_) {
+        flow.facetLoaded = true;
+      } finally {
+        flow.facetPending = false;
+        draw();
+      }
+    }
+
+    async function answerFacet(answer) {
+      if (!bodyFacetApi || !flow.facetState?.offer || flow.facetPending) return;
+      flow.facetPending = true;
+      flow.error = '';
+      draw();
+      try {
+        const res = await bodyFacetApi.answer(answer, flow.facetState.offer, hint);
+        if (!current()) return;
+        if (res?.offer) {
+          flow.facetState = res;
+          if (!String(res.offer.state).startsWith('ask_')) {
+            const chosen = res.offer.state === 'chosen'
+              ? { choice: 'facet', facet: res.offer.facet }
+              : { choice: 'none' };
+            await updateMetaAndRepreview({ body_facet: chosen });
+          }
+        }
+      } catch (err) {
+        if (!current()) return;
+        flow.error = errorTextFrom(err, strings.preview_failed);
+        try {
+          const fresh = await bodyFacetApi.load(hint);
+          if (current() && fresh?.offer) flow.facetState = fresh;
+        } catch (_) { /* ignore */ }
+      } finally {
+        flow.facetPending = false;
+        draw();
+      }
+    }
+
+    async function updateMetaAndRepreview(patch) {
+      if (!savedEligible(flow.data) || !current()) return;
+      const metadata = flow.data.import_json;
+      const metaRev = ++flow.metaRevision;
+      flow.controller?.abort?.();
+      flow.controller = null;
+      flow.token = null;
+      flow.error = '';
+      const metaBody = {
+        import_id: id,
+        path: metadata.file_path,
+        ...patch,
+      };
+      try {
+        await window.apiJson('/app/import/api/meta', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(metaBody),
+        });
+        if (!current() || metaRev !== flow.metaRevision) return;
+        if ('setting' in patch) metadata.setting = patch.setting;
+        if ('body_facet' in patch) metadata.body_facet = patch.body_facet;
+        if ('notebook' in patch) metadata.notebook = patch.notebook;
+        flow.binding = savedBinding(flow.data);
+        flow.phase = 'idle';
+        await runPreview();
+      } catch (err) {
+        if (!current() || metaRev !== flow.metaRevision) return;
+        flow.error = errorTextFrom(err, strings.preview_failed);
+        flow.phase = 'failed';
+        draw();
+      }
+    }
+
+    function renderDiscardBox() {
+      const box = querySlot('[data-saved-start-discard]');
+      if (!box) return;
+      if (!flow.discardOpen) {
+        if (flow.lastDiscardHtml) {
+          box.innerHTML = '';
+          flow.lastDiscardHtml = '';
+        }
+        if (flow.escapeHandler && typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+          document.removeEventListener('keydown', flow.escapeHandler);
+          flow.escapeHandler = null;
+        }
+        return;
+      }
+      const nextDiscardHtml = `<div class="import-discard-confirm" role="dialog" aria-modal="false" aria-labelledby="discardConfirmTitle">`
+        + `<h4 id="discardConfirmTitle">${escapeHtml(strings.discard_title)}</h4>`
+        + `<p>${escapeHtml(strings.discard_body)}</p>`
+        + (flow.discardError ? `<p role="alert" class="import-discard-error">${escapeHtml(flow.discardError)}</p>` : '')
+        + `<div class="import-action-row">`
+        + `<button type="button" class="import-secondary-btn" data-discard-cancel>${escapeHtml(strings.discard_cancel)}</button>`
+        + `<button type="button" class="import-danger-btn" data-discard-confirm${flow.discardInFlight ? ' aria-disabled="true"' : ''}>${escapeHtml(strings.discard_confirm)}</button>`
+        + `</div></div>`;
+      if (flow.lastDiscardHtml === nextDiscardHtml) return;
+      flow.lastDiscardHtml = nextDiscardHtml;
+      box.innerHTML = nextDiscardHtml;
+      const cancelBtn = box.querySelector?.('[data-discard-cancel]');
+      const confirmBtn = box.querySelector?.('[data-discard-confirm]');
+      const closeConfirm = () => {
+        if (flow.discardInFlight) return;
+        flow.discardOpen = false;
+        flow.discardError = '';
+        draw();
+        const trigger = querySlot('[data-saved-start-discard-trigger]');
+        trigger?.focus?.();
+      };
+      if (cancelBtn) cancelBtn.onclick = closeConfirm;
+      if (confirmBtn) confirmBtn.onclick = () => confirmDiscard();
+      if (!flow.escapeHandler && typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+        flow.escapeHandler = event => {
+          if (event.key === 'Escape' && flow.discardOpen) {
+            event.preventDefault();
+            closeConfirm();
+          }
+        };
+        document.addEventListener('keydown', flow.escapeHandler);
+      }
+      if (!flow.discardInFlight && cancelBtn?.focus) cancelBtn.focus();
+    }
+
+    async function confirmDiscard() {
+      if (!current() || flow.discardInFlight) return;
+      flow.discardInFlight = true;
+      flow.discardError = '';
+      flow.controller?.abort?.();
+      flow.controller = null;
+      renderDiscardBox();
+      try {
+        await window.apiJson(`/app/import/api/${encodeURIComponent(id)}/discard`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        if (!current()) return;
+        flow.discardOpen = false;
+        flow.revoked = true;
+        savedFlows.delete(id);
+        if (onDiscard) onDiscard(id);
+        else await flow.refresh();
+      } catch (err) {
+        if (!current()) return;
+        if (err?.status === 404) {
+          flow.discardOpen = false;
+          flow.revoked = true;
+          savedFlows.delete(id);
+          if (onDiscard) onDiscard(id);
+          else await flow.refresh();
+          return;
+        }
+        if (err?.status === 409) {
+          flow.discardOpen = false;
+          flow.discardError = '';
+          flow.revoked = true;
+          await flow.refresh();
+          return;
+        }
+        flow.discardError = errorTextFrom(err, strings.discard_failed);
+      } finally {
+        flow.discardInFlight = false;
+        if (current() && flow.discardOpen) renderDiscardBox();
+      }
+    }
+
     function draw() {
       if (!current()) return;
       const focused = restoreFocus || flow.slot.contains(document.activeElement);
@@ -811,33 +1346,133 @@
         flow.slot.innerHTML = '';
         return;
       }
-      const label = unknown ? strings.check_status : flow.phase === 'previewing' || (flow.inFlight && flow.phase === 'idle')
-        ? strings.preparing_preview : flow.phase === 'starting' ? strings.starting
-          : flow.phase === 'checking' ? strings.checking_status
-            : flow.phase === 'ready' ? strings.start_import : strings.preview_import;
+      const fileName = flow.data?.import_json?.original_filename || flow.data?.original_filename || strings.file;
+      const checkingText = window.JournalI18n.render('journal.window.import.ox.detail.checking', [['name', String(fileName)]]);
+      const blocked = !unknown && !busy && (
+        facetBlocking()
+        || (flow.phase === 'ready' && flow.preview && (!flow.preview.ready || !flow.preview.spaceFits))
+      );
+      const label = unknown
+        ? strings.check_status
+        : flow.phase === 'previewing' || (flow.inFlight && flow.phase === 'idle')
+          ? strings.preparing_preview
+          : flow.phase === 'starting'
+            ? strings.starting
+            : flow.phase === 'checking'
+              ? strings.checking_status
+              : flow.phase === 'ready'
+                ? strings.start_import
+                : flow.phase === 'failed' || (flow.preview && flow.preview.spaceFits === false)
+                  ? strings.try_preview_again
+                  : strings.preview_import;
+
       if (!flow.slot.querySelector('[data-saved-start-status]')) {
-        flow.slot.innerHTML = '<section class="import-saved-start"><p role="status" aria-live="polite" data-saved-start-status></p>'
+        flow.lastPreviewHtml = '';
+        flow.lastOptionsHtml = '';
+        flow.lastDiscardHtml = '';
+        flow.slot.innerHTML = '<section class="import-saved-start">'
+          + '<p role="status" aria-live="polite" data-saved-start-status></p>'
+          + '<div data-saved-start-preview></div>'
+          + '<div data-saved-start-options></div>'
           + '<div data-saved-start-originals></div>'
           + '<div class="import-action-row" data-saved-start-actions></div>'
+          + '<div data-saved-start-discard></div>'
           + '<div role="alert" data-saved-start-error></div></section>';
         const source = flow.data.import_json?.source_hint || flow.data.import_json?.source;
-        originals?.render(flow.slot.querySelector('[data-saved-start-originals]'), source);
+        originals?.render?.(flow.slot.querySelector('[data-saved-start-originals]'), source);
       }
-      // The button is drawn once and kept, so its focus stays on the same node.
+
+      // The primary button is drawn once and kept, so its focus stays on the same node.
       let button = flow.slot.querySelector('[data-saved-start-action]');
       if (!button) {
-        flow.slot.querySelector('[data-saved-start-actions]').innerHTML = '<button type="button" class="import-primary-btn" data-saved-start-action></button>';
+        const actionsEl = flow.slot.querySelector('[data-saved-start-actions]');
+        actionsEl.innerHTML = '<button type="button" class="import-primary-btn" data-saved-start-action></button>'
+          + '<button type="button" class="import-secondary-btn import-discard-trigger" data-saved-start-discard-trigger></button>';
         button = flow.slot.querySelector('[data-saved-start-action]');
       }
       writeText(button, label);
-      writeAttr(button, 'aria-disabled', String(busy));
-      writeText(flow.slot.querySelector('[data-saved-start-status]'), busy ? label : flow.summary);
-      writeText(flow.slot.querySelector('[data-saved-start-error]'), flow.error);
+      writeAttr(button, 'aria-disabled', String(busy || blocked));
       button.onclick = () => act(button);
+
+      const discardBtn = querySlot('[data-saved-start-discard-trigger]');
+      if (discardBtn) {
+        writeText(discardBtn, strings.discard_button);
+        writeHidden(discardBtn, unknown || !savedEligible(flow.data));
+        discardBtn.onclick = () => {
+          if (flow.inFlight && flow.phase === 'starting') return;
+          flow.discardOpen = true;
+          flow.discardError = '';
+          renderDiscardBox();
+        };
+      }
+
+      const statusText = flow.phase === 'previewing'
+        ? checkingText
+        : busy
+          ? label
+          : (flow.preview && flow.preview.stats && flow.preview.stats.length ? '' : flow.summary);
+      writeText(flow.slot.querySelector('[data-saved-start-status]'), statusText);
+      const previewEl = querySlot('[data-saved-start-preview]');
+      if (previewEl) {
+        const nextPreview = flow.phase === 'ready' || (flow.preview && !busy) ? renderFoundMarkup() : '';
+        if (flow.lastPreviewHtml !== nextPreview) {
+          flow.lastPreviewHtml = nextPreview;
+          previewEl.innerHTML = nextPreview;
+        }
+      }
+      renderOptionsBox();
+      renderDiscardBox();
+      writeText(flow.slot.querySelector('[data-saved-start-error]'), flow.error);
       if (focused && document.activeElement !== button) button.focus();
     }
+
+    async function runPreview() {
+      if (!current() || flow.inFlight || !savedEligible(flow.data)) return;
+      const metadata = flow.data.import_json;
+      const payload = {
+        import_id: id,
+        path: metadata.file_path,
+        timestamp: metadata.source_timestamp,
+        setting: flow.settingDraft || metadata.setting || '',
+      };
+      const revision = flow.revision;
+      flow.controller?.abort?.();
+      flow.controller = typeof AbortController === 'function' ? new AbortController() : null;
+      const signal = flow.controller ? flow.controller.signal : undefined;
+      flow.inFlight = true;
+      flow.phase = 'previewing';
+      flow.error = '';
+      draw();
+      try {
+        const reply = await window.apiJson('/app/import/api/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          ...(signal ? { signal } : {}),
+        });
+        if (revision !== flow.revision || !current()) return;
+        const preview = previewSummary(reply);
+        if (typeof reply.preview_token !== 'string' || !reply.preview_token) throw new Error('invalid Preview');
+        flow.preview = preview;
+        flow.summary = preview.summary;
+        if (isEvernote && preview.notebook && !flow.notebookDraft) flow.notebookDraft = preview.notebook;
+        flow.token = preview.ready ? reply.preview_token : null;
+        flow.phase = preview.ready ? 'ready' : 'idle';
+      } catch (err) {
+        if (revision !== flow.revision || !current()) return;
+        if (err?.name === 'AbortError') return;
+        flow.token = null;
+        flow.preview = null;
+        flow.phase = 'failed';
+        flow.error = errorTextFrom(err, strings.preview_failed);
+      } finally {
+        flow.inFlight = false;
+        draw();
+      }
+    }
+
     async function act(button) {
-      if (!current() || flow.slot.querySelector('button') !== button
+      if (!current() || flow.slot.querySelector('[data-saved-start-action]') !== button
           || flow.inFlight || ['previewing', 'starting', 'checking'].includes(flow.phase)) return;
       if (flow.phase === 'unknown') {
         flow.phase = 'checking';
@@ -849,49 +1484,145 @@
         return;
       }
       if (!savedEligible(flow.data)) return;
-      if (originals?.pending(flow.slot.querySelector('[data-saved-start-originals]'))) return;
+      if (originals?.pending?.(flow.slot.querySelector('[data-saved-start-originals]'))) return;
+      if (facetBlocking()) return;
+      const starting = flow.phase === 'ready' && Boolean(flow.token) && Boolean(flow.preview?.ready) && flow.preview?.spaceFits !== false;
+      if (!starting) {
+        await runPreview();
+        return;
+      }
       const metadata = flow.data.import_json;
-      const payload = { import_id: id, path: metadata.file_path,
-        timestamp: metadata.source_timestamp, setting: metadata.setting || '' };
+      // If Evernote notebook changed, persist it via /meta right before /start.
+      if (isEvernote && flow.notebookDraft !== String(metadata.notebook || '')) {
+        try {
+          await window.apiJson('/app/import/api/meta', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ import_id: id, path: metadata.file_path, notebook: flow.notebookDraft }),
+          });
+          metadata.notebook = flow.notebookDraft;
+          flow.binding = savedBinding(flow.data);
+        } catch (err) {
+          if (!current()) return;
+          flow.error = errorTextFrom(err, strings.start_unconfirmed);
+          draw();
+          return;
+        }
+      }
+      // If context note changed without blur/change firing yet, save & re-preview first so /start never hits 409 SourceChanged.
+      if (!isBodySource && !isEvernote && flow.settingDraft.trim() !== String(metadata.setting || '')) {
+        await updateMetaAndRepreview({ setting: flow.settingDraft.trim() });
+        return;
+      }
+      const payload = {
+        import_id: id,
+        path: metadata.file_path,
+        timestamp: metadata.source_timestamp,
+        setting: metadata.setting || '',
+        preview_token: flow.token,
+        first_start_only: true,
+      };
+      if (flow.preview?.needsBodyConfirm) {
+        payload.body_confirmed = flow.token;
+      }
       const revision = flow.revision;
-      const starting = flow.phase === 'ready';
       flow.inFlight = true;
-      flow.phase = starting ? 'starting' : 'previewing';
+      flow.phase = 'starting';
       flow.error = '';
       draw();
       try {
-        const reply = await window.apiJson(`/app/import/api/${starting ? 'start' : 'preview'}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(starting ? { ...payload, preview_token: flow.token, first_start_only: true } : payload),
+        const reply = await window.apiJson('/app/import/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
         });
         if (revision !== flow.revision || !current()) return;
-        if (starting) {
-          flow.token = null;
-          flow.phase = 'unknown';
-          if (reply.import_id !== id) flow.error = strings.start_unconfirmed;
-          await flow.refresh();
-        } else {
-          const preview = previewSummary(reply.size);
-          if (typeof reply.preview_token !== 'string' || !reply.preview_token) throw new Error('invalid Preview');
-          flow.summary = preview.summary;
-          flow.token = preview.ready ? reply.preview_token : null;
-          flow.phase = preview.ready ? 'ready' : 'idle';
-        }
-      } catch (_) {
+        flow.token = null;
+        flow.phase = 'unknown';
+        if (reply.import_id !== id) flow.error = strings.start_unconfirmed;
+        await flow.refresh();
+      } catch (err) {
         if (revision !== flow.revision || !current()) return;
         flow.token = null;
-        flow.phase = starting ? 'unknown' : 'idle';
-        flow.error = starting ? strings.start_unconfirmed : strings.preview_failed;
+        if (isDefiniteStartRefusal(err)) {
+          flow.phase = 'failed';
+          flow.error = errorTextFrom(err, strings.start_unconfirmed);
+        } else {
+          flow.phase = 'unknown';
+          flow.error = strings.start_unconfirmed;
+        }
       } finally {
         flow.inFlight = false;
-        if (starting && flow.phase === 'starting') flow.phase = 'unknown';
+        if (flow.phase === 'starting') flow.phase = 'unknown';
         draw();
       }
     }
+
     draw();
+    if (isBodySource && bodyFacetApi && !flow.facetLoaded) {
+      loadFacetIfNeeded();
+    }
+    if (autoPreview && savedEligible(data) && flow.phase === 'idle' && !flow.autoAttempted && !flow.inFlight) {
+      flow.autoAttempted = true;
+      runPreview();
+    }
   }
 
-  function renderDetail(data) {
+  function renderRunningProgress(data, liveStage = null) {
+    const derived = deriveStatus(data);
+    if (derived.code !== 'running') return '';
+    const thinking = asObject(data?.thinking);
+    let headline = strings.processing;
+    let detail = '';
+    let pct = null;
+    if (thinking && thinking.status === 'body' && thinking.live === true) {
+      const body = asObject(thinking.body) || {};
+      const phaseKeys = {
+        scan: 'journal.window.import.body.phase.words.scan.reading.your.export',
+        place: 'journal.window.import.body.phase.words.place.sorting.what.it.read',
+        repair: 'journal.window.import.body.phase.words.repair.checking.what.an.earlier.import.left',
+        write: 'journal.window.import.body.phase.words.write.saving',
+        retry: 'journal.window.import.body.phase.words.retry.trying.again.what.didn.t.save',
+      };
+      if (body.phase && phaseKeys[body.phase]) {
+        headline = window.JournalI18n.render(phaseKeys[body.phase]);
+      }
+      if (Number.isSafeInteger(body.days_total) && body.days_total > 0) {
+        const done = Number.isSafeInteger(body.days_done) ? body.days_done : 0;
+        detail = window.JournalI18n.render('journal.window.import.progress.body.days', [
+          ['days_done', String(done)], ['days_total', String(body.days_total)],
+        ]);
+        pct = Math.max(4, Math.min(100, Math.round((done / body.days_total) * 100)));
+      }
+    } else if (liveStage) {
+      if (liveStage.headline) headline = String(liveStage.headline);
+      if (liveStage.detail) detail = String(liveStage.detail);
+      if (typeof liveStage.pct === 'number' && Number.isFinite(liveStage.pct)) {
+        pct = Math.max(4, Math.min(100, Math.round(liveStage.pct)));
+      }
+    }
+    const bar = pct !== null
+      ? `<div class="import-running-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><div class="import-running-fill" style="width:${pct}%"></div></div>`
+      : '';
+    return `<section class="import-running-card" role="status" aria-live="polite" data-running-progress-card>`
+      + `<p class="import-running-headline">${escapeHtml(headline)}</p>`
+      + (detail ? `<p class="import-running-detail">${escapeHtml(detail)}</p>` : '')
+      + bar
+      + `</section>`;
+  }
+
+  function renderExpiredRecovery() {
+    return {
+      metaHtml: `<span class="status-badge expired">${escapeHtml(strings.expired_badge)}</span>`,
+      bodyHtml: `<section class="import-expired-card">`
+        + `<p class="import-expired-lead">${escapeHtml(strings.expired_body)}</p>`
+        + `<p class="import-expired-recovery">${escapeHtml(strings.expired_recovery)}</p>`
+        + `<div class="import-action-row"><a class="import-primary-btn" href="/app/import/">${escapeHtml(strings.back_to_imports)}</a></div>`
+        + `</section>`,
+    };
+  }
+
+  function renderDetail(data, liveStage = null) {
     if (!window.Drawer || typeof window.Drawer.render !== 'function') {
       throw new Error(strings.drawer_unavailable);
     }
@@ -906,16 +1637,20 @@
       bodyHtml: renderDrawerBody(data)
     });
     const leads = derived.code === 'success' ? renderLeadsCard(data) : '';
+    const running = `<div class="import-running-slot" data-running-progress-slot>${derived.code === 'running' ? renderRunningProgress(data, liveStage) : ''}</div>`;
     const continuation = hasSavedFlow(data) ? '<div data-saved-start-slot></div>' : '';
-    return continuation + leads + drawer + renderImportDelete(data);
+    return continuation + running + leads + drawer + renderImportDelete(data);
   }
 
   window.ImportDetail = Object.freeze({
     renderDetail,
+    renderRunningProgress,
+    renderExpiredRecovery,
     mountSavedStart,
     forgetSavedStarts,
     renderMeta,
     deriveStatus,
+    previewSummary,
     formatDuration,
     composeDrawerLine,
     resolveDay,

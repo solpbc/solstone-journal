@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for marker warn.",
+  "context": "Journal command-line text for marker warn.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3544949e43dc24fbc1e66d7e928ae5be7310469e1a75a18cc7d80f87292323cd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

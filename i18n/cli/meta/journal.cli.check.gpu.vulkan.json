@@ -1,0 +1,25 @@
+{
+  "description": "Readiness report: gpu vulkan.",
+  "context": "Readiness report: gpu vulkan.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "gpu",
+      "type": "string"
+    },
+    {
+      "name": "gb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "626b34a00f01edc23db7f25df32fc311fc126577cd59b0397481002b1cb822fb",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

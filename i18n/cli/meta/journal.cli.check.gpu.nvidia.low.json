@@ -1,0 +1,21 @@
+{
+  "description": "Readiness report: gpu nvidia low.",
+  "context": "Readiness report: gpu nvidia low.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "gb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b2900e1c8b249f713b4f6873a2cc509c232d16f341a23e7dc8e71fa06ec32a80",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

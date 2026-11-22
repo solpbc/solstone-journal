@@ -1,0 +1,21 @@
+{
+  "description": "Readiness report: memory eligible.",
+  "context": "Readiness report: memory eligible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "gb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "98eee8ad6777ede18e5621e5e5b6966c68ac2b1962c6d3b95000ee93c6568adb",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

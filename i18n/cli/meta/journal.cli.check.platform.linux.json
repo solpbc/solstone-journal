@@ -1,0 +1,21 @@
+{
+  "description": "Readiness report: platform linux.",
+  "context": "Readiness report: platform linux.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "arch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0e844c124f4661f9b550bd2192c6a2d94f512f6e3660e0e63b7200f46d60a35d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
