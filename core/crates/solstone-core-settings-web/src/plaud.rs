@@ -587,7 +587,10 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         seed_connected_plaud(root.path());
         std::fs::create_dir_all(root.path().join("health")).unwrap();
-        let sock = root.path().join("health/callosum.sock");
+        let sock = root.path().join("health").join("callosum.sock");
+        #[cfg(windows)]
+        let _namespace =
+            solstone_core_callosum::test_fixture::WindowsPipeNamespace::register(sock.clone());
         let server = CallosumSocketServer::bind(sock.clone()).await.unwrap();
         let mut supervisor = CallosumSocketConnection::new(sock, Map::new());
         supervisor.start();
