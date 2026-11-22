@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sound windows package member.",
+  "context": "Journal command-line text for sound windows package member.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f87b4cba70d82270c7681aeeffd118516db595e48729a68b18e296e76688cffa",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

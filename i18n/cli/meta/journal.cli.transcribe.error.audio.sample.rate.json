@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error audio sample rate.",
+  "context": "Journal command-line text for error audio sample rate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rate",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b141a9e7cb55926d800548936c716f30c8825162aa8cbfd1796f09e1ded70258",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_wav",
+      "kind": "accepted-input",
+      "value": "WAV"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error audio empty.",
+  "context": "Journal command-line text for error audio empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6799c388e56e29349bc228dbe410c305fa33cad704a159431317d518d1b3a51c",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

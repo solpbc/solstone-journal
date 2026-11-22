@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows deadline exceeded.",
+  "context": "Journal command-line text for error windows deadline exceeded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "54d0f3a437136a4d0ada2fcab0e67e252fc35515b6a854e2fa3c6eee8e58c2e6",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

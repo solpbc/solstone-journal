@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error vad vad response has no boolean has speech.",
+  "context": "Journal command-line text for error vad vad response has no boolean has speech.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a7f59454e051824a1f9c5e07687058528dfb2b863bb5558578c9faba64615820",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    },
+    {
+      "name": "code_has_speech",
+      "kind": "accepted-input",
+      "value": "has_speech"
+    }
+  ]
+}

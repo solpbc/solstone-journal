@@ -10,6 +10,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 log = { workspace = true }
 serde_json = { workspace = true }
 solstone-core-assets = { workspace = true }

@@ -44,8 +44,8 @@ use solstone_core_cli::{
     THINKING_CHATGPT_SIGN_IN_HELP, THINKING_CHATGPT_SIGN_IN_USAGE, THINKING_CHATGPT_SIGN_OUT_HELP,
     THINKING_CHATGPT_SIGN_OUT_USAGE, THINKING_CHATGPT_STATUS_HELP, THINKING_CHATGPT_STATUS_USAGE,
     THINKING_CHATGPT_USAGE, THINKING_HELP, THINKING_SET_LANE_HELP, THINKING_SET_LANE_USAGE,
-    THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, ThinkingCommand,
-    TranscribeOptions, USAGE, evaluate_args, render_service_diagnostic, version_line,
+    THINKING_USAGE, TOP_HELP, TOP_USAGE, ThinkingCommand, TranscribeOptions, USAGE, evaluate_args,
+    render_service_diagnostic, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 #[cfg(any(unix, windows))]
@@ -741,7 +741,10 @@ fn main() -> ExitCode {
                 );
                 return (run.stdout, run.stderr, run.exit_code);
             }
-            let generation = match solstone_core_transcribe::enter_speakers_analyze_generation(
+            let locale = solstone_core_think_cli::terminal_locale()
+                .unwrap_or(solstone_core_cli_copy::ENGLISH);
+            let generation = match solstone_core_transcribe::enter_speakers_analyze_generation_in(
+                locale,
                 journal,
                 solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Think,
                 #[cfg(windows)]
@@ -751,12 +754,8 @@ fn main() -> ExitCode {
                 Err(error) => {
                     return (
                         String::new(),
-                        solstone_core_transcribe::speakers_installation_detail_in(
-                            &error,
-                            solstone_core_think_cli::terminal_locale()
-                                .unwrap_or(solstone_core_cli_copy::ENGLISH),
-                        )
-                        .unwrap_or_default(),
+                        solstone_core_transcribe::speakers_installation_detail_in(&error, locale)
+                            .unwrap_or_default(),
                         error.exit_code(),
                     );
                 }
@@ -1093,7 +1092,12 @@ fn main() -> ExitCode {
         }
         Ok(Command::SettingsParseError(error)) => settings_parse_error(error),
         Ok(Command::TranscribeHelp) => {
-            print!("{TRANSCRIBE_HELP}");
+            let locale = solstone_core_transcribe::terminal_locale()
+                .unwrap_or(solstone_core_cli_copy::ENGLISH);
+            println!(
+                "{}",
+                solstone_core_cli_copy::render_for(locale, "journal.cli.transcribe.help", &[])
+            );
             ExitCode::SUCCESS
         }
         Ok(Command::FacetCandidatesHelp) => {
@@ -1233,10 +1237,12 @@ fn run_transcribe(
     options: TranscribeOptions,
     #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> ExitCode {
+    let terminal = solstone_core_transcribe::terminal_locale();
+    let locale = terminal.unwrap_or(solstone_core_cli_copy::ENGLISH);
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
         Err(error) => {
-            eprint_journal_path_error(error);
+            eprint_journal_path_error_in(locale, error);
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
@@ -1248,7 +1254,8 @@ fn run_transcribe(
                 .unwrap_or_default()
         );
     };
-    match solstone_core_transcribe::run_cli(
+    match solstone_core_transcribe::run_cli_in(
+        terminal,
         options.arguments,
         &journal.path,
         &mut on_day,
@@ -1257,13 +1264,15 @@ fn run_transcribe(
     ) {
         Ok(result) => complete_transcribe(&journal.path, result),
         Err(CliRunError::Cli(CliError::Usage { message })) => {
-            eprint!("{TRANSCRIBE_USAGE}");
-            eprintln!("solstone journal transcribe: error: {message}");
+            eprint!(
+                "{}",
+                solstone_core_transcribe::usage_error(locale, &message)
+            );
             ExitCode::from(2)
         }
         Err(error) => {
-            if let Some(message) = error.message() {
-                eprintln!("{message}");
+            if let Some(locale) = terminal {
+                eprintln!("{}", error.render(locale));
             } else {
                 eprintln!("{error}");
             }
@@ -1296,9 +1305,18 @@ fn feed_transcribed_files(journal: &Path, files: &[solstone_core_transcribe::Tra
                 &|| Ok(()),
             )
         {
+            let locale = solstone_core_transcribe::terminal_locale()
+                .unwrap_or(solstone_core_cli_copy::ENGLISH);
             log::warn!(
-                "speaker candidate pool feed failed for {}: {error}",
-                file.transcript_path.display()
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.transcribe.feed.failure",
+                    [
+                        ("path", &(file.transcript_path.display())),
+                        ("detail", &(error.render(locale)))
+                    ]
+                )
             );
         }
     }

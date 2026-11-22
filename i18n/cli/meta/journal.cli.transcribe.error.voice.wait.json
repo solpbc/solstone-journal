@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error voice wait.",
+  "context": "Journal command-line text for error voice wait.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "954fe99c8b605063a3f13df4e9d7da36a285f613e837e8544425879be95f608e",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer npz parent.",
+  "context": "Journal command-line text for error writer npz parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "89328ba35a768ff58dda422826d9cd2b56b7f917cf7f34c94c67d831041bcb4c",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

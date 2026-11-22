@@ -43,6 +43,63 @@ pub enum TranscribedClusterFeedError {
     Pool(#[from] CandidateTrackerError),
 }
 
+impl TranscribedClusterFeedError {
+    pub fn render(&self, locale: &str) -> String {
+        match self {
+            Self::Load(TranscribedClusterError::Io(detail)) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.feed.read",
+                [("detail", &(detail))],
+            ),
+            Self::Load(TranscribedClusterError::Transcript(TranscriptError::InvalidUtf8)) => {
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.transcribe.feed.parse",
+                    [(
+                        "detail",
+                        &(solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.talent.hook.transcript.bytes",
+                            &[],
+                        )),
+                    )],
+                )
+            }
+            Self::Unreadable => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.transcribe.feed.unreadable",
+                &[],
+            ),
+            Self::Pool(CandidateTrackerError::Lock(detail)) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.feed.pool.lock",
+                [(
+                    "detail",
+                    &(solstone_core_journal_io::cli_diagnostics::lock_detail(locale, detail)),
+                )],
+            ),
+            Self::Pool(CandidateTrackerError::Read(detail)) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.feed.pool.read",
+                [("detail", &(detail))],
+            ),
+            Self::Pool(CandidateTrackerError::Write(detail)) => {
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.transcribe.feed.pool.write",
+                    [("detail", &(detail))],
+                )
+            }
+            Self::Pool(CandidateTrackerError::CentroidWidth) => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.transcribe.feed.pool.width",
+                &[],
+            ),
+            Self::Pool(CandidateTrackerError::Cancelled(detail)) => detail.clone(),
+        }
+    }
+}
+
 /// Feed completed transcript evidence through the candidate pool's admission rules.
 /// The caller retains custody and cancellation authority through publication.
 pub fn feed_transcribed_clusters(

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer id range.",
+  "context": "Journal command-line text for error writer id range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c77972dcc99884c013a9d925e4c179b56735b99b8049ec52b57053bb4800ebf7",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_1_i32_max",
+      "kind": "accepted-input",
+      "value": "1..=i32::MAX"
+    }
+  ]
+}

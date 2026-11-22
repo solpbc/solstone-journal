@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer zip central record extends beyond archive.",
+  "context": "Journal command-line text for error writer zip central record extends beyond archive.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dad209642ffeb7d0e156b6f1270483e5d6b7c39fc8daaa811f0d44cbcaa852e4",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

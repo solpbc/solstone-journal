@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer schema.",
+  "context": "Journal command-line text for error writer schema.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "schema",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d3c6480cc6e2bba49489f7702a05b552c2a1b12db6dca0a0b361b78689961b32",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

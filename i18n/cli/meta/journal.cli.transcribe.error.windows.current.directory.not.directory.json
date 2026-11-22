@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows current directory not directory.",
+  "context": "Journal command-line text for error windows current directory not directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "122423f1e8c5c6a1683c25019da0b46e9120617eabd518ec9c87007ddb0f68f3",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

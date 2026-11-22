@@ -107,10 +107,5 @@ pub fn settings_detail(
     locale: &str,
     error: &solstone_core_journal_config::ConfigLoadError,
 ) -> String {
-    let solstone_core_journal_config::ConfigLoadError::Corrupt { path, .. } = error;
-    solstone_core_window_catalog::strings(
-        locale,
-        "journal.window.facets.awareness.response.detail.unreadable.settings",
-        [("settings_path", path.display().to_string().as_str())],
-    )
+    error.render(locale)
 }

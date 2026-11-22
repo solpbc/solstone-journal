@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error writer payload finite.",
+  "context": "Journal command-line text for error writer payload finite.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "row",
+      "type": "string"
+    },
+    {
+      "name": "column",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9cdc52a5b2e593776e5d2cf0c2fb80da4de3a9f28a85921b5c7793cc6796fa95",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

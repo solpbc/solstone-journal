@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stage output parent.",
+  "context": "Journal command-line text for stage output parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "381b25154d951a7e024cc99d5d0ae2716ce987e27a4a12600820ce670fb9151c",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

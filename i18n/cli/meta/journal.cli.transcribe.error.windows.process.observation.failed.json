@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows process observation failed.",
+  "context": "Journal command-line text for error windows process observation failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f408281aead1b4dbd29b6835dad8d1412b4bbe6d4002f8802aca1c0c74df1c6",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

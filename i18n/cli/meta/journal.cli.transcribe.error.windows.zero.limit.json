@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error windows zero limit.",
+  "context": "Journal command-line text for error windows zero limit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f21ab533d832c33f381ea7aee43f9ba7d7520b942d64f6ab264a626f90ff34d1",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

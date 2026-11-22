@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for error confidential hosted stt returned http status.",
+  "context": "Journal command-line text for error confidential hosted stt returned http status.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ff063df5246e504a78a3ca2e24f764120f5a3ef08f6a42461ccb308805daebec",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_stt",
+      "kind": "accepted-input",
+      "value": "STT"
+    },
+    {
+      "name": "code_http",
+      "kind": "accepted-input",
+      "value": "HTTP"
+    }
+  ]
+}

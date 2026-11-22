@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error publish raw.",
+  "context": "Journal command-line text for error publish raw.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "99b5f9b626d4d4bb7c7a72d49cd23f91cce83440e7a5ff4a32f19b8f81d30e69",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_header_raw",
+      "kind": "accepted-input",
+      "value": "header.raw"
+    }
+  ]
+}

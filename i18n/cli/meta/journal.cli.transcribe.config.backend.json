@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for config backend.",
+  "context": "Journal command-line text for config backend.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backends",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3d53c4f34c0f2c0298b975b161e75fb8babc7584819e8758eff6a3715f5dd0a3",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "key",
+      "kind": "accepted-input",
+      "value": "transcribe.backend"
+    }
+  ]
+}

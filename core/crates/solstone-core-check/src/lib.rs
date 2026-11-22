@@ -1088,17 +1088,22 @@ pub fn human_output(report: &CheckReport) -> String {
 pub fn evaluate_host_ced(journal: &Path, os: &str, arch: &str) -> CedVerdict {
     #[cfg(windows)]
     {
-        solstone_core_local::install::ced_readiness::evaluate_ced_readiness_with_probe(
-            journal,
-            os,
-            arch,
-            ced_windows::probe,
-        )
+        return evaluate_host_ced_in(solstone_core_cli_copy::ENGLISH, journal, os, arch);
     }
     #[cfg(not(windows))]
     {
         solstone_core_local::install::ced_readiness::evaluate_ced_readiness(journal, os, arch)
     }
+}
+
+#[cfg(windows)]
+pub fn evaluate_host_ced_in(locale: &str, journal: &Path, os: &str, arch: &str) -> CedVerdict {
+    solstone_core_local::install::ced_readiness::evaluate_ced_readiness_with_probe_detail(
+        journal,
+        os,
+        arch,
+        |library, model| ced_windows::probe(locale, library, model),
+    )
 }
 
 #[cfg(windows)]
@@ -1185,7 +1190,7 @@ mod tests {
         let degraded_ced = ced_check(&check_inputs(
             Some(CapabilityStatus::UnloadableOrUnrunnable {
                 capability: CED_CAPABILITY.to_owned(),
-                detail: "ced library failed to load".to_owned(),
+                detail: "ced library failed to load".into(),
             }),
             RfdetrCheckInput::Omit,
         ))
@@ -1358,35 +1363,35 @@ mod tests {
             (
                 CapabilityStatus::Absent {
                     capability: capability.clone(),
-                    detail: detail.clone(),
+                    detail: detail.clone().into(),
                 },
                 "absent",
             ),
             (
                 CapabilityStatus::IntegrityInvalid {
                     capability: capability.clone(),
-                    detail: detail.clone(),
+                    detail: detail.clone().into(),
                 },
                 "integrity_invalid",
             ),
             (
                 CapabilityStatus::UnloadableOrUnrunnable {
                     capability: capability.clone(),
-                    detail: detail.clone(),
+                    detail: detail.clone().into(),
                 },
                 "unloadable",
             ),
             (
                 CapabilityStatus::WrongAbiOrProtocol {
                     capability: capability.clone(),
-                    detail: detail.clone(),
+                    detail: detail.clone().into(),
                 },
                 "wrong_abi_or_protocol",
             ),
             (
                 CapabilityStatus::ResourceOrOwnerScopeUnavailable {
                     capability: capability.clone(),
-                    detail: detail.clone(),
+                    detail: detail.clone().into(),
                 },
                 "resource_or_owner_scope_unavailable",
             ),
@@ -1409,7 +1414,7 @@ mod tests {
         let inputs = check_inputs(
             Some(CapabilityStatus::UnloadableOrUnrunnable {
                 capability: CED_CAPABILITY.to_owned(),
-                detail: "ced library failed to load".to_owned(),
+                detail: "ced library failed to load".into(),
             }),
             RfdetrCheckInput::Ready,
         );
@@ -1455,7 +1460,7 @@ mod tests {
         let inputs = check_inputs(
             Some(CapabilityStatus::Absent {
                 capability: CED_CAPABILITY.to_owned(),
-                detail: "sidecar missing".to_owned(),
+                detail: "sidecar missing".into(),
             }),
             RfdetrCheckInput::Ready,
         );

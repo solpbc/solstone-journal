@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error confidential the confidential lane has no confidential byo endpoint.",
+  "context": "Journal command-line text for error confidential the confidential lane has no confidential byo endpoint.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f4d8aa23a3465ca84e43dec07328f1eca4c439163fdec8166aefcf5de87ff2a6",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_byo",
+      "kind": "accepted-input",
+      "value": "BYO"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for owner running.",
+  "context": "Journal command-line text for owner running.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a0648da22dd0b43a1b650a322f99b3bb745d57efd23effea5e86f50359a63b26",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "import",
+      "kind": "command",
+      "value": "solstone import <file>"
+    }
+  ]
+}

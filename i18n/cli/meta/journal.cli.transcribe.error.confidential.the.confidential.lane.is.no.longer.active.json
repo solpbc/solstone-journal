@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error confidential the confidential lane is no longer active.",
+  "context": "Journal command-line text for error confidential the confidential lane is no longer active.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7bb2221b7fce32ddee43ce0f2e52ef20869b9c46dfdc8e202b8f48f7ce08ff95",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

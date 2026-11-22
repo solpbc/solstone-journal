@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for claim target name.",
+  "context": "Journal command-line text for claim target name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c4b78fffa1a0b429a3b9fd0518d553bef45df33bc32468858e391953a3dda510",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

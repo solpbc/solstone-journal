@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer payload size does not match byte count.",
+  "context": "Journal command-line text for error writer payload size does not match byte count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4dd567fbc13cd7ef18c0a6949d7dae209f0941d822bd1855078ab153be2391f1",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_byte_count",
+      "kind": "accepted-input",
+      "value": "byte_count"
+    }
+  ]
+}

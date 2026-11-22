@@ -154,13 +154,18 @@ impl SpeakerAnalyzeError {
     }
 }
 
+impl SpeakerAnalyzeError {
+    pub(crate) fn render(&self, locale: &str) -> String {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.transcribe.error.speaker.analysis",
+            [("stage", &(self.stage)), ("reason", &(self.reason))],
+        )
+    }
+}
 impl fmt::Display for SpeakerAnalyzeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "speaker analysis failed: {}/{}",
-            self.stage, self.reason
-        )
+        formatter.write_str(&self.render(solstone_core_cli_copy::ENGLISH))
     }
 }
 

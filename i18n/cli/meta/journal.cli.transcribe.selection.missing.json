@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for selection missing.",
+  "context": "Journal command-line text for selection missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d9f3a74e846a65dc9f1ae301fcdbae1c3932370466222d59a9db7f18208be864",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "input",
+      "kind": "accepted-input",
+      "value": "audio_path"
+    },
+    {
+      "name": "all_flag",
+      "kind": "flag",
+      "value": "--all"
+    }
+  ]
+}

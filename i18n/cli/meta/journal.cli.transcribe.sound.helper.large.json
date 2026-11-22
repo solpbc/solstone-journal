@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sound helper large.",
+  "context": "Journal command-line text for sound helper large.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f50ae0c297a5e3dcf1dadea6e55458ef896868f858b93360054321825c6d6715",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

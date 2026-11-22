@@ -3,6 +3,7 @@
 
 //! Terminal stage outcomes. Empty terminals retain the raw input.
 
+use solstone_core_segment::output_attempt::{claim_detail, input_verification_cancelled};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -60,7 +61,7 @@ pub(crate) fn capture_input_facts(path: &Path) -> Result<InputFacts, TranscribeE
     let input_size = fs::metadata(path)
         .map_err(|error| TranscribeError::InputMetadata {
             path: path.to_path_buf(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?
         .len();
     Ok(InputFacts {
@@ -103,12 +104,12 @@ pub(crate) fn commit_input<'a>(
     let commit = input
         .commit_checked(claims, &|| checkpoint().is_err())
         .map_err(|error| {
-            if error.to_string() == "processing input verification cancelled" {
+            if input_verification_cancelled(&error) {
                 TranscribeError::Cancelled
             } else {
                 TranscribeError::ProcessingClaim {
                     path: raw.to_path_buf(),
-                    detail: error.to_string(),
+                    detail: claim_detail(&error),
                 }
             }
         })?;
@@ -158,6 +159,7 @@ pub(crate) fn set_before_input_capture(hook: Option<Box<dyn FnOnce()>>) {
 }
 
 /// Run the currently implemented native transcription path for one segment audio file.
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn process_one(
     audio_path: &Path,
     journal_path: &Path,
@@ -167,7 +169,32 @@ pub(crate) fn process_one(
     attestation_state: &AttestationStateStore,
     #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<ProcessOutcome, TranscribeError> {
-    process_one_with(
+    process_one_in(
+        None,
+        audio_path,
+        journal_path,
+        redo,
+        explicit_backend,
+        config,
+        attestation_state,
+        #[cfg(windows)]
+        generation,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn process_one_in(
+    terminal_locale: Option<&str>,
+    audio_path: &Path,
+    journal_path: &Path,
+    redo: bool,
+    explicit_backend: Option<&str>,
+    config: &JournalConfigRead,
+    attestation_state: &AttestationStateStore,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
+) -> Result<ProcessOutcome, TranscribeError> {
+    process_one_with_in(
+        terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH),
         audio_path,
         journal_path,
         redo,
@@ -198,7 +225,7 @@ pub(crate) fn finish_context_output(
         )
         .map_err(|detail| TranscribeError::ProcessingClaim {
             path: audio_path.to_path_buf(),
-            detail,
+            detail: detail.into(),
         })?;
         solstone_core_system::work_retry::raw::finish_output_checked(
             journal_path,
@@ -211,7 +238,7 @@ pub(crate) fn finish_context_output(
                 .err()
                 .unwrap_or_else(|| TranscribeError::ProcessingClaim {
                     path: audio_path.to_path_buf(),
-                    detail,
+                    detail: detail.into(),
                 })
         })?;
     }
@@ -233,7 +260,7 @@ pub(crate) fn finish_context_output_admitted(
         )
         .map_err(|detail| TranscribeError::ProcessingClaim {
             path: audio_path.to_path_buf(),
-            detail,
+            detail: detail.into(),
         })?;
         solstone_core_system::work_retry::raw::finish_output_checked(
             journal_path,
@@ -243,7 +270,7 @@ pub(crate) fn finish_context_output_admitted(
         )
         .map_err(|detail| TranscribeError::ProcessingClaim {
             path: audio_path.to_path_buf(),
-            detail,
+            detail: detail.into(),
         })?;
     }
     Ok(())
@@ -304,13 +331,43 @@ fn same_held_attempt(
     resume_held_attempt(journal_path, &audio_path.with_extension("jsonl"), context).map_err(
         |detail| TranscribeError::ProcessingClaim {
             path: audio_path.to_path_buf(),
-            detail,
+            detail: detail.into(),
         },
     )
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(any(all(feature = "embedded", unix), all(test, feature = "full-tests")))]
 pub(crate) fn process_one_with(
+    audio_path: &Path,
+    journal_path: &Path,
+    redo: bool,
+    explicit_backend: Option<&str>,
+    config: &JournalConfigRead,
+    attestation_state: &AttestationStateStore,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
+    #[cfg(all(feature = "embedded", unix))] embedded: Option<&crate::embedded::EmbeddedContext<'_>>,
+    retry: Option<&solstone_core_system::work_retry::RetryContext>,
+) -> Result<ProcessOutcome, TranscribeError> {
+    process_one_with_in(
+        solstone_core_cli_copy::ENGLISH,
+        audio_path,
+        journal_path,
+        redo,
+        explicit_backend,
+        config,
+        attestation_state,
+        #[cfg(windows)]
+        generation,
+        #[cfg(all(feature = "embedded", unix))]
+        embedded,
+        retry,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn process_one_with_in(
+    locale: &str,
     audio_path: &Path,
     journal_path: &Path,
     redo: bool,
@@ -367,7 +424,7 @@ pub(crate) fn process_one_with(
     )
     .map_err(|error| TranscribeError::ProcessingClaim {
         path: audio_path.to_path_buf(),
-        detail: error.to_string(),
+        detail: claim_detail(&error),
     })?;
     if !redo
         && !same_held_attempt(journal_path, audio_path, retry)?
@@ -381,7 +438,7 @@ pub(crate) fn process_one_with(
     if !redo && let Some(context) = retry {
         let claim_error = |detail: String| TranscribeError::ProcessingClaim {
             path: audio_path.to_path_buf(),
-            detail,
+            detail: detail.into(),
         };
         match solstone_core_system::work_retry::raw::classify_held_attempt_checked(
             journal_path,
@@ -421,7 +478,7 @@ pub(crate) fn process_one_with(
         .map(|config| crate::config::owner_voice_only(&config))
         .map_err(|error| TranscribeError::ProcessingClaim {
             path: audio_path.to_path_buf(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     let owner_voice_eligibility =
         crate::owner_voice::eligibility(audio_path, &output, owner_voice_setting);
@@ -438,9 +495,15 @@ pub(crate) fn process_one_with(
                     .is_some_and(solstone_core_processing_record::owner_voice_filtered);
                 let error = TranscribeError::OwnerVoiceUnavailable {
                     detail: if first_time {
-                        "save a voice in Speakers, or turn off transcribe.owner_voice_only".into()
+                        crate::TranscribeDetail::message(
+                            "journal.cli.transcribe.stage.owner.save.or.disable",
+                            [],
+                        )
                     } else {
-                        "save a voice in Speakers to finish this filtered recording".into()
+                        crate::TranscribeDetail::message(
+                            "journal.cli.transcribe.stage.owner.save.to.finish",
+                            [],
+                        )
                     },
                 };
                 emit_event(
@@ -478,12 +541,12 @@ pub(crate) fn process_one_with(
     let observation =
         InputObservation::capture_checked(&claim, audio_path, &|| checkpoint().is_err()).map_err(
             |error| {
-                if error.to_string() == "processing input verification cancelled" {
+                if input_verification_cancelled(&error) {
                     TranscribeError::Cancelled
                 } else {
                     TranscribeError::ProcessingClaim {
                         path: audio_path.to_path_buf(),
-                        detail: error.to_string(),
+                        detail: claim_detail(&error),
                     }
                 }
             },
@@ -500,7 +563,10 @@ pub(crate) fn process_one_with(
                 if sha256_hex(observation.input_sha256()) != attempt.input {
                     return Err(TranscribeError::ProcessingClaim {
                         path: audio_path.to_path_buf(),
-                        detail: "retry permission changed".into(),
+                        detail: crate::TranscribeDetail::message(
+                            "journal.cli.think.retry.permission.changed",
+                            [],
+                        ),
                     });
                 }
                 (true, resumed_attempt.clone())
@@ -514,7 +580,7 @@ pub(crate) fn process_one_with(
                 )
                 .map_err(|detail| TranscribeError::ProcessingClaim {
                     path: audio_path.to_path_buf(),
-                    detail,
+                    detail: detail.into(),
                 })?;
                 (attempt.is_some(), attempt)
             }
@@ -526,7 +592,7 @@ pub(crate) fn process_one_with(
             )
             .map_err(|detail| TranscribeError::ProcessingClaim {
                 path: audio_path.to_path_buf(),
-                detail,
+                detail: detail.into(),
             })?;
             (admitted, None)
         }
@@ -606,7 +672,7 @@ pub(crate) fn process_one_with(
         Err(error) => {
             timings.add_ms("decode", elapsed_ms(decoded_at));
             let decode_error = TranscribeError::Decode {
-                detail: error.to_string(),
+                detail: (&error).into(),
             };
             let write_at = Instant::now();
             #[cfg(all(feature = "embedded", unix))]
@@ -712,13 +778,7 @@ pub(crate) fn process_one_with(
                 Ok(step) => step,
                 Err(crate::owner_voice::FirstPassProblem::HelperOutdated) => {
                     let commit = commit_input(&observation, &claim, audio_path, &checkpoint)?;
-                    let mut processing = crate::processing::backend_failure_record(
-                        facts.input_size,
-                        solstone_core_processing_record::vocab::REASON_ANALYSIS_FAILED,
-                    );
-                    processing["error"] = json!(
-                        "the speaker-analysis helper predates overlap ranges or speaker turns"
-                    );
+                    let processing = crate::processing::outdated_helper_record(facts.input_size);
                     write_failed_record(&facts, redo, processing, context_attempt.as_ref())?;
                     drop(commit);
                     finish_context_output(
@@ -791,7 +851,7 @@ pub(crate) fn process_one_with(
             (step.audio, masked_vad)
         }
     };
-    let (sound_tags, sound_tag_status) = tag_audio(&full_audio, journal_path);
+    let (sound_tags, sound_tag_status) = tag_audio(&full_audio, journal_path, locale);
 
     if !vad.has_speech {
         let write_at = Instant::now();
@@ -809,6 +869,7 @@ pub(crate) fn process_one_with(
         )?;
         drop(observation);
         finish_voice_only_deletion(
+            locale,
             journal_path,
             &facts,
             &claim,
@@ -901,6 +962,7 @@ pub(crate) fn process_one_with(
             return runtime.transcribe(samples);
         }
         dispatch_backend(
+            locale,
             config,
             journal_path,
             &backend,
@@ -986,6 +1048,7 @@ pub(crate) fn process_one_with(
         )?;
         drop(observation);
         finish_voice_only_deletion(
+            locale,
             journal_path,
             &facts,
             &claim,
@@ -1103,13 +1166,13 @@ pub(crate) fn process_one_with(
         solstone_core_system::work_retry::raw::stamp_attempt_from(&mut processing, attempt)
             .map_err(|detail| TranscribeError::ProcessingClaim {
                 path: audio_path.to_path_buf(),
-                detail,
+                detail: detail.into(),
             })?;
     } else {
         solstone_core_system::work_retry::raw::stamp_attempt(&mut processing).map_err(
             |detail| TranscribeError::ProcessingClaim {
                 path: audio_path.to_path_buf(),
-                detail,
+                detail: detail.into(),
             },
         )?;
     }
@@ -1144,6 +1207,7 @@ pub(crate) fn process_one_with(
     })?;
     drop(observation);
     finish_voice_only_deletion(
+        locale,
         journal_path,
         &facts,
         &claim,
@@ -1262,11 +1326,16 @@ where
     if !confidential::confidential_request_fits(samples) {
         return Err(TranscribeError::ConfidentialDeferred {
             reason: "confidential_audio_too_long".to_owned(),
-            detail: format!(
-                "audio is {:.1}s and would send {} bytes; confidential STT accepts at most {} bytes",
-                audio_seconds,
-                confidential::confidential_request_bytes(samples),
-                confidential::CONFIDENTIAL_STT_MAX_REQUEST_BYTES,
+            detail: crate::TranscribeDetail::message(
+                "journal.cli.transcribe.stage.confidential.cap",
+                [
+                    ("seconds", &(format!("{audio_seconds:.1}"))),
+                    (
+                        "bytes",
+                        &(confidential::confidential_request_bytes(samples)),
+                    ),
+                    ("limit", &(confidential::CONFIDENTIAL_STT_MAX_REQUEST_BYTES)),
+                ],
             ),
         });
     }
@@ -1372,6 +1441,7 @@ where
 }
 
 pub(crate) fn dispatch_backend(
+    locale: &str,
     config: &JournalConfigRead,
     journal_path: &Path,
     backend: &str,
@@ -1384,7 +1454,7 @@ pub(crate) fn dispatch_backend(
             let wav = audio_to_wav_bytes(statement_audio, SAMPLE_RATE).map_err(|error| {
                 TranscribeError::ParakeetCppFailure {
                     reason: "wav_encode_failed".to_owned(),
-                    detail: error.to_string(),
+                    detail: (&error).into(),
                 }
             })?;
             let server = parakeet_cpp::connect(journal_path)?;
@@ -1409,6 +1479,7 @@ pub(crate) fn dispatch_backend(
             #[cfg(all(feature = "embedded", unix))]
             if let Some(runtime) = embedded {
                 return confidential::transcribe_cancellable(
+                    locale,
                     statement_audio,
                     journal_path,
                     config,
@@ -1418,7 +1489,13 @@ pub(crate) fn dispatch_backend(
                     runtime.observation,
                 );
             }
-            confidential::transcribe(statement_audio, journal_path, config, attestation_state)
+            confidential::transcribe(
+                locale,
+                statement_audio,
+                journal_path,
+                config,
+                attestation_state,
+            )
         });
     }
     Err(TranscribeError::BackendNotImplemented {
@@ -1763,6 +1840,7 @@ pub(crate) fn write_failed_record(
 /// attempt still holds the transcript's claim and segment commit. Whatever happens, the
 /// published words stand; an unfinished deletion stays owed for the daily cleanup.
 pub(crate) fn finish_voice_only_deletion(
+    locale: &str,
     journal_path: &Path,
     facts: &InputFacts,
     claim: &OutputClaims,
@@ -1780,7 +1858,14 @@ pub(crate) fn finish_voice_only_deletion(
     match finish_owner_voice_deletion(journal_path, &jsonl, claim, commit, jiff::Timestamp::now()) {
         outcome @ (OwnerVoiceDeletion::Deleted | OwnerVoiceDeletion::DeletedUnrecorded) => {
             if outcome == OwnerVoiceDeletion::DeletedUnrecorded {
-                log::warn!("voice-only original deleted but deletion event was not recorded");
+                log::warn!(
+                    "{}",
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.transcribe.stage.owner.deleted.unrecorded",
+                        &[]
+                    )
+                );
             }
             #[cfg(all(feature = "embedded", unix))]
             if let Some(runtime) = embedded {
@@ -1788,7 +1873,14 @@ pub(crate) fn finish_voice_only_deletion(
             }
         }
         OwnerVoiceDeletion::Gone => {}
-        outcome => log::warn!("voice-only original not deleted now: {outcome:?}"),
+        outcome => log::warn!(
+            "{}",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.stage.owner.not.deleted",
+                [("outcome", &(format!("{outcome:?}")))]
+            )
+        ),
     }
 }
 
@@ -2058,6 +2150,7 @@ mod tests {
                     _ => (),
                 }
                 super::finish_voice_only_deletion(
+                    solstone_core_cli_copy::ENGLISH,
                     root.path(),
                     &facts,
                     &claims,
@@ -2569,7 +2662,7 @@ mod tests {
         Err(TerminalWriteFailure::Typed(
             SpeakerTranscriptWriteError::PayloadInvalid {
                 path: "injected".to_owned(),
-                detail: "injected failure".to_owned(),
+                detail: "injected failure".into(),
             },
         ))
     }
@@ -2812,7 +2905,7 @@ mod tests {
         // 1. Missing member -> Absent
         let status_missing = CapabilityStatus::Absent {
             capability: "ced".to_owned(),
-            detail: format!("{}: member missing", code::MEMBER_MISSING),
+            detail: format!("{}: member missing", code::MEMBER_MISSING).into(),
         };
         assert_eq!(
             vad_no_speech(&facts, false, None, Some(&status_missing), None).unwrap(),
@@ -2831,7 +2924,7 @@ mod tests {
         // 2. Model changed -> IntegrityInvalid
         let status_changed = CapabilityStatus::IntegrityInvalid {
             capability: "ced".to_owned(),
-            detail: format!("{}: member changed", code::MEMBER_CHANGED),
+            detail: format!("{}: member changed", code::MEMBER_CHANGED).into(),
         };
         assert_eq!(
             vad_no_speech(&facts, true, None, Some(&status_changed), None).unwrap(),
@@ -3631,7 +3724,7 @@ mod tests {
             move |_, _| {
                 Err(TranscribeError::OrphanNpzRemove {
                     path: orphan_path,
-                    detail: "injected removal failure".to_owned(),
+                    detail: "injected removal failure".into(),
                 })
             },
         )
@@ -3818,6 +3911,7 @@ mod tests {
 
         for config in [&active_config, &empty_config] {
             let error = super::dispatch_backend(
+                solstone_core_cli_copy::ENGLISH,
                 config,
                 dummy_journal,
                 "remote",
@@ -3873,11 +3967,11 @@ mod tests {
         };
         let coreml = TranscribeError::ParakeetCoremlDeferred {
             reason: "coreml_helper_missing".to_owned(),
-            detail: "test".to_owned(),
+            detail: "test".into(),
         };
         let confidential_err = TranscribeError::ConfidentialDeferred {
             reason: "attestation_failed".to_owned(),
-            detail: "the confidential attestation channel is not ready".to_owned(),
+            detail: "the confidential attestation channel is not ready".into(),
         };
 
         let context = || BackendErrorContext {

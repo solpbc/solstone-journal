@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for claim root directory.",
+  "context": "Journal command-line text for claim root directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2e2d951599b8773f4ee5e63dc20bfac13ccee039cc41a24a9bdf387fdf719ca0",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

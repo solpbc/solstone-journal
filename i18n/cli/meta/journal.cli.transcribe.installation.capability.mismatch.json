@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for installation capability mismatch.",
+  "context": "Journal command-line text for installation capability mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "80d353aa3183ccfcacaf487fcf9349e9aa3e97630d01210c45c1154b55d3a8d0",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

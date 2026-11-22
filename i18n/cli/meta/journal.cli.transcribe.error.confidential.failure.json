@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error confidential failure.",
+  "context": "Journal command-line text for error confidential failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "926ea0eda06b668c88c046c362d3da1d2c351b624c64f7fbb239f1663b8dfc73",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sound helper missing.",
+  "context": "Journal command-line text for sound helper missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9101eea8ea7a317c9430949c5dfdf437c67df00d4f2cdf4b22b5fa1caae6c82f",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

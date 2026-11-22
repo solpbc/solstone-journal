@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for error vad vad response was not json error.",
+  "context": "Journal command-line text for error vad vad response was not json error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "32e216e32fbf92957f3ce7abef64d27a85a265eb50a514e2e4bd527c4614254b",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    },
+    {
+      "name": "code_json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sound engine absent.",
+  "context": "Journal command-line text for sound engine absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea5c1df510e6c37d202ca6d909d5415399c247e6570c14591465d57a4bce3bcc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows cancelled.",
+  "context": "Journal command-line text for error windows cancelled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "190f2ce3d1013edb6082be7d0032347771da000516a24d61d487ca1f96521f97",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

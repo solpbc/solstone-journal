@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for sound windows root.",
+  "context": "Journal command-line text for sound windows root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e5ef42c25bd3d88e705979bbfcc64406d9fc154c98c7389e34ecf2985bf56f0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "variable",
+      "kind": "accepted-input",
+      "value": "SystemRoot"
+    }
+  ]
+}

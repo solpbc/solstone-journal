@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer zip unicode path extra crc mismatch.",
+  "context": "Journal command-line text for error writer zip unicode path extra crc mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0506d51eb40d5c83401a82dd83a98508d508947fccac50ac134e159fbb25bc19",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

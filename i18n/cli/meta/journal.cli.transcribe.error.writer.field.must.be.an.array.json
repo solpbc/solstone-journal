@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer field must be an array.",
+  "context": "Journal command-line text for error writer field must be an array.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4f93ec848cddd9c8bc793bca5887c049b3b8237c6c0bf65e7307ba936ef5ad89",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

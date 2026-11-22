@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error vad vad helper stdin was unavailable.",
+  "context": "Journal command-line text for error vad vad helper stdin was unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9833b9289dc8c9ce7eca00d31b04c08bc9b180e77d4043bd1918193228aededc",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    },
+    {
+      "name": "code_stdin",
+      "kind": "accepted-input",
+      "value": "stdin"
+    }
+  ]
+}

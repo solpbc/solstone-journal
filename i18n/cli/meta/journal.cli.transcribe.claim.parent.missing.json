@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for claim parent missing.",
+  "context": "Journal command-line text for claim parent missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f40b71f2c65e5cc3ec78b39d977c73a423b7a44b195d48a35e08e5ea9d43cdab",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

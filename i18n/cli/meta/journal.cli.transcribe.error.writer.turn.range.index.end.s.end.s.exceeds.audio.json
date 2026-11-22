@@ -1,0 +1,41 @@
+{
+  "description": "Journal command-line text for error writer turn range index end s end s exceeds audio.",
+  "context": "Journal command-line text for error writer turn range index end s end s exceeds audio.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    },
+    {
+      "name": "end_s",
+      "type": "string"
+    },
+    {
+      "name": "audio_duration_s",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4cb3bb76ac620305a899ae1551d4adf3dbcb64b555ffc0e80cbd1c6658c7c92e",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_end_s",
+      "kind": "accepted-input",
+      "value": "end_s"
+    },
+    {
+      "name": "code_audio_duration_s",
+      "kind": "accepted-input",
+      "value": "audio_duration_s"
+    }
+  ]
+}

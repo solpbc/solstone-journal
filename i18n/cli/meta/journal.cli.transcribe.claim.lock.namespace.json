@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for claim lock namespace.",
+  "context": "Journal command-line text for claim lock namespace.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a9a96a6b87cfd2aef32cb143f73f9b821e7a7b5a2baa3963c688875ca57afc56",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

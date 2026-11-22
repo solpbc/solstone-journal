@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer zip central signature at central header start.",
+  "context": "Journal command-line text for error writer zip central signature at central header start.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "central_header_start",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3ecb55eb9181338e76159a0d1b3bea8cde661140ad7e308cd30cc91049932a8b",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

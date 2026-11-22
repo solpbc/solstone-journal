@@ -7,6 +7,7 @@
 //! then a segment commit. Inference runs while holding only output attempts.
 //! Lock entries are persistent; removing one would split its lock namespace.
 
+use solstone_core_cli_copy::MessageDetail;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
@@ -27,6 +28,153 @@ fn refusal(message: impl Into<String>) -> io::Error {
     io::Error::other(message.into())
 }
 
+#[derive(Debug)]
+struct FixedRefusal(&'static str);
+impl std::fmt::Display for FixedRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&solstone_core_cli_copy::render_for(
+            solstone_core_cli_copy::ENGLISH,
+            self.0,
+            &[],
+        ))
+    }
+}
+impl std::error::Error for FixedRefusal {}
+
+const CANCELLED_INPUT: &str = "journal.cli.transcribe.claim.input.cancelled";
+fn fixed_refusal(id: &'static str) -> io::Error {
+    io::Error::other(FixedRefusal(id))
+}
+
+pub fn input_verification_cancelled(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .and_then(|cause| cause.downcast_ref::<FixedRefusal>())
+        .is_some_and(|cause| cause.0 == CANCELLED_INPUT)
+}
+
+#[cfg(test)]
+#[test]
+fn only_the_hash_checkpoint_marks_an_input_verification_cancellation() {
+    let cancelled = fixed_refusal(CANCELLED_INPUT);
+    let unrelated = io::Error::other(cancelled.to_string());
+    assert!(input_verification_cancelled(&cancelled));
+    assert!(!input_verification_cancelled(&unrelated));
+}
+
+/// Preserve typed claim failures until the caller selects its display language.
+pub fn claim_detail(error: &io::Error) -> MessageDetail {
+    let Some(cause) = error.get_ref() else {
+        return error.to_string().into();
+    };
+    if let Some(reason) = cause.downcast_ref::<FixedRefusal>() {
+        return MessageDetail::message(reason.0, []);
+    }
+    if let Some(reason) = cause.downcast_ref::<solstone_core_journal_io::JournalRootError>() {
+        use solstone_core_journal_io::JournalRootError as Root;
+        return match reason {
+            Root::Invalid { root, reason, .. } => root_reason(reason).context_with(
+                "journal.cli.transcribe.claim.root.invalid",
+                [("path", &root.display())],
+            ),
+            Root::Unsupported { root, reason, .. } => root_reason(reason).context_with(
+                "journal.cli.transcribe.claim.root.unsupported",
+                [("path", &root.display())],
+            ),
+            Root::Io {
+                operation, source, ..
+            } => MessageDetail::message(
+                "journal.cli.transcribe.claim.root.io",
+                [("operation", &(operation)), ("reason", &(source))],
+            ),
+            Root::Changed => {
+                MessageDetail::message("journal.cli.transcribe.claim.root.changed", [])
+            }
+        };
+    }
+    if let Some(reason) = cause.downcast_ref::<ExistingParentLockError>() {
+        use ExistingParentLockError as Lock;
+        return match reason {
+            Lock::InvalidLockPath { name } => MessageDetail::message(
+                "journal.cli.transcribe.claim.lock.invalid",
+                [("name", &(format!("{name:?}")))],
+            ),
+            Lock::MissingParent { parent } => MessageDetail::message(
+                "journal.cli.transcribe.claim.lock.missing",
+                [("path", &(parent.display()))],
+            ),
+            Lock::UnsafeParent { parent, kind } => MessageDetail::message(
+                "journal.cli.transcribe.claim.lock.parent.unsafe",
+                [("kind", &(kind)), ("path", &(parent.display()))],
+            ),
+            Lock::UnsafeLockEntry { path, kind } => MessageDetail::message(
+                "journal.cli.transcribe.claim.lock.entry.unsafe",
+                [("kind", &(kind)), ("path", &(path.display()))],
+            ),
+            Lock::WrongMode { path, observed } => MessageDetail::message(
+                "journal.cli.transcribe.claim.lock.mode",
+                [
+                    ("mode", &(format!("{observed:o}"))),
+                    ("path", &(path.display())),
+                ],
+            ),
+            Lock::Io {
+                operation,
+                path,
+                source,
+            } => MessageDetail::message(
+                "journal.cli.doctor.sync.io",
+                [
+                    ("operation", operation),
+                    ("path", &path.display()),
+                    ("reason", source),
+                ],
+            ),
+            Lock::ParentChanged { parent } => MessageDetail::message(
+                "journal.cli.transcribe.claim.lock.parent.changed",
+                [("path", &(parent.display()))],
+            ),
+            Lock::NamespaceChanged { path } => MessageDetail::message(
+                "journal.cli.transcribe.claim.lock.namespace",
+                [("path", &(path.display()))],
+            ),
+            Lock::Timeout(timeout) => MessageDetail::message(
+                "journal.cli.backup.config.lock.timeout",
+                [
+                    ("path", &timeout.path.display()),
+                    ("seconds", &timeout.timeout.as_secs_f64()),
+                ],
+            ),
+        };
+    }
+    error.to_string().into()
+}
+
+// These are typed root-refusal facts from journal-io, never input or helper text.
+fn root_reason(reason: &'static str) -> MessageDetail {
+    match reason {
+        "journal root does not exist" => {
+            MessageDetail::message("journal.cli.transcribe.claim.root.absent", [])
+        }
+        "journal root is not a directory" => {
+            MessageDetail::message("journal.cli.transcribe.claim.root.directory", [])
+        }
+        "journal root must be absolute" => {
+            MessageDetail::message("journal.cli.transcribe.claim.root.absolute", [])
+        }
+        "canonical journal root has no final component" => {
+            MessageDetail::message("journal.cli.transcribe.claim.root.component", [])
+        }
+        "canonical journal root has a non-UTF-8 ancestor" => {
+            MessageDetail::message("journal.cli.transcribe.claim.root.ancestor", [])
+        }
+        "canonical journal root is not absolute" => {
+            MessageDetail::message("journal.cli.transcribe.claim.root.canonical.absolute", [])
+        }
+        technical => technical.into(),
+    }
+}
+
 fn lock_refusal(error: ExistingParentLockError) -> io::Error {
     let kind = if matches!(error, ExistingParentLockError::Timeout(_)) {
         io::ErrorKind::WouldBlock
@@ -39,7 +187,7 @@ fn lock_refusal(error: ExistingParentLockError) -> io::Error {
 fn lock_name(path: &Path) -> Result<OsString> {
     let mut name = path
         .file_name()
-        .ok_or_else(|| refusal("missing lock target name"))?
+        .ok_or_else(|| fixed_refusal("journal.cli.transcribe.claim.target.name"))?
         .to_os_string();
     name.push(".lock");
     Ok(name)
@@ -48,20 +196,23 @@ fn lock_name(path: &Path) -> Result<OsString> {
 fn parent(path: &Path) -> Result<&Path> {
     path.parent()
         .filter(|path| !path.as_os_str().is_empty())
-        .ok_or_else(|| refusal("missing parent directory"))
+        .ok_or_else(|| fixed_refusal("journal.cli.transcribe.claim.parent.missing"))
 }
 
 fn admit(path: &Path) -> Result<JournalRoot> {
-    JournalRoot::open(path).map_err(|error| refusal(error.to_string()))
+    JournalRoot::open(path).map_err(io::Error::other)
 }
 
 fn revalidate(root: &JournalRoot) -> Result<()> {
     root.revalidate_canonical_binding()
-        .map_err(|error| refusal(error.to_string()))
+        .map_err(io::Error::other)
 }
 
 fn live(segment: &Path) -> Result<()> {
-    live_for(segment, solstone_core_cli_copy::ENGLISH)
+    if crate::owner_deleted(segment).map_err(|error| refusal(error.to_string()))? {
+        return Err(fixed_refusal("journal.cli.segment.relocation.deleted"));
+    }
+    Ok(())
 }
 
 fn live_for(segment: &Path, locale: &str) -> Result<()> {
@@ -88,7 +239,7 @@ impl DirectoryBinding {
             .canonical_path()
             .ancestors()
             .skip(1)
-            .map(|path| DirectoryIdentityWitness::open(path).map_err(|e| refusal(e.to_string())))
+            .map(|path| DirectoryIdentityWitness::open(path).map_err(io::Error::other))
             .collect::<Result<_>>()?;
         let binding = Self { root, ancestors };
         binding.revalidate()?;
@@ -98,7 +249,7 @@ impl DirectoryBinding {
         for ancestor in &self.ancestors {
             ancestor
                 .revalidate_canonical_binding()
-                .map_err(|e| refusal(e.to_string()))?;
+                .map_err(io::Error::other)?;
         }
         revalidate(&self.root)
     }
@@ -219,7 +370,7 @@ impl OutputClaims {
         let root = self
             .parents
             .get(segment)
-            .ok_or_else(|| refusal("segment is not covered by these output attempts"))?;
+            .ok_or_else(|| fixed_refusal("journal.cli.transcribe.claim.segment.not.covered"))?;
         root.revalidate()
     }
 
@@ -229,7 +380,7 @@ impl OutputClaims {
         self.parents
             .get(segment)
             .map(|binding| binding.root.identity())
-            .ok_or_else(|| refusal("segment is not covered by these output attempts"))
+            .ok_or_else(|| fixed_refusal("journal.cli.transcribe.claim.segment.not.covered"))
     }
 
     fn revalidate_commit(&self, segment: &Path) -> Result<()> {
@@ -383,7 +534,7 @@ struct RawFacts {
 fn raw_facts_checked(path: &Path, cancelled: &dyn Fn() -> bool) -> Result<(RawFacts, File)> {
     let named = fs::symlink_metadata(path)?;
     if !named.file_type().is_file() {
-        return Err(refusal("processing input is not a plain file"));
+        return Err(fixed_refusal("journal.cli.transcribe.claim.input.not.file"));
     }
     let mut file = File::open(path)?;
     let metadata = file.metadata()?;
@@ -391,7 +542,9 @@ fn raw_facts_checked(path: &Path, cancelled: &dyn Fn() -> bool) -> Result<(RawFa
     let identity = {
         use std::os::unix::fs::MetadataExt;
         if named.dev() != metadata.dev() || named.ino() != metadata.ino() {
-            return Err(refusal("processing input changed while opening"));
+            return Err(fixed_refusal(
+                "journal.cli.transcribe.claim.input.changed.open",
+            ));
         }
         (metadata.dev(), metadata.ino())
     };
@@ -402,7 +555,7 @@ fn raw_facts_checked(path: &Path, cancelled: &dyn Fn() -> bool) -> Result<(RawFa
     let mut buffer = [0_u8; 64 * 1024];
     loop {
         if cancelled() {
-            return Err(refusal("processing input verification cancelled"));
+            return Err(fixed_refusal(CANCELLED_INPUT));
         }
         let count = file.read(&mut buffer)?;
         if count == 0 {
@@ -412,7 +565,9 @@ fn raw_facts_checked(path: &Path, cancelled: &dyn Fn() -> bool) -> Result<(RawFa
         size += count as u64;
     }
     if size != metadata.len() || file.metadata()?.len() != size {
-        return Err(refusal("processing input changed while reading"));
+        return Err(fixed_refusal(
+            "journal.cli.transcribe.claim.input.changed.read",
+        ));
     }
     Ok((
         RawFacts {
@@ -446,7 +601,9 @@ impl InputObservation {
         cancelled: &dyn Fn() -> bool,
     ) -> Result<Self> {
         if !claims.outputs.contains(&path.with_extension("jsonl")) {
-            return Err(refusal("input has no output attempt"));
+            return Err(fixed_refusal(
+                "journal.cli.transcribe.claim.input.no.attempt",
+            ));
         }
         claims.validate_parent(parent(path)?)?;
         live(parent(path)?)?;
@@ -481,14 +638,18 @@ impl InputObservation {
         cancelled: &dyn Fn() -> bool,
     ) -> Result<SegmentCommit<'a>> {
         if !claims.outputs.contains(&self.path.with_extension("jsonl")) {
-            return Err(refusal("input has no output attempt"));
+            return Err(fixed_refusal(
+                "journal.cli.transcribe.claim.input.no.attempt",
+            ));
         }
         let commit = claims.commit(parent(&self.path)?)?;
         if raw_facts_checked(&self.path, cancelled)?.0 != self.facts {
-            return Err(refusal("processing input changed before publication"));
+            return Err(fixed_refusal(
+                "journal.cli.transcribe.claim.input.changed.commit",
+            ));
         }
         if cancelled() {
-            return Err(refusal("processing input verification cancelled"));
+            return Err(fixed_refusal(CANCELLED_INPUT));
         }
         Ok(commit)
     }

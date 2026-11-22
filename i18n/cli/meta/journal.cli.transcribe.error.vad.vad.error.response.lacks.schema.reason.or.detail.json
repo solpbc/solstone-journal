@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error vad vad error response lacks schema reason or detail.",
+  "context": "Journal command-line text for error vad vad error response lacks schema reason or detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9bb3ffcf5596b460965be5e86cecae28d87da7024a0e114647f143d2e7f08c91",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

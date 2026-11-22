@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for backend choice.",
+  "context": "Journal command-line text for backend choice.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    },
+    {
+      "name": "choices",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e96c77d306cb7af1fe96429f7f10f96e63b52bc3eecd1535fb780eee5a48b1c4",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "backend_flag",
+      "kind": "flag",
+      "value": "--backend"
+    }
+  ]
+}

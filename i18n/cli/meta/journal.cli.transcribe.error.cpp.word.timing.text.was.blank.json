@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error cpp word timing text was blank.",
+  "context": "Journal command-line text for error cpp word timing text was blank.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "05c95f9a74a120b4e7b281bcf388a46a8156c1516ab00a83e9124507245116e9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

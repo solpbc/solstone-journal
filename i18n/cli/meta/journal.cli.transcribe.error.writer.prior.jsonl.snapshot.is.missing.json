@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer prior jsonl snapshot is missing.",
+  "context": "Journal command-line text for error writer prior jsonl snapshot is missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "797fbb882b19a15601f03ca7feac7303d21924fd5e307535d1bc8dbf75114cf0",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

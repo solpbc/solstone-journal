@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer invalid f32 payload chunk.",
+  "context": "Journal command-line text for error writer invalid f32 payload chunk.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ee11a4a0bb8760107bb4f8e2c66fb2de384efda1397e3f0a930c0370043afe16",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_f32",
+      "kind": "accepted-input",
+      "value": "f32"
+    }
+  ]
+}

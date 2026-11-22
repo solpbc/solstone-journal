@@ -107,7 +107,7 @@ pub(crate) fn remove_orphan_npz(jsonl_path: &Path, npz_path: &Path) -> Result<()
     if npz_path.is_file() && !jsonl_path.exists() {
         fs::remove_file(npz_path).map_err(|error| TranscribeError::OrphanNpzRemove {
             path: npz_path.to_path_buf(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     }
     Ok(())
@@ -153,25 +153,28 @@ fn prepare_payload(
             .tempfile_in(destination.parent().ok_or_else(|| {
                 TranscribeError::TranscriptPayload {
                     path: Some(destination.to_path_buf()),
-                    detail: "transcript destination has no parent".into(),
+                    detail: crate::TranscribeDetail::message(
+                        "journal.cli.transcribe.error.payload.parent",
+                        [],
+                    ),
                 }
             })?)
             .map_err(|error| TranscribeError::TranscriptPayload {
                 path: None,
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             })?;
     let (mut file, path) =
         temporary
             .keep()
             .map_err(|error| TranscribeError::TranscriptPayload {
                 path: None,
-                detail: error.error.to_string(),
+                detail: error.error.to_string().into(),
             })?;
     if let Err(error) = file.write_all(bytes).and_then(|()| file.sync_all()) {
         let _ = fs::remove_file(&path);
         return Err(TranscribeError::TranscriptPayload {
             path: Some(path),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         });
     }
     drop(file);
@@ -186,7 +189,7 @@ fn prepare_payload(
 fn remove_payload(path: &Path) -> Result<(), TranscribeError> {
     fs::remove_file(path).map_err(|error| TranscribeError::TranscriptPayload {
         path: Some(path.to_path_buf()),
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })
 }
 
@@ -218,7 +221,7 @@ fn build_full_request(
             "dtype": "float32-le",
             "shape": [payload.statement_ids.len(), 256],
             "byte_count": fs::metadata(&payload.path).map_err(|error| TranscribeError::TranscriptPayload {
-                path: Some(payload.path.clone()), detail: error.to_string(),
+                path: Some(payload.path.clone()), detail: error.to_string().into(),
             })?.len(),
             "statement_ids": payload.statement_ids,
             "durations_s": payload.durations_s,
@@ -226,7 +229,7 @@ fn build_full_request(
         },
     }))
     .map_err(|error| TranscribeError::TranscriptRequest {
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })
 }
 
@@ -285,7 +288,10 @@ pub(crate) fn native_statement(statement: &Map<String, Value>) -> Result<Value, 
 
 fn invalid_statement(field: &str) -> TranscribeError {
     TranscribeError::TranscriptRequest {
-        detail: format!("full transcript statement has no valid {field}"),
+        detail: crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.statement.field",
+            [("field", &(field))],
+        ),
     }
 }
 

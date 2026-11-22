@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error process unowned reason.",
+  "context": "Journal command-line text for error process unowned reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "01658b84204dd6d1e9d2e52fdbb348f0e33b2a3c317df0088cd5d4ef4b76ae4f",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_explicitlyunowned",
+      "kind": "accepted-input",
+      "value": "ExplicitlyUnowned"
+    }
+  ]
+}

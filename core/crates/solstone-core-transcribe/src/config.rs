@@ -21,17 +21,24 @@ pub(crate) fn read_transcribe_config(
 /// An invalid configured value is a hard error: silently treating it as
 /// unset could execute a different privacy or resource lane than the journal
 /// says it selected.
+#[cfg(test)]
 pub(crate) fn transcribe_backend(config: &JournalConfigRead) -> Result<Option<&str>, String> {
-    config.config.as_ref().map_or(Ok(None), |config| {
-        configured_stt_backend(config).map_err(|_| invalid_backend_message())
-    })
+    transcribe_backend_in(solstone_core_cli_copy::ENGLISH, config)
 }
 
-fn invalid_backend_message() -> String {
-    format!(
-        "invalid transcribe.backend in journal config; choose one of: {}",
-        STT_BACKENDS.join(", ")
-    )
+pub(crate) fn transcribe_backend_in<'a>(
+    locale: &str,
+    config: &'a JournalConfigRead,
+) -> Result<Option<&'a str>, String> {
+    config.config.as_ref().map_or(Ok(None), |config| {
+        configured_stt_backend(config).map_err(|_| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.config.backend",
+                [("backends", &(STT_BACKENDS.join(", ")))],
+            )
+        })
+    })
 }
 
 /// Whether confidential audio handling is enabled for transcription.

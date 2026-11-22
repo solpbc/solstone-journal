@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sound package windows runtime.",
+  "context": "Journal command-line text for sound package windows runtime.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b762f73150352f3e713d78d8ecef95f63f783a094be53d554d1f5a2fffbfd30e",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

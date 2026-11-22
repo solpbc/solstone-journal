@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error coreml helper response missing token timings.",
+  "context": "Journal command-line text for error coreml helper response missing token timings.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0194e0f5d1b10b2df731345447cba307e3c138d97b237198e42ab20811b6738a",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_token_timings",
+      "kind": "accepted-input",
+      "value": "token_timings[]"
+    }
+  ]
+}

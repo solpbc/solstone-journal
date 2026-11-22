@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer turn ranges must be sorted range index is out.",
+  "context": "Journal command-line text for error writer turn ranges must be sorted range index is out.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7e057130c41f0b9f721289cece99fba3a7e6bf9b7ed7ad730715b71fe4e61b81",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

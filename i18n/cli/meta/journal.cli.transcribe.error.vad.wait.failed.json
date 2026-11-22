@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error vad wait failed.",
+  "context": "Journal command-line text for error vad wait failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bd4fffb5423c059532111b492999b8cbd4b2ab01f35113026833c37c6ab944ef",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error cpp response missing top level words.",
+  "context": "Journal command-line text for error cpp response missing top level words.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "37854d5f9799760857ff3f8f9cdcc31ee29ba7b0cd8322d4c84dfa7e5c84c38b",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_words",
+      "kind": "accepted-input",
+      "value": "words[]"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error vad vad response must be an object.",
+  "context": "Journal command-line text for error vad vad response must be an object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7349882145fa3ad33a8519c9f241235781b51c468b85765f65eb6f2a1924ac25",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

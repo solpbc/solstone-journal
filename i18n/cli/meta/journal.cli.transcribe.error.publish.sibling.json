@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error publish sibling.",
+  "context": "Journal command-line text for error publish sibling.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ae30243eec3aadc2a85db939b45ce5496940ad3aa43a0fe6b99359e98d3bf32d",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sound helper spawn.",
+  "context": "Journal command-line text for sound helper spawn.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1d906c252f1039d7a2a060a21f47211f13ff7682dd1f7febaf76aebba8aacd32",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

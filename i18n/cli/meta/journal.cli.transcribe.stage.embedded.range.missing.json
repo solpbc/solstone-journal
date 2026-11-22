@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stage embedded range missing.",
+  "context": "Journal command-line text for stage embedded range missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a3631e12c90196f10f556c86c61387a69b080b0c78920a39d5e9adea2f528e29",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

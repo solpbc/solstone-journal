@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer zip unicode path extra too small.",
+  "context": "Journal command-line text for error writer zip unicode path extra too small.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fc38ed72425c4bf3d4dbd8dd77c168a637318c92c9b7840be20686dd86a430b2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

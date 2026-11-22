@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error coreml parakeet helper timed out.",
+  "context": "Journal command-line text for error coreml parakeet helper timed out.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "657a6f01e7082851f0c7d70ac4c7442155aac13a03108765337a5291909583cb",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_parakeet",
+      "kind": "accepted-input",
+      "value": "Parakeet"
+    }
+  ]
+}

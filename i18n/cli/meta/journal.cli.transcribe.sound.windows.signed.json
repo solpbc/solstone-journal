@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sound windows signed.",
+  "context": "Journal command-line text for sound windows signed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2a99a34117b380ef7c5a68b54f60d449a45f5022ccd5e625ebec500819e3decd",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

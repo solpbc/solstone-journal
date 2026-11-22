@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error process identity.",
+  "context": "Journal command-line text for error process identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "pid",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c89b8fee930851cac169122cc53c62d30dfc90b10b8a09181cd64c8f674db146",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

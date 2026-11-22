@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sound schema.",
+  "context": "Journal command-line text for sound schema.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d87e742449cfe212619c7cb7d337fa13e8da477cb850dee8124e6daed23994ac",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

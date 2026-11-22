@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error vad vad speech entry ends before it starts.",
+  "context": "Journal command-line text for error vad vad speech entry ends before it starts.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ace71e12e396adc765861eefc3787f10ee978587260465f9414b8af10252aa82",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

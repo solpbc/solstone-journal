@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error windows blocked.",
+  "context": "Journal command-line text for error windows blocked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "blockers",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fda0d20b7713b348fe7e0a8e1d0914014830f706c21edaae336d83db9f24c92e",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

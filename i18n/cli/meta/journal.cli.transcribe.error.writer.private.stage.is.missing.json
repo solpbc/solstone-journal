@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer private stage is missing.",
+  "context": "Journal command-line text for error writer private stage is missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f2c1943053155b41335a171973072183bdb22e8503db9103055556e2dd3ca7a4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

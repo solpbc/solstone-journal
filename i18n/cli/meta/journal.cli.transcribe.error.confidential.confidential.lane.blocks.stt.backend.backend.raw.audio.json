@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error confidential confidential lane blocks stt backend backend raw audio.",
+  "context": "Journal command-line text for error confidential confidential lane blocks stt backend backend raw audio.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9ff1668929f08b5f01f76d440c71eaaa3465c102a29d3db5ee534b68ca330049",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_stt",
+      "kind": "accepted-input",
+      "value": "STT"
+    }
+  ]
+}

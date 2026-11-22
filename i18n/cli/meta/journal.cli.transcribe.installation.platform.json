@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for installation platform.",
+  "context": "Journal command-line text for installation platform.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "platform",
+      "type": "string"
+    },
+    {
+      "name": "architecture",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "71bd8eb0f20bd25d202301cc0af214bd47b1b2629c39be8f18c3bb3f6d75cf82",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code",
+      "kind": "accepted-input",
+      "value": "platform-unsupported"
+    }
+  ]
+}

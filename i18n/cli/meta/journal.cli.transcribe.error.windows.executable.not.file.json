@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows executable not file.",
+  "context": "Journal command-line text for error windows executable not file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "adddb5494d8f8da139220259da86e57d4bf049c059be59c0ded3c23325a00055",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

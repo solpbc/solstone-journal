@@ -1,0 +1,40 @@
+{
+  "description": "Journal command-line text for error asset digest.",
+  "context": "Journal command-line text for error asset digest.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "asset",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "actual",
+      "type": "string"
+    },
+    {
+      "name": "expected",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "09ae8d07d07a86f85c05db547dea076c49d92e94c50927a5545e87c9c0a7c952",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_sha256",
+      "kind": "accepted-input",
+      "value": "sha256"
+    }
+  ]
+}

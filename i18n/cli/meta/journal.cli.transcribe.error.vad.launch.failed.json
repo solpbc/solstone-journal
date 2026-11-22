@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for error vad launch failed.",
+  "context": "Journal command-line text for error vad launch failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "49bf5a293d545941e4803376b8b7ed9dbfcd6b2fb5903d10cd983fe84ca076ef",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for error cpp failure.",
+  "context": "Journal command-line text for error cpp failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cdb9fffbdb530130743bfa3230bdab82f3049a40aa832a9b8ffc6f31c001fd85",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_parakeet_cpp",
+      "kind": "accepted-input",
+      "value": "parakeet.cpp"
+    }
+  ]
+}

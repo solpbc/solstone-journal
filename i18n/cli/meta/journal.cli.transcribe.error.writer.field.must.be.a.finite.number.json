@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer field must be a finite number.",
+  "context": "Journal command-line text for error writer field must be a finite number.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bce0e45b6723862a4e15e6d138b2f220f2cb24080de7b2b7f127b161f62c5b30",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for error vad error utf8.",
+  "context": "Journal command-line text for error vad error utf8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9ca3e6642f204a3e3ebda1c3b5e9a0e294f59d477606afca4456611aff791c36",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    },
+    {
+      "name": "code_utf_8",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

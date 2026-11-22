@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error publish parent.",
+  "context": "Journal command-line text for error publish parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "662ccbe86ac4724336f493ca8fe090233dbe3c4d5a0a704c9f282ed7de530d42",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

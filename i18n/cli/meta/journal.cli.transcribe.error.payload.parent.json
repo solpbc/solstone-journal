@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error payload parent.",
+  "context": "Journal command-line text for error payload parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "203df5f10abc434bfded47ebfa4f86916b85b6ca8c68f5d849278f6161bedb4b",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

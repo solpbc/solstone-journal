@@ -1,0 +1,37 @@
+{
+  "description": "Journal command-line text for error coreml failure.",
+  "context": "Journal command-line text for error coreml failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "26749bdd66d8edbee006dc53c0a095e03cb146b09a409f21f76e826b368c2d52",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_parakeet",
+      "kind": "accepted-input",
+      "value": "parakeet"
+    },
+    {
+      "name": "code_coreml",
+      "kind": "accepted-input",
+      "value": "CoreML"
+    }
+  ]
+}

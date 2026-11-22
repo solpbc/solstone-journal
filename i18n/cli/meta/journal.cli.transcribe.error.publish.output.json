@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error publish output.",
+  "context": "Journal command-line text for error publish output.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8b1c904788300888409d0578b7f3e3895df25f4e240e45d8df916af396a269e4",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_output_jsonl_path",
+      "kind": "accepted-input",
+      "value": "output.jsonl_path"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sound helper exit.",
+  "context": "Journal command-line text for sound helper exit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    },
+    {
+      "name": "stderr",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "30aca3488c8f8d5d570ddfd6b9ce1ef5808b729f6223a15eae3beb59b88e9f91",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error cpp tls is required.",
+  "context": "Journal command-line text for error cpp tls is required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8f76a1fae87f810d0cfba062de513996719e123fcb4a309b3012a12ffb3ff494",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_tls",
+      "kind": "accepted-input",
+      "value": "TLS"
+    }
+  ]
+}

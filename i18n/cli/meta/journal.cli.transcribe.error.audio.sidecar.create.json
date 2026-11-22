@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for error audio sidecar create.",
+  "context": "Journal command-line text for error audio sidecar create.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ff65339a62b33b3b61f045e6c0ec1c7989d642d42bc4649924562e9429733728",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_f32le",
+      "kind": "accepted-input",
+      "value": "f32le"
+    }
+  ]
+}

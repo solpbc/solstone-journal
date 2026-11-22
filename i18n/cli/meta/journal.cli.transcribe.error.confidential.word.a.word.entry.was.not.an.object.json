@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error confidential word a word entry was not an object.",
+  "context": "Journal command-line text for error confidential word a word entry was not an object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4208768b76da9992e2b1abe9cd27f485f29c810553870f13ae699f3b607bccd9",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

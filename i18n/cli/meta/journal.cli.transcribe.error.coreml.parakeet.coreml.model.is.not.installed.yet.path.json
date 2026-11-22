@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for error coreml parakeet coreml model is not installed yet path.",
+  "context": "Journal command-line text for error coreml parakeet coreml model is not installed yet path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d4a07182c2875b193cc8dfd005435f2c316a6c45465919767e633cc28fcefac3",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_parakeet",
+      "kind": "accepted-input",
+      "value": "Parakeet"
+    },
+    {
+      "name": "code_coreml",
+      "kind": "accepted-input",
+      "value": "CoreML"
+    }
+  ]
+}

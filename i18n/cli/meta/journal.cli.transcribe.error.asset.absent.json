@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error asset absent.",
+  "context": "Journal command-line text for error asset absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "asset",
+      "type": "string"
+    },
+    {
+      "name": "paths",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b6d8ba18a0a3d60a3d73fc00f62d76ce3d331a8a157fdda394ba62eeea315261",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

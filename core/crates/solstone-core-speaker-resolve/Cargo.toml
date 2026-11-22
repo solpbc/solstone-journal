@@ -38,6 +38,7 @@ full-tests = []
 test-hooks = []
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 solstone-core-window-catalog.workspace = true
 solstone-core-removals.workspace = true
 solstone-core-system.workspace = true

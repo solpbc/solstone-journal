@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error writer noisy s is required when noisy rms is present.",
+  "context": "Journal command-line text for error writer noisy s is required when noisy rms is present.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "48e26b4974a41d04d8cf766d604259675d79546c89be1625f8a715e8ebda408d",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_noisy_s",
+      "kind": "accepted-input",
+      "value": "noisy_s"
+    },
+    {
+      "name": "code_noisy_rms",
+      "kind": "accepted-input",
+      "value": "noisy_rms"
+    }
+  ]
+}

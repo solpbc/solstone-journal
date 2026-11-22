@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for installation provenance.",
+  "context": "Journal command-line text for installation provenance.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bbf6c8936d2b4a8aa44ae504d24017dec78a5317ca464ac0188c57c0e3239894",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

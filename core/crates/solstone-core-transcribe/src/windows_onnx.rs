@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::Path;
 
-use solstone_core_local::install::onnx_readiness::verified_windows_onnx_package_in;
+use solstone_core_local::install::onnx_readiness::verified_windows_onnx_package_detail;
 use solstone_core_system::process::{
     BoundedHelperBudget, BoundedHelperError, BoundedHelperFailure, BoundedHelperOutput,
     BoundedHelperRequest, BoundedHelperResourceLimits, BoundedHelperResources, run_bounded_helper,
@@ -25,11 +25,41 @@ pub(crate) enum OnnxHelper {
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum OnnxHelperError {
     #[error("{0}")]
-    Admission(String),
+    Admission(crate::TranscribeDetail),
     #[error(transparent)]
     Validation(#[from] BoundedHelperError),
     #[error(transparent)]
     Launch(#[from] BoundedHelperFailure),
+}
+
+impl OnnxHelperError {
+    pub(crate) fn into_detail(self) -> crate::TranscribeDetail {
+        match self {
+            Self::Admission(detail) => detail,
+            Self::Validation(failure) => crate::TranscribeDetail::from(&failure),
+            Self::Launch(failure) => {
+                let cause = crate::TranscribeDetail::from(failure.cause());
+                match (failure.cleanup(), failure.blockers()) {
+                    (None, []) => cause,
+                    (Some(cleanup), []) => cause.context_with(
+                        "journal.cli.transcribe.error.windows.cleanup",
+                        [("cleanup", &format!("{cleanup:?}"))],
+                    ),
+                    (None, blockers) => cause.context_with(
+                        "journal.cli.transcribe.error.windows.blocked",
+                        [("blockers", &format!("{blockers:?}"))],
+                    ),
+                    (Some(cleanup), blockers) => cause.context_with(
+                        "journal.cli.transcribe.error.windows.cleanup.blocked",
+                        [
+                            ("cleanup", &format!("{cleanup:?}")),
+                            ("blockers", &format!("{blockers:?}")),
+                        ],
+                    ),
+                }
+            }
+        }
+    }
 }
 
 pub(crate) fn run_onnx_helper(
@@ -55,7 +85,7 @@ pub(crate) fn run_onnx_helper_in(
     stdin: &[u8],
     budget: BoundedHelperBudget,
     resources: BoundedHelperResources,
-    locale: &str,
+    _locale: &str,
 ) -> Result<BoundedHelperOutput, OnnxHelperError> {
     if stdin.len() > budget.stdin_limit_bytes {
         return Err(BoundedHelperError::InputLimitExceeded.into());
@@ -67,17 +97,17 @@ pub(crate) fn run_onnx_helper_in(
         // path could resolve differently under the helper's working directory.
         let pin = std::env::var("SOLSTONE_JOURNAL_MINISIGN_PIN").map_err(|_| {
             OnnxHelperError::Admission(
-                "test-signed ONNX launch requires an explicit UTF-8 fixture pin path".to_owned(),
+                "test-signed ONNX launch requires an explicit UTF-8 fixture pin path".into(),
             )
         })?;
         if pin.is_empty() || !Path::new(&pin).is_absolute() {
             return Err(OnnxHelperError::Admission(
-                "test-signed ONNX launch requires an absolute fixture pin path".to_owned(),
+                "test-signed ONNX launch requires an absolute fixture pin path".into(),
             ));
         }
         pin
     };
-    let package = verified_windows_onnx_package_in(locale).map_err(OnnxHelperError::Admission)?;
+    let package = verified_windows_onnx_package_detail().map_err(OnnxHelperError::Admission)?;
     let executable = match helper {
         OnnxHelper::Speakers => package.speakers_worker,
         OnnxHelper::Vad => package.vad_worker,
@@ -87,11 +117,7 @@ pub(crate) fn run_onnx_helper_in(
         &executable,
     ) {
         return Err(OnnxHelperError::Admission(
-            solstone_core_cli_copy::render_for(
-                locale,
-                "journal.cli.doctor.windows.onnx.helper",
-                &[],
-            ),
+            crate::TranscribeDetail::message("journal.cli.doctor.windows.onnx.helper", []),
         ));
     }
     let system_root =

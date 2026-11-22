@@ -1,0 +1,118 @@
+{
+  "description": "Journal command-line text for help.",
+  "context": "Journal command-line text for help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b0e0a8581fab1467a6bff6b500853a1e55c2392fe3017b7a2bfd787dbd6c954a",
+  "max_length": 1196,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal transcribe [-h] [--all] [--redo]"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                          [--backend {parakeet,parakeet-cpp,confidential}]"
+    },
+    {
+      "name": "syntax_continuation_2",
+      "kind": "accepted-input",
+      "value": "                          [-v] [-d]"
+    },
+    {
+      "name": "syntax_continuation_3",
+      "kind": "accepted-input",
+      "value": "                          [audio_path]"
+    },
+    {
+      "name": "stt",
+      "kind": "accepted-input",
+      "value": "STT"
+    },
+    {
+      "name": "input",
+      "kind": "accepted-input",
+      "value": "audio_path"
+    },
+    {
+      "name": "sample",
+      "kind": "accepted-input",
+      "value": "HHMMSS_LEN/audio.flac"
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "gap_12",
+      "kind": "whitespace",
+      "value": "            "
+    },
+    {
+      "name": "all_option",
+      "kind": "accepted-input",
+      "value": "--all"
+    },
+    {
+      "name": "gap_17",
+      "kind": "whitespace",
+      "value": "                 "
+    },
+    {
+      "name": "redo_option",
+      "kind": "accepted-input",
+      "value": "--redo"
+    },
+    {
+      "name": "gap_16",
+      "kind": "whitespace",
+      "value": "                "
+    },
+    {
+      "name": "syntax_continuation_16",
+      "kind": "accepted-input",
+      "value": "  --backend {parakeet,parakeet-cpp,confidential}"
+    },
+    {
+      "name": "verbose_option",
+      "kind": "accepted-input",
+      "value": "-v, --verbose"
+    },
+    {
+      "name": "gap_9",
+      "kind": "whitespace",
+      "value": "         "
+    },
+    {
+      "name": "debug_option",
+      "kind": "accepted-input",
+      "value": "-d, --debug"
+    },
+    {
+      "name": "gap_11",
+      "kind": "whitespace",
+      "value": "           "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for installation coded.",
+  "context": "Journal command-line text for installation coded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7b574c1f0c6e8bd42597cbbec303a997df75041124622909b830dcf4c81b73aa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

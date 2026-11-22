@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for audio format.",
+  "context": "Journal command-line text for audio format.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "extension",
+      "type": "string"
+    },
+    {
+      "name": "formats",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e05b05f5f79de6afa0c3111bcb669058fec3283528609e5ac3ce4f9726e54fd2",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

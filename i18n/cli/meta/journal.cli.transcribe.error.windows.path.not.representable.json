@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows path not representable.",
+  "context": "Journal command-line text for error windows path not representable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2e7c8527146073e1f240e6b9551514faa2dcac4e4950f6e52cefca3fceec2823",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

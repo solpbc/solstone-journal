@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for claim segment not covered.",
+  "context": "Journal command-line text for claim segment not covered.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc66b75bf18ee4d1d46e81001c2010a2a8cf40b1b2701dcabde43ab0ec785bc3",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

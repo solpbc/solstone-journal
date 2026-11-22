@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for installation lock kind.",
+  "context": "Journal command-line text for installation lock kind.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "da5d52627c048eda305cd9bf96dad9ea64e6955782e310283026005a91aa8ddb",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

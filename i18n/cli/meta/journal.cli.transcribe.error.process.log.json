@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error process log.",
+  "context": "Journal command-line text for error process log.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dd7096c5a87a9ad0fab1b4c132fc1dccf94b11f4d4f9b2a07cd4a9f6830355bf",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

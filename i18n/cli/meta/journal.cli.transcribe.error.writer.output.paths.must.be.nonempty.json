@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer output paths must be nonempty.",
+  "context": "Journal command-line text for error writer output paths must be nonempty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af6721cc8a75230effc84062580b4115e464116c6d07fad4ef3d9f28723faacc",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

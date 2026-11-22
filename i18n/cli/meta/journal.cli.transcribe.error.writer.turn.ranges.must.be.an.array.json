@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer turn ranges must be an array.",
+  "context": "Journal command-line text for error writer turn ranges must be an array.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "061ecc49d2f3d76146dd6584b1a0747838126c4a8e3e37c51c1555a9c929ac61",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

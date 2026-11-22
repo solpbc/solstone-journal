@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for selection conflict.",
+  "context": "Journal command-line text for selection conflict.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fab2cb7d2ec801149caf7023996d36fab1ce283a7bf01700dea32b4a9f50e147",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "input",
+      "kind": "accepted-input",
+      "value": "audio_path"
+    },
+    {
+      "name": "all_flag",
+      "kind": "flag",
+      "value": "--all"
+    }
+  ]
+}

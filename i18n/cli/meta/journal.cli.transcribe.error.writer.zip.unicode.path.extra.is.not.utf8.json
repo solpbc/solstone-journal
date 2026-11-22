@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer zip unicode path extra is not utf8.",
+  "context": "Journal command-line text for error writer zip unicode path extra is not utf8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5500e727d75467ada9b6fb5ce850d433a3dae0093a088592400564048cbf28db",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_utf_8",
+      "kind": "accepted-input",
+      "value": "utf-8"
+    }
+  ]
+}

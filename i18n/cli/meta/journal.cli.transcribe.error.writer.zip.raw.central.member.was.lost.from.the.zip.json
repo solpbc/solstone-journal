@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer zip raw central member was lost from the zip.",
+  "context": "Journal command-line text for error writer zip raw central member was lost from the zip.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7eb87152200362d657ea39a0f94a2f1941e420d943def915ec5e5ae48de0daa3",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

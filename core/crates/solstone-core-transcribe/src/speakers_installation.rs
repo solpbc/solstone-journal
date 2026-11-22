@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use jiff::{SignedDuration, Timestamp};
 use serde_json::{Value, json};
+use solstone_core_cli_copy::ENGLISH;
 use solstone_core_journal_io::{JsonWriteOptions, write_json};
 #[cfg(not(windows))]
 use solstone_core_journal_io::{LeaseOptions, acquire_file_lease};
@@ -25,7 +26,9 @@ use solstone_core_system::process::{
     current_process_identity,
 };
 
-use crate::args::{CliError, generation_write_error, installation_error};
+use crate::args::{
+    CliError, coded_installation_error, generation_write_error, installation_error_in,
+};
 #[cfg(not(windows))]
 use crate::model_assets::resolve_model_asset_path;
 #[cfg(not(windows))]
@@ -165,6 +168,10 @@ impl Drop for SpeakersAnalyzeGeneration {
     }
 }
 
+fn installation_message(locale: &str, id: &str) -> CliError {
+    installation_error_in(locale, solstone_core_cli_copy::render_for(locale, id, &[]))
+}
+
 /// Enter a validated installation generation for this journal process tree.
 ///
 /// `role` is a static call-site declaration of the acquiring root. Borrowers
@@ -175,10 +182,21 @@ pub fn enter_speakers_analyze_generation(
     journal: &Path,
     role: SpeakersAnalyzeOwnerRole,
 ) -> Result<SpeakersAnalyzeGeneration, CliError> {
+    enter_speakers_analyze_generation_in(ENGLISH, journal, role)
+}
+
+/// Enter a validated generation with diagnostics in the caller's language.
+#[cfg(not(windows))]
+pub fn enter_speakers_analyze_generation_in(
+    locale: &str,
+    journal: &Path,
+    role: SpeakersAnalyzeOwnerRole,
+) -> Result<SpeakersAnalyzeGeneration, CliError> {
     enter_impl(
+        locale,
         journal,
         role,
-        installation_proof()?,
+        installation_proof(locale)?,
         true,
         inherited_from_env(),
     )
@@ -191,11 +209,12 @@ pub(crate) fn enter_with_proof(
     role: SpeakersAnalyzeOwnerRole,
     proof: Value,
 ) -> Result<SpeakersAnalyzeGeneration, CliError> {
-    enter_impl(journal, role, proof, false, inherited_from_env())
+    enter_impl(ENGLISH, journal, role, proof, false, inherited_from_env())
 }
 
 #[cfg(not(windows))]
 fn enter_impl(
+    locale: &str,
     journal: &Path,
     role: SpeakersAnalyzeOwnerRole,
     proof: Value,
@@ -224,19 +243,19 @@ fn enter_impl(
             ..LeaseOptions::default()
         },
     )
-    .map_err(|error| installation_error(format!("generation-lease: {error}")))?
+    .map_err(|error| coded_installation_error(locale, "generation-lease", &error))?
     .ok_or_else(|| generation_contention_error(journal))?;
 
     // A lease holder always validates the pinned bytes before publishing a
     // record that descendants may borrow.
     if validate_assets {
-        validate_model_assets()?;
+        validate_model_assets(locale)?;
     }
-    let id = random_hex()?;
-    let token = random_hex()?;
+    let id = random_hex(locale)?;
+    let token = random_hex(locale)?;
     fs::write(lease.path(), &token)
-        .map_err(|error| generation_write_error("generation-token", error))?;
-    let fd = duplicate_for_inheritance(&lease)?;
+        .map_err(|error| generation_write_error(locale, "generation-token", error))?;
+    let fd = duplicate_for_inheritance(locale, &lease)?;
     let record = json!({
         "schema": INSTALL_GENERATION_SCHEMA,
         "id": id,
@@ -245,7 +264,7 @@ fn enter_impl(
     });
     if let Err(error) = write_json(&generation_path, &record, OWNER_WRITE_OPTIONS) {
         close_inherited_fd(fd);
-        return Err(generation_write_error("generation-record", error));
+        return Err(generation_write_error(locale, "generation-record", error));
     }
     let _ = write_owner_record(journal, role, &id);
     Ok(SpeakersAnalyzeGeneration {
@@ -263,6 +282,17 @@ pub fn enter_speakers_analyze_generation(
     role: SpeakersAnalyzeOwnerRole,
     admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> Result<SpeakersAnalyzeGeneration, CliError> {
+    enter_speakers_analyze_generation_in(ENGLISH, journal, role, admitted)
+}
+
+/// Enter a validated generation with diagnostics in the caller's language.
+#[cfg(windows)]
+pub fn enter_speakers_analyze_generation_in(
+    locale: &str,
+    journal: &Path,
+    role: SpeakersAnalyzeOwnerRole,
+    admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> Result<SpeakersAnalyzeGeneration, CliError> {
     use solstone_core_system::process::{ReadFileGrant, ReadFileGrantKind};
     use std::io::Write;
     use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
@@ -271,42 +301,53 @@ pub fn enter_speakers_analyze_generation(
     };
 
     if env::var_os(GENERATION_FD_ENV_KEY).is_some() {
-        return Err(installation_error(
-            "obsolete Windows generation descriptor marker",
+        return Err(installation_message(
+            locale,
+            "journal.cli.transcribe.installation.obsolete",
         ));
     }
-    let proof = installation_proof()?;
-    let metadata = windows_inherited_generation()?;
+    let proof = installation_proof(locale)?;
+    let metadata = windows_inherited_generation(locale)?;
     if let Some(admitted) = admitted {
         if admitted.journal() != journal || role == SpeakersAnalyzeOwnerRole::Supervisor {
-            return Err(installation_error(
-                "generation launch provenance does not match this root",
+            return Err(installation_message(
+                locale,
+                "journal.cli.transcribe.installation.provenance",
             ));
         }
         let [grant] = admitted.read_file_grants() else {
-            return Err(installation_error(
-                "authenticated generation grant is missing or duplicated",
+            return Err(installation_message(
+                locale,
+                "journal.cli.transcribe.installation.grant.required",
             ));
         };
-        let (id, token) =
-            metadata.ok_or_else(|| installation_error("generation metadata is missing"))?;
+        let (id, token) = metadata.ok_or_else(|| {
+            installation_message(
+                locale,
+                "journal.cli.transcribe.installation.metadata.required",
+            )
+        })?;
         if grant.kind() != ReadFileGrantKind::SpeakersAnalyzeGeneration {
-            return Err(installation_error("unexpected generation grant kind"));
+            return Err(installation_message(
+                locale,
+                "journal.cli.transcribe.installation.grant.kind",
+            ));
         }
-        validate_windows_borrow(journal, &proof, &id, &token, grant)?;
+        validate_windows_borrow(locale, journal, &proof, &id, &token, grant)?;
         return Ok(SpeakersAnalyzeGeneration {
             environment: windows_generation_environment(&id, &token),
             read_grant: grant.clone(),
         });
     }
     if metadata.is_some() {
-        return Err(installation_error(
-            "generation metadata has no authenticated launch capability",
+        return Err(installation_message(
+            locale,
+            "journal.cli.transcribe.installation.metadata.unverified",
         ));
     }
     let lease_path = generation_lock_path(journal);
     fs::create_dir_all(lease_path.parent().expect("generation lock has parent"))
-        .map_err(|error| generation_write_error("generation-directory", error))?;
+        .map_err(|error| generation_write_error(locale, "generation-directory", error))?;
     let mut file = fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -318,28 +359,29 @@ pub fn enter_speakers_analyze_generation(
             if error.raw_os_error() == Some(32) {
                 generation_contention_error(journal)
             } else {
-                generation_write_error("generation-open", error)
+                generation_write_error(locale, "generation-open", error)
             }
         })?;
     let attributes = file
         .metadata()
-        .map_err(|error| installation_error(error.to_string()))?;
+        .map_err(|error| installation_error_in(locale, error.to_string()))?;
     if !attributes.is_file() || attributes.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return Err(installation_error(
-            "generation lock is not an ordinary file",
+        return Err(installation_message(
+            locale,
+            "journal.cli.transcribe.installation.lock.kind",
         ));
     }
     // Package proof already verified the signed Windows helper/model bytes.
     // Write through this exclusive file object; never reopen its pathname.
-    let id = random_hex()?;
-    let token = random_hex()?;
+    let id = random_hex(locale)?;
+    let token = random_hex(locale)?;
     file.set_len(0)
         .and_then(|_| file.write_all(token.as_bytes()))
         .and_then(|_| file.sync_all())
-        .map_err(|error| generation_write_error("generation-token", error))?;
+        .map_err(|error| generation_write_error(locale, "generation-token", error))?;
     let grant =
         ReadFileGrant::try_clone_read_only(ReadFileGrantKind::SpeakersAnalyzeGeneration, &file)
-            .map_err(|error| installation_error(format!("generation-capability: {error}")))?;
+            .map_err(|error| coded_installation_error(locale, "generation-capability", &error))?;
     write_json(
         generation_path(journal),
         &json!({
@@ -347,7 +389,7 @@ pub fn enter_speakers_analyze_generation(
         }),
         OWNER_WRITE_OPTIONS,
     )
-    .map_err(|error| generation_write_error("generation-record", error))?;
+    .map_err(|error| generation_write_error(locale, "generation-record", error))?;
     // Observability only: a later contended root names this owner exactly as
     // the Unix path does. Never consulted for admission.
     let _ = write_owner_record(journal, role, &id);
@@ -369,31 +411,38 @@ fn windows_generation_environment(id: &str, token: &str) -> BTreeMap<OsString, O
 }
 
 #[cfg(windows)]
-fn windows_inherited_generation() -> Result<Option<(String, String)>, CliError> {
+fn windows_inherited_generation(locale: &str) -> Result<Option<(String, String)>, CliError> {
     let id = env::var_os(GENERATION_ENV_KEY);
     let token = env::var_os(GENERATION_TOKEN_ENV_KEY);
     match (id, token) {
         (None, None) => Ok(None),
         (Some(id), Some(token)) => {
-            let id = id
-                .into_string()
-                .map_err(|_| installation_error("non-Unicode generation ID"))?;
-            let token = token
-                .into_string()
-                .map_err(|_| installation_error("non-Unicode generation token"))?;
+            let id = id.into_string().map_err(|_| {
+                installation_message(locale, "journal.cli.transcribe.installation.id.encoding")
+            })?;
+            let token = token.into_string().map_err(|_| {
+                installation_message(locale, "journal.cli.transcribe.installation.token.encoding")
+            })?;
             if [&id, &token].iter().any(|value| {
                 value.len() != 32 || !value.bytes().all(|byte| byte.is_ascii_hexdigit())
             }) {
-                return Err(installation_error("malformed generation metadata"));
+                return Err(installation_message(
+                    locale,
+                    "journal.cli.transcribe.installation.metadata.malformed",
+                ));
             }
             Ok(Some((id, token)))
         }
-        _ => Err(installation_error("partial generation metadata")),
+        _ => Err(installation_message(
+            locale,
+            "journal.cli.transcribe.installation.metadata.partial",
+        )),
     }
 }
 
 #[cfg(windows)]
 fn validate_windows_borrow(
+    locale: &str,
     journal: &Path,
     proof: &Value,
     id: &str,
@@ -406,8 +455,12 @@ fn validate_windows_borrow(
         FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
         FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     };
-    let fail =
-        || installation_error("generation capability does not match the current installation");
+    let fail = || {
+        installation_message(
+            locale,
+            "journal.cli.transcribe.installation.capability.mismatch",
+        )
+    };
     let path = generation_lock_path(journal);
     // Metadata-only open is compatible with the exclusive data open; it cannot
     // read the token or borrow the generation by itself.
@@ -474,9 +527,8 @@ fn validate_windows_borrow(
     Ok(())
 }
 
-#[cfg(windows)]
 pub(crate) fn validate_speakers_analyze_runtime() -> Result<ValidatedInstallation, CliError> {
-    validate_speakers_analyze_runtime_in(solstone_core_cli_copy::ENGLISH)
+    validate_speakers_analyze_runtime_in(ENGLISH)
 }
 
 #[cfg(windows)]
@@ -485,7 +537,7 @@ pub(crate) fn validate_speakers_analyze_runtime_in(
 ) -> Result<ValidatedInstallation, CliError> {
     let package =
         solstone_core_local::install::onnx_readiness::verified_windows_onnx_package_in(locale)
-            .map_err(installation_error)?;
+            .map_err(|error| installation_error_in(locale, error))?;
     Ok(ValidatedInstallation {
         helper: package.speakers_worker,
         wespeaker_model: package.wespeaker_model,
@@ -494,14 +546,14 @@ pub(crate) fn validate_speakers_analyze_runtime_in(
 }
 
 #[cfg(windows)]
-fn installation_proof() -> Result<Value, CliError> {
-    let paths = validate_speakers_analyze_runtime()?;
+fn installation_proof(locale: &str) -> Result<Value, CliError> {
+    let paths = validate_speakers_analyze_runtime_in(locale)?;
     Ok(json!({
         "schema": PROOF_KEY_SCHEMA, "platform": runtime_platform(),
-        "helper": file_stamp(&paths.helper)?,
+        "helper": file_stamp(locale, &paths.helper)?,
         "assets": [
-            { "name": WESPEAKER_ASSET, "file": file_stamp(&paths.wespeaker_model)? },
-            { "name": PYANNOTE_ASSET, "file": file_stamp(&paths.pyannote_model)? },
+            { "name": WESPEAKER_ASSET, "file": file_stamp(locale, &paths.wespeaker_model)? },
+            { "name": PYANNOTE_ASSET, "file": file_stamp(locale, &paths.pyannote_model)? },
         ],
     }))
 }
@@ -583,12 +635,16 @@ fn read_speakers_analyze_owner_inner(journal: &Path) -> Option<SpeakersAnalyzeOw
 
 /// Fully validate the helper and both pinned model assets for an invocation.
 #[cfg(not(windows))]
-pub(crate) fn validate_speakers_analyze_runtime() -> Result<ValidatedInstallation, CliError> {
-    let proof = installation_proof()?;
-    let wespeaker_model = resolve_model_asset(WESPEAKER_ASSET)
-        .map_err(|error| installation_error(format!("asset-missing: {error}")))?;
-    let pyannote_model = resolve_model_asset(PYANNOTE_ASSET)
-        .map_err(|error| installation_error(format!("asset-missing: {error}")))?;
+pub(crate) fn validate_speakers_analyze_runtime_in(
+    locale: &str,
+) -> Result<ValidatedInstallation, CliError> {
+    let proof = installation_proof(locale)?;
+    let wespeaker_model = resolve_model_asset(WESPEAKER_ASSET).map_err(|error| {
+        coded_installation_error(locale, "asset-missing", &error.render(locale))
+    })?;
+    let pyannote_model = resolve_model_asset(PYANNOTE_ASSET).map_err(|error| {
+        coded_installation_error(locale, "asset-missing", &error.render(locale))
+    })?;
     let helper = PathBuf::from(
         proof
             .get("helper")
@@ -613,33 +669,42 @@ pub(crate) struct ValidatedInstallation {
 }
 
 #[cfg(not(windows))]
-fn installation_proof() -> Result<Value, CliError> {
-    check_platform_coverage()?;
-    let helper = helper_path()?;
-    let wespeaker = resolve_model_asset_path(WESPEAKER_ASSET)
-        .map_err(|error| installation_error(format!("asset-missing: {error}")))?;
-    let pyannote = resolve_model_asset_path(PYANNOTE_ASSET)
-        .map_err(|error| installation_error(format!("asset-missing: {error}")))?;
+fn installation_proof(locale: &str) -> Result<Value, CliError> {
+    check_platform_coverage(locale)?;
+    let helper = helper_path(locale)?;
+    let wespeaker = resolve_model_asset_path(WESPEAKER_ASSET).map_err(|error| {
+        coded_installation_error(locale, "asset-missing", &error.render(locale))
+    })?;
+    let pyannote = resolve_model_asset_path(PYANNOTE_ASSET).map_err(|error| {
+        coded_installation_error(locale, "asset-missing", &error.render(locale))
+    })?;
     Ok(json!({
         "schema": PROOF_KEY_SCHEMA,
         "platform": runtime_platform(),
-        "helper": file_stamp(&helper)?,
+        "helper": file_stamp(locale, &helper)?,
         "assets": [
-            { "name": WESPEAKER_ASSET, "file": file_stamp(&wespeaker)? },
-            { "name": PYANNOTE_ASSET, "file": file_stamp(&pyannote)? },
+            { "name": WESPEAKER_ASSET, "file": file_stamp(locale, &wespeaker)? },
+            { "name": PYANNOTE_ASSET, "file": file_stamp(locale, &pyannote)? },
         ],
     }))
 }
 
 #[cfg(not(windows))]
-fn check_platform_coverage() -> Result<(), CliError> {
+fn check_platform_coverage(locale: &str) -> Result<(), CliError> {
     let (platform, architecture) = runtime_platform();
     let covered = matches!(
         (platform, architecture),
         ("linux", "x86_64" | "aarch64") | ("darwin", "arm64")
     );
     covered.then_some(()).ok_or_else(|| {
-        installation_error(format!("platform-unsupported: {platform}/{architecture}"))
+        installation_error_in(
+            locale,
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.installation.platform",
+                [("platform", &(platform)), ("architecture", &(architecture))],
+            ),
+        )
     })
 }
 
@@ -651,37 +716,47 @@ fn runtime_platform() -> (&'static str, &'static str) {
 }
 
 #[cfg(not(windows))]
-fn helper_path() -> Result<PathBuf, CliError> {
-    let executable =
-        env::current_exe().map_err(|error| installation_error(format!("helper-path: {error}")))?;
+fn helper_path(locale: &str) -> Result<PathBuf, CliError> {
+    let executable = env::current_exe()
+        .map_err(|error| coded_installation_error(locale, "helper-path", &error))?;
     let directory = executable.parent().ok_or_else(|| {
-        installation_error("helper-path: current executable has no parent directory")
+        installation_message(locale, "journal.cli.transcribe.installation.helper.parent")
     })?;
     let candidate = match env::var(HELPER_BINARY_ENV) {
         Ok(path) if !path.is_empty() => PathBuf::from(path),
         _ => directory.join(HELPER_BINARY_NAME),
     };
     if !is_executable(&candidate) {
-        return Err(installation_error(format!(
-            "helper-not-executable: {}",
-            candidate.display()
-        )));
+        return Err(coded_installation_error(
+            locale,
+            "helper-not-executable",
+            &candidate.display(),
+        ));
     }
     Ok(candidate)
 }
 
 #[cfg(not(windows))]
-fn validate_model_assets() -> Result<(), CliError> {
-    resolve_model_asset(WESPEAKER_ASSET)
-        .map_err(|error| installation_error(format!("asset-missing: {error}")))?;
-    resolve_model_asset(PYANNOTE_ASSET)
-        .map_err(|error| installation_error(format!("asset-missing: {error}")))?;
+fn validate_model_assets(locale: &str) -> Result<(), CliError> {
+    resolve_model_asset(WESPEAKER_ASSET).map_err(|error| {
+        coded_installation_error(locale, "asset-missing", &error.render(locale))
+    })?;
+    resolve_model_asset(PYANNOTE_ASSET).map_err(|error| {
+        coded_installation_error(locale, "asset-missing", &error.render(locale))
+    })?;
     Ok(())
 }
 
-fn file_stamp(path: &Path) -> Result<Value, CliError> {
+fn file_stamp(locale: &str, path: &Path) -> Result<Value, CliError> {
     let metadata = fs::metadata(path).map_err(|error| {
-        installation_error(format!("proof-metadata: {}: {error}", path.display()))
+        installation_error_in(
+            locale,
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.installation.stamp",
+                [("path", &(path.display())), ("error", &(error))],
+            ),
+        )
     })?;
     let modified_ns = metadata
         .modified()
@@ -732,15 +807,24 @@ fn borrowed_generation_matches(
 }
 
 #[cfg(unix)]
-fn duplicate_for_inheritance(lease: &solstone_core_journal_io::FileLease) -> Result<i32, CliError> {
+fn duplicate_for_inheritance(
+    locale: &str,
+    lease: &solstone_core_journal_io::FileLease,
+) -> Result<i32, CliError> {
     lease
         .duplicate_for_inheritance()
-        .map_err(|error| installation_error(format!("generation-fd: {error}")))
+        .map_err(|error| coded_installation_error(locale, "generation-fd", &error))
 }
 
 #[cfg(not(any(unix, windows)))]
-fn duplicate_for_inheritance(_: &solstone_core_journal_io::FileLease) -> Result<i32, CliError> {
-    Err(installation_error("generation-fd: unsupported platform"))
+fn duplicate_for_inheritance(
+    locale: &str,
+    _: &solstone_core_journal_io::FileLease,
+) -> Result<i32, CliError> {
+    Err(installation_message(
+        locale,
+        "journal.cli.transcribe.installation.fd.platform",
+    ))
 }
 
 #[cfg(not(windows))]
@@ -771,10 +855,10 @@ fn inherited_generation_ofd_holds_lock(_: &str) -> bool {
     false
 }
 
-fn random_hex() -> Result<String, CliError> {
+fn random_hex(locale: &str) -> Result<String, CliError> {
     let mut bytes = [0_u8; 16];
     getrandom::fill(&mut bytes)
-        .map_err(|error| installation_error(format!("generation-random: {error}")))?;
+        .map_err(|error| coded_installation_error(locale, "generation-random", &error))?;
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
@@ -876,7 +960,7 @@ fn generation_contention_error(journal: &Path) -> CliError {
         ),
     };
     CliError::SpeakersGenerationHeld {
-        message: diagnostic.render(solstone_core_cli_copy::ENGLISH),
+        message: diagnostic.render(ENGLISH),
         diagnostic,
     }
 }
@@ -1020,7 +1104,7 @@ mod tests {
 
     #[test]
     fn current_target_has_covered_speakers_analyze_runtime() {
-        check_platform_coverage().unwrap();
+        check_platform_coverage(ENGLISH).unwrap();
     }
 
     #[test]
@@ -1090,6 +1174,7 @@ mod tests {
         .unwrap();
         let inherited = inherited_from(&owner);
         let borrowed = enter_impl(
+            ENGLISH,
             journal.path(),
             SpeakersAnalyzeOwnerRole::Transcribe,
             proof(),
@@ -1130,6 +1215,7 @@ mod tests {
         )
         .unwrap();
         let error = enter_impl(
+            ENGLISH,
             journal.path(),
             SpeakersAnalyzeOwnerRole::Supervisor,
             proof(),
@@ -1158,6 +1244,7 @@ mod tests {
             .open(generation_lock_path(journal.path()))
             .unwrap();
         let error = enter_impl(
+            ENGLISH,
             journal.path(),
             SpeakersAnalyzeOwnerRole::Transcribe,
             proof(),
@@ -1187,6 +1274,7 @@ mod tests {
             .open(generation_lock_path(journal.path()))
             .unwrap();
         let replacement = enter_impl(
+            ENGLISH,
             journal.path(),
             SpeakersAnalyzeOwnerRole::Transcribe,
             proof(),
@@ -1213,6 +1301,7 @@ mod tests {
         .unwrap();
         fs::write(owner_path(journal.path()), b"{not-json").unwrap();
         let borrowed = enter_impl(
+            ENGLISH,
             journal.path(),
             SpeakersAnalyzeOwnerRole::Transcribe,
             proof(),
@@ -1242,6 +1331,7 @@ mod tests {
         }
         let (id, fd, _) = inherited_from(&owner);
         let error = enter_impl(
+            ENGLISH,
             journal.path(),
             SpeakersAnalyzeOwnerRole::Transcribe,
             proof(),
@@ -1427,6 +1517,7 @@ mod tests {
             "assets": [SENTINEL],
         });
         let owner = enter_impl(
+            ENGLISH,
             journal.path(),
             SpeakersAnalyzeOwnerRole::Supervisor,
             poisoned_proof.clone(),
@@ -1444,6 +1535,7 @@ mod tests {
             "owner.json must not serialize proof, env, or argv-shaped inputs: {owner_bytes}"
         );
         let error = enter_impl(
+            ENGLISH,
             journal.path(),
             SpeakersAnalyzeOwnerRole::Transcribe,
             poisoned_proof,

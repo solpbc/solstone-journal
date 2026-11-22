@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error coreml helper version response missing field.",
+  "context": "Journal command-line text for error coreml helper version response missing field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3fa9471483368978ca94544ab77b9e2cdd1753753cd6033ac64bde8331bfe297",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

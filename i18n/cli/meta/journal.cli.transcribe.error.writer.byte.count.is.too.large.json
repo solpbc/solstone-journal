@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer byte count is too large.",
+  "context": "Journal command-line text for error writer byte count is too large.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b1fff9c22de619bb567714a8e3bedc01a8a53dc428d59a01c60272a4418d2c01",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_byte_count",
+      "kind": "accepted-input",
+      "value": "byte_count"
+    }
+  ]
+}

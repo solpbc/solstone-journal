@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for claim root absolute.",
+  "context": "Journal command-line text for claim root absolute.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b971b8957b0cfb99a5811b3c1b85fb7e3db89208c48aaaac1ccc7116f8abb5eb",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -67,6 +67,17 @@ pub(crate) fn backend_failure_record(input_size: u64, reason: &str) -> Value {
     record(vocab::STATE_FAILED, reason, input_size)
 }
 
+/// Source-English diagnostic for both desktop and embedded transcript headers.
+pub(crate) fn outdated_helper_record(input_size: u64) -> Value {
+    let mut record = backend_failure_record(input_size, vocab::REASON_ANALYSIS_FAILED);
+    record["error"] = Value::String(solstone_core_cli_copy::render_for(
+        solstone_core_cli_copy::ENGLISH,
+        "journal.cli.transcribe.stage.owner.helper.outdated",
+        &[],
+    ));
+    record
+}
+
 #[cfg(test)]
 mod tests {
     use solstone_core_processing_record::vocab;

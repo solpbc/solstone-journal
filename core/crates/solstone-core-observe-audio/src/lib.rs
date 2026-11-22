@@ -86,6 +86,77 @@ pub enum AudioError {
     InvalidWavSampleRate { sample_rate: u32 },
 }
 
+impl From<&AudioError> for solstone_core_cli_copy::MessageDetail {
+    fn from(error: &AudioError) -> Self {
+        match error {
+            AudioError::DecodedSampleLimit { path, max_samples } => Self::message(
+                "journal.cli.transcribe.error.audio.budget",
+                [("limit", &(max_samples)), ("path", &(path.display()))],
+            ),
+            AudioError::NoAudioStream { path } => Self::message(
+                "journal.cli.transcribe.error.audio.stream",
+                [("path", &(path.display()))],
+            ),
+            AudioError::NoDecodedAudio { path } => Self::message(
+                "journal.cli.transcribe.error.audio.samples",
+                [("path", &(path.display()))],
+            ),
+            AudioError::EmptyInput { path } => Self::message(
+                "journal.cli.transcribe.error.audio.empty",
+                [("path", &(path.display()))],
+            ),
+            AudioError::CorruptInput { path, detail, .. } => Self::message(
+                "journal.cli.transcribe.error.audio.corrupt",
+                [("path", &(path.display())), ("detail", &(detail))],
+            ),
+            AudioError::Io { path, source } => Self::message(
+                "journal.cli.transcribe.error.audio.io",
+                [("path", &(path.display())), ("error", &(source))],
+            ),
+            AudioError::Ffmpeg { path, detail, .. } => Self::message(
+                "journal.cli.transcribe.error.audio.ffmpeg",
+                [("path", &(path.display())), ("detail", &(detail))],
+            ),
+            AudioError::SidecarCreate { path, source } => Self::message(
+                "journal.cli.transcribe.error.audio.sidecar.create",
+                [("path", &(path.display())), ("error", &(source))],
+            ),
+            AudioError::SidecarWrite { path, source } => Self::message(
+                "journal.cli.transcribe.error.audio.sidecar.write",
+                [("path", &(path.display())), ("error", &(source))],
+            ),
+            AudioError::SidecarSync { path, source } => Self::message(
+                "journal.cli.transcribe.error.audio.sidecar.sync",
+                [("path", &(path.display())), ("error", &(source))],
+            ),
+            AudioError::InvalidWavSampleRate { sample_rate } => Self::message(
+                "journal.cli.transcribe.error.audio.sample.rate",
+                [("rate", &(sample_rate))],
+            ),
+            AudioError::WavDataTooLarge { samples } => Self::cardinal(
+                "journal.cli.transcribe.error.audio.wav.size",
+                [("samples", *samples as i64)],
+                error.to_string(),
+                [],
+            ),
+            AudioError::ResamplerFlushDidNotConverge {
+                path,
+                iterations,
+                flushed_samples,
+                remaining_samples,
+            } => Self::cardinal(
+                "journal.cli.transcribe.error.audio.flush",
+                [
+                    ("iterations", *iterations as i64),
+                    ("flushed", *flushed_samples as i64),
+                ],
+                error.to_string(),
+                [("path", &path.display()), ("remaining", remaining_samples)],
+            ),
+        }
+    }
+}
+
 impl AudioError {
     pub fn ffmpeg_errno(&self) -> Option<i32> {
         match self {

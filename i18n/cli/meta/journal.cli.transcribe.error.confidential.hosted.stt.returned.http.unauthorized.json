@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error confidential hosted stt returned http unauthorized.",
+  "context": "Journal command-line text for error confidential hosted stt returned http unauthorized.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8629d7a182fb189c4eb4fa08ce82e271d0e177194810dd0ef64050f667c537d7",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_stt",
+      "kind": "accepted-input",
+      "value": "STT"
+    },
+    {
+      "name": "code_http",
+      "kind": "accepted-input",
+      "value": "HTTP"
+    }
+  ]
+}

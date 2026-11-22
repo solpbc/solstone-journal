@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error confidential word response had no words array.",
+  "context": "Journal command-line text for error confidential word response had no words array.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7dea6ccc8a6510b81cbd25d27f4a4326d993bc33f2e9c82f16d59b45944103c6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error cpp word timing contains invalid numeric value.",
+  "context": "Journal command-line text for error cpp word timing contains invalid numeric value.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2b9bf13755f905f5619decdf4b7d4ba16948f1c0e46af22aa0867af9822e0cdd",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -53,40 +53,59 @@ pub enum ModelAssetError {
     },
 }
 
-impl fmt::Display for ModelAssetError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl ModelAssetError {
+    /// Render the asset diagnostic without translating paths or signed digests.
+    pub fn render(&self, locale: &str) -> String {
         match self {
-            Self::OverrideInvalid { asset, directory } => write!(
-                formatter,
-                "{MODEL_ASSETS_ENV}={:?} does not provide nonempty model asset {asset:?}",
-                directory
+            Self::OverrideInvalid { asset, directory } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.asset.override",
+                [
+                    ("directory", &(format!("{directory:?}"))),
+                    ("asset", &(format!("{asset:?}"))),
+                ],
             ),
-            Self::CurrentExecutable { source } => {
-                write!(
-                    formatter,
-                    "could not determine current executable: {source}"
-                )
-            }
-            Self::AssetNotFound { asset, searched } => write!(
-                formatter,
-                "could not find nonempty model asset {asset:?}; searched {}",
-                searched
-                    .iter()
-                    .map(|path| path.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
+            Self::CurrentExecutable { source } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.asset.executable",
+                [("error", &(source))],
+            ),
+            Self::AssetNotFound { asset, searched } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.asset.absent",
+                [
+                    ("asset", &(format!("{asset:?}"))),
+                    (
+                        "paths",
+                        &(searched
+                            .iter()
+                            .map(|path| path.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")),
+                    ),
+                ],
             ),
             Self::DigestMismatch {
                 asset,
                 path,
                 expected,
                 actual,
-            } => write!(
-                formatter,
-                "model asset {asset:?} at {} has sha256 {actual}, expected {expected}",
-                path.display()
+            } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.asset.digest",
+                [
+                    ("asset", &(format!("{asset:?}"))),
+                    ("path", &(path.display())),
+                    ("actual", &(actual)),
+                    ("expected", &(expected)),
+                ],
             ),
         }
+    }
+}
+impl fmt::Display for ModelAssetError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.render(solstone_core_cli_copy::ENGLISH))
     }
 }
 

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error windows output limit exceeded.",
+  "context": "Journal command-line text for error windows output limit exceeded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d5569576342c3a9b90f435697e118d1ac420a0d5379a24193d7ebfe4c7ddaf4d",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

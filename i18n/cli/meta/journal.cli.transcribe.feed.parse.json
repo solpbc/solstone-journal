@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for feed parse.",
+  "context": "Journal command-line text for feed parse.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8a8acb2ad8b009e2a6d4779783b9a35d66c74722ba080cb4b1d5e8aea2ab05cc",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

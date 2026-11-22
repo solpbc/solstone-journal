@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error coreml helper returned transcript text without token timings.",
+  "context": "Journal command-line text for error coreml helper returned transcript text without token timings.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be1d74eada288b031d3a3bb4ffd7f0c314da32bb863cea41cb38c00bbd65d85f",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

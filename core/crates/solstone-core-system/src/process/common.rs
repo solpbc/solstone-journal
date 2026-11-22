@@ -618,6 +618,60 @@ pub enum LaunchError {
     Admission(String),
 }
 
+impl From<LaunchError> for solstone_core_cli_copy::MessageDetail {
+    fn from(error: LaunchError) -> Self {
+        match error {
+            LaunchError::CapabilityUnavailable { needed }
+            | LaunchError::SpawnManaged(SpawnError::CapabilityUnavailable { needed }) => {
+                Self::message(
+                    "journal.cli.transcribe.error.process.capability",
+                    [("needed", &(needed))],
+                )
+            }
+            LaunchError::EmptyUnownedReason => {
+                Self::message("journal.cli.transcribe.error.process.unowned.reason", [])
+            }
+            LaunchError::Spawn(source) | LaunchError::SpawnManaged(SpawnError::Spawn(source)) => {
+                Self::message(
+                    "journal.cli.transcribe.error.process.spawn",
+                    [("error", &(source))],
+                )
+            }
+            LaunchError::ConfirmationFailed { pid, source } => Self::message(
+                "journal.cli.transcribe.error.process.confirm",
+                [("pid", &(pid)), ("error", &(source))],
+            ),
+            LaunchError::Terminate(source) => Self::message(
+                "journal.cli.transcribe.error.process.terminate",
+                [("error", &(source))],
+            ),
+            LaunchError::OutputUnavailable => {
+                Self::message("journal.cli.transcribe.error.process.output", [])
+            }
+            LaunchError::NotExplicitlyUnowned => {
+                Self::message("journal.cli.transcribe.error.process.explicit", [])
+            }
+            LaunchError::Admission(reason) => Self::message(
+                "journal.cli.transcribe.error.process.admission",
+                [("reason", &(reason))],
+            ),
+            LaunchError::SpawnManaged(SpawnError::EmptyCommand) => {
+                Self::message("journal.cli.transcribe.error.process.command", [])
+            }
+            LaunchError::SpawnManaged(SpawnError::Log(source)) => Self::message(
+                "journal.cli.transcribe.error.process.log",
+                [("error", &(source))],
+            ),
+            LaunchError::SpawnManaged(SpawnError::ExactInstanceUnavailable { pid }) => {
+                Self::message(
+                    "journal.cli.transcribe.error.process.identity",
+                    [("pid", &(pid))],
+                )
+            }
+        }
+    }
+}
+
 pub type BoxedTerminateFn = Box<dyn FnMut(&mut Child, Duration) -> Result<(), LaunchError> + Send>;
 
 #[derive(Debug, Error)]

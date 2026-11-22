@@ -13,6 +13,7 @@ pub enum ConfidentialIoPhase {
 }
 
 struct TranscribeControl<'a> {
+    locale: &'a str,
     observation: Option<&'a solstone_core_brain::BrainObservationSink>,
     checkpoint: &'a dyn Fn() -> Result<(), TranscribeError>,
     service_io: &'a dyn Fn(ConfidentialIoPhase),
@@ -116,7 +117,10 @@ pub(crate) fn refuse_confidential_egress(
         return if backend == "confidential" {
             Err(deferred(
                 "confidential_lane_inactive",
-                "the confidential lane is no longer active",
+                crate::TranscribeDetail::message(
+                    "journal.cli.transcribe.error.confidential.the.confidential.lane.is.no.longer.active",
+                    [],
+                ),
             ))
         } else {
             Ok(())
@@ -132,14 +136,20 @@ pub(crate) fn refuse_confidential_egress(
         } else {
             Err(deferred(
                 "confidential_audio_disabled",
-                "confidential audio handling is disabled",
+                crate::TranscribeDetail::message(
+                    "journal.cli.transcribe.error.confidential.confidential.audio.handling.is.disabled",
+                    [],
+                ),
             ))
         };
     }
 
     Err(deferred(
         "confidential_egress_blocked",
-        format!("confidential lane blocks STT backend {backend:?}; raw audio must stay local"),
+        crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.confidential.confidential.lane.blocks.stt.backend.backend.raw.audio",
+            [("backend", &(format!("{backend:?}")))],
+        ),
     ))
 }
 
@@ -169,6 +179,7 @@ where
         readiness,
         establish,
         TranscribeControl {
+            locale: solstone_core_cli_copy::ENGLISH,
             observation: None,
             checkpoint: &|| Ok(()),
             service_io: &|_| {},
@@ -199,11 +210,18 @@ where
     if endpoint.credential.is_none() {
         return Err(deferred(
             "hosted_transcribe_unreachable",
-            "the confidential endpoint has no credential",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.confidential.the.confidential.endpoint.has.no.credential",
+                [],
+            ),
         ));
     }
-    let wav = audio_to_wav_bytes(audio, SAMPLE_RATE)
-        .map_err(|error| deferred("confidential_audio_encode_failed", error.to_string()))?;
+    let wav = audio_to_wav_bytes(audio, SAMPLE_RATE).map_err(|error| {
+        deferred(
+            "confidential_audio_encode_failed",
+            crate::TranscribeDetail::from(&error),
+        )
+    })?;
     let now = SystemTime::now();
     #[cfg(not(windows))]
     let nvattest_dir = std::path::PathBuf::new();
@@ -236,8 +254,12 @@ where
             &endpoint.base_url,
         ) {
             log::warn!(
-                "confidential transcription verification was not recorded for {}: {error}",
-                journal_path.display()
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    control.locale,
+                    "journal.cli.transcribe.stage.confidential.verification.record",
+                    [("path", &(journal_path.display())), ("error", &(error))]
+                )
             );
         }
         deferred_from_attestation(state, now)
@@ -245,8 +267,12 @@ where
     (control.checkpoint)()?;
     if let Err(error) = solstone_core_brain::clear_transcription_verification(journal_path) {
         log::warn!(
-            "confidential transcription verification was not cleared for {}: {error}",
-            journal_path.display()
+            "{}",
+            solstone_core_cli_copy::display_for(
+                control.locale,
+                "journal.cli.transcribe.stage.confidential.verification.clear",
+                [("path", &(journal_path.display())), ("error", &(error))]
+            )
         );
     }
     if let Err(code) = solstone_core_spp_ratls::send_admission_probe(
@@ -255,7 +281,13 @@ where
         endpoint.credential.as_deref(),
         TRANSCRIBE_TIMEOUT,
     ) {
-        return Err(deferred(code, "the confidential admission probe failed"));
+        return Err(deferred(
+            code,
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.confidential.the.confidential.admission.probe.failed",
+                [],
+            ),
+        ));
     }
     (control.checkpoint)()?;
     let response = send_multipart_request(
@@ -272,12 +304,14 @@ where
 
 /// Send one hosted transcription over a freshly attested channel.
 pub(crate) fn transcribe(
+    locale: &str,
     audio: &[f32],
     journal_path: &Path,
     config: &JournalConfigRead,
     state: &AttestationStateStore,
 ) -> Result<(TranscriptionResponse, ModelInfo), TranscribeError> {
     transcribe_cancellable(
+        locale,
         audio,
         journal_path,
         config,
@@ -288,7 +322,9 @@ pub(crate) fn transcribe(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn transcribe_cancellable(
+    locale: &str,
     audio: &[f32],
     journal_path: &Path,
     config: &JournalConfigRead,
@@ -335,6 +371,7 @@ pub(crate) fn transcribe_cancellable(
         readiness,
         establish_fresh_production_channel,
         TranscribeControl {
+            locale,
             observation,
             checkpoint,
             service_io,
@@ -368,7 +405,10 @@ fn confidential_endpoint(config: &JournalConfigRead) -> Result<ByoEndpoint, Tran
         Some(LocalEndpointResolution::Byo(endpoint)) if endpoint.is_confidential => Ok(endpoint),
         _ => Err(deferred(
             "confidential_lane_inactive",
-            "the confidential lane has no confidential BYO endpoint",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.confidential.the.confidential.lane.has.no.confidential.byo.endpoint",
+                [],
+            ),
         )),
     }
 }
@@ -376,7 +416,13 @@ fn confidential_endpoint(config: &JournalConfigRead) -> Result<ByoEndpoint, Tran
 fn deferred_from_attestation(state: &AttestationStateStore, now: SystemTime) -> TranscribeError {
     let reason = attestation_reason(&state.get_attestation_state(), now)
         .unwrap_or("attestation_not_yet_verified");
-    deferred(reason, "the confidential attestation channel is not ready")
+    deferred(
+        reason,
+        crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.confidential.the.confidential.attestation.channel.is.not.ready",
+            [],
+        ),
+    )
 }
 
 fn attestation_reason(state: &AttestationState, now: SystemTime) -> Option<&'static str> {
@@ -509,31 +555,54 @@ fn retry_interrupted<T>(operation: impl FnMut() -> std::io::Result<T>) -> std::i
 ///
 /// ⛔ Never includes `InvalidJson`'s payload: that is the raw response body, which in
 /// real use carries the owner's speech.
-fn word_contract_detail(error: &WordContractError) -> String {
+fn word_contract_detail(error: &WordContractError) -> crate::TranscribeDetail {
     match error {
-        WordContractError::InvalidNumber { key, found } => {
-            format!("word `{key}` was not a finite number (found {found})")
-        }
-        other => word_contract_kind(other).to_owned(),
-    }
-}
-
-fn word_contract_kind(error: &WordContractError) -> &'static str {
-    match error {
-        WordContractError::InvalidJson(_) => "response was not JSON",
-        WordContractError::NotObject => "response was not an object",
-        WordContractError::MissingWords => "response had no words array",
-        WordContractError::TextWithoutTimings => "response had text but no word timings",
-        WordContractError::WordNotObject => "a word entry was not an object",
+        WordContractError::InvalidJson(_) => crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.confidential.word.response.was.not.json",
+            [],
+        ),
+        WordContractError::NotObject => crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.confidential.word.response.was.not.an.object",
+            [],
+        ),
+        WordContractError::MissingWords => crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.confidential.word.response.had.no.words.array",
+            [],
+        ),
+        WordContractError::TextWithoutTimings => crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.confidential.word.response.had.text.but.no.word.timings",
+            [],
+        ),
+        WordContractError::WordNotObject => crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.confidential.word.a.word.entry.was.not.an.object",
+            [],
+        ),
         WordContractError::MissingKey(key) => match *key {
-            "word" => "a word entry was missing `word`",
-            "start" => "a word entry was missing `start`",
-            "end" => "a word entry was missing `end`",
-            _ => "a word entry was missing a required key",
+            "word" => crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.confidential.word.a.word.entry.was.missing.word",
+                [],
+            ),
+            "start" => crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.confidential.word.a.word.entry.was.missing.start",
+                [],
+            ),
+            "end" => crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.confidential.word.a.word.entry.was.missing.end",
+                [],
+            ),
+            _ => crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.confidential.word.a.word.entry.was.missing.a.required.key",
+                [],
+            ),
         },
-        WordContractError::BlankWord => "a word entry was blank",
-        // ⚠ Rendered by the caller with the key and type, so it is not folded here.
-        WordContractError::InvalidNumber { .. } => "a word number was not finite",
+        WordContractError::BlankWord => crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.confidential.word.a.word.entry.was.blank",
+            [],
+        ),
+        WordContractError::InvalidNumber { key, found } => crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.confidential.word.word.key.was.not.a.finite.number.found",
+            [("key", &(key)), ("found", &(found))],
+        ),
     }
 }
 
@@ -543,15 +612,24 @@ fn hosted_response(
     match response.status {
         401 => Err(deferred(
             "confidential_access_ended",
-            "hosted STT returned HTTP 401",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.confidential.hosted.stt.returned.http.unauthorized",
+                [],
+            ),
         )),
         400 | 413 => Err(deferred(
             "hosted_transcribe_rejected",
-            format!("hosted STT returned HTTP {}", response.status),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.confidential.hosted.stt.returned.http.status",
+                [("status", &(response.status))],
+            ),
         )),
         429 | 503 | 504 => Err(deferred(
             "hosted_transcribe_backpressure",
-            format!("hosted STT returned HTTP {}", response.status),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.confidential.hosted.stt.returned.http.status",
+                [("status", &(response.status))],
+            ),
         )),
         200 => {
             let body = String::from_utf8_lossy(&response.body);
@@ -564,10 +642,8 @@ fn hosted_response(
                 // and in real use that is owner speech.
                 deferred(
                     "hosted_transcribe_contract_failed",
-                    format!(
-                        "hosted STT response violated the verbose JSON contract: {}",
-                        word_contract_detail(&error)
-                    ),
+                    word_contract_detail(&error)
+                        .context("journal.cli.transcribe.error.confidential.word.contract"),
                 )
             })?;
             Ok((
@@ -581,7 +657,10 @@ fn hosted_response(
         }
         status => Err(deferred(
             "hosted_transcribe_unexpected_status",
-            format!("hosted STT returned HTTP {status}"),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.confidential.hosted.stt.returned.http.status",
+                [("status", &(status))],
+            ),
         )),
     }
 }
@@ -590,7 +669,10 @@ pub(crate) fn hosted_transcribe_transport_error(error: HttpError) -> TranscribeE
     deferred("hosted_transcribe_unreachable", error.to_string())
 }
 
-fn deferred(reason: impl Into<String>, detail: impl Into<String>) -> TranscribeError {
+fn deferred(
+    reason: impl Into<String>,
+    detail: impl Into<crate::TranscribeDetail>,
+) -> TranscribeError {
     TranscribeError::ConfidentialDeferred {
         reason: reason.into(),
         detail: detail.into(),
@@ -773,6 +855,7 @@ mod tests {
                 panic!("readiness refusal must not establish")
             },
             super::TranscribeControl {
+                locale: solstone_core_cli_copy::ENGLISH,
                 observation: Some(&sink),
                 checkpoint: &|| Ok(()),
                 service_io: &|_| panic!("refusal must not send audio"),
@@ -825,6 +908,7 @@ mod tests {
                 ))
             },
             super::TranscribeControl {
+                locale: solstone_core_cli_copy::ENGLISH,
                 observation: None,
                 checkpoint: &|| {
                     if cancelled.load(Ordering::SeqCst) {

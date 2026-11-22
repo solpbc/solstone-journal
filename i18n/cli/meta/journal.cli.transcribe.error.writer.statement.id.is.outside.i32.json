@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer statement id is outside i32.",
+  "context": "Journal command-line text for error writer statement id is outside i32.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5b56c973981e68f8ad3a8f7d5148d9ab9b00b4d6d2353717ba72a448402cb244",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_i32",
+      "kind": "accepted-input",
+      "value": "i32"
+    }
+  ]
+}

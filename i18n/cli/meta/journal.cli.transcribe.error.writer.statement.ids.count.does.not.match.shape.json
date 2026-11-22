@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer statement ids count does not match shape.",
+  "context": "Journal command-line text for error writer statement ids count does not match shape.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8e8ddde79c4bc5c1b6f2559538e1234343aed4be6de49356afe56ce9b6dafd27",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_statement_ids",
+      "kind": "accepted-input",
+      "value": "statement_ids"
+    }
+  ]
+}

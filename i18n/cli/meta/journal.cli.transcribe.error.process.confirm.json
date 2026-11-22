@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error process confirm.",
+  "context": "Journal command-line text for error process confirm.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "pid",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0ccf09bb62c17ddeb5ba2c7b06075bb9a1c70cbe6d0d694e2e3031348c993f11",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

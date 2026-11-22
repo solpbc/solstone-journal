@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sound window count.",
+  "context": "Journal command-line text for sound window count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fef51f84077b12cd5b82b729ac6db887f3c4bb3f791ef52434a8c69e0c5c308e",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

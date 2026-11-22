@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer zip repeated exposed central coordinate.",
+  "context": "Journal command-line text for error writer zip repeated exposed central coordinate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "640dccc0f10a21b0c5ac73a0b1099122b4d293793073caef674d36dbc2e95603",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

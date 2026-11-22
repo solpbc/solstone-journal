@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error statement field.",
+  "context": "Journal command-line text for error statement field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1610b14a77d8ce839ef8a0c5ce24210e51253705c33ce75ced57b443de5d6bf7",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

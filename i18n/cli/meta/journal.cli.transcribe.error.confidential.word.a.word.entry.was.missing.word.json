@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error confidential word a word entry was missing word.",
+  "context": "Journal command-line text for error confidential word a word entry was missing word.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8b0676adf5a31eceb552f1acd81f005aec1aff20ab588027a53cbb7bd7f782c4",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

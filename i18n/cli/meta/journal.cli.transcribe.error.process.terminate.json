@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error process terminate.",
+  "context": "Journal command-line text for error process terminate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f2f6c74ccfb102268e7fecd0d588a75c89139c030fe92a2cf2746dd922333fe8",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sound helper timeout.",
+  "context": "Journal command-line text for sound helper timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "timeout",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ff969ef89deb5c7cc4fb65f1654e439468d4bce3b800023f0f4aa9d86e12c857",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

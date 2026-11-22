@@ -12,23 +12,27 @@ use solstone_core_speaker_id::writer::{SpeakerTranscriptWriteError, WriteRespons
 pub fn publish_transcript_request(
     bytes: &[u8],
 ) -> Result<WriteResponse, SpeakerTranscriptWriteError> {
-    let malformed = |detail: &str| SpeakerTranscriptWriteError::MalformedRequest {
-        detail: detail.into(),
-    };
+    let malformed =
+        |detail: crate::TranscribeDetail| SpeakerTranscriptWriteError::MalformedRequest { detail };
     let value: Value =
-        serde_json::from_slice(bytes).map_err(|error| malformed(&error.to_string()))?;
-    let output = PathBuf::from(
-        value["output"]["jsonl_path"]
-            .as_str()
-            .ok_or_else(|| malformed("output.jsonl_path is required"))?,
-    );
-    let output = std::path::absolute(output).map_err(|error| malformed(&error.to_string()))?;
-    let segment = output
-        .parent()
-        .ok_or_else(|| malformed("output has no parent"))?;
+        serde_json::from_slice(bytes).map_err(|error| malformed(error.to_string().into()))?;
+    let output = PathBuf::from(value["output"]["jsonl_path"].as_str().ok_or_else(|| {
+        malformed(crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.publish.output",
+            [],
+        ))
+    })?);
+    let output =
+        std::path::absolute(output).map_err(|error| malformed(error.to_string().into()))?;
+    let segment = output.parent().ok_or_else(|| {
+        malformed(crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.publish.parent",
+            [],
+        ))
+    })?;
     let failure = |error: std::io::Error| SpeakerTranscriptWriteError::OutputUnwritable {
         path: output.display().to_string(),
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     };
     let claims = OutputClaims::acquire([output.clone()], Default::default()).map_err(failure)?;
     // Match the lower writer's header precedence: segment metadata can
@@ -45,10 +49,18 @@ pub fn publish_transcript_request(
                 .get("raw")
                 .unwrap_or(&header["raw"])
                 .as_str()
-                .ok_or_else(|| malformed("header.raw is required"))?,
+                .ok_or_else(|| {
+                    malformed(crate::TranscribeDetail::message(
+                        "journal.cli.transcribe.error.publish.raw",
+                        [],
+                    ))
+                })?,
         );
         if name.file_name() != Some(name.as_os_str()) {
-            return Err(malformed("processing raw must be a sibling filename"));
+            return Err(malformed(crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.publish.sibling",
+                [],
+            )));
         }
         Some(InputObservation::capture(&claims, &segment.join(name)).map_err(failure)?)
     } else {

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error terminal payload.",
+  "context": "Journal command-line text for error terminal payload.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1f72ddc88ce2b2e00a5ac0c2e2237793fa96471dfb9d31d64a1d3f9faabb3d25",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

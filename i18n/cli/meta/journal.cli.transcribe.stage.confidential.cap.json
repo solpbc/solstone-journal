@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for stage confidential cap.",
+  "context": "Journal command-line text for stage confidential cap.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "seconds",
+      "type": "string"
+    },
+    {
+      "name": "bytes",
+      "type": "string"
+    },
+    {
+      "name": "limit",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ffd7dd3b1dfb128f527885373786f63dff67b0d6c7529fba099481fc3a38b11e",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

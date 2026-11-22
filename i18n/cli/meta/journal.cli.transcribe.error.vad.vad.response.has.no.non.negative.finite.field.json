@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error vad vad response has no non negative finite field.",
+  "context": "Journal command-line text for error vad vad response has no non negative finite field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "46326734bdfac7e269e9d6d00fc5a3bcd8b717510b89d016bc1f79e0c3092335",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

@@ -3746,3 +3746,788 @@ journal.cli.think.log.held.release = could not release held { $name } for { $seg
 journal.cli.think.log.segment.turn = thinking { $day }/{ $segment } without its turn: { $error }
 
 journal.cli.think.log.provider.record = thinking provider is unavailable; { $left } segments wait for the next run
+
+journal.cli.transcribe.batch.day = { $count ->
+    [one] { $verb }: { $count } day could not be read
+   *[other] { $verb }: { $count } day(s) could not be read
+    }
+
+journal.cli.transcribe.batch.day.record = { $verb }: { $count } day(s) could not be read
+
+journal.cli.transcribe.batch.failed = transcription: { $failed } failed
+
+journal.cli.transcribe.config.backend = invalid { $key } in journal config; choose one of: { $backends }
+
+journal.cli.transcribe.file.failed = { $file }: transcription failed ({ $reason }); details: { $output }
+
+journal.cli.transcribe.owner.running = your journal is running and transcribes recordings itself. bring the recording in with '{ $import }' instead.
+
+journal.cli.transcribe.owner.stopped = your journal isn't running. start it with '{ $up }', then bring the recording in with '{ $import }'; your journal transcribes it.
+
+journal.cli.transcribe.summary = { $processed } processed, { $skipped } skipped (already transcribed)
+
+journal.cli.transcribe.summary.deferred = { $processed } processed, { $skipped } skipped (already transcribed), { $deferred } deferred (provider not ready, will retry)
+
+journal.cli.transcribe.summary.deferred.failed = { $processed } processed, { $skipped } skipped (already transcribed), { $deferred } deferred (provider not ready, will retry), { $failed } failed
+
+journal.cli.transcribe.summary.failed = { $processed } processed, { $skipped } skipped (already transcribed), { $failed } failed
+
+journal.cli.transcribe.feed.failure = speaker candidate pool feed failed for { $path }: { $detail }
+
+journal.cli.transcribe.feed.parse = failed to parse transcript: { $detail }
+
+journal.cli.transcribe.feed.pool.lock = candidate pool lock failed: { $detail }
+
+journal.cli.transcribe.feed.pool.read = candidate pool read failed: { $detail }
+
+journal.cli.transcribe.feed.pool.width = candidate pool centroid width mismatch
+
+journal.cli.transcribe.feed.pool.write = candidate pool write failed: { $detail }
+
+journal.cli.transcribe.feed.read = failed to read transcript: { $detail }
+
+journal.cli.transcribe.feed.unreadable = completed transcript or embeddings could not be read
+
+journal.cli.transcribe.audio.directory = Audio file must be in a segment directory ({ $pattern }), but parent is: { $parent }
+
+journal.cli.transcribe.audio.format = Unsupported audio format: { $extension }. Supported formats: { $formats }
+
+journal.cli.transcribe.audio.missing = Audio file not found.{ $line_break }  Tried absolute:         { $absolute }{ $line_break }  Tried journal-relative: { $relative }
+
+journal.cli.transcribe.backend.choice = argument { $backend_flag }: invalid choice: '{ $backend }' (choose from { $choices })
+
+journal.cli.transcribe.backend.duplicate = argument { $backend_flag }: may only be specified once
+
+journal.cli.transcribe.claim.input.cancelled = processing input verification cancelled
+
+journal.cli.transcribe.claim.input.changed.commit = processing input changed before publication
+
+journal.cli.transcribe.claim.input.changed.open = processing input changed while opening
+
+journal.cli.transcribe.claim.input.changed.read = processing input changed while reading
+
+journal.cli.transcribe.claim.input.no.attempt = input has no output attempt
+
+journal.cli.transcribe.claim.input.not.file = processing input is not a plain file
+
+journal.cli.transcribe.claim.lock.entry.unsafe = persistent lock entry is an unsafe { $kind }: { $path }
+
+journal.cli.transcribe.claim.lock.invalid = invalid persistent lock entry { $name }
+
+journal.cli.transcribe.claim.lock.missing = persistent lock parent is missing: { $path }
+
+journal.cli.transcribe.claim.lock.mode = persistent lock entry has mode { $mode }, expected 600: { $path }
+
+journal.cli.transcribe.claim.lock.namespace = persistent lock entry changed during acquisition: { $path }
+
+journal.cli.transcribe.claim.lock.parent.changed = persistent lock parent changed during acquisition: { $path }
+
+journal.cli.transcribe.claim.lock.parent.unsafe = persistent lock parent is an unsafe { $kind }: { $path }
+
+journal.cli.transcribe.claim.parent.missing = missing parent directory
+
+journal.cli.transcribe.claim.root.absent = journal root does not exist
+
+journal.cli.transcribe.claim.root.absolute = journal root must be absolute
+
+journal.cli.transcribe.claim.root.ancestor = canonical journal root has a non-UTF-8 ancestor
+
+journal.cli.transcribe.claim.root.canonical.absolute = canonical journal root is not absolute
+
+journal.cli.transcribe.claim.root.changed = journal source changed during acquisition
+
+journal.cli.transcribe.claim.root.component = canonical journal root has no final component
+
+journal.cli.transcribe.claim.root.directory = journal root is not a directory
+
+journal.cli.transcribe.claim.root.invalid = invalid journal root { $path }: { $detail }
+
+journal.cli.transcribe.claim.root.io = { $operation }: { $reason }
+
+journal.cli.transcribe.claim.root.unsupported = unsupported journal root { $path }: { $detail }
+
+journal.cli.transcribe.claim.segment.not.covered = segment is not covered by these output attempts
+
+journal.cli.transcribe.claim.target.name = missing lock target name
+
+journal.cli.transcribe.error.asset.absent = could not find nonempty model asset { $asset }; searched { $paths }
+
+journal.cli.transcribe.error.asset.digest = model asset { $asset } at { $path } has { $code_sha256 } { $actual }, expected { $expected }
+
+journal.cli.transcribe.error.asset.executable = could not determine current executable: { $error }
+
+journal.cli.transcribe.error.asset.override = { $code_solstone_transcribe_model_assets_dir }={ $directory } does not provide nonempty model asset { $asset }
+
+journal.cli.transcribe.error.audio.budget = decoded sample budget { $limit } exceeded for { $path }
+
+journal.cli.transcribe.error.audio.corrupt = corrupt audio input { $path }: { $detail }
+
+journal.cli.transcribe.error.audio.empty = audio input is empty: { $path }
+
+journal.cli.transcribe.error.audio.ffmpeg = { $code_ffmpeg } error for { $path }: { $detail }
+
+journal.cli.transcribe.error.audio.flush = { $iterations ->
+    [one] { $flushed ->
+        [one] resampler flush did not converge for { $path } after { $iterations } iteration ({ $flushed } sample flushed; { $remaining } still delayed)
+        *[other] resampler flush did not converge for { $path } after { $iterations } iteration ({ $flushed } samples flushed; { $remaining } still delayed)
+    }
+    *[other] { $flushed ->
+        [one] resampler flush did not converge for { $path } after { $iterations } iterations ({ $flushed } sample flushed; { $remaining } still delayed)
+        *[other] resampler flush did not converge for { $path } after { $iterations } iterations ({ $flushed } samples flushed; { $remaining } still delayed)
+    }
+    }
+
+journal.cli.transcribe.error.audio.io = { $code_i_o } error for { $path }: { $error }
+
+journal.cli.transcribe.error.audio.sample.rate = invalid { $code_wav } sample rate: { $rate }
+
+journal.cli.transcribe.error.audio.samples = no audio samples decoded from { $path }
+
+journal.cli.transcribe.error.audio.sidecar.create = cannot create { $code_f32le } sidecar { $path }: { $error }
+
+journal.cli.transcribe.error.audio.sidecar.sync = cannot sync { $code_f32le } sidecar { $path }: { $error }
+
+journal.cli.transcribe.error.audio.sidecar.write = cannot write { $code_f32le } sidecar { $path }: { $error }
+
+journal.cli.transcribe.error.audio.stream = no audio stream in { $path }
+
+journal.cli.transcribe.error.audio.wav.size = { $samples ->
+    [one] WAV data is too large for a { $riff_u32 } field: { $samples } sample
+   *[other] WAV data is too large for a { $riff_u32 } field: { $samples } samples
+    }
+
+journal.cli.transcribe.error.backend.memory = no viable { $code_stt } backend (available memory: { $available }, local floor: { $floor })
+
+journal.cli.transcribe.error.backend.platform = { $code_stt } backend is unavailable on this host platform: { $backend }
+
+journal.cli.transcribe.error.cancelled = embedded transcription cancelled before publication
+
+journal.cli.transcribe.error.claim = could not acquire transcription ownership for { $path }: { $detail }
+
+journal.cli.transcribe.error.confidential.confidential.audio.handling.is.disabled = confidential audio handling is disabled
+
+journal.cli.transcribe.error.confidential.confidential.lane.blocks.stt.backend.backend.raw.audio = confidential lane blocks { $code_stt } backend { $backend }; raw audio must stay local
+
+journal.cli.transcribe.error.confidential.failure = confidential transcription { $reason }: { $detail }
+
+journal.cli.transcribe.error.confidential.hosted.stt.returned.http.status = hosted { $code_stt } returned { $code_http } { $status }
+
+journal.cli.transcribe.error.confidential.hosted.stt.returned.http.unauthorized = hosted { $code_stt } returned { $code_http } 401
+
+journal.cli.transcribe.error.confidential.the.confidential.admission.probe.failed = the confidential admission probe failed
+
+journal.cli.transcribe.error.confidential.the.confidential.attestation.channel.is.not.ready = the confidential attestation channel is not ready
+
+journal.cli.transcribe.error.confidential.the.confidential.endpoint.has.no.credential = the confidential endpoint has no credential
+
+journal.cli.transcribe.error.confidential.the.confidential.lane.has.no.confidential.byo.endpoint = the confidential lane has no confidential { $code_byo } endpoint
+
+journal.cli.transcribe.error.confidential.the.confidential.lane.is.no.longer.active = the confidential lane is no longer active
+
+journal.cli.transcribe.error.confidential.word.a.word.entry.was.blank = a word entry was blank
+
+journal.cli.transcribe.error.confidential.word.a.word.entry.was.missing.a.required.key = a word entry was missing a required key
+
+journal.cli.transcribe.error.confidential.word.a.word.entry.was.missing.end = a word entry was missing `end`
+
+journal.cli.transcribe.error.confidential.word.a.word.entry.was.missing.start = a word entry was missing `start`
+
+journal.cli.transcribe.error.confidential.word.a.word.entry.was.missing.word = a word entry was missing `word`
+
+journal.cli.transcribe.error.confidential.word.a.word.entry.was.not.an.object = a word entry was not an object
+
+journal.cli.transcribe.error.confidential.word.contract = hosted { $code_stt } response violated the verbose { $code_json } contract: { $detail }
+
+journal.cli.transcribe.error.confidential.word.response.had.no.words.array = response had no words array
+
+journal.cli.transcribe.error.confidential.word.response.had.text.but.no.word.timings = response had text but no word timings
+
+journal.cli.transcribe.error.confidential.word.response.was.not.an.object = response was not an object
+
+journal.cli.transcribe.error.confidential.word.response.was.not.json = response was not { $code_json }
+
+journal.cli.transcribe.error.confidential.word.word.key.was.not.a.finite.number.found = word `{ $key }` was not a finite number (found { $found })
+
+journal.cli.transcribe.error.coreml.failure = { $code_parakeet } { $code_coreml } { $reason }: { $detail }
+
+journal.cli.transcribe.error.coreml.helper.json.was.not.an.object = helper { $code_json } was not an object
+
+journal.cli.transcribe.error.coreml.helper.response.has.invalid.key = helper response has invalid { $key }
+
+journal.cli.transcribe.error.coreml.helper.response.missing.key = helper response missing { $key }
+
+journal.cli.transcribe.error.coreml.helper.response.missing.token.timings = helper response missing { $code_token_timings }
+
+journal.cli.transcribe.error.coreml.helper.returned.transcript.text.without.token.timings = helper returned transcript text without token timings
+
+journal.cli.transcribe.error.coreml.helper.token.timings.collapsed.to.no.words = helper token timings collapsed to no words
+
+journal.cli.transcribe.error.coreml.helper.version.json.was.not.an.object = helper version { $code_json } was not an object
+
+journal.cli.transcribe.error.coreml.helper.version.response.missing.field = helper version response missing { $field }
+
+journal.cli.transcribe.error.coreml.missing.stderr.pipe = missing { $code_stderr } pipe
+
+journal.cli.transcribe.error.coreml.missing.stdout.pipe = missing { $code_stdout } pipe
+
+journal.cli.transcribe.error.coreml.name.reader.panicked = { $name } reader panicked
+
+journal.cli.transcribe.error.coreml.parakeet.coreml.model.is.not.installed.yet.path = { $code_parakeet } { $code_coreml } model is not installed yet: { $path }
+
+journal.cli.transcribe.error.coreml.parakeet.helper.exited.with.status = { $code_parakeet } helper exited with { $status }
+
+journal.cli.transcribe.error.coreml.parakeet.helper.is.missing.path = { $code_parakeet } helper is missing: { $path }
+
+journal.cli.transcribe.error.coreml.parakeet.helper.is.not.a.file.path = { $code_parakeet } helper is not a file: { $path }
+
+journal.cli.transcribe.error.coreml.parakeet.helper.is.not.executable.path = { $code_parakeet } helper is not executable: { $path }
+
+journal.cli.transcribe.error.coreml.parakeet.helper.timed.out = { $code_parakeet } helper timed out
+
+journal.cli.transcribe.error.coreml.parakeet.helper.timed.out.after.seconds.s = { $code_parakeet } helper timed out after { $seconds }s
+
+journal.cli.transcribe.error.coreml.publication.busy = { $code_parakeet } { $code_coreml } publication lock busy
+
+journal.cli.transcribe.error.coreml.token.timing.must.be.an.object = token timing must be an object
+
+journal.cli.transcribe.error.cpp.device.must.be.one.of.auto.cpu = device must be one of: { $code_auto_cpu }
+
+journal.cli.transcribe.error.cpp.failure = { $code_parakeet_cpp } { $reason }: { $detail }
+
+journal.cli.transcribe.error.cpp.http.status = { $code_http } { $status }
+
+journal.cli.transcribe.error.cpp.parakeet.cpp.is.only.supported.on.linux.and = { $code_parakeet_cpp } is only supported on linux and windows
+
+journal.cli.transcribe.error.cpp.parakeet.server.credentials.are.unavailable.in.this.process = { $code_parakeet } server credentials are unavailable in this process.
+
+journal.cli.transcribe.error.cpp.parakeet.server.is.not.ready.yet = { $code_parakeet } server is not ready yet.
+
+journal.cli.transcribe.error.cpp.response.has.text.but.no.word.timings = response has text but no word timings
+
+journal.cli.transcribe.error.cpp.response.json.was.invalid.error = response { $code_json } was invalid: { $error }
+
+journal.cli.transcribe.error.cpp.response.json.was.not.an.object = response { $code_json } was not an object
+
+journal.cli.transcribe.error.cpp.response.missing.top.level.words = response missing top-level { $code_words }
+
+journal.cli.transcribe.error.cpp.tls.is.required = { $code_tls } is required
+
+journal.cli.transcribe.error.cpp.transcription.request.timed.out = transcription request timed out
+
+journal.cli.transcribe.error.cpp.word.timing.contains.invalid.numeric.value = word timing contains invalid numeric value
+
+journal.cli.transcribe.error.cpp.word.timing.item.must.be.an.object = word timing item must be an object
+
+journal.cli.transcribe.error.cpp.word.timing.missing.key.key = word timing missing key: { $key }
+
+journal.cli.transcribe.error.cpp.word.timing.text.was.blank = word timing text was blank
+
+journal.cli.transcribe.error.input.inspect = could not inspect input { $path }: { $detail }
+
+journal.cli.transcribe.error.orphan = could not remove orphan { $code_npz } { $path }: { $detail }
+
+journal.cli.transcribe.error.payload.parent = transcript destination has no parent
+
+journal.cli.transcribe.error.process.admission = hosted launch admission failed: { $reason }
+
+journal.cli.transcribe.error.process.capability = host capability unavailable: { $needed }
+
+journal.cli.transcribe.error.process.command = cannot spawn an empty command
+
+journal.cli.transcribe.error.process.confirm = post-spawn confirmation failed for pid { $pid }: { $error }
+
+journal.cli.transcribe.error.process.explicit = this authority is not explicitly unowned
+
+journal.cli.transcribe.error.process.identity = failed to capture birth-bound identity for spawned pid { $pid }
+
+journal.cli.transcribe.error.process.log = failed to prepare operational log: { $error }
+
+journal.cli.transcribe.error.process.output = child output is unavailable
+
+journal.cli.transcribe.error.process.spawn = failed to spawn child: { $error }
+
+journal.cli.transcribe.error.process.terminate = failed to terminate child: { $error }
+
+journal.cli.transcribe.error.process.unowned.reason = { $code_explicitlyunowned } reason must be nonempty
+
+journal.cli.transcribe.error.publish.output = { $code_output_jsonl_path } is required
+
+journal.cli.transcribe.error.publish.parent = output has no parent
+
+journal.cli.transcribe.error.publish.raw = { $code_header_raw } is required
+
+journal.cli.transcribe.error.publish.sibling = processing raw must be a sibling filename
+
+journal.cli.transcribe.error.speaker.analysis = speaker analysis failed: { $stage }/{ $reason }
+
+journal.cli.transcribe.error.statement.field = full transcript statement has no valid { $field }
+
+journal.cli.transcribe.error.terminal.payload = could not prepare terminal payload: { $detail }
+
+journal.cli.transcribe.error.terminal.payload.path = could not prepare or remove terminal payload { $path }: { $detail }
+
+journal.cli.transcribe.error.terminal.request = could not serialize terminal writer request: { $detail }
+
+journal.cli.transcribe.error.transcript.payload = could not prepare transcript payload: { $detail }
+
+journal.cli.transcribe.error.transcript.payload.path = could not prepare or remove transcript payload { $path }: { $detail }
+
+journal.cli.transcribe.error.transcript.request = could not serialize transcript writer request: { $detail }
+
+journal.cli.transcribe.error.vad.contract.exit = { $code_vad } helper contract error (exit { $code }): { $detail }
+
+journal.cli.transcribe.error.vad.contract.exit.stderr = { $code_vad } helper contract error (exit { $code }): { $detail }: { $stderr }
+
+journal.cli.transcribe.error.vad.contract.signal = { $code_vad } helper contract error (no exit code): { $detail }
+
+journal.cli.transcribe.error.vad.contract.signal.stderr = { $code_vad } helper contract error (no exit code): { $detail }: { $stderr }
+
+journal.cli.transcribe.error.vad.could.not.create.vad.input.directory.error = could not create { $code_vad } input directory: { $error }
+
+journal.cli.transcribe.error.vad.could.not.remove.vad.input.directory.error = could not remove { $code_vad } input directory: { $error }
+
+journal.cli.transcribe.error.vad.could.not.remove.vad.input.directory.input.remains.in = could not remove { $code_vad } input directory: input remains in use
+
+journal.cli.transcribe.error.vad.could.not.send.vad.request.error = could not send { $code_vad } request: { $error }
+
+journal.cli.transcribe.error.vad.could.not.serialize.vad.request.error = could not serialize { $code_vad } request: { $error }
+
+journal.cli.transcribe.error.vad.error.empty = { $code_vad } error response was empty
+
+journal.cli.transcribe.error.vad.error.many = { $code_vad } error response contained more than one line
+
+journal.cli.transcribe.error.vad.error.utf8 = { $code_vad } error response was not { $code_utf_8 }: { $error }
+
+journal.cli.transcribe.error.vad.helper = { $code_vad } helper { $reason } (exit { $code }): { $detail }
+
+journal.cli.transcribe.error.vad.launch.failed = could not launch { $code_vad } helper { $path }: { $detail }
+
+journal.cli.transcribe.error.vad.response.empty = { $code_vad } response was empty
+
+journal.cli.transcribe.error.vad.response.many = { $code_vad } response contained more than one line
+
+journal.cli.transcribe.error.vad.response.utf8 = { $code_vad } response was not { $code_utf_8 }: { $error }
+
+journal.cli.transcribe.error.vad.vad.error.response.lacks.schema.reason.or.detail = { $code_vad } error response lacks schema, reason, or detail
+
+journal.cli.transcribe.error.vad.vad.error.response.must.be.an.object = { $code_vad } error response must be an object
+
+journal.cli.transcribe.error.vad.vad.error.response.violates.its.schema = { $code_vad } error response violates its schema
+
+journal.cli.transcribe.error.vad.vad.error.response.was.not.json.error = { $code_vad } error response was not { $code_json }: { $error }
+
+journal.cli.transcribe.error.vad.vad.helper.stdin.was.unavailable = { $code_vad } helper { $code_stdin } was unavailable
+
+journal.cli.transcribe.error.vad.vad.helper.terminated.without.an.exit.code = { $code_vad } helper terminated without an exit code
+
+journal.cli.transcribe.error.vad.vad.response.has.an.unknown.schema = { $code_vad } response has an unknown schema
+
+journal.cli.transcribe.error.vad.vad.response.has.no.boolean.has.speech = { $code_vad } response has no boolean { $code_has_speech }
+
+journal.cli.transcribe.error.vad.vad.response.has.no.non.empty.field = { $code_vad } response has no non-empty { $field }
+
+journal.cli.transcribe.error.vad.vad.response.has.no.non.negative.finite.field = { $code_vad } response has no non-negative finite { $field }
+
+journal.cli.transcribe.error.vad.vad.response.has.no.speech.array = { $code_vad } response has no speech array
+
+journal.cli.transcribe.error.vad.vad.response.must.be.an.object = { $code_vad } response must be an object
+
+journal.cli.transcribe.error.vad.vad.response.was.not.json.error = { $code_vad } response was not { $code_json }: { $error }
+
+journal.cli.transcribe.error.vad.vad.speech.entry.ends.before.it.starts = { $code_vad } speech entry ends before it starts
+
+journal.cli.transcribe.error.vad.vad.speech.entry.has.no.valid.field.sample.index = { $code_vad } speech entry has no valid { $field } sample index
+
+journal.cli.transcribe.error.vad.vad.speech.entry.must.be.an.object = { $code_vad } speech entry must be an object
+
+journal.cli.transcribe.error.vad.wait.failed = could not wait for { $code_vad } helper: { $detail }
+
+journal.cli.transcribe.error.vad.write = could not write { $code_vad } input: { $detail }
+
+journal.cli.transcribe.error.voice.wait = voice-only transcription is waiting: { $detail }
+
+journal.cli.transcribe.error.windows.admission.deadline.exceeded = bounded helper admission did not complete before its deadline
+
+journal.cli.transcribe.error.windows.blocked = { $detail }; prior helper cleanup blocks admission: { $blockers }
+
+journal.cli.transcribe.error.windows.cancelled = bounded helper was cancelled
+
+journal.cli.transcribe.error.windows.cleanup = { $detail }; cleanup was incomplete at return: { $cleanup }
+
+journal.cli.transcribe.error.windows.cleanup.blocked = { $detail }; cleanup was incomplete at return: { $cleanup }; prior helper cleanup blocks admission: { $blockers }
+
+journal.cli.transcribe.error.windows.cleanup.contended = bounded helper cleanup admission is contended
+
+journal.cli.transcribe.error.windows.cleanup.pending = earlier bounded helper cleanup blocks admission
+
+journal.cli.transcribe.error.windows.current.directory.not.directory = bounded helper current directory is not a directory
+
+journal.cli.transcribe.error.windows.current.directory.outside.package = bounded helper current directory is outside its package root
+
+journal.cli.transcribe.error.windows.current.directory.unavailable = bounded helper current directory could not be canonicalized
+
+journal.cli.transcribe.error.windows.deadline.exceeded = bounded helper did not complete before its deadline
+
+journal.cli.transcribe.error.windows.executable.not.file = bounded helper executable is not a regular file
+
+journal.cli.transcribe.error.windows.executable.outside.package = bounded helper executable is outside its package root
+
+journal.cli.transcribe.error.windows.executable.unavailable = bounded helper executable could not be canonicalized
+
+journal.cli.transcribe.error.windows.input.limit.exceeded = bounded helper input exceeds its declared byte limit
+
+journal.cli.transcribe.error.windows.input.write.failed = bounded helper input writer failed
+
+journal.cli.transcribe.error.windows.io.worker.start.failed = bounded helper { $stream } { $code_i_o } worker could not start
+
+journal.cli.transcribe.error.windows.job.not.quiescent = bounded helper completion did not establish Job quiescence
+
+journal.cli.transcribe.error.windows.launch.failed = bounded helper failed before an owned child identity was available
+
+journal.cli.transcribe.error.windows.launch.finalization.failed = native launch finalization failed: { $detail }
+
+journal.cli.transcribe.error.windows.missing.system.root = bounded helper environment must contain a nonempty { $code_systemroot }
+
+journal.cli.transcribe.error.windows.output.limit.exceeded = bounded helper { $stream } output exceeded its declared byte limit
+
+journal.cli.transcribe.error.windows.output.read.failed = bounded helper { $stream } output reader failed
+
+journal.cli.transcribe.error.windows.package.root.unavailable = bounded helper package root could not be canonicalized
+
+journal.cli.transcribe.error.windows.path.environment.refused = bounded helper environment may not contain { $code_path }
+
+journal.cli.transcribe.error.windows.path.not.representable = bounded helper path cannot be represented by the managed Windows command boundary
+
+journal.cli.transcribe.error.windows.process.observation.failed = bounded helper process observation failed
+
+journal.cli.transcribe.error.windows.zero.limit = bounded helper { $stream } byte limit must be nonzero
+
+journal.cli.transcribe.error.windows.zero.timeout = bounded helper timeout must be nonzero
+
+journal.cli.transcribe.error.writer.base.time.us.of.day.is.outside.a.day = { $code_base_time_us_of_day } is outside a day
+
+journal.cli.transcribe.error.writer.byte.count.does.not.match.shape = { $code_byte_count } does not match shape
+
+journal.cli.transcribe.error.writer.byte.count.is.too.large = { $code_byte_count } is too large
+
+journal.cli.transcribe.error.writer.cancelled = transcript publication was cancelled before admission
+
+journal.cli.transcribe.error.writer.destination = destination already exists: { $path }
+
+journal.cli.transcribe.error.writer.dtype.must.be.float32.le = { $code_dtype } must be { $code_float32_le }
+
+journal.cli.transcribe.error.writer.duration.and.noisy.must.be.provided.together = duration and noisy must be provided together
+
+journal.cli.transcribe.error.writer.durations.s.count.does.not.match.shape = { $code_durations_s } count does not match shape
+
+journal.cli.transcribe.error.writer.durations.s.must.be.finite.f32.values = { $code_durations_s } must be finite { $code_f32 } values
+
+journal.cli.transcribe.error.writer.encoder.must.be.nonempty = encoder must be nonempty
+
+journal.cli.transcribe.error.writer.field.must.be.a.boolean = { $field } must be a boolean
+
+journal.cli.transcribe.error.writer.field.must.be.a.finite.number = { $field } must be a finite number
+
+journal.cli.transcribe.error.writer.field.must.be.a.string = { $field } must be a string
+
+journal.cli.transcribe.error.writer.field.must.be.an.array = { $field } must be an array
+
+journal.cli.transcribe.error.writer.field.must.be.an.integer = { $field } must be an integer
+
+journal.cli.transcribe.error.writer.field.must.be.an.unsigned.integer = { $field } must be an unsigned integer
+
+journal.cli.transcribe.error.writer.header.numbers.must.be.finite = header numbers must be finite
+
+journal.cli.transcribe.error.writer.id.range = id must be in { $code_1_i32_max }
+
+journal.cli.transcribe.error.writer.invalid.f32.payload.chunk = invalid { $code_f32 } payload chunk
+
+journal.cli.transcribe.error.writer.jsonl.path.and.npz.path.must.be.sibling.files = { $code_jsonl_path } and { $code_npz_path } must be sibling files sharing a stem
+
+journal.cli.transcribe.error.writer.missing.required.field.key = missing required field { $key }
+
+journal.cli.transcribe.error.writer.noisy.s.is.required.when.noisy.rms.is.present = { $code_noisy_s } is required when { $code_noisy_rms } is present
+
+journal.cli.transcribe.error.writer.npz.cancelled = cancelled
+
+journal.cli.transcribe.error.writer.npz.count = { $code_npz } has an unexpected member count
+
+journal.cli.transcribe.error.writer.npz.members = { $code_npz } members do not match the transcript sidecar contract
+
+journal.cli.transcribe.error.writer.npz.missing = { $code_npz } member { $name } is missing
+
+journal.cli.transcribe.error.writer.npz.parent = npz destination has no parent
+
+journal.cli.transcribe.error.writer.npz.readback = { $code_npz } member { $name } did not round-trip
+
+journal.cli.transcribe.error.writer.output.path.has.no.parent = output path has no parent
+
+journal.cli.transcribe.error.writer.output.paths.must.be.nonempty = output paths must be nonempty
+
+journal.cli.transcribe.error.writer.payload.finite = embedding payload is non-finite at row { $row }, column { $column }
+
+journal.cli.transcribe.error.writer.payload.format.must.be.raw.f32le.row.major.v1 = { $code_payload_format } must be { $code_raw_f32le_row_major_v1 }
+
+journal.cli.transcribe.error.writer.payload.size.does.not.match.byte.count = payload size does not match { $code_byte_count }
+
+journal.cli.transcribe.error.writer.prior.jsonl.snapshot.is.missing = prior jsonl snapshot is missing
+
+journal.cli.transcribe.error.writer.prior.npz.snapshot.is.missing = prior npz snapshot is missing
+
+journal.cli.transcribe.error.writer.prior.restore.refused = prior restore refused
+
+journal.cli.transcribe.error.writer.private.stage.is.missing = private stage is missing
+
+journal.cli.transcribe.error.writer.private.transcript.copy.did.not.match.the.staged.file = private transcript copy did not match the staged file
+
+journal.cli.transcribe.error.writer.private.transcript.jsonl.is.missing = private transcript jsonl is missing
+
+journal.cli.transcribe.error.writer.rounded.header.number.is.not.json.representable = rounded header number is not { $code_json }-representable
+
+journal.cli.transcribe.error.writer.schema = unknown schema: { $schema }
+
+journal.cli.transcribe.error.writer.segment.meta.must.be.an.object = { $code_segment_meta } must be an object
+
+journal.cli.transcribe.error.writer.shape.byte.count.overflows = shape byte count overflows
+
+journal.cli.transcribe.error.writer.shape.must.be.row.count.width = shape must be { $code_row_count_256 }
+
+journal.cli.transcribe.error.writer.shape.row.count.is.too.large = shape row count is too large
+
+journal.cli.transcribe.error.writer.speaker.evidence.multi.fraction.is.required.with.speaker.evidence = { $code_speaker_evidence_multi_fraction } is required with { $code_speaker_evidence }
+
+journal.cli.transcribe.error.writer.speaker.evidence.version.is.required.with.speaker.evidence = { $code_speaker_evidence_version } is required with { $code_speaker_evidence }
+
+journal.cli.transcribe.error.writer.speaker.must.be.a.string.integer.null.or.absent = speaker must be a string, integer, null, or absent
+
+journal.cli.transcribe.error.writer.speech.loud.windows.is.required.when.loud.windows.is = { $code_speech_loud_windows } is required when { $code_loud_windows } is positive
+
+journal.cli.transcribe.error.writer.stage.path.already.exists = stage path already exists
+
+journal.cli.transcribe.error.writer.stage.path.is.a.symlink = stage path is a symlink
+
+journal.cli.transcribe.error.writer.stage.path.is.not.a.private.directory = stage path is not a private directory
+
+journal.cli.transcribe.error.writer.stale.npz.unlink.refused = stale npz unlink refused
+
+journal.cli.transcribe.error.writer.statement = statement { $index }: { $detail }
+
+journal.cli.transcribe.error.writer.statement.duplicate = statement { $index } duplicates id { $id }
+
+journal.cli.transcribe.error.writer.statement.id.is.not.a.transcript.statement.id = statement ID is not a transcript statement ID
+
+journal.cli.transcribe.error.writer.statement.id.is.outside.i32 = statement ID is outside { $code_i32 }
+
+journal.cli.transcribe.error.writer.statement.id.missing = statement { $index } is missing id
+
+journal.cli.transcribe.error.writer.statement.ids.count.does.not.match.shape = { $code_statement_ids } count does not match shape
+
+journal.cli.transcribe.error.writer.statement.ids.must.be.unique = statement IDs must be unique
+
+journal.cli.transcribe.error.writer.statement.text.ended.before.its.trimmed.length = statement text ended before its trimmed length
+
+journal.cli.transcribe.error.writer.statement.text.is.not.valid.utf8 = statement text is not valid { $code_utf_8 }
+
+journal.cli.transcribe.error.writer.text.must.be.a.nonempty.string = text must be a nonempty string
+
+journal.cli.transcribe.error.writer.turn.audio.duration.s.must.be.non.negative = { $code_audio_duration_s } must be non-negative
+
+journal.cli.transcribe.error.writer.turn.boundary.suspect.must.be.true.if.present = { $code_turn_boundary_suspect } must be true if present
+
+journal.cli.transcribe.error.writer.turn.expected.version.expected.got.version = expected version { $expected }, got { $version }
+
+journal.cli.transcribe.error.writer.turn.field.is.missing = { $field } is missing
+
+journal.cli.transcribe.error.writer.turn.field.must.be.finite = { $field } must be finite
+
+journal.cli.transcribe.error.writer.turn.invalid = invalid { $code_speaker_turn_evidence }: { $detail }
+
+journal.cli.transcribe.error.writer.turn.range.index.end.s.end.s.exceeds.audio = range { $index } { $code_end_s } { $end_s } exceeds { $code_audio_duration_s } { $audio_duration_s }
+
+journal.cli.transcribe.error.writer.turn.range.index.has.unexpected.keys = range { $index } has unexpected keys
+
+journal.cli.transcribe.error.writer.turn.range.index.is.an.exact.duplicate = range { $index } is an exact duplicate
+
+journal.cli.transcribe.error.writer.turn.range.index.is.inverted.start.s.start.s = range { $index } is inverted: { $code_start_s } { $start_s } > { $code_end_s } { $end_s }
+
+journal.cli.transcribe.error.writer.turn.range.index.must.be.an.object = range { $index } must be an object
+
+journal.cli.transcribe.error.writer.turn.range.index.start.s.must.be.non.negative = range { $index } { $code_start_s } must be non-negative
+
+journal.cli.transcribe.error.writer.turn.ranges.must.be.an.array = ranges must be an array
+
+journal.cli.transcribe.error.writer.turn.ranges.must.be.sorted.range.index.is.out = ranges must be sorted: range { $index } is out of order
+
+journal.cli.transcribe.error.writer.turn.speaker.turns.evidence.has.unexpected.keys = speaker turns evidence has unexpected keys
+
+journal.cli.transcribe.error.writer.turn.speaker.turns.evidence.must.be.an.object = speaker turns evidence must be an object
+
+journal.cli.transcribe.error.writer.turn.version.must.be.a.string = version must be a string
+
+journal.cli.transcribe.error.writer.zip.central.extra.at.extra.at.error = central extra at { $extra_at }: { $error }
+
+journal.cli.transcribe.error.writer.zip.central.header.at.central.header.start.error = central header at { $central_header_start }: { $error }
+
+journal.cli.transcribe.error.writer.zip.central.name.at.name.at.error = central name at { $name_at }: { $error }
+
+journal.cli.transcribe.error.writer.zip.central.record.extends.beyond.archive = central record extends beyond archive
+
+journal.cli.transcribe.error.writer.zip.central.signature.at.central.header.start = central signature at { $central_header_start }
+
+journal.cli.transcribe.error.writer.zip.cp437.scalar = { $code_cp437 } scalar
+
+journal.cli.transcribe.error.writer.zip.flagged.name.is.not.utf8 = flagged name is not { $code_utf_8 }
+
+journal.cli.transcribe.error.writer.zip.local.header.at.header.start.error = local header at { $header_start }: { $error }
+
+journal.cli.transcribe.error.writer.zip.local.signature.at.header.start = local signature at { $header_start }
+
+journal.cli.transcribe.error.writer.zip.raw.and.exposed.central.populations.disagree = raw and exposed central populations disagree
+
+journal.cli.transcribe.error.writer.zip.raw.central.member.was.lost.from.the.zip = raw central member was lost from the ZIP index
+
+journal.cli.transcribe.error.writer.zip.repeated.exposed.central.coordinate = repeated exposed central coordinate
+
+journal.cli.transcribe.error.writer.zip.unicode.path.extra.crc.mismatch = unicode path extra crc mismatch
+
+journal.cli.transcribe.error.writer.zip.unicode.path.extra.is.not.utf8 = unicode path extra is not { $code_utf_8 }
+
+journal.cli.transcribe.error.writer.zip.unicode.path.extra.too.small = unicode path extra too small
+
+journal.cli.transcribe.error.writer.zip.unproved = zip member { $index } name unproved: { $detail }
+
+journal.cli.transcribe.error.writer.zip.unreadable = zip archive unreadable: { $detail }
+
+journal.cli.transcribe.error.writer.zip.zip.member.name.collision.name = zip member name collision: { $name }
+
+journal.cli.transcribe.help = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $syntax_continuation_3 }{ $line_break }{ $line_break }Transcribe audio files using pluggable { $stt } and native speaker analysis{ $line_break }{ $line_break }positional arguments:{ $line_break }  { $input }            Path to audio file in journal segment directory, e.g.{ $line_break }                        { $sample }{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_12 }show this help message and exit{ $line_break }{ $indent_2 }{ $all_option }{ $gap_17 }Batch-transcribe all unprocessed audio segments in the{ $line_break }                        journal{ $line_break }{ $indent_2 }{ $redo_option }{ $gap_16 }Reprocess file, overwriting existing outputs{ $line_break }{ $syntax_continuation_16 }{ $line_break }                        { $stt } backend to use (overrides config and resource-{ $line_break }                        aware auto default){ $line_break }{ $indent_2 }{ $verbose_option }{ $gap_9 }Enable verbose output{ $line_break }{ $indent_2 }{ $debug_option }{ $gap_11 }Enable debug logging
+
+journal.cli.transcribe.installation.capability.mismatch = generation capability does not match the current installation
+
+journal.cli.transcribe.installation.coded = { $code }: { $detail }
+
+journal.cli.transcribe.installation.fd.platform = { $fd }: unsupported platform
+
+journal.cli.transcribe.installation.grant.kind = unexpected generation grant kind
+
+journal.cli.transcribe.installation.grant.required = authenticated generation grant is missing or duplicated
+
+journal.cli.transcribe.installation.helper.parent = { $helper }: current executable has no parent directory
+
+journal.cli.transcribe.installation.id.encoding = non-{ $unicode } generation ID
+
+journal.cli.transcribe.installation.lock.kind = generation lock is not an ordinary file
+
+journal.cli.transcribe.installation.metadata.malformed = malformed generation metadata
+
+journal.cli.transcribe.installation.metadata.partial = partial generation metadata
+
+journal.cli.transcribe.installation.metadata.required = generation metadata is missing
+
+journal.cli.transcribe.installation.metadata.unverified = generation metadata has no authenticated launch capability
+
+journal.cli.transcribe.installation.obsolete = obsolete { $windows } generation descriptor marker
+
+journal.cli.transcribe.installation.platform = { $code }: { $platform }/{ $architecture }
+
+journal.cli.transcribe.installation.provenance = generation launch provenance does not match this root
+
+journal.cli.transcribe.installation.stamp = { $code }: { $path }: { $error }
+
+journal.cli.transcribe.installation.token.encoding = non-{ $unicode } generation token
+
+journal.cli.transcribe.selection.conflict = { $all_flag } and { $input } are mutually exclusive
+
+journal.cli.transcribe.selection.missing = provide { $input } or { $all_flag }
+
+journal.cli.transcribe.sound.all.windows.failed = sound tagging failed for all windows: { $detail }
+
+journal.cli.transcribe.sound.engine.absent = ced engine is not installed
+
+journal.cli.transcribe.sound.failed = sound tagging failed: { $error }
+
+journal.cli.transcribe.sound.helper.executable = ced helper binary is not executable: { $path }
+
+journal.cli.transcribe.sound.helper.exit = ced helper exited { $code }: { $stderr }
+
+journal.cli.transcribe.sound.helper.io = ced helper I/O failed: { $detail }
+
+journal.cli.transcribe.sound.helper.large = ced response exceeded 64 MiB
+
+journal.cli.transcribe.sound.helper.missing = ced helper binary is missing: { $path }
+
+journal.cli.transcribe.sound.helper.parent = current executable has no parent directory
+
+journal.cli.transcribe.sound.helper.response = ced helper response was not valid JSON: { $detail }
+
+journal.cli.transcribe.sound.helper.spawn = ced helper could not start: { $detail }
+
+journal.cli.transcribe.sound.helper.timeout = ced helper did not exit within { $timeout }
+
+journal.cli.transcribe.sound.helper.unresolved = ced helper unresolved: { $detail }
+
+journal.cli.transcribe.sound.helper.windows = CED requires the Windows host caller
+
+journal.cli.transcribe.sound.package.platform = unsupported CED platform { $os }/{ $arch }
+
+journal.cli.transcribe.sound.package.windows.runtime = Windows CED package verification requires a Windows runtime
+
+journal.cli.transcribe.sound.prepare = sound tagging could not prepare audio: { $error }
+
+journal.cli.transcribe.sound.probe.helper.exit = ced probe helper exited { $code }: { $stderr }
+
+journal.cli.transcribe.sound.probe.helper.unexpected = ced probe helper returned an unexpected response: { $response }
+
+journal.cli.transcribe.sound.probe.unexpected = ced probe returned an unexpected response: { $response }
+
+journal.cli.transcribe.sound.schema = sound tagging returned an unexpected response schema
+
+journal.cli.transcribe.sound.unsupported = sound tagger disabled: ced assets unsupported on { $os }/{ $arch }
+
+journal.cli.transcribe.sound.window.count = sound tagging returned an unexpected window count
+
+journal.cli.transcribe.sound.window.ok = sound tagging returned a window missing an { $field } field
+
+journal.cli.transcribe.sound.windows.launch = CED helper launch failed: { $error }
+
+journal.cli.transcribe.sound.windows.library = CED request library does not match the signed package
+
+journal.cli.transcribe.sound.windows.package.bin = running executable is not in the package bin directory
+
+journal.cli.transcribe.sound.windows.package.member = signed CED app payload refuses { $member }: { $error }
+
+journal.cli.transcribe.sound.windows.package.parent = running executable has no containing directory
+
+journal.cli.transcribe.sound.windows.package.root = package bin directory has no package root
+
+journal.cli.transcribe.sound.windows.probe = CED helper returned an invalid probe response
+
+journal.cli.transcribe.sound.windows.root = { $variable } is not set
+
+journal.cli.transcribe.sound.windows.signed = Windows CED requires the signed package helper and its declared command
+
+journal.cli.transcribe.stage.confidential.cap = audio is { $seconds }s and would send { $bytes } bytes; confidential STT accepts at most { $limit } bytes
+
+journal.cli.transcribe.stage.confidential.verification.clear = confidential transcription verification was not cleared for { $path }: { $error }
+
+journal.cli.transcribe.stage.confidential.verification.record = confidential transcription verification was not recorded for { $path }: { $error }
+
+journal.cli.transcribe.stage.embedded.missing.draft = recognize walk has no draft spool
+
+journal.cli.transcribe.stage.embedded.range.missing = merged turn range is missing
+
+journal.cli.transcribe.stage.embedded.scratch = could not create embedded scratch: { $error }
+
+journal.cli.transcribe.stage.output.parent = transcript path has no parent
+
+journal.cli.transcribe.stage.owner.deleted.unrecorded = voice-only original deleted but deletion event was not recorded
+
+journal.cli.transcribe.stage.owner.helper.outdated = the speaker-analysis helper predates overlap ranges or speaker turns
+
+journal.cli.transcribe.stage.owner.not.deleted = voice-only original not deleted now: { $outcome }
+
+journal.cli.transcribe.stage.owner.save.or.disable = save a voice in Speakers, or turn off { $setting }
+
+journal.cli.transcribe.stage.owner.save.to.finish = save a voice in Speakers to finish this filtered recording
+
+journal.cli.transcribe.usage.error = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $syntax_continuation_3 }{ $line_break }{ $command }: error: { $message }

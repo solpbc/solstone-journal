@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer header numbers must be finite.",
+  "context": "Journal command-line text for error writer header numbers must be finite.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f54ce7f8835e101fc84a1f1b0bf7949cd54dd1cac419c24e4c58d7e41af65f03",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

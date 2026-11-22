@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for summary.",
+  "context": "Journal command-line text for summary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "processed",
+      "type": "string"
+    },
+    {
+      "name": "skipped",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "08c8605b79a8c0c1ffdba8f1167079db7bbbd71d8e0bc93a4d2a373ca807caa0",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

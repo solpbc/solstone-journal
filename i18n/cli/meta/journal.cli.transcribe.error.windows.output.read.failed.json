@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error windows output read failed.",
+  "context": "Journal command-line text for error windows output read failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b0e7d5a3c82d9455a0f3134a674c5f695424c2b491f2967b0d6d6abc4ea7d201",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

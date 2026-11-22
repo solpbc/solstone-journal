@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error vad vad speech entry must be an object.",
+  "context": "Journal command-line text for error vad vad speech entry must be an object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "07b0fcc532b27f555742f7c43186d07a3ffd6b90ac3a5f4c5a5afcbdd2ab53f0",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

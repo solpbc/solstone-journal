@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error speaker analysis.",
+  "context": "Journal command-line text for error speaker analysis.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stage",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b9f010695d5a78dc66ed8ad04b08e86b35f8be20f06258a9a1508962c4c30d8e",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

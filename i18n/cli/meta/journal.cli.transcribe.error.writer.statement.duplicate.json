@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error writer statement duplicate.",
+  "context": "Journal command-line text for error writer statement duplicate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    },
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cff2bc0b6a086beca3d28de26884af60a07afe38c6fcc55bbb1df9bdcb232563",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

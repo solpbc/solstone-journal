@@ -3,6 +3,8 @@
 
 //! Windows CED transport; local retains model/digest and verdict authority.
 
+use solstone_core_cli_copy::MessageDetail;
+use solstone_core_local::install::capability_status::CapabilityDetail;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::Path;
@@ -11,7 +13,7 @@ use std::time::Duration;
 pub use solstone_core_system::process::BoundedHelperResources;
 
 use serde_json::{Value, json};
-use solstone_core_local::install::ced_readiness::verified_windows_ced_package;
+use solstone_core_local::install::ced_readiness::verified_windows_ced_package_detail;
 use solstone_core_local::install::ced_runtime::{
     CED_ANALYZE_TIMEOUT, CED_PROBE_COMMAND, CedAnalyzeError, CedAnalyzeProgram,
 };
@@ -20,8 +22,9 @@ use solstone_core_system::process::{
     run_bounded_helper,
 };
 
-pub(crate) fn probe(library: &Path, model: &Path) -> Result<(), String> {
-    let response = invoke(
+pub(crate) fn probe(locale: &str, library: &Path, model: &Path) -> Result<(), CapabilityDetail> {
+    let response = invoke_in(
+        locale,
         &CedAnalyzeProgram::SiblingHelper,
         &[CED_PROBE_COMMAND],
         &json!({"schema": "solstone-ced-probe-request-v1", "models": {
@@ -30,11 +33,14 @@ pub(crate) fn probe(library: &Path, model: &Path) -> Result<(), String> {
         CED_ANALYZE_TIMEOUT,
         solstone_core_system::process::BoundedHelperResources::new(),
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| CapabilityDetail::from(error.detail()))?;
     if response.get("schema").and_then(Value::as_str) != Some("solstone-ced-probe-response-v1")
         || response.get("ok") != Some(&Value::Bool(true))
     {
-        return Err("CED helper returned an invalid probe response".to_owned());
+        return Err(CapabilityDetail::message(
+            "journal.cli.transcribe.sound.windows.probe",
+            [],
+        ));
     }
     Ok(())
 }
@@ -46,16 +52,33 @@ pub fn invoke(
     timeout: Duration,
     resources: BoundedHelperResources,
 ) -> Result<Value, CedAnalyzeError> {
+    invoke_in(
+        solstone_core_cli_copy::ENGLISH,
+        program,
+        leading_args,
+        request,
+        timeout,
+        resources,
+    )
+}
+
+pub fn invoke_in(
+    locale: &str,
+    program: &CedAnalyzeProgram,
+    leading_args: &[&str],
+    request: &Value,
+    timeout: Duration,
+    resources: BoundedHelperResources,
+) -> Result<Value, CedAnalyzeError> {
     if !matches!(program, CedAnalyzeProgram::SiblingHelper)
         || (!leading_args.is_empty() && leading_args != [CED_PROBE_COMMAND])
     {
         return Err(CedAnalyzeError::Unresolved {
-            detail: "Windows CED requires the signed package helper and its declared command"
-                .to_owned(),
+            detail: MessageDetail::message("journal.cli.transcribe.sound.windows.signed", []),
         });
     }
-    let package =
-        verified_windows_ced_package().map_err(|detail| CedAnalyzeError::Unresolved { detail })?;
+    let package = verified_windows_ced_package_detail()
+        .map_err(|detail| CedAnalyzeError::Unresolved { detail })?;
     let requested_library = request
         .get("models")
         .and_then(|models| models.get("ced_library_path"))
@@ -67,16 +90,16 @@ pub fn invoke(
         )
     }) {
         return Err(CedAnalyzeError::Unresolved {
-            detail: "CED request library does not match the signed package".to_owned(),
+            detail: MessageDetail::message("journal.cli.transcribe.sound.windows.library", []),
         });
     }
     let system_root = std::env::var_os("SystemRoot").ok_or_else(|| CedAnalyzeError::Spawn {
-        detail: "SystemRoot is not set".to_owned(),
+        detail: MessageDetail::message("journal.cli.transcribe.sound.windows.root", []),
     })?;
     let mut request = request.clone();
     request["models"]["ced_library_path"] = json!(package.library);
     let stdin = serde_json::to_vec(&request).map_err(|error| CedAnalyzeError::Io {
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })?;
     // The helper re-verifies this same signed payload for itself before it
     // will load the engine, so it has to resolve the manifest pin the way we
@@ -112,9 +135,16 @@ pub fn invoke(
             quiescent: true, ..
         } if error.cleanup().is_none() => CedAnalyzeError::Timeout,
         _ => {
-            log::warn!("CED helper launch failed: {error:?}");
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.transcribe.sound.windows.launch",
+                    [("error", &format!("{error:?}"))]
+                )
+            );
             CedAnalyzeError::Spawn {
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             }
         }
     })?;
@@ -125,6 +155,6 @@ pub fn invoke(
         });
     }
     serde_json::from_slice(&output.stdout).map_err(|error| CedAnalyzeError::MalformedResponse {
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })
 }

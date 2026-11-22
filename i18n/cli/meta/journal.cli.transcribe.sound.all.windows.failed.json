@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sound all windows failed.",
+  "context": "Journal command-line text for sound all windows failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0b82e94594d22d8f37f75f17c3a52d598042a2fa81b4055bcf6d731935b6c602",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

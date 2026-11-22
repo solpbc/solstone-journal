@@ -216,7 +216,7 @@ fn successful_package_classification_returns_tags_and_no_status() {
 fn unloadable_ready_verdict_degrades_tag_audio_to_none() {
     let readiness = CedVerdict::Degraded(CapabilityStatus::UnloadableOrUnrunnable {
         capability: "ced".to_owned(),
-        detail: "stub: engine refused to load".to_owned(),
+        detail: "stub: engine refused to load".into(),
     });
     let (tags, status) = tag_audio_with_readiness_and_program(
         &enough_audio(),

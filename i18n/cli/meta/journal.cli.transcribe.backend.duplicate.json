@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for backend duplicate.",
+  "context": "Journal command-line text for backend duplicate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7fa8ad7e2b5b402a9c2c551f08a3196e9a346da89770bdd8f9003e35931ba2ab",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "backend_flag",
+      "kind": "flag",
+      "value": "--backend"
+    }
+  ]
+}

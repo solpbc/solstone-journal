@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for error backend memory.",
+  "context": "Journal command-line text for error backend memory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "available",
+      "type": "string"
+    },
+    {
+      "name": "floor",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fc886de3b56b44765b7b621689091217819001366e1d4d4bb2893335874b1852",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_stt",
+      "kind": "accepted-input",
+      "value": "STT"
+    }
+  ]
+}

@@ -279,7 +279,7 @@ fn read_statement_ids(path: &Path) -> Result<Option<Vec<i64>>, Zip2NameFailure> 
         return Ok(None);
     };
     let archive = ZipArchive::new(file).map_err(|error| Zip2NameFailure::Unreadable {
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })?;
     let (mut archive, names) = prove_open_zip(archive)?;
     let Some(index) = names.iter().position(|name| name == "statement_ids.npy") else {
@@ -288,13 +288,13 @@ fn read_statement_ids(path: &Path) -> Result<Option<Vec<i64>>, Zip2NameFailure> 
     let mut member = archive
         .by_index(index)
         .map_err(|error| Zip2NameFailure::Unreadable {
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     let mut bytes = Vec::new();
     member
         .read_to_end(&mut bytes)
         .map_err(|error| Zip2NameFailure::Unreadable {
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     let Some(blob) = parse_npy(&bytes).ok() else {
         return Ok(None);
@@ -325,7 +325,7 @@ fn prove_open_zip<R: Read + Seek>(
         let entry = archive
             .by_index(index)
             .map_err(|error| Zip2NameFailure::Unreadable {
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             })?;
         coords.push((entry.header_start(), entry.central_header_start()));
     }
@@ -333,7 +333,7 @@ fn prove_open_zip<R: Read + Seek>(
     let mut reader = archive.into_inner();
     let names = prove_zip2_directory(&mut reader, central_start, &coords)?;
     let archive = ZipArchive::new(reader).map_err(|error| Zip2NameFailure::Unreadable {
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })?;
     Ok((archive, names))
 }

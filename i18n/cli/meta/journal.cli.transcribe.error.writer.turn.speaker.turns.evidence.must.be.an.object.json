@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer turn speaker turns evidence must be an object.",
+  "context": "Journal command-line text for error writer turn speaker turns evidence must be an object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "914c8ff57e4c8418dbdd457839c0c8c31e6e3adb910eec48267f70f43cfc7bf9",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

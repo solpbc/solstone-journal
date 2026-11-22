@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error writer speaker evidence multi fraction is required with speaker evidence.",
+  "context": "Journal command-line text for error writer speaker evidence multi fraction is required with speaker evidence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "13550b1a00d835d9eae55500c8c89e3a01882197e1475b952f2bea80d51f956f",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_speaker_evidence_multi_fraction",
+      "kind": "accepted-input",
+      "value": "speaker_evidence_multi_fraction"
+    },
+    {
+      "name": "code_speaker_evidence",
+      "kind": "accepted-input",
+      "value": "speaker_evidence"
+    }
+  ]
+}

@@ -85,7 +85,7 @@ pub fn probe_from_executable_in(
     {
         Ok(path) => probe_vad_runtime_in(&path, timeout, locale),
         Err(error) => VadRuntimeStatus::Unresolved {
-            cause: error.to_string(),
+            cause: error.render(locale),
         },
     }
 }
@@ -574,17 +574,23 @@ pub fn probe_vad_runtime_in(binary: &Path, timeout: Duration, locale: &str) -> V
             }
         }
         Err(error) => {
+            let debug = match &error {
+                OnnxHelperError::Admission(detail) => {
+                    format!("Admission({:?})", detail.render(locale))
+                }
+                other => format!("{other:?}"),
+            };
             log::warn!(
                 "{}",
                 solstone_core_cli_copy::display_for(
                     locale,
                     "journal.cli.doctor.vad.probe.log",
-                    [("error", &(format!("{error:?}")))]
+                    [("error", &debug)]
                 )
             );
             VadRuntimeStatus::Spawn {
                 path,
-                cause: error.to_string(),
+                cause: error.into_detail().render(locale),
             }
         }
     }

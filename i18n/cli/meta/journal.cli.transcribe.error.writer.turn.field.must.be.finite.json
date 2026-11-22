@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer turn field must be finite.",
+  "context": "Journal command-line text for error writer turn field must be finite.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e101ea5c086ce28838a817a2fe5fdda1aa37b0e4613eb2fbbe34d177037fc187",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

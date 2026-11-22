@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer turn boundary suspect must be true if present.",
+  "context": "Journal command-line text for error writer turn boundary suspect must be true if present.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "db414f65cb68709f0885845cb1a0098652c50ecdb9ab6bc3875e2724fdfe125f",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_turn_boundary_suspect",
+      "kind": "accepted-input",
+      "value": "turn_boundary_suspect"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for feed pool write.",
+  "context": "Journal command-line text for feed pool write.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "71ba1f59d49116a56452372f5b30710b7f4fde31fe1e3c5c44eda78f844cb902",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

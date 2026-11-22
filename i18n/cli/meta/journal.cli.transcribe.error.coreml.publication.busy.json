@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error coreml publication busy.",
+  "context": "Journal command-line text for error coreml publication busy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "60e2aa355b5a7d213e17cac03b79ae0e9a60afd8f6cb977fcd39183ac56037c5",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_parakeet",
+      "kind": "accepted-input",
+      "value": "parakeet"
+    },
+    {
+      "name": "code_coreml",
+      "kind": "accepted-input",
+      "value": "CoreML"
+    }
+  ]
+}

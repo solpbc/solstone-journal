@@ -312,7 +312,7 @@ fn io_error(audio: &Path, error: std::io::Error) -> TranscribeError {
     } else {
         TranscribeError::TranscriptPayload {
             path: Some(audio.to_path_buf()),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         }
     }
 }

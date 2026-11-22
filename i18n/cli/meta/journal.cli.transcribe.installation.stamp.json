@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for installation stamp.",
+  "context": "Journal command-line text for installation stamp.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e25d6c7564ac94e0801ee2753f9ae18a6184447e77e06dd293c4301b06d27593",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code",
+      "kind": "accepted-input",
+      "value": "proof-metadata"
+    }
+  ]
+}

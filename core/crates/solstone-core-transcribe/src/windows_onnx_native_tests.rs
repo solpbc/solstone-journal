@@ -209,7 +209,7 @@ fn installed_onnx_pin_refusal_precedes_helper_launch() {
         BoundedHelperResources::new(),
     );
     match result {
-        Err(OnnxHelperError::Admission(detail)) => assert_eq!(detail, expected_message),
+        Err(OnnxHelperError::Admission(detail)) => assert_eq!(detail.to_string(), expected_message),
         _ => panic!("exact pin refusal must precede helper launch"),
     }
     assert_eq!(std::fs::read(pin).unwrap(), original_pin);

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error process capability.",
+  "context": "Journal command-line text for error process capability.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "needed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e713a72883a1fe1f8d2de4b15bbd1d0c61823e50f32430b0b204ee2e438b400b",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

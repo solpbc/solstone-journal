@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error confidential word response was not json.",
+  "context": "Journal command-line text for error confidential word response was not json.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8b702dcceec71c6e5c0a8b335939de9b8a0869f2af2d430fd0bea16263c678a3",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

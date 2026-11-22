@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error process spawn.",
+  "context": "Journal command-line text for error process spawn.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "606eb3d75cb8000272e7503e0379a9575cc58063f08d33f724363bd98cb3a1da",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

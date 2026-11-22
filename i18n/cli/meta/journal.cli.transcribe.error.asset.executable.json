@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error asset executable.",
+  "context": "Journal command-line text for error asset executable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dbd23dc1e5268515c3a699806a9f0be2d9e1efb433fbd12c9429148b218b9fab",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

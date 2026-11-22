@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for audio missing.",
+  "context": "Journal command-line text for audio missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "absolute",
+      "type": "string"
+    },
+    {
+      "name": "relative",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d6c8eaa911f1a07a547ca3df6a1ab21726c8b8b684cdd54c7c31c58b86901b2f",
+  "max_length": 161,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

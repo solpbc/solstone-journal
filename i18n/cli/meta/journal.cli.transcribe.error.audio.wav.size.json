@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for error audio wav size.",
+  "context": "Journal command-line text for error audio wav size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "samples",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5e03fa1a13b153295ebe6f039e752a6ade0738a8d4aa0a6be577995ca95e915f",
+  "max_length": 212,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "samples",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "riff_u32",
+      "kind": "accepted-input",
+      "value": "RIFF u32"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows current directory unavailable.",
+  "context": "Journal command-line text for error windows current directory unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2627ebcf4ac272479c6858c9d239d243621a7debcf097c34a5a804dc053df85f",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

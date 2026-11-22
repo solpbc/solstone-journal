@@ -3,6 +3,7 @@
 
 //! CLI syntax, host preflight, and input guards without stage-machine wiring.
 
+use solstone_core_cli_copy::ENGLISH;
 use std::env;
 use std::fs;
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -12,8 +13,9 @@ use std::time::Duration;
 
 use crate::{TranscribeError, backend::KNOWN_BACKENDS};
 
-const SUPERVISOR_MESSAGE: &str =
-    "journal isn't running. start it with 'solstone journal up' and retry.";
+static SUPERVISOR_MESSAGE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    solstone_core_cli_copy::render_for(ENGLISH, "journal.cli.streams.supervisor", &[])
+});
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 const SUPERVISOR_TIMEOUT: Duration = Duration::from_millis(200);
 const SUPPORTED_AUDIO_FORMATS: [&str; 6] = [".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"];
@@ -79,7 +81,7 @@ impl CliError {
             | Self::SpeakersPrerequisite { message, .. }
             | Self::SpeakersStorageFull { message, .. }
             | Self::SpeakersGenerationHeld { message, .. } => Some(message),
-            Self::SupervisorUnavailable => Some(SUPERVISOR_MESSAGE),
+            Self::SupervisorUnavailable => Some(&SUPERVISOR_MESSAGE),
             Self::SupervisorSpawnedUnavailable => None,
         }
     }
@@ -87,6 +89,13 @@ impl CliError {
 
 /// Parse command-line syntax without performing semantic file validation.
 pub fn parse_arguments(
+    arguments: impl IntoIterator<Item = String>,
+) -> Result<ParsedArgs, CliError> {
+    parse_arguments_in(ENGLISH, arguments)
+}
+
+pub(crate) fn parse_arguments_in(
+    locale: &str,
     arguments: impl IntoIterator<Item = String>,
 ) -> Result<ParsedArgs, CliError> {
     let mut parsed = ParsedArgs {
@@ -101,25 +110,45 @@ pub fn parse_arguments(
             "--all" => parsed.all = true,
             "--redo" => parsed.redo = true,
             "--backend" => {
-                let backend = arguments
-                    .next()
-                    .ok_or_else(|| usage("argument --backend: expected one argument"))?;
+                let backend = arguments.next().ok_or_else(|| {
+                    usage(solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.think.argument.value",
+                        [("option", &"--backend")],
+                    ))
+                })?;
                 if !KNOWN_BACKENDS.contains(&backend.as_str()) {
-                    return Err(usage(&format!(
-                        "argument --backend: invalid choice: '{backend}' (choose from {})",
-                        KNOWN_BACKENDS.join(", ")
+                    return Err(usage(solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.transcribe.backend.choice",
+                        [
+                            ("backend", &(backend)),
+                            ("choices", &(KNOWN_BACKENDS.join(", "))),
+                        ],
                     )));
                 }
                 if parsed.backend.replace(backend).is_some() {
-                    return Err(usage("argument --backend: may only be specified once"));
+                    return Err(usage(solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.transcribe.backend.duplicate",
+                        &[],
+                    )));
                 }
             }
             option if option.starts_with('-') => {
-                return Err(usage(&format!("unrecognized arguments: {option}")));
+                return Err(usage(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.argument.unknown",
+                    [("argument", &option)],
+                )));
             }
             path => {
                 if parsed.audio_path.replace(PathBuf::from(path)).is_some() {
-                    return Err(usage(&format!("unrecognized arguments: {path}")));
+                    return Err(usage(solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.think.argument.unknown",
+                        [("argument", &path)],
+                    )));
                 }
             }
         }
@@ -199,18 +228,22 @@ where
     B: FnOnce() -> Result<PathBuf, String>,
     M: Fn(&str) -> Result<PathBuf, TranscribeError>,
 {
+    let locale = ENGLISH;
     let helper = binary().map_err(installation_error)?;
     if !is_executable(&helper) {
-        return Err(installation_error(format!(
-            "helper-not-executable: {}",
-            helper.display()
-        )));
+        return Err(coded_installation_error(
+            locale,
+            "helper-not-executable",
+            &helper.display(),
+        ));
     }
     for asset in [
         "wespeaker-resnet34-256.onnx",
         "pyannote-segmentation-3.0.onnx",
     ] {
-        model(asset).map_err(|error| installation_error(format!("asset-missing: {error}")))?;
+        model(asset).map_err(|error| {
+            coded_installation_error(locale, "asset-missing", &error.render(locale))
+        })?;
     }
     Ok(())
 }
@@ -222,15 +255,7 @@ pub fn check_speakers_analyze_installation() -> Result<(), CliError> {
 
 /// Run host diagnostics using the caller's display language.
 pub fn check_speakers_analyze_installation_in(locale: &str) -> Result<(), CliError> {
-    #[cfg(windows)]
-    {
-        crate::speakers_installation::validate_speakers_analyze_runtime_in(locale).map(|_| ())
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = locale;
-        check_speakers_analyze_installation()
-    }
+    crate::speakers_installation::validate_speakers_analyze_runtime_in(locale).map(|_| ())
 }
 
 /// The repair guidance paired with speakers-analyze installation failures.
@@ -267,24 +292,38 @@ fn is_executable(path: &Path) -> bool {
 
 /// Validate the two `--all` / positional-input semantic rules after supervisor preflight.
 pub(crate) fn validate_selection(args: &ParsedArgs) -> Result<(), CliError> {
+    validate_selection_in(ENGLISH, args)
+}
+
+pub(crate) fn validate_selection_in(locale: &str, args: &ParsedArgs) -> Result<(), CliError> {
     if args.all && args.audio_path.is_some() {
-        return Err(usage("--all and audio_path are mutually exclusive"));
+        return Err(usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.transcribe.selection.conflict",
+            &[],
+        )));
     }
     if !args.all && args.audio_path.is_none() {
-        return Err(usage("provide audio_path or --all"));
+        return Err(usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.transcribe.selection.missing",
+            &[],
+        )));
     }
     Ok(())
 }
 
 /// Resolve and validate one input using the journal-relative convention from Python.
-pub(crate) fn resolve_single_audio_path(
+pub(crate) fn resolve_single_audio_path_in(
+    locale: &str,
     audio_path: &Path,
     journal_path: &Path,
 ) -> Result<PathBuf, CliError> {
-    resolve_single_audio_path_with(audio_path, journal_path, Path::exists)
+    resolve_single_audio_path_with(locale, audio_path, journal_path, Path::exists)
 }
 
 fn resolve_single_audio_path_with<F>(
+    locale: &str,
     audio_path: &Path,
     journal_path: &Path,
     exists: F,
@@ -299,10 +338,13 @@ where
         if exists(&journal_relative) {
             journal_relative
         } else {
-            return Err(usage(&format!(
-                "Audio file not found.\n  Tried absolute:         {}\n  Tried journal-relative: {}",
-                audio_path.display(),
-                journal_relative.display()
+            return Err(usage(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.audio.missing",
+                [
+                    ("absolute", &(audio_path.display())),
+                    ("relative", &(journal_relative.display())),
+                ],
             )));
         }
     };
@@ -311,9 +353,13 @@ where
         .map(|extension| format!(".{}", extension.to_string_lossy().to_ascii_lowercase()))
         .unwrap_or_default();
     if !SUPPORTED_AUDIO_FORMATS.contains(&extension.as_str()) {
-        return Err(usage(&format!(
-            "Unsupported audio format: {extension}. Supported formats: {}",
-            SUPPORTED_AUDIO_FORMATS.join(", ")
+        return Err(usage(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.transcribe.audio.format",
+            [
+                ("extension", &(extension)),
+                ("formats", &(SUPPORTED_AUDIO_FORMATS.join(", "))),
+            ],
         )));
     }
     let parent = resolved
@@ -322,8 +368,10 @@ where
         .and_then(|name| name.to_str())
         .unwrap_or_default();
     if !is_segment_directory(parent) {
-        return Err(usage(&format!(
-            "Audio file must be in a segment directory (HHMMSS_LEN/), but parent is: {parent}"
+        return Err(usage(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.transcribe.audio.directory",
+            [("parent", &(parent))],
         )));
     }
     Ok(resolved)
@@ -446,18 +494,18 @@ fn is_segment_directory(value: &str) -> bool {
 /// and starting the journal was the whole repair, and reinstalling would have
 /// fixed nothing. Out-of-space (including a disk quota) gets its own copy;
 /// every other write failure keeps the installation remediation.
-pub(crate) fn generation_write_error<E>(step: &str, error: E) -> CliError
+pub(crate) fn generation_write_error<E>(locale: &str, step: &str, error: E) -> CliError
 where
     E: std::error::Error + 'static,
 {
-    let detail = format!("{step}: {error}");
+    let detail = coded_detail(locale, step, &error);
     if is_out_of_space(&error) {
         CliError::SpeakersStorageFull {
-            message: disk_full_message(&detail, solstone_core_cli_copy::ENGLISH),
+            message: disk_full_message(&detail, locale),
             detail,
         }
     } else {
-        installation_error(detail)
+        installation_error_in(locale, detail)
     }
 }
 
@@ -494,8 +542,29 @@ pub fn speakers_installation_detail_in(error: &CliError, locale: &str) -> Option
         CliError::SpeakersPrerequisite { detail, .. } => Some(prerequisite_message(detail, locale)),
         CliError::SpeakersStorageFull { detail, .. } => Some(disk_full_message(detail, locale)),
         CliError::SpeakersGenerationHeld { diagnostic, .. } => Some(diagnostic.render(locale)),
+        CliError::SupervisorUnavailable => Some(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.streams.supervisor",
+            &[],
+        )),
         _ => error.message().map(str::to_owned),
     }
+}
+
+fn coded_detail(locale: &str, code: &str, detail: &dyn std::fmt::Display) -> String {
+    solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.transcribe.installation.coded",
+        [("code", &(code)), ("detail", &(detail))],
+    )
+}
+
+pub(crate) fn coded_installation_error(
+    locale: &str,
+    code: &str,
+    detail: &dyn std::fmt::Display,
+) -> CliError {
+    installation_error_in(locale, coded_detail(locale, code, detail))
 }
 
 fn prerequisite_message(detail: &str, locale: &str) -> String {
@@ -523,15 +592,29 @@ pub fn speakers_repair_in(locale: &str) -> String {
 }
 
 pub(crate) fn installation_error(detail: impl Into<String>) -> CliError {
+    installation_error_in(ENGLISH, detail)
+}
+
+pub(crate) fn installation_error_in(locale: &str, detail: impl Into<String>) -> CliError {
     let detail = detail.into();
-    let message = prerequisite_message(&detail, solstone_core_cli_copy::ENGLISH);
+    let message = prerequisite_message(&detail, locale);
     CliError::SpeakersPrerequisite { detail, message }
 }
 
-fn usage(message: &str) -> CliError {
-    CliError::Usage {
-        message: message.to_owned(),
-    }
+/// The complete argument error emitted by the installed journal command.
+pub fn usage_error(locale: &str, message: &str) -> String {
+    format!(
+        "{}\n",
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.transcribe.usage.error",
+            [("message", &(message))]
+        )
+    )
+}
+
+fn usage(message: String) -> CliError {
+    CliError::Usage { message }
 }
 
 #[cfg(test)]
@@ -540,7 +623,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{
-        CliError, check_speakers_analyze_installation_with, parse_arguments,
+        CliError, ENGLISH, check_speakers_analyze_installation_with, parse_arguments,
         preflight_arguments_with, require_solstone_with, resolve_single_audio_path_with,
         should_skip_batch_processed, should_skip_process_audio_processed,
         should_skip_process_one_processed, validate_selection,
@@ -562,6 +645,7 @@ mod tests {
             std::io::ErrorKind::QuotaExceeded,
         ] {
             let error = super::generation_write_error(
+                ENGLISH,
                 "generation-record",
                 std::io::Error::new(kind, "There is not enough space on the disk."),
             );
@@ -600,6 +684,7 @@ mod tests {
             }
         }
         let error = super::generation_write_error(
+            ENGLISH,
             "generation-record",
             Wrapped(std::io::Error::from(std::io::ErrorKind::StorageFull)),
         );
@@ -614,6 +699,7 @@ mod tests {
     #[test]
     fn any_other_generation_write_failure_keeps_the_installation_repair() {
         let error = super::generation_write_error(
+            ENGLISH,
             "generation-token",
             std::io::Error::from(std::io::ErrorKind::PermissionDenied),
         );
@@ -698,9 +784,10 @@ mod tests {
     #[test]
     fn unsupported_audio_format_is_usage_error() {
         let audio = Path::new("/journal/chronicle/20260810/stream/120000_60/clip.txt");
-        let error =
-            resolve_single_audio_path_with(audio, Path::new("/journal"), |path| path == audio)
-                .unwrap_err();
+        let error = resolve_single_audio_path_with(ENGLISH, audio, Path::new("/journal"), |path| {
+            path == audio
+        })
+        .unwrap_err();
         assert_eq!(error.exit_code(), 2);
         assert_eq!(
             error.message(),
@@ -713,9 +800,10 @@ mod tests {
     #[test]
     fn wrong_parent_directory_is_usage_error() {
         let audio = Path::new("/journal/chronicle/20260810/stream/not-a-segment/clip.wav");
-        let error =
-            resolve_single_audio_path_with(audio, Path::new("/journal"), |path| path == audio)
-                .unwrap_err();
+        let error = resolve_single_audio_path_with(ENGLISH, audio, Path::new("/journal"), |path| {
+            path == audio
+        })
+        .unwrap_err();
         assert_eq!(error.exit_code(), 2);
         assert_eq!(
             error.message(),
@@ -730,7 +818,7 @@ mod tests {
         let audio = Path::new("clip.wav");
         let temporary = tempfile::tempdir().unwrap();
         let journal = temporary.path();
-        let error = resolve_single_audio_path_with(audio, journal, |_| false).unwrap_err();
+        let error = resolve_single_audio_path_with(ENGLISH, audio, journal, |_| false).unwrap_err();
         assert_eq!(error.exit_code(), 2);
         let expected = format!(
             "Audio file not found.\n  Tried absolute:         clip.wav\n  Tried journal-relative: {}",

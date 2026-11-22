@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer zip flagged name is not utf8.",
+  "context": "Journal command-line text for error writer zip flagged name is not utf8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "13b3e3d2387f7c7fcae0144bdd80a475d56c6222ddf11874a5b0d4046e3ae8b9",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_utf_8",
+      "kind": "accepted-input",
+      "value": "utf-8"
+    }
+  ]
+}

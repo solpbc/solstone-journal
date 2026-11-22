@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows job not quiescent.",
+  "context": "Journal command-line text for error windows job not quiescent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1358753d1656d04e1dca8521ed07705b52d7f93ea11e141b6bee0fa5779ee579",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -92,3 +92,125 @@ impl Diagnostic {
         render_for(locale, self.id, &args)
     }
 }
+
+/// A diagnostic detail that can cross a record boundary before it reaches a terminal.
+/// External messages retain their original text. Journal messages keep their arguments.
+#[derive(Clone, PartialEq, Eq)]
+pub struct MessageDetail(Box<DetailValue>);
+
+#[derive(Clone, PartialEq, Eq)]
+enum DetailValue {
+    External(String),
+    Catalog(Diagnostic),
+    Count {
+        message: Diagnostic,
+        counts: Vec<(&'static str, i64)>,
+        source: String,
+    },
+    Context {
+        message: Diagnostic,
+        detail: MessageDetail,
+    },
+}
+
+impl MessageDetail {
+    pub fn message<const N: usize>(
+        id: &'static str,
+        args: [(&'static str, &dyn std::fmt::Display); N],
+    ) -> Self {
+        Self(Box::new(DetailValue::Catalog(Diagnostic::new(id, args))))
+    }
+
+    pub fn cardinal<const C: usize, const N: usize>(
+        id: &'static str,
+        counts: [(&'static str, i64); C],
+        source: String,
+        args: [(&'static str, &dyn std::fmt::Display); N],
+    ) -> Self {
+        Self(Box::new(DetailValue::Count {
+            message: Diagnostic::new(id, args),
+            counts: counts.into(),
+            source,
+        }))
+    }
+
+    pub fn context(self, id: &'static str) -> Self {
+        self.context_with(id, [])
+    }
+
+    pub fn context_with<const N: usize>(
+        self,
+        id: &'static str,
+        args: [(&'static str, &dyn std::fmt::Display); N],
+    ) -> Self {
+        Self(Box::new(DetailValue::Context {
+            message: Diagnostic::new(id, args),
+            detail: self,
+        }))
+    }
+
+    pub fn render(&self, locale: &str) -> String {
+        self.render_for_output(Some(locale))
+    }
+
+    /// A machine reader gets the stable source spelling even after a terminal grammar fix.
+    pub fn render_for_output(&self, requested: Option<&str>) -> String {
+        let locale = requested.unwrap_or(ENGLISH);
+        match self.0.as_ref() {
+            DetailValue::External(text) => text.clone(),
+            DetailValue::Catalog(diagnostic) => diagnostic.render(locale),
+            DetailValue::Count { source, .. } if requested.is_none() => source.clone(),
+            DetailValue::Count {
+                message, counts, ..
+            } => {
+                let mut values: Vec<_> = message
+                    .values
+                    .iter()
+                    .map(|(name, value)| (*name, Value::String(value)))
+                    .collect();
+                values.extend(
+                    counts
+                        .iter()
+                        .map(|(name, count)| (*name, Value::Cardinal(*count))),
+                );
+                render_for(locale, message.id, &values)
+            }
+            DetailValue::Context { message, detail } => {
+                let cause = detail.render_for_output(requested);
+                let mut values: Vec<_> = message
+                    .values
+                    .iter()
+                    .map(|(name, value)| (*name, Value::String(value)))
+                    .collect();
+                values.push(("detail", Value::String(&cause)));
+                render_for(locale, message.id, &values)
+            }
+        }
+    }
+}
+
+impl From<String> for MessageDetail {
+    fn from(value: String) -> Self {
+        Self(Box::new(DetailValue::External(value)))
+    }
+}
+
+impl From<&str> for MessageDetail {
+    fn from(value: &str) -> Self {
+        value.to_owned().into()
+    }
+}
+
+impl std::fmt::Display for MessageDetail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.render_for_output(None))
+    }
+}
+
+// Some diagnostic logs display enclosing errors with Debug. Keep their original
+// quoted source string there as well as in Display's unquoted machine output.
+impl std::fmt::Debug for MessageDetail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.render_for_output(None), f)
+    }
+}

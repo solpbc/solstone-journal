@@ -65,14 +65,14 @@ fn transcribe_with_installed_helper(
 ) -> Result<TranscriptionResponse, TranscribeError> {
     let _admission =
         solstone_core_local::install::coreml_install::hold_parakeet_coreml_read_admission(home)
-            .map_err(|error| deferred("coreml_models_updating", error.to_string()))?;
+            .map_err(|error| deferred("coreml_models_updating", error.into_detail()))?;
     // A missing model is installed by the supervisor's self-heal; the audio waits for it.
     if !solstone_core_local::install::coreml_install::parakeet_coreml_installed(home, cache_dir) {
         return Err(deferred(
             "coreml_model_missing",
-            format!(
-                "Parakeet CoreML model is not installed yet: {}",
-                cache_dir.display()
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.coreml.parakeet.coreml.model.is.not.installed.yet.path",
+                [("path", &(cache_dir.display()))],
             ),
         ));
     }
@@ -87,8 +87,12 @@ pub(crate) fn transcribe_with_helper(
     timeout: Duration,
 ) -> Result<TranscriptionResponse, TranscribeError> {
     require_ready_helper(helper)?;
-    let wav = audio_to_wav_bytes(audio, SAMPLE_RATE)
-        .map_err(|error| failure("coreml_tempfile_failed", error.to_string()))?;
+    let wav = audio_to_wav_bytes(audio, SAMPLE_RATE).map_err(|error| {
+        failure(
+            "coreml_tempfile_failed",
+            crate::TranscribeDetail::from(&error),
+        )
+    })?;
     let mut temporary = tempfile::Builder::new()
         .suffix(".wav")
         .tempfile()
@@ -115,7 +119,7 @@ pub(crate) fn get_model_info_with_helper(
     timeout: Duration,
 ) -> Result<ModelInfo, TranscribeError> {
     let output = run_helper(helper, &["--version".to_owned()], timeout)
-        .map_err(|error| failure("coreml_version_probe_failed", error.to_string()))?;
+        .map_err(|error| failure("coreml_version_probe_failed", error.into_detail()))?;
     if !output.status.success() {
         return Err(failure(
             "coreml_version_probe_failed",
@@ -136,7 +140,10 @@ fn require_ready_helper(helper: &Path) -> Result<(), TranscribeError> {
         if error.kind() == std::io::ErrorKind::NotFound {
             deferred(
                 "coreml_helper_missing",
-                format!("Parakeet helper is missing: {}", helper.display()),
+                crate::TranscribeDetail::message(
+                    "journal.cli.transcribe.error.coreml.parakeet.helper.is.missing.path",
+                    [("path", &(helper.display()))],
+                ),
             )
         } else {
             failure("coreml_helper_launch_failed", error.to_string())
@@ -145,13 +152,19 @@ fn require_ready_helper(helper: &Path) -> Result<(), TranscribeError> {
     if !metadata.is_file() {
         return Err(deferred(
             "coreml_helper_missing",
-            format!("Parakeet helper is not a file: {}", helper.display()),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.coreml.parakeet.helper.is.not.a.file.path",
+                [("path", &(helper.display()))],
+            ),
         ));
     }
     if metadata.permissions().mode() & 0o111 == 0 {
         return Err(deferred(
             "coreml_helper_not_executable",
-            format!("Parakeet helper is not executable: {}", helper.display()),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.coreml.parakeet.helper.is.not.executable.path",
+                [("path", &(helper.display()))],
+            ),
         ));
     }
     Ok(())
@@ -242,12 +255,12 @@ fn map_helper_run_error(error: HelperRunError, timeout: Duration) -> TranscribeE
     match error {
         HelperRunError::TimedOut => deferred(
             "coreml_helper_timeout",
-            format!(
-                "Parakeet helper timed out after {:.1}s",
-                timeout.as_secs_f64()
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.coreml.parakeet.helper.timed.out.after.seconds.s",
+                [("seconds", &(format!("{:.1}", timeout.as_secs_f64())))],
             ),
         ),
-        error => failure("coreml_helper_launch_failed", error.to_string()),
+        error => failure("coreml_helper_launch_failed", error.into_detail()),
     }
 }
 
@@ -387,11 +400,11 @@ fn conclude_helper<S: HelperSupervisor>(
 ) -> Result<(ExitStatus, String, String), HelperRunError> {
     session
         .kill_group()
-        .map_err(|error| HelperRunError::Wait(error.to_string()))?;
+        .map_err(|error| HelperRunError::Wait(error.to_string().into()))?;
     session.close_owned_pipes();
     let reaped = session
         .reap_root()
-        .map_err(|error| HelperRunError::Wait(error.to_string()))?;
+        .map_err(|error| HelperRunError::Wait(error.to_string().into()))?;
     let (stdout, stderr) = session.join_readers()?;
     Ok((reaped, stdout, stderr))
 }
@@ -406,7 +419,7 @@ fn run_helper(
         || spawn_helper(helper, arguments),
         Box::new(terminate_helper_child),
     )
-    .map_err(|error| HelperRunError::Spawn(error.to_string()))?;
+    .map_err(|error| HelperRunError::Spawn(error.into()))?;
     let mut session = LiveHelper {
         authority,
         reaped_exit: None,
@@ -418,7 +431,10 @@ fn run_helper(
         Some(stdout) => stdout,
         None => {
             let _ = conclude_helper(&mut session);
-            return Err(HelperRunError::Read("missing stdout pipe".to_owned()));
+            return Err(HelperRunError::Read(crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.coreml.missing.stdout.pipe",
+                [],
+            )));
         }
     };
     let stderr = match session.authority.take_stderr() {
@@ -426,7 +442,10 @@ fn run_helper(
         None => {
             drop(stdout);
             let _ = conclude_helper(&mut session);
-            return Err(HelperRunError::Read("missing stderr pipe".to_owned()));
+            return Err(HelperRunError::Read(crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.coreml.missing.stderr.pipe",
+                [],
+            )));
         }
     };
     session.stdout_reader = Some(spawn_reader(stdout));
@@ -436,7 +455,7 @@ fn run_helper(
         match session.observe_without_reap() {
             Err(error) => {
                 let _ = conclude_helper(&mut session);
-                return Err(HelperRunError::Wait(error.to_string()));
+                return Err(HelperRunError::Wait(error.to_string().into()));
             }
             Ok(false) if started.elapsed() >= timeout => {
                 return match conclude_helper(&mut session) {
@@ -467,9 +486,12 @@ fn join_reader(
     reader: thread::JoinHandle<Result<String, HelperRunError>>,
     name: &str,
 ) -> Result<String, HelperRunError> {
-    reader
-        .join()
-        .map_err(|_| HelperRunError::Read(format!("{name} reader panicked")))?
+    reader.join().map_err(|_| {
+        HelperRunError::Read(crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.coreml.name.reader.panicked",
+            [("name", &(name))],
+        ))
+    })?
 }
 
 fn read_child_stream(mut stream: impl Read) -> Result<String, HelperRunError> {
@@ -477,7 +499,7 @@ fn read_child_stream(mut stream: impl Read) -> Result<String, HelperRunError> {
     let mut buffer = [0_u8; 8192];
     loop {
         let count = retry_interrupted(|| stream.read(&mut buffer))
-            .map_err(|error| HelperRunError::Read(error.to_string()))?;
+            .map_err(|error| HelperRunError::Read(error.to_string().into()))?;
         if count == 0 {
             break;
         }
@@ -497,9 +519,12 @@ fn retry_interrupted<T>(mut operation: impl FnMut() -> io::Result<T>) -> io::Res
 
 fn parse_coreml_response(text: &str) -> Result<TranscriptionResponse, CoremlResponseError> {
     let payload: Value = serde_json::from_str(text)
-        .map_err(|error| CoremlResponseError::InvalidJson(error.to_string()))?;
+        .map_err(|error| CoremlResponseError::InvalidJson(error.to_string().into()))?;
     let object = payload.as_object().ok_or_else(|| {
-        CoremlResponseError::InvalidJson("helper JSON was not an object".to_owned())
+        CoremlResponseError::InvalidJson(crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.coreml.helper.json.was.not.an.object",
+            [],
+        ))
     })?;
     let transcript = required_string(object, "transcript")?.trim().to_owned();
     required_finite_number(object, "audio_sec")?;
@@ -509,7 +534,10 @@ fn parse_coreml_response(text: &str) -> Result<TranscriptionResponse, CoremlResp
         .get("token_timings")
         .and_then(Value::as_array)
         .ok_or_else(|| {
-            CoremlResponseError::Contract("helper response missing token_timings[]".to_owned())
+            CoremlResponseError::Contract(crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.coreml.helper.response.missing.token.timings",
+                [],
+            ))
         })?;
     if token_timings.is_empty() {
         return transcript
@@ -520,7 +548,7 @@ fn parse_coreml_response(text: &str) -> Result<TranscriptionResponse, CoremlResp
             })
             .ok_or_else(|| {
                 CoremlResponseError::Contract(
-                    "helper returned transcript text without token timings".to_owned(),
+                    crate::TranscribeDetail::message("journal.cli.transcribe.error.coreml.helper.returned.transcript.text.without.token.timings", []),
                 )
             });
     }
@@ -532,7 +560,10 @@ fn parse_coreml_response(text: &str) -> Result<TranscriptionResponse, CoremlResp
     let words = collapse_subwords_to_words(&tokens);
     if words.is_empty() && !transcript.is_empty() {
         return Err(CoremlResponseError::Contract(
-            "helper token timings collapsed to no words".to_owned(),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.coreml.helper.token.timings.collapsed.to.no.words",
+                [],
+            ),
         ));
     }
     Ok(TranscriptionResponse {
@@ -541,11 +572,14 @@ fn parse_coreml_response(text: &str) -> Result<TranscriptionResponse, CoremlResp
     })
 }
 
-fn parse_version_response(text: &str) -> Result<(), String> {
+fn parse_version_response(text: &str) -> Result<(), crate::TranscribeDetail> {
     let payload: Value = serde_json::from_str(text).map_err(|error| error.to_string())?;
-    let object = payload
-        .as_object()
-        .ok_or_else(|| "helper version JSON was not an object".to_owned())?;
+    let object = payload.as_object().ok_or_else(|| {
+        crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.coreml.helper.version.json.was.not.an.object",
+            [],
+        )
+    })?;
     for field in [
         "fluidaudio_version",
         "model_version_default",
@@ -557,7 +591,12 @@ fn parse_version_response(text: &str) -> Result<(), String> {
             .get(field)
             .and_then(Value::as_str)
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| format!("helper version response missing {field}"))?;
+            .ok_or_else(|| {
+                crate::TranscribeDetail::message(
+                    "journal.cli.transcribe.error.coreml.helper.version.response.missing.field",
+                    [("field", &(field))],
+                )
+            })?;
     }
     Ok(())
 }
@@ -566,10 +605,12 @@ fn required_string<'a>(
     object: &'a Map<String, Value>,
     key: &str,
 ) -> Result<&'a str, CoremlResponseError> {
-    object
-        .get(key)
-        .and_then(Value::as_str)
-        .ok_or_else(|| CoremlResponseError::Contract(format!("helper response missing {key}")))
+    object.get(key).and_then(Value::as_str).ok_or_else(|| {
+        CoremlResponseError::Contract(crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.coreml.helper.response.missing.key",
+            [("key", &(key))],
+        ))
+    })
 }
 
 fn required_finite_number(
@@ -580,19 +621,29 @@ fn required_finite_number(
         .get(key)
         .and_then(Value::as_f64)
         .filter(|value| value.is_finite())
-        .ok_or_else(|| CoremlResponseError::Contract(format!("helper response has invalid {key}")))
+        .ok_or_else(|| {
+            CoremlResponseError::Contract(crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.coreml.helper.response.has.invalid.key",
+                [("key", &(key))],
+            ))
+        })
 }
 
 fn required_u64(object: &Map<String, Value>, key: &str) -> Result<u64, CoremlResponseError> {
-    object
-        .get(key)
-        .and_then(Value::as_u64)
-        .ok_or_else(|| CoremlResponseError::Contract(format!("helper response has invalid {key}")))
+    object.get(key).and_then(Value::as_u64).ok_or_else(|| {
+        CoremlResponseError::Contract(crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.coreml.helper.response.has.invalid.key",
+            [("key", &(key))],
+        ))
+    })
 }
 
 fn parse_token_timing(value: &Value) -> Result<TokenTiming, CoremlResponseError> {
     let object = value.as_object().ok_or_else(|| {
-        CoremlResponseError::Contract("token timing must be an object".to_owned())
+        CoremlResponseError::Contract(crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.coreml.token.timing.must.be.an.object",
+            [],
+        ))
     })?;
     let token = required_string(object, "token")?.to_owned();
     required_u64(object, "token_id")?;
@@ -681,23 +732,32 @@ fn is_punctuation(token: &str) -> bool {
         })
 }
 
-fn helper_failure_detail(output: &HelperOutput) -> String {
+fn helper_failure_detail(output: &HelperOutput) -> crate::TranscribeDetail {
     let stderr = output.stderr.trim();
     if stderr.is_empty() {
-        format!("Parakeet helper exited with {}", output.status)
+        crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.coreml.parakeet.helper.exited.with.status",
+            [("status", &(output.status))],
+        )
     } else {
-        stderr.to_owned()
+        stderr.into()
     }
 }
 
-fn deferred(reason: impl Into<String>, detail: impl Into<String>) -> TranscribeError {
+fn deferred(
+    reason: impl Into<String>,
+    detail: impl Into<crate::TranscribeDetail>,
+) -> TranscribeError {
     TranscribeError::ParakeetCoremlDeferred {
         reason: reason.into(),
         detail: detail.into(),
     }
 }
 
-fn failure(reason: impl Into<String>, detail: impl Into<String>) -> TranscribeError {
+fn failure(
+    reason: impl Into<String>,
+    detail: impl Into<crate::TranscribeDetail>,
+) -> TranscribeError {
     TranscribeError::ParakeetCoremlFailure {
         reason: reason.into(),
         detail: detail.into(),
@@ -713,27 +773,28 @@ struct HelperOutput {
 
 #[derive(Debug)]
 enum HelperRunError {
-    Spawn(String),
-    Wait(String),
-    Read(String),
+    Spawn(crate::TranscribeDetail),
+    Wait(crate::TranscribeDetail),
+    Read(crate::TranscribeDetail),
     TimedOut,
 }
 
-impl std::fmt::Display for HelperRunError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl HelperRunError {
+    fn into_detail(self) -> crate::TranscribeDetail {
         match self {
-            Self::Spawn(detail) | Self::Wait(detail) | Self::Read(detail) => {
-                formatter.write_str(detail)
-            }
-            Self::TimedOut => formatter.write_str("Parakeet helper timed out"),
+            Self::Spawn(detail) | Self::Wait(detail) | Self::Read(detail) => detail,
+            Self::TimedOut => crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.coreml.parakeet.helper.timed.out",
+                [],
+            ),
         }
     }
 }
 
 #[derive(Debug)]
 enum CoremlResponseError {
-    InvalidJson(String),
-    Contract(String),
+    InvalidJson(crate::TranscribeDetail),
+    Contract(crate::TranscribeDetail),
 }
 
 struct TokenTiming {
@@ -924,7 +985,7 @@ mod tests {
         assert_failure_reason(
             super::failure(
                 "coreml_version_probe_failed",
-                HelperRunError::TimedOut.to_string(),
+                HelperRunError::TimedOut.into_detail(),
             ),
             "coreml_version_probe_failed",
         );

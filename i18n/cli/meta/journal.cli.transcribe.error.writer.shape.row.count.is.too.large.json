@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer shape row count is too large.",
+  "context": "Journal command-line text for error writer shape row count is too large.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5312c6bfcb4943adf3ee474ef3c747bdb1d0976b9f1e60d78c70562ae44881d7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

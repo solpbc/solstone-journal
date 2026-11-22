@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for feed failure.",
+  "context": "Journal command-line text for feed failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1afe9019f7d53483bb94535556a5cec2c4b21adc16f1bcab1b21d022df7f41fe",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

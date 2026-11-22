@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for claim lock parent unsafe.",
+  "context": "Journal command-line text for claim lock parent unsafe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "10b029f13666efa89051852c6a3131e21e6541ddec2f11884205257218e6a4a8",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

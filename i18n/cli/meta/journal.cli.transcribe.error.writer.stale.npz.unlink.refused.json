@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer stale npz unlink refused.",
+  "context": "Journal command-line text for error writer stale npz unlink refused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b2aac6fbb26f1d034d1c6a66e3819d1067161ebb1f34ab52e6a10f5d14cf9897",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

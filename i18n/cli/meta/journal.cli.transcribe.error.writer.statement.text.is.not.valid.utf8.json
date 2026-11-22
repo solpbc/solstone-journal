@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer statement text is not valid utf8.",
+  "context": "Journal command-line text for error writer statement text is not valid utf8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b57a9507b8d42d38b0b646937a487af5226f803c7e980409811f9082508fda41",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_utf_8",
+      "kind": "accepted-input",
+      "value": "utf-8"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer turn speaker turns evidence has unexpected keys.",
+  "context": "Journal command-line text for error writer turn speaker turns evidence has unexpected keys.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81444bc945a180d1fd023205927ae815ceab5c525b2afd96d27509901749a7f7",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

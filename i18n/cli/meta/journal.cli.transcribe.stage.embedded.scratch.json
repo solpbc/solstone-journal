@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for stage embedded scratch.",
+  "context": "Journal command-line text for stage embedded scratch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2b6ec3c150150c60b5db268708daed55e1e87b18a25298a9df8645277220743c",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

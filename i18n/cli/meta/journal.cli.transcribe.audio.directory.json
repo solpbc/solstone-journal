@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for audio directory.",
+  "context": "Journal command-line text for audio directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "parent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0ded35f992427437bd1f8754308c05f0cef77d2189499488965a30916c0d0e4f",
+  "max_length": 116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "pattern",
+      "kind": "accepted-input",
+      "value": "HHMMSS_LEN/"
+    }
+  ]
+}

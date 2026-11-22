@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows cleanup contended.",
+  "context": "Journal command-line text for error windows cleanup contended.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3403600a655c76720e35914788ef40a6f9957ad719ec36102324e83f6cf68250",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

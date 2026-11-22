@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows package root unavailable.",
+  "context": "Journal command-line text for error windows package root unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cf2fbb9cf9a15079a8b3989fa240c3549865aa4e2c8125cc75a3f44d650770f1",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

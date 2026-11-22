@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows input limit exceeded.",
+  "context": "Journal command-line text for error windows input limit exceeded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3770508152fdea3f112d91c0e96ba125919b2b00843d9d8982fbb592c20b3470",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

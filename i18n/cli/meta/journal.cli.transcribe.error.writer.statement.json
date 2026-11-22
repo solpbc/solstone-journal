@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error writer statement.",
+  "context": "Journal command-line text for error writer statement.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5f5852e8621e08fdb2fa0b3c6165e45ddc090c61b89de5c80a2b3375f90df9ce",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
