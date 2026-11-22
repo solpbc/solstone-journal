@@ -1088,7 +1088,7 @@ pub fn human_output(report: &CheckReport) -> String {
 pub fn evaluate_host_ced(journal: &Path, os: &str, arch: &str) -> CedVerdict {
     #[cfg(windows)]
     {
-        return evaluate_host_ced_in(solstone_core_cli_copy::ENGLISH, journal, os, arch);
+        evaluate_host_ced_in(solstone_core_cli_copy::ENGLISH, journal, os, arch)
     }
     #[cfg(not(windows))]
     {
