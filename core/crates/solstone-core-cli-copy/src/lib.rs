@@ -92,3 +92,19 @@ impl Diagnostic {
         render_for(locale, self.id, &args)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Diagnostic, ENGLISH};
+
+    #[test]
+    fn saved_diagnostic_renders_its_detail_when_the_locale_is_unknown() {
+        let diagnostic = {
+            let detail = String::from("catalog fixture detail");
+            Diagnostic::new("journal.cli.doctor.context.failed", [("error", &detail)])
+        };
+        let english = diagnostic.render(ENGLISH);
+        assert!(english.contains("catalog fixture detail"));
+        assert_eq!(diagnostic.render("x-catalog-fixture"), english);
+    }
+}
