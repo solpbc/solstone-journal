@@ -476,15 +476,10 @@ mod tests {
         );
         let held = received(dir.path(), &space).unwrap();
         assert!(held.values().all(|m| m.shared && m.shared_by == by));
+        let received_root = dir.path().join("social").join("received");
         for path in fs::read_dir(space_dir(dir.path(), &space)).unwrap() {
-            let rel = path
-                .unwrap()
-                .path()
-                .strip_prefix(dir.path())
-                .unwrap()
-                .to_string_lossy()
-                .into_owned();
-            assert!(rel.starts_with("social/received/"), "{rel}");
+            let path = path.unwrap().path();
+            assert!(path.starts_with(&received_root), "{}", path.display());
         }
 
         // r1 edited, r2 unshared.
