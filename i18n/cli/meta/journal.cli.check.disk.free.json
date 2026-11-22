@@ -1,0 +1,25 @@
+{
+  "description": "Readiness report: disk free.",
+  "context": "Readiness report: disk free.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "gb",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b073d2396df497f6b8d9d997fefa0382a70b46e3c034e2b9a0bbaf8c98ed8c37",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

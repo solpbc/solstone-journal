@@ -1,0 +1,16 @@
+{
+  "description": "Readiness report: platform apple.",
+  "context": "Readiness report: platform apple.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2a0387c0a3cdb4fa9957a33576d9ac3ff3a7dd285fbc602221ecc34248144960",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

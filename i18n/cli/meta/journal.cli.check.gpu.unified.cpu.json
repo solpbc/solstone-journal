@@ -1,0 +1,21 @@
+{
+  "description": "Readiness report: gpu unified cpu.",
+  "context": "Readiness report: gpu unified cpu.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "gb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "36f75a527f9476caf380d893dcaa4003c274c68282343a70d00ed7353fbd1492",
+  "max_length": 149,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

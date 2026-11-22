@@ -1,0 +1,16 @@
+{
+  "description": "Readiness report: overall blocked.",
+  "context": "Readiness report: overall blocked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "314beb0b8c558f2b6bc79d6d0c6407bba988887afbcb5d8ffaad33cae7185711",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

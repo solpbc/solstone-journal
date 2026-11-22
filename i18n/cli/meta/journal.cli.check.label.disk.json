@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for label disk.",
+  "context": "Journal command-line text for label disk.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8a4224f68110bd11faffebeb1a8964f70550d14e5379a096b7598fe1b5783feb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for marker unknown.",
+  "context": "Journal command-line text for marker unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "031e37b41b0a41bcfc3bcd16ab345d9be5ebbe5f49b88b1f15678b96d2f6f1d9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Readiness report: platform intel.",
+  "context": "Readiness report: platform intel.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e422bb626f141c84c0e61f0e135a59e21d60a01d360630cfe5ac5cb8113bf5bf",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

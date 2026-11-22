@@ -1,0 +1,16 @@
+{
+  "description": "Readiness report: disk overflow.",
+  "context": "Readiness report: disk overflow.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6bfe18980645d22e346a28c662134943e12d2ebda32f9960df17c135b87b5c05",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

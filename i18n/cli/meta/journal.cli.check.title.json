@@ -1,0 +1,23 @@
+{
+  "description": "Readiness report: title.",
+  "context": "Readiness report: title.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "efee8f3c4693d9b49d346ec0680516c69e58b3135df8735551efd0a716492836",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "accepted-input",
+      "value": "solstone journal check"
+    }
+  ]
+}

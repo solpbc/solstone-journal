@@ -11572,3 +11572,101 @@ journal.cli.setup.parser.timeout = argument { $timeout_flag }: invalid int value
 journal.cli.setup.parser.unknown = unrecognized arguments
 
 journal.cli.setup.parser.variant = argument { $variant_flag }: invalid choice: { $value } (choose from { $choices })
+
+journal.cli.check.disk.error = free space at { $path } could not be verified: { $message }
+
+journal.cli.check.disk.free = { $gb } GB free at { $path } (need 20 GB)
+
+journal.cli.check.disk.low = the journal and local models need at least 20 GB free — { $path } has { $gb } GB
+
+journal.cli.check.disk.overflow = free space overflow
+
+journal.cli.check.feedback = Think this readout is wrong for your machine? We'd love a patch — { $url }
+
+journal.cli.check.gpu.absent = no usable GPU found — the bundled local models need a hardware GPU
+
+journal.cli.check.gpu.absent.linux = no usable GPU found — the bundled local models need a hardware GPU with at least 6 GB
+
+journal.cli.check.gpu.cuda.integrity = CUDA runtime integrity failure
+
+journal.cli.check.gpu.low.linux = GPU { $gpu } has { $gb } GB — the bundled local models need at least 6 GB
+
+journal.cli.check.gpu.low.windows = GPU { $gpu } has { $gb } GB; the bundled local models need at least 6 GB
+
+journal.cli.check.gpu.nvidia = NVIDIA GPU with { $gb } GB
+
+journal.cli.check.gpu.nvidia.cpu = NVIDIA GPU with { $gb } GB; a model runs on your GPU; transcription runs on your CPU on this machine
+
+journal.cli.check.gpu.nvidia.low = the NVIDIA GPU has { $gb } GB — the bundled local models need at least 6 GB
+
+journal.cli.check.gpu.nvidia.unknown = NVIDIA GPU detected but its memory could not be read — GPU readiness is unknown
+
+journal.cli.check.gpu.readiness.unknown = GPU readiness could not be determined: { $error }
+
+journal.cli.check.gpu.render.permission = a GPU render node exists under { $path } but this user cannot open it — add yourself to the render group with `{ $repair }`, then log out and back in and run `{ $command }` again
+
+journal.cli.check.gpu.unified = NVIDIA GPU with { $gb } GB (unified memory)
+
+journal.cli.check.gpu.unified.cpu = NVIDIA GPU with { $gb } GB (unified memory); a model runs on your GPU; transcription runs on your CPU on this machine
+
+journal.cli.check.gpu.unknown = couldn't read GPU memory. local thinking needs at least 6 GB
+
+journal.cli.check.gpu.vulkan = Vulkan GPU { $gpu } with { $gb } GB
+
+journal.cli.check.gpu.vulkan.cpu = Vulkan GPU { $gpu } with { $gb } GB; a model runs on your GPU; transcription runs on your CPU on this machine
+
+journal.cli.check.gpu.vulkan.incomplete = no NVIDIA GPU found and the Vulkan probe did not complete — GPU readiness is unknown
+
+journal.cli.check.label.ced = ced
+
+journal.cli.check.label.disk = disk
+
+journal.cli.check.label.gpu = gpu
+
+journal.cli.check.label.memory = memory
+
+journal.cli.check.label.platform = platform
+
+journal.cli.check.label.ram = ram
+
+journal.cli.check.label.rfdetr = rfdetr
+
+journal.cli.check.marker.blocked = [blocked]
+
+journal.cli.check.marker.ok = [ok]
+
+journal.cli.check.marker.unknown = [unknown]
+
+journal.cli.check.marker.warn = [warn]
+
+journal.cli.check.memory.available = enough total memory, but only { $gb } GB is free right now — close some apps before the local models load
+
+journal.cli.check.memory.eligible = { $gb } GB of memory meets the 16 GB minimum
+
+journal.cli.check.memory.minimum = Apple Silicon needs at least 16 GB of memory for the bundled local models (this Mac has { $gb } GB)
+
+journal.cli.check.memory.unknown = available memory could not be verified
+
+journal.cli.check.overall.blocked = Not ready — this computer can't run the bundled local models yet.
+
+journal.cli.check.overall.ready = Ready — install the journal next:  see { $file }
+
+journal.cli.check.overall.warning = Mostly ready (see the warnings above) — you can install the journal:  see { $file }
+
+journal.cli.check.platform.apple = Apple Silicon macOS (arm64)
+
+journal.cli.check.platform.intel = Intel Macs aren't supported — use an Apple Silicon Mac, or run the journal on supported Linux.
+
+journal.cli.check.platform.linux = Linux ({ $arch })
+
+journal.cli.check.platform.unsupported = { $os }/{ $arch } can't run the bundled local models yet. supported platforms are apple silicon macos, x86_64/aarch64 linux and x86_64/aarch64 windows.
+
+journal.cli.check.platform.windows = Windows ({ $arch })
+
+journal.cli.check.ram.low = { $gb } GB of system memory is on the low side — 8 GB or more is recommended
+
+journal.cli.check.ram.total = { $gb } GB of system memory
+
+journal.cli.check.ram.unknown = system memory could not be verified
+
+journal.cli.check.title = { $command } — can this computer run the journal with the bundled local models?

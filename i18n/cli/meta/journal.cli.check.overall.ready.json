@@ -1,0 +1,23 @@
+{
+  "description": "Readiness report: overall ready.",
+  "context": "Readiness report: overall ready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d12a2ca655ae89f268deeac11c46939a2be2e6d503e466d05452eafb650d56f",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "file",
+      "kind": "accepted-input",
+      "value": "INSTALL.md"
+    }
+  ]
+}

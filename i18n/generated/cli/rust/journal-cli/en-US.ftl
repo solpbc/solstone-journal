@@ -832,6 +832,104 @@ m6a6f75726e616c2e636c692e627261696e2e7772697465722e76616c69646174696f6e2e7265737
 
 m6a6f75726e616c2e636c692e627261696e2e7772697465722e76616c69646174696f6e2e726573756c742e69732e6e6f742e616e2e6f626a656374 = validation result is not an object
 
+m6a6f75726e616c2e636c692e636865636b2e6469736b2e6572726f72 = free space at { $path } could not be verified: { $message }
+
+m6a6f75726e616c2e636c692e636865636b2e6469736b2e66726565 = { $gb } GB free at { $path } (need 20 GB)
+
+m6a6f75726e616c2e636c692e636865636b2e6469736b2e6c6f77 = the journal and local models need at least 20 GB free — { $path } has { $gb } GB
+
+m6a6f75726e616c2e636c692e636865636b2e6469736b2e6f766572666c6f77 = free space overflow
+
+m6a6f75726e616c2e636c692e636865636b2e666565646261636b = Think this readout is wrong for your machine? We'd love a patch — { $url }
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e616273656e74 = no usable GPU found — the bundled local models need a hardware GPU
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e616273656e742e6c696e7578 = no usable GPU found — the bundled local models need a hardware GPU with at least 6 GB
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e637564612e696e74656772697479 = CUDA runtime integrity failure
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e6c6f772e6c696e7578 = GPU { $gpu } has { $gb } GB — the bundled local models need at least 6 GB
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e6c6f772e77696e646f7773 = GPU { $gpu } has { $gb } GB; the bundled local models need at least 6 GB
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e6e7669646961 = NVIDIA GPU with { $gb } GB
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e6e76696469612e637075 = NVIDIA GPU with { $gb } GB; a model runs on your GPU; transcription runs on your CPU on this machine
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e6e76696469612e6c6f77 = the NVIDIA GPU has { $gb } GB — the bundled local models need at least 6 GB
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e6e76696469612e756e6b6e6f776e = NVIDIA GPU detected but its memory could not be read — GPU readiness is unknown
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e72656164696e6573732e756e6b6e6f776e = GPU readiness could not be determined: { $error }
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e72656e6465722e7065726d697373696f6e = a GPU render node exists under { "/dev/dri" } but this user cannot open it — add yourself to the render group with `{ "sudo usermod -aG render $USER" }`, then log out and back in and run `{ "solstone journal check" }` again
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e756e6966696564 = NVIDIA GPU with { $gb } GB (unified memory)
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e756e69666965642e637075 = NVIDIA GPU with { $gb } GB (unified memory); a model runs on your GPU; transcription runs on your CPU on this machine
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e756e6b6e6f776e = couldn't read GPU memory. local thinking needs at least 6 GB
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e76756c6b616e = Vulkan GPU { $gpu } with { $gb } GB
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e76756c6b616e2e637075 = Vulkan GPU { $gpu } with { $gb } GB; a model runs on your GPU; transcription runs on your CPU on this machine
+
+m6a6f75726e616c2e636c692e636865636b2e6770752e76756c6b616e2e696e636f6d706c657465 = no NVIDIA GPU found and the Vulkan probe did not complete — GPU readiness is unknown
+
+m6a6f75726e616c2e636c692e636865636b2e6c6162656c2e636564 = ced
+
+m6a6f75726e616c2e636c692e636865636b2e6c6162656c2e6469736b = disk
+
+m6a6f75726e616c2e636c692e636865636b2e6c6162656c2e677075 = gpu
+
+m6a6f75726e616c2e636c692e636865636b2e6c6162656c2e6d656d6f7279 = memory
+
+m6a6f75726e616c2e636c692e636865636b2e6c6162656c2e706c6174666f726d = platform
+
+m6a6f75726e616c2e636c692e636865636b2e6c6162656c2e72616d = ram
+
+m6a6f75726e616c2e636c692e636865636b2e6c6162656c2e726664657472 = rfdetr
+
+m6a6f75726e616c2e636c692e636865636b2e6d61726b65722e626c6f636b6564 = [blocked]
+
+m6a6f75726e616c2e636c692e636865636b2e6d61726b65722e6f6b = [ok]
+
+m6a6f75726e616c2e636c692e636865636b2e6d61726b65722e756e6b6e6f776e = [unknown]
+
+m6a6f75726e616c2e636c692e636865636b2e6d61726b65722e7761726e = [warn]
+
+m6a6f75726e616c2e636c692e636865636b2e6d656d6f72792e617661696c61626c65 = enough total memory, but only { $gb } GB is free right now — close some apps before the local models load
+
+m6a6f75726e616c2e636c692e636865636b2e6d656d6f72792e656c696769626c65 = { $gb } GB of memory meets the 16 GB minimum
+
+m6a6f75726e616c2e636c692e636865636b2e6d656d6f72792e6d696e696d756d = Apple Silicon needs at least 16 GB of memory for the bundled local models (this Mac has { $gb } GB)
+
+m6a6f75726e616c2e636c692e636865636b2e6d656d6f72792e756e6b6e6f776e = available memory could not be verified
+
+m6a6f75726e616c2e636c692e636865636b2e6f766572616c6c2e626c6f636b6564 = Not ready — this computer can't run the bundled local models yet.
+
+m6a6f75726e616c2e636c692e636865636b2e6f766572616c6c2e7265616479 = Ready — install the journal next:  see { "INSTALL.md" }
+
+m6a6f75726e616c2e636c692e636865636b2e6f766572616c6c2e7761726e696e67 = Mostly ready (see the warnings above) — you can install the journal:  see { "INSTALL.md" }
+
+m6a6f75726e616c2e636c692e636865636b2e706c6174666f726d2e6170706c65 = Apple Silicon macOS (arm64)
+
+m6a6f75726e616c2e636c692e636865636b2e706c6174666f726d2e696e74656c = Intel Macs aren't supported — use an Apple Silicon Mac, or run the journal on supported Linux.
+
+m6a6f75726e616c2e636c692e636865636b2e706c6174666f726d2e6c696e7578 = Linux ({ $arch })
+
+m6a6f75726e616c2e636c692e636865636b2e706c6174666f726d2e756e737570706f72746564 = { $os }/{ $arch } can't run the bundled local models yet. supported platforms are apple silicon macos, x86_64/aarch64 linux and x86_64/aarch64 windows.
+
+m6a6f75726e616c2e636c692e636865636b2e706c6174666f726d2e77696e646f7773 = Windows ({ $arch })
+
+m6a6f75726e616c2e636c692e636865636b2e72616d2e6c6f77 = { $gb } GB of system memory is on the low side — 8 GB or more is recommended
+
+m6a6f75726e616c2e636c692e636865636b2e72616d2e746f74616c = { $gb } GB of system memory
+
+m6a6f75726e616c2e636c692e636865636b2e72616d2e756e6b6e6f776e = system memory could not be verified
+
+m6a6f75726e616c2e636c692e636865636b2e7469746c65 = { "solstone journal check" } — can this computer run the journal with the bundled local models?
+
 m6a6f75726e616c2e636c692e636c69656e742e646174652e73686f7274 = { $weekday } { $month } { $day }
 
 m6a6f75726e616c2e636c692e636c69656e742e646174652e73686f72742e79656172 = { $weekday } { $month } { $day } '{ $year }

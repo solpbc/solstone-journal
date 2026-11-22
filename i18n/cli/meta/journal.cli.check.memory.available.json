@@ -1,0 +1,21 @@
+{
+  "description": "Readiness report: memory available.",
+  "context": "Readiness report: memory available.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "gb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0a1d1125b1312e276edc51521b868702db109d030c58f53dfdaa678fd19730a1",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

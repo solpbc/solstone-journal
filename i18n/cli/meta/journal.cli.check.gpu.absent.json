@@ -1,0 +1,16 @@
+{
+  "description": "Readiness report: gpu absent.",
+  "context": "Readiness report: gpu absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3c78664f942aa3a0bfe49ca7043dbfbc827411b82ade5a27e8e786b22a9bbe5f",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

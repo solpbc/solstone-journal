@@ -510,7 +510,7 @@ For command help, keep command names, flags, argument syntax, authority paths an
 
 For native Sol commands, render terminal messages in the caller's language. Keep JSON responses and request bodies in their original form, including commands that return JSON by default. Preserve device labels, journal marks and server-provided details as received.
 
-The journal host chooses the terminal language after it identifies the command and its option values. Keep service receipts, supervisor logs and machine output in their canonical form.
+The journal host chooses the terminal language after it identifies the command and its option values. Keep service receipts, supervisor logs and machine output in their canonical form. For `journal check`, render the terminal report in the caller’s language. Keep the JSON report in English, including its diagnostic details.
 
 Keep the English Markdown that Think and Describe write readable on its own. Store the message identities and argument ranges in the matching `.md.display` file. When reading it, check that it still matches the Markdown before translating only the marked messages.
 

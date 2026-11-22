@@ -1,0 +1,16 @@
+{
+  "description": "Readiness report: gpu cuda integrity.",
+  "context": "Readiness report: gpu cuda integrity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a10a3ac783ce592336775142f13b3a083d67e6cae5cfd00d3dd823f4e1e81189",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

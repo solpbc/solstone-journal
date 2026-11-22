@@ -1,0 +1,21 @@
+{
+  "description": "Readiness report: memory minimum.",
+  "context": "Readiness report: memory minimum.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "gb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cc2edaf5eb47d59a3c0149624a06094d0c06c1fe4810db2b54eac0fe3fb79fb5",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

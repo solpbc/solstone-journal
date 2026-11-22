@@ -1,0 +1,16 @@
+{
+  "description": "Readiness report: gpu nvidia unknown.",
+  "context": "Readiness report: gpu nvidia unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d81c8121173fccc3198c2bcbcb3b730a74ded88f5c3738b3d8cd6a31971eaf93",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

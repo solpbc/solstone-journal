@@ -3,6 +3,7 @@
 
 //! Pure readiness verdict shared by the native `solstone-core check` adapter and tests.
 
+use solstone_core_cli_copy::{ENGLISH, display_for};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -13,16 +14,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_local::install::capability_status::CapabilityStatus;
-use solstone_core_local::install::ced_readiness::{CED_READY_DETAIL, CedVerdict};
+use solstone_core_local::install::ced_readiness::CedVerdict;
 #[cfg(test)]
 use solstone_core_local::install::rfdetr_readiness::RFDETR_UNAVAILABLE_GUIDANCE;
 use solstone_core_local::install::rfdetr_readiness::{
-    RFDETR_READY_DETAIL, RfdetrDegradedCause, RfdetrReadiness, evaluate_rfdetr_readiness,
+    RfdetrDegradedCause, RfdetrReadiness, evaluate_rfdetr_readiness,
 };
 use solstone_core_local::{
     APPLE_SILICON_TOTAL_MEMORY_MIN_BYTES, AppleTotalMemoryVerdict, GPU_DEVICE_LOCAL_MIN_BYTES,
-    GpuDeviceLocalVerdict, VulkanDevice, apple_total_memory_verdict, cpu_placement_suffix,
-    gpu_device_local_verdict, select_device,
+    GpuDeviceLocalVerdict, VulkanDevice, apple_total_memory_verdict, gpu_device_local_verdict,
+    select_device,
 };
 use solstone_core_system::provider_runtime::parakeet_placement_for_devices;
 
@@ -31,7 +32,6 @@ const DISK_MIN: u64 = 20 * GIB;
 const MAC_AVAILABLE_MIN: u64 = 13 * GIB;
 const LINUX_RAM_WARN: u64 = 8 * GIB;
 const FEEDBACK_URL: &str = "https://github.com/solpbc/solstone-journal";
-const RENDER_HINT: &str = "a GPU render node exists under /dev/dri but this user cannot open it — add yourself to the render group with `sudo usermod -aG render $USER`, then log out and back in and run `solstone journal check` again";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CheckInputs {
@@ -258,7 +258,7 @@ fn memory() -> MemoryInput {
     }
 }
 #[cfg(unix)]
-fn free_disk(path: &Path) -> Result<u64, String> {
+fn free_disk(locale: &str, path: &Path) -> Result<u64, String> {
     let mut root = path.to_path_buf();
     while !root.exists() && root != root.parent().unwrap_or(&root) {
         root = root.parent().unwrap_or(&root).to_path_buf();
@@ -266,17 +266,21 @@ fn free_disk(path: &Path) -> Result<u64, String> {
     let stat = statvfs(&root).map_err(|error| error.to_string())?;
     (stat.blocks_available() as u64)
         .checked_mul(stat.fragment_size() as u64)
-        .ok_or_else(|| "free space overflow".into())
+        .ok_or_else(|| display_for(locale, "journal.cli.check.disk.overflow", []))
 }
 
 #[cfg(windows)]
-fn free_disk(path: &Path) -> Result<u64, String> {
+fn free_disk(_locale: &str, path: &Path) -> Result<u64, String> {
     solstone_core_local::install::fit_report::free_bytes(path)
 }
 
 #[cfg(not(any(unix, windows)))]
-fn free_disk(_path: &Path) -> Result<u64, String> {
-    Err("disk-space inspection is unsupported on this platform".into())
+fn free_disk(locale: &str, _path: &Path) -> Result<u64, String> {
+    Err(display_for(
+        locale,
+        "journal.cli.journal.archive.space.platform",
+        [],
+    ))
 }
 fn render_nodes_present_but_inaccessible(root: &Path) -> bool {
     let Ok(entries) = fs::read_dir(root) else {
@@ -313,13 +317,21 @@ pub fn local_check_gpu_selection(
     journal: &Path,
     nvidia: &solstone_core_local::NvidiaProbe,
 ) -> LocalCheckGpuSelection {
+    local_check_gpu_selection_in(ENGLISH, journal, nvidia)
+}
+
+fn local_check_gpu_selection_in(
+    locale: &str,
+    journal: &Path,
+    nvidia: &solstone_core_local::NvidiaProbe,
+) -> LocalCheckGpuSelection {
     let read = match solstone_core_journal_config::read_journal_config(journal) {
         Ok(read) => read,
         Err(error) => {
             return LocalCheckGpuSelection {
                 vulkan_device_index: None,
                 local_backend: None,
-                gpu_evaluation_error: Some(error.to_string()),
+                gpu_evaluation_error: Some(error.render(locale)),
                 bundled_local_selected_or_planned: false,
             };
         }
@@ -351,7 +363,11 @@ pub fn local_check_gpu_selection(
         solstone_core_local::BackendSelection::IntegrityBlocked => LocalCheckGpuSelection {
             vulkan_device_index: None,
             local_backend: None,
-            gpu_evaluation_error: Some("CUDA runtime integrity failure".into()),
+            gpu_evaluation_error: Some(display_for(
+                locale,
+                "journal.cli.check.gpu.cuda.integrity",
+                [],
+            )),
             bundled_local_selected_or_planned,
         },
     }
@@ -360,7 +376,12 @@ pub fn local_check_gpu_selection(
 /// Gather the same real host state used by `journal check` for all native consumers.
 #[must_use]
 pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
-    gather_host_inputs_with(
+    gather_host_inputs_in(ENGLISH, journal, version)
+}
+
+fn gather_host_inputs_in(locale: &str, journal: &Path, version: &str) -> CheckInputs {
+    gather_host_inputs_with_locale(
+        locale,
         journal,
         version,
         std::env::consts::OS,
@@ -371,6 +392,21 @@ pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
 
 #[must_use]
 pub fn gather_host_inputs_with<N, V>(
+    journal: &Path,
+    version: &str,
+    os: &str,
+    nvidia_fn: N,
+    vulkan_fn: V,
+) -> CheckInputs
+where
+    N: FnOnce() -> solstone_core_local::nvidia::NvidiaProbe,
+    V: FnOnce() -> solstone_core_system::vulkan_observe::VulkanObservation,
+{
+    gather_host_inputs_with_locale(ENGLISH, journal, version, os, nvidia_fn, vulkan_fn)
+}
+
+fn gather_host_inputs_with_locale<N, V>(
+    locale: &str,
     journal: &Path,
     version: &str,
     os: &str,
@@ -394,11 +430,11 @@ where
         (None, "unavailable")
     };
     let vulkan_obs = vulkan_fn();
-    let selection = local_check_gpu_selection(journal, &nvidia);
+    let selection = local_check_gpu_selection_in(locale, journal, &nvidia);
     CheckInputs {
         platform: host_platform(),
         memory: memory(),
-        disk: free_disk(journal)
+        disk: free_disk(locale, journal)
             .map(|free_bytes| DiskInput::Ok { free_bytes })
             .unwrap_or_else(|message| DiskInput::Error { message }),
         journal_path: journal.display().to_string(),
@@ -545,12 +581,12 @@ fn label(bytes: u64) -> String {
         format!("{rounded:.1}")
     }
 }
-fn placement_suffix(
+fn uses_cpu_transcription(
     devices: &[VulkanDevice],
     selected: Option<&VulkanDevice>,
     unified_memory: bool,
     bundled_local_selected_or_planned: bool,
-) -> String {
+) -> bool {
     // Missing journal config is a planned bundled-local install.
     // A present config uses that config's bundled-local selection.
     let decision = parakeet_placement_for_devices(
@@ -559,7 +595,7 @@ fn placement_suffix(
         unified_memory,
         bundled_local_selected_or_planned,
     );
-    cpu_placement_suffix(selected, decision.force_cpu)
+    selected.is_some() && decision.force_cpu
 }
 /// Whether this host runs any of the bundled local capabilities.
 ///
@@ -584,6 +620,10 @@ fn overall(checks: &[Check]) -> Severity {
 }
 
 pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
+    build_check_report_in(ENGLISH, inputs)
+}
+
+fn build_check_report_in(locale: &str, inputs: &CheckInputs) -> CheckReport {
     let supported = supported(&inputs.platform);
     let platform = PlatformReport {
         os: inputs.platform.os.clone(),
@@ -594,11 +634,12 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
     };
     if !supported {
         let detail = if inputs.platform.os == "Darwin" {
-            "Intel Macs aren't supported — use an Apple Silicon Mac, or run the journal on supported Linux.".into()
+            display_for(locale, "journal.cli.check.platform.intel", [])
         } else {
-            format!(
-                "{}/{} can't run the bundled local models yet. supported platforms are apple silicon macos, x86_64/aarch64 linux and x86_64/aarch64 windows.",
-                inputs.platform.os, inputs.platform.arch
+            display_for(
+                locale,
+                "journal.cli.check.platform.unsupported",
+                [("os", &inputs.platform.os), ("arch", &inputs.platform.arch)],
             )
         };
         let checks = vec![check("platform", Severity::Blocked, detail, None, None)];
@@ -611,18 +652,26 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
         };
     }
     let platform_detail = match inputs.platform.os.as_str() {
-        "Darwin" => "Apple Silicon macOS (arm64)".into(),
-        "Windows" => format!("Windows ({})", inputs.platform.arch),
-        _ => format!("Linux ({})", inputs.platform.arch),
+        "Darwin" => display_for(locale, "journal.cli.check.platform.apple", []),
+        "Windows" => display_for(
+            locale,
+            "journal.cli.check.platform.windows",
+            [("arch", &inputs.platform.arch)],
+        ),
+        _ => display_for(
+            locale,
+            "journal.cli.check.platform.linux",
+            [("arch", &inputs.platform.arch)],
+        ),
     };
     let mut checks = vec![check("platform", Severity::Ok, platform_detail, None, None)];
     if inputs.platform.os == "Darwin" {
-        checks.push(mac_memory(&inputs.memory));
-        checks.push(disk(inputs));
-        if let Some(ced) = ced_check(inputs) {
+        checks.push(mac_memory(locale, &inputs.memory));
+        checks.push(disk(locale, inputs));
+        if let Some(ced) = ced_check(locale, inputs) {
             checks.push(ced);
         }
-        if let Some(rfdetr) = rfdetr_check(inputs) {
+        if let Some(rfdetr) = rfdetr_check(locale, inputs) {
             checks.push(rfdetr);
         }
         return CheckReport {
@@ -633,13 +682,13 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
             version: inputs.version.clone(),
         };
     }
-    checks.push(gpu(inputs));
-    checks.push(ram(&inputs.memory));
-    checks.push(disk(inputs));
-    if let Some(ced) = ced_check(inputs) {
+    checks.push(gpu(locale, inputs));
+    checks.push(ram(locale, &inputs.memory));
+    checks.push(disk(locale, inputs));
+    if let Some(ced) = ced_check(locale, inputs) {
         checks.push(ced);
     }
-    if let Some(rfdetr) = rfdetr_check(inputs) {
+    if let Some(rfdetr) = rfdetr_check(locale, inputs) {
         checks.push(rfdetr);
     }
     CheckReport {
@@ -672,27 +721,33 @@ fn rfdetr_cause_str(cause: RfdetrDegradedCause) -> &'static str {
         RfdetrDegradedCause::Unrunnable => "unrunnable",
     }
 }
-fn ced_check(inputs: &CheckInputs) -> Option<Check> {
+fn ced_check(locale: &str, inputs: &CheckInputs) -> Option<Check> {
     match &inputs.ced {
         None => None,
-        Some(CapabilityStatus::Ready) => {
-            Some(check("ced", Severity::Ok, CED_READY_DETAIL, None, None))
-        }
+        Some(CapabilityStatus::Ready) => Some(check(
+            "ced",
+            Severity::Ok,
+            display_for(locale, "journal.cli.host.health.ced.ready", []),
+            None,
+            None,
+        )),
         Some(status) => {
-            let detail = status.detail().expect("non-ready status carries detail");
+            let detail = status
+                .display_detail(locale)
+                .expect("non-ready status carries detail");
             let mut item = check("ced", Severity::Warning, detail, None, None);
             item.cause = Some(ced_cause_str(status));
             Some(item)
         }
     }
 }
-fn rfdetr_check(inputs: &CheckInputs) -> Option<Check> {
+fn rfdetr_check(locale: &str, inputs: &CheckInputs) -> Option<Check> {
     match &inputs.rfdetr {
         RfdetrCheckInput::Omit => None,
         RfdetrCheckInput::Ready => Some(check(
             "rfdetr",
             Severity::Ok,
-            RFDETR_READY_DETAIL,
+            display_for(locale, "journal.cli.host.health.rfdetr.ready", []),
             None,
             None,
         )),
@@ -710,22 +765,27 @@ fn rfdetr_check(inputs: &CheckInputs) -> Option<Check> {
             let lowercase_os = inputs.platform.os.to_ascii_lowercase();
             let (guidance_os, guidance_arch) =
                 canonical_host_pair(&lowercase_os, &inputs.platform.arch);
-            let guidance = solstone_core_local::install::rfdetr_windows::rfdetr_degraded_guidance(
+            let id = if solstone_core_local::install::rfdetr_install::rfdetr_uses_package_payload(
                 guidance_os,
                 guidance_arch,
-            );
+            ) {
+                "journal.cli.host.health.rfdetr.package"
+            } else {
+                "journal.cli.host.health.rfdetr.assets"
+            };
+            let guidance = display_for(locale, id, []);
             let mut item = check("rfdetr", Severity::Warning, guidance, None, None);
             item.cause = Some(rfdetr_cause_str(*cause));
             Some(item)
         }
     }
 }
-fn mac_memory(memory: &MemoryInput) -> Check {
+fn mac_memory(locale: &str, memory: &MemoryInput) -> Check {
     match apple_total_memory_verdict(memory.total_bytes) {
         AppleTotalMemoryVerdict::Unreadable => check(
             "memory",
             Severity::Unknown,
-            "available memory could not be verified",
+            display_for(locale, "journal.cli.check.memory.unknown", []),
             Some(APPLE_SILICON_TOTAL_MEMORY_MIN_BYTES),
             None,
         ),
@@ -734,9 +794,10 @@ fn mac_memory(memory: &MemoryInput) -> Check {
             check(
                 "memory",
                 Severity::Blocked,
-                format!(
-                    "Apple Silicon needs at least 16 GB of memory for the bundled local models (this Mac has {} GB)",
-                    label(total)
+                display_for(
+                    locale,
+                    "journal.cli.check.memory.minimum",
+                    [("gb", &label(total))],
                 ),
                 Some(APPLE_SILICON_TOTAL_MEMORY_MIN_BYTES),
                 Some(total),
@@ -752,9 +813,10 @@ fn mac_memory(memory: &MemoryInput) -> Check {
                 check(
                     "memory",
                     Severity::Warning,
-                    format!(
-                        "enough total memory, but only {} GB is free right now — close some apps before the local models load",
-                        label(available)
+                    display_for(
+                        locale,
+                        "journal.cli.check.memory.available",
+                        [("gb", &label(available))],
                     ),
                     Some(MAC_AVAILABLE_MIN),
                     Some(available),
@@ -763,7 +825,11 @@ fn mac_memory(memory: &MemoryInput) -> Check {
                 check(
                     "memory",
                     Severity::Ok,
-                    format!("{} GB of memory meets the 16 GB minimum", label(total)),
+                    display_for(
+                        locale,
+                        "journal.cli.check.memory.eligible",
+                        [("gb", &label(total))],
+                    ),
                     Some(APPLE_SILICON_TOTAL_MEMORY_MIN_BYTES),
                     Some(total),
                 )
@@ -771,7 +837,17 @@ fn mac_memory(memory: &MemoryInput) -> Check {
         }
     }
 }
+fn vulkan_gpu_detail(locale: &str, gpu: &str, bytes: u64, cpu: bool) -> String {
+    let id = if cpu {
+        "journal.cli.check.gpu.vulkan.cpu"
+    } else {
+        "journal.cli.check.gpu.vulkan"
+    };
+    display_for(locale, id, [("gpu", &gpu), ("gb", &label(bytes))])
+}
+
 fn windows_vulkan_verdict_check(
+    locale: &str,
     probe_ok: bool,
     devices: &[VulkanDevice],
     override_index: Option<u32>,
@@ -784,16 +860,16 @@ fn windows_vulkan_verdict_check(
             check(
                 "gpu",
                 Severity::Ok,
-                format!(
-                    "Vulkan GPU {} with {} GB{}",
-                    selected.name,
-                    label(available_bytes),
-                    placement_suffix(
+                vulkan_gpu_detail(
+                    locale,
+                    &selected.name,
+                    available_bytes,
+                    uses_cpu_transcription(
                         devices,
                         Some(selected),
                         false,
-                        bundled_local_selected_or_planned
-                    )
+                        bundled_local_selected_or_planned,
+                    ),
                 ),
                 Some(GPU_DEVICE_LOCAL_MIN_BYTES),
                 Some(available_bytes),
@@ -804,10 +880,10 @@ fn windows_vulkan_verdict_check(
             check(
                 "gpu",
                 Severity::Blocked,
-                format!(
-                    "GPU {} has {} GB; the bundled local models need at least 6 GB",
-                    selected.name,
-                    label(available_bytes)
+                display_for(
+                    locale,
+                    "journal.cli.check.gpu.low.windows",
+                    [("gpu", &selected.name), ("gb", &label(available_bytes))],
                 ),
                 Some(GPU_DEVICE_LOCAL_MIN_BYTES),
                 Some(available_bytes),
@@ -816,26 +892,30 @@ fn windows_vulkan_verdict_check(
         GpuDeviceLocalVerdict::Unknown => check(
             "gpu",
             Severity::Unknown,
-            "couldn't read GPU memory. local thinking needs at least 6 GB",
+            display_for(locale, "journal.cli.check.gpu.unknown", []),
             Some(GPU_DEVICE_LOCAL_MIN_BYTES),
             None,
         ),
         GpuDeviceLocalVerdict::NoHardwareDevice => check(
             "gpu",
             Severity::Blocked,
-            "no usable GPU found — the bundled local models need a hardware GPU",
+            display_for(locale, "journal.cli.check.gpu.absent", []),
             None,
             None,
         ),
     }
 }
 
-fn gpu(inputs: &CheckInputs) -> Check {
+fn gpu(locale: &str, inputs: &CheckInputs) -> Check {
     if let Some(error) = &inputs.gpu_evaluation_error {
         return check(
             "gpu",
             Severity::Unknown,
-            format!("GPU readiness could not be determined: {error}"),
+            display_for(
+                locale,
+                "journal.cli.check.gpu.readiness.unknown",
+                [("error", &error)],
+            ),
             None,
             None,
         );
@@ -849,17 +929,23 @@ fn gpu(inputs: &CheckInputs) -> Check {
         if (!inputs.vulkan.probe_ok || selected.is_none())
             && inputs.render_nodes_present_but_inaccessible
         {
-            return check("gpu", Severity::Unknown, RENDER_HINT, None, None);
+            return check(
+                "gpu",
+                Severity::Unknown,
+                display_for(locale, "journal.cli.check.gpu.render.permission", []),
+                None,
+                None,
+            );
         }
         if !inputs.vulkan.probe_ok {
             let (detail, expected) = if inputs.platform.os == "Windows" {
                 (
-                    "couldn't read GPU memory. local thinking needs at least 6 GB".to_string(),
+                    display_for(locale, "journal.cli.check.gpu.unknown", []),
                     Some(GPU_DEVICE_LOCAL_MIN_BYTES),
                 )
             } else {
                 (
-                    "no NVIDIA GPU found and the Vulkan probe did not complete — GPU readiness is unknown".to_string(),
+                    display_for(locale, "journal.cli.check.gpu.vulkan.incomplete", []),
                     None,
                 )
             };
@@ -867,6 +953,7 @@ fn gpu(inputs: &CheckInputs) -> Check {
         }
         if inputs.platform.os == "Windows" {
             return windows_vulkan_verdict_check(
+                locale,
                 inputs.vulkan.probe_ok,
                 &inputs.vulkan.devices,
                 inputs.vulkan_device_index,
@@ -878,7 +965,7 @@ fn gpu(inputs: &CheckInputs) -> Check {
             return check(
                 "gpu",
                 Severity::Blocked,
-                "no usable GPU found — the bundled local models need a hardware GPU with at least 6 GB",
+                display_for(locale, "journal.cli.check.gpu.absent.linux", []),
                 Some(GPU_DEVICE_LOCAL_MIN_BYTES),
                 None,
             );
@@ -888,10 +975,10 @@ fn gpu(inputs: &CheckInputs) -> Check {
             return check(
                 "gpu",
                 Severity::Blocked,
-                format!(
-                    "GPU {} has {} GB — the bundled local models need at least 6 GB",
-                    selected.name,
-                    label(bytes)
+                display_for(
+                    locale,
+                    "journal.cli.check.gpu.low.linux",
+                    [("gpu", &selected.name), ("gb", &label(bytes))],
                 ),
                 Some(GPU_DEVICE_LOCAL_MIN_BYTES),
                 Some(bytes),
@@ -900,16 +987,16 @@ fn gpu(inputs: &CheckInputs) -> Check {
         return check(
             "gpu",
             Severity::Ok,
-            format!(
-                "Vulkan GPU {} with {} GB{}",
-                selected.name,
-                label(bytes),
-                placement_suffix(
+            vulkan_gpu_detail(
+                locale,
+                &selected.name,
+                bytes,
+                uses_cpu_transcription(
                     &inputs.vulkan.devices,
                     Some(&selected),
                     false,
-                    inputs.bundled_local_selected_or_planned
-                )
+                    inputs.bundled_local_selected_or_planned,
+                ),
             ),
             Some(GPU_DEVICE_LOCAL_MIN_BYTES),
             Some(bytes),
@@ -917,6 +1004,7 @@ fn gpu(inputs: &CheckInputs) -> Check {
     }
     if inputs.local_backend == Some(solstone_core_local::Backend::Vulkan) {
         return windows_vulkan_verdict_check(
+            locale,
             inputs.vulkan.probe_ok,
             &inputs.vulkan.devices,
             inputs.vulkan_device_index,
@@ -929,7 +1017,7 @@ fn gpu(inputs: &CheckInputs) -> Check {
         return check(
             "gpu",
             Severity::Unknown,
-            "NVIDIA GPU detected but its memory could not be read — GPU readiness is unknown",
+            display_for(locale, "journal.cli.check.gpu.nvidia.unknown", []),
             Some(GPU_DEVICE_LOCAL_MIN_BYTES),
             None,
         );
@@ -939,25 +1027,29 @@ fn gpu(inputs: &CheckInputs) -> Check {
         return check(
             "gpu",
             Severity::Blocked,
-            format!(
-                "the NVIDIA GPU has {} GB — the bundled local models need at least 6 GB",
-                label(bytes)
+            display_for(
+                locale,
+                "journal.cli.check.gpu.nvidia.low",
+                [("gb", &label(bytes))],
             ),
             Some(GPU_DEVICE_LOCAL_MIN_BYTES),
             Some(bytes),
         );
     }
     let unified = inputs.nvidia.memory_source == "system_available";
-    let mut detail = format!("NVIDIA GPU with {} GB", label(bytes));
-    if unified {
-        detail.push_str(" (unified memory)");
-    }
-    detail.push_str(&placement_suffix(
+    let cpu = uses_cpu_transcription(
         &inputs.vulkan.devices,
         selected.as_ref(),
         unified,
         inputs.bundled_local_selected_or_planned,
-    ));
+    );
+    let id = match (unified, cpu) {
+        (false, false) => "journal.cli.check.gpu.nvidia",
+        (false, true) => "journal.cli.check.gpu.nvidia.cpu",
+        (true, false) => "journal.cli.check.gpu.unified",
+        (true, true) => "journal.cli.check.gpu.unified.cpu",
+    };
+    let detail = display_for(locale, id, [("gb", &label(bytes))]);
     check(
         "gpu",
         Severity::Ok,
@@ -966,42 +1058,44 @@ fn gpu(inputs: &CheckInputs) -> Check {
         Some(bytes),
     )
 }
-fn ram(memory: &MemoryInput) -> Check {
+fn ram(locale: &str, memory: &MemoryInput) -> Check {
     match memory.total_bytes {
         None => check(
             "ram",
             Severity::Warning,
-            "system memory could not be verified",
+            display_for(locale, "journal.cli.check.ram.unknown", []),
             None,
             None,
         ),
         Some(total) if total < LINUX_RAM_WARN => check(
             "ram",
             Severity::Warning,
-            format!(
-                "{} GB of system memory is on the low side — 8 GB or more is recommended",
-                label(total)
-            ),
+            display_for(locale, "journal.cli.check.ram.low", [("gb", &label(total))]),
             Some(LINUX_RAM_WARN),
             Some(total),
         ),
         Some(total) => check(
             "ram",
             Severity::Ok,
-            format!("{} GB of system memory", label(total)),
+            display_for(
+                locale,
+                "journal.cli.check.ram.total",
+                [("gb", &label(total))],
+            ),
             None,
             Some(total),
         ),
     }
 }
-fn disk(inputs: &CheckInputs) -> Check {
+fn disk(locale: &str, inputs: &CheckInputs) -> Check {
     match &inputs.disk {
         DiskInput::Error { message } => check(
             "disk",
             Severity::Unknown,
-            format!(
-                "free space at {} could not be verified: {message}",
-                inputs.journal_path
+            display_for(
+                locale,
+                "journal.cli.check.disk.error",
+                [("path", &inputs.journal_path), ("message", &message)],
             ),
             Some(DISK_MIN),
             None,
@@ -1009,10 +1103,10 @@ fn disk(inputs: &CheckInputs) -> Check {
         DiskInput::Ok { free_bytes } if *free_bytes < DISK_MIN => check(
             "disk",
             Severity::Blocked,
-            format!(
-                "the journal and local models need at least 20 GB free — {} has {} GB",
-                inputs.journal_path,
-                label(*free_bytes)
+            display_for(
+                locale,
+                "journal.cli.check.disk.low",
+                [("path", &inputs.journal_path), ("gb", &label(*free_bytes))],
             ),
             Some(DISK_MIN),
             Some(*free_bytes),
@@ -1020,10 +1114,10 @@ fn disk(inputs: &CheckInputs) -> Check {
         DiskInput::Ok { free_bytes } => check(
             "disk",
             Severity::Ok,
-            format!(
-                "{} GB free at {} (need 20 GB)",
-                label(*free_bytes),
-                inputs.journal_path
+            display_for(
+                locale,
+                "journal.cli.check.disk.free",
+                [("gb", &label(*free_bytes)), ("path", &inputs.journal_path)],
             ),
             Some(DISK_MIN),
             Some(*free_bytes),
@@ -1047,39 +1141,51 @@ pub fn json_output(report: &CheckReport) -> String {
     )
 }
 pub fn human_output(report: &CheckReport) -> String {
-    let mut lines = vec![
-        "solstone journal check — can this computer run the journal with the bundled local models?"
-            .to_owned(),
-    ];
+    human_output_in(ENGLISH, report)
+}
+
+pub fn human_host_report(locale: &str, journal: &Path, version: &str) -> (String, u8) {
+    human_report(locale, &gather_host_inputs_in(locale, journal, version))
+}
+
+pub fn human_report(locale: &str, inputs: &CheckInputs) -> (String, u8) {
+    let report = build_check_report_in(locale, inputs);
+    (human_output_in(locale, &report), exit_code(&report))
+}
+
+fn human_output_in(locale: &str, report: &CheckReport) -> String {
+    let mut lines = vec![display_for(locale, "journal.cli.check.title", [])];
     for item in &report.checks {
-        let marker = match item.severity {
-            Severity::Ok => "[ok]",
-            Severity::Warning => "[warn]",
-            Severity::Blocked => "[blocked]",
-            Severity::Unknown => "[unknown]",
+        let marker_id = match item.severity {
+            Severity::Ok => "journal.cli.check.marker.ok",
+            Severity::Warning => "journal.cli.check.marker.warn",
+            Severity::Blocked => "journal.cli.check.marker.blocked",
+            Severity::Unknown => "journal.cli.check.marker.unknown",
         };
-        lines.push(format!("  {marker:<9} {:<9} {}", item.name, item.detail));
+        let marker = display_for(locale, marker_id, []);
+        let label = match item.name {
+            "platform" => display_for(locale, "journal.cli.check.label.platform", []),
+            "memory" => display_for(locale, "journal.cli.check.label.memory", []),
+            "disk" => display_for(locale, "journal.cli.check.label.disk", []),
+            "ced" => display_for(locale, "journal.cli.check.label.ced", []),
+            "rfdetr" => display_for(locale, "journal.cli.check.label.rfdetr", []),
+            "gpu" => display_for(locale, "journal.cli.check.label.gpu", []),
+            "ram" => display_for(locale, "journal.cli.check.label.ram", []),
+            other => other.to_owned(),
+        };
+        lines.push(format!("  {marker:<9} {label:<9} {}", item.detail));
     }
-    match report.overall {
-        Severity::Ok => {
-            let _ = report.recommended_package;
-            lines.push("Ready — install the journal next:  see INSTALL.md".to_owned());
-        }
-        Severity::Warning => {
-            let _ = report.recommended_package;
-            lines.push(
-                "Mostly ready (see the warnings above) — you can install the journal:  see INSTALL.md"
-                    .to_owned(),
-            );
-        }
-        Severity::Blocked => {
-            lines.push("Not ready — this computer can't run the bundled local models yet.".into())
-        }
+    lines.push(match report.overall {
+        Severity::Ok => display_for(locale, "journal.cli.check.overall.ready", []),
+        Severity::Warning => display_for(locale, "journal.cli.check.overall.warning", []),
+        Severity::Blocked => display_for(locale, "journal.cli.check.overall.blocked", []),
         Severity::Unknown => unreachable!(),
-    };
+    });
     lines.push(String::new());
-    lines.push(format!(
-        "Think this readout is wrong for your machine? We'd love a patch — {FEEDBACK_URL}"
+    lines.push(display_for(
+        locale,
+        "journal.cli.check.feedback",
+        [("url", &FEEDBACK_URL)],
     ));
     format!("{}\n", lines.join("\n"))
 }
@@ -1153,7 +1259,7 @@ mod tests {
     #[test]
     fn ready_rfdetr_is_ok_and_does_not_change_overall() {
         let inputs = check_inputs(None, RfdetrCheckInput::Ready);
-        let rfdetr = rfdetr_check(&inputs).expect("ready RF-DETR check");
+        let rfdetr = rfdetr_check(ENGLISH, &inputs).expect("ready RF-DETR check");
         assert_eq!(rfdetr.severity, Severity::Ok);
         assert_eq!(overall(&[rfdetr]), Severity::Ok);
     }
@@ -1176,7 +1282,7 @@ mod tests {
             (RfdetrDegradedCause::Unrunnable, "unrunnable"),
         ] {
             let inputs = check_inputs(None, RfdetrCheckInput::Degraded { cause });
-            let rfdetr = rfdetr_check(&inputs).expect("degraded RF-DETR check");
+            let rfdetr = rfdetr_check(ENGLISH, &inputs).expect("degraded RF-DETR check");
             assert_eq!(rfdetr.severity, Severity::Warning, "{cause:?}");
             // Done condition 7: the owner-facing `detail` stays the single
             // shared guidance sentence (unchanged, out of bounds to reword),
@@ -1187,20 +1293,26 @@ mod tests {
         }
 
         // The two optional-asset checks must not disagree about severity.
-        let degraded_ced = ced_check(&check_inputs(
-            Some(CapabilityStatus::UnloadableOrUnrunnable {
-                capability: CED_CAPABILITY.to_owned(),
-                detail: "ced library failed to load".into(),
-            }),
-            RfdetrCheckInput::Omit,
-        ))
+        let degraded_ced = ced_check(
+            ENGLISH,
+            &check_inputs(
+                Some(CapabilityStatus::UnloadableOrUnrunnable {
+                    capability: CED_CAPABILITY.to_owned(),
+                    detail: "ced library failed to load".into(),
+                }),
+                RfdetrCheckInput::Omit,
+            ),
+        )
         .expect("degraded CED check");
-        let degraded_rfdetr = rfdetr_check(&check_inputs(
-            None,
-            RfdetrCheckInput::Degraded {
-                cause: RfdetrDegradedCause::Unrunnable,
-            },
-        ))
+        let degraded_rfdetr = rfdetr_check(
+            ENGLISH,
+            &check_inputs(
+                None,
+                RfdetrCheckInput::Degraded {
+                    cause: RfdetrDegradedCause::Unrunnable,
+                },
+            ),
+        )
         .expect("degraded RF-DETR check");
         assert_eq!(
             degraded_rfdetr.severity, degraded_ced.severity,
@@ -1336,7 +1448,7 @@ mod tests {
         // guidance ("run journal install-models") for a package-payload asset.
         for spelling in ["windows", "Windows"] {
             inputs.platform.os = spelling.into();
-            let rfdetr = rfdetr_check(&inputs).expect("degraded RF-DETR check on Windows");
+            let rfdetr = rfdetr_check(ENGLISH, &inputs).expect("degraded RF-DETR check on Windows");
             assert_eq!(rfdetr.severity, Severity::Warning, "{spelling}");
             assert_eq!(
                 rfdetr.detail, RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE,
@@ -1397,7 +1509,7 @@ mod tests {
             ),
         ] {
             let inputs = check_inputs(Some(status.clone()), RfdetrCheckInput::Omit);
-            let ced = ced_check(&inputs).expect("degraded CED check");
+            let ced = ced_check(ENGLISH, &inputs).expect("degraded CED check");
             assert_eq!(ced.severity, Severity::Warning, "{status:?}");
             assert_eq!(ced.detail, detail);
             assert_eq!(ced.cause, Some(expected_cause_str), "{status:?}");
@@ -1448,8 +1560,8 @@ mod tests {
     fn both_providers_ready_leaves_overall_ok() {
         let inputs = check_inputs(Some(CapabilityStatus::Ready), RfdetrCheckInput::Ready);
         let overall_severity = overall(&[
-            ced_check(&inputs).expect("ready CED check"),
-            rfdetr_check(&inputs).expect("ready RF-DETR check"),
+            ced_check(ENGLISH, &inputs).expect("ready CED check"),
+            rfdetr_check(ENGLISH, &inputs).expect("ready RF-DETR check"),
         ]);
         assert_eq!(overall_severity, Severity::Ok);
         assert_ne!(overall_severity, Severity::Blocked);
@@ -1466,8 +1578,8 @@ mod tests {
         );
         assert_eq!(
             overall(&[
-                ced_check(&inputs).unwrap(),
-                rfdetr_check(&inputs).expect("ready RF-DETR check"),
+                ced_check(ENGLISH, &inputs).unwrap(),
+                rfdetr_check(ENGLISH, &inputs).expect("ready RF-DETR check"),
             ]),
             Severity::Warning
         );
@@ -1616,8 +1728,18 @@ mod tests {
             vram_mib: 8192,
         }];
         let selected = inputs.vulkan.devices.first();
-        assert!(placement_suffix(&inputs.vulkan.devices, selected, false, false).is_empty());
-        assert!(!placement_suffix(&inputs.vulkan.devices, selected, false, true).is_empty());
+        assert!(!uses_cpu_transcription(
+            &inputs.vulkan.devices,
+            selected,
+            false,
+            false
+        ));
+        assert!(uses_cpu_transcription(
+            &inputs.vulkan.devices,
+            selected,
+            false,
+            true
+        ));
     }
 
     #[test]
@@ -1886,7 +2008,7 @@ mod tests {
         inputs.local_backend = sel.local_backend;
         inputs.gpu_evaluation_error = sel.gpu_evaluation_error;
         inputs.bundled_local_selected_or_planned = sel.bundled_local_selected_or_planned;
-        let g = gpu(&inputs);
+        let g = gpu(ENGLISH, &inputs);
         assert_eq!(g.severity, Severity::Unknown);
         assert!(!g.detail.contains("default-discrete"));
 
@@ -1909,7 +2031,7 @@ mod tests {
         inputs.local_backend = sel.local_backend;
         inputs.gpu_evaluation_error = sel.gpu_evaluation_error;
         inputs.bundled_local_selected_or_planned = sel.bundled_local_selected_or_planned;
-        let g = gpu(&inputs);
+        let g = gpu(ENGLISH, &inputs);
         assert_eq!(g.severity, Severity::Blocked);
         assert!(g.detail.contains("configured-small"));
 
@@ -1961,7 +2083,7 @@ mod tests {
         inputs.vulkan.probe_ok = true;
         inputs.vulkan.devices = pair_a.clone();
         inputs.vulkan_device_index = Some(1);
-        let g = gpu(&inputs);
+        let g = gpu(ENGLISH, &inputs);
         assert_eq!(g.severity, Severity::Blocked);
         assert!(g.detail.contains("configured-small"));
 
@@ -1972,7 +2094,7 @@ mod tests {
 
         // Linux !nvidia.detected with pair_b and override Some(1) -> Ok, names configured-large
         inputs.vulkan.devices = pair_b.clone();
-        let g = gpu(&inputs);
+        let g = gpu(ENGLISH, &inputs);
         assert_eq!(g.severity, Severity::Ok);
         assert!(g.detail.contains("configured-large"));
 
@@ -1985,13 +2107,13 @@ mod tests {
         inputs.platform.os = "Windows".into();
         inputs.vulkan.devices = pair_a.clone();
         inputs.vulkan_device_index = Some(1);
-        let g = gpu(&inputs);
+        let g = gpu(ENGLISH, &inputs);
         assert_eq!(g.severity, Severity::Blocked);
         assert!(g.detail.contains("configured-small"));
 
         // Windows with pair_b and override Some(1) -> Ok
         inputs.vulkan.devices = pair_b.clone();
-        let g = gpu(&inputs);
+        let g = gpu(ENGLISH, &inputs);
         assert_eq!(g.severity, Severity::Ok);
         assert!(g.detail.contains("configured-large"));
 
@@ -2002,14 +2124,14 @@ mod tests {
         inputs.local_backend = Some(solstone_core_local::Backend::Vulkan);
         inputs.vulkan.devices = pair_a.clone();
         inputs.vulkan_device_index = Some(1);
-        let g = gpu(&inputs);
+        let g = gpu(ENGLISH, &inputs);
         assert_eq!(g.severity, Severity::Blocked);
         assert!(g.detail.contains("configured-small"));
 
         // Small NVIDIA capacity must not block the eligible selected Vulkan device.
         inputs.nvidia.vram_mib = Some(2048);
         inputs.vulkan.devices = pair_b.clone();
-        let g = gpu(&inputs);
+        let g = gpu(ENGLISH, &inputs);
         assert_eq!(g.severity, Severity::Ok);
         assert!(g.detail.contains("configured-large"));
 
@@ -2018,7 +2140,7 @@ mod tests {
         inputs.nvidia.vram_mib = Some(16384);
         inputs.vulkan.devices = pair_a.clone();
         inputs.vulkan_device_index = Some(1); // Vulkan device 1 is below bar
-        let g = gpu(&inputs);
+        let g = gpu(ENGLISH, &inputs);
         assert_eq!(g.severity, Severity::Ok);
         assert!(g.detail.contains("NVIDIA GPU with 16 GB"));
 
@@ -2026,7 +2148,7 @@ mod tests {
         inputs.nvidia.vram_mib = Some(4096);
         inputs.vulkan.devices = pair_b.clone();
         inputs.vulkan_device_index = Some(1); // Vulkan device 1 is 24 GB
-        let g = gpu(&inputs);
+        let g = gpu(ENGLISH, &inputs);
         assert_eq!(g.severity, Severity::Blocked);
         assert!(
             g.detail

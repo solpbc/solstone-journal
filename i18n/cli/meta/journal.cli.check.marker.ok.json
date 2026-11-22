@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for marker ok.",
+  "context": "Journal command-line text for marker ok.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3afa542af1d72de861dec4b86c94101ca4cca0b226cbfb7e7a59c4b033f2aca6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

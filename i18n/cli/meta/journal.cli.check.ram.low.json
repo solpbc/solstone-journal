@@ -1,0 +1,21 @@
+{
+  "description": "Readiness report: ram low.",
+  "context": "Readiness report: ram low.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "gb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "77a285952ada89321303fe14fbd66144ad8c54c4ec94214ca3bf9e19d08b037b",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
