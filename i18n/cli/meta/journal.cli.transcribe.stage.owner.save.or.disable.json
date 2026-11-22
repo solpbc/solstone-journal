@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for stage owner save or disable.",
+  "context": "Journal command-line text for stage owner save or disable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5b71ec0ada669eb33c999fb56e9b3255800802e91da49ba8d5804f370888a08a",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "setting",
+      "kind": "accepted-input",
+      "value": "transcribe.owner_voice_only"
+    }
+  ]
+}

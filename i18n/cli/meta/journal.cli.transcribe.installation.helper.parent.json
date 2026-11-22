@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for installation helper parent.",
+  "context": "Journal command-line text for installation helper parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "23e37530843a11250f67e5de671632173bc9534dea9e6b83a5a410d0b6dd7930",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "helper",
+      "kind": "accepted-input",
+      "value": "helper-path"
+    }
+  ]
+}

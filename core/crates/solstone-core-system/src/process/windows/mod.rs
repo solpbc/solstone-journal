@@ -77,6 +77,8 @@ pub use forward::{
 #[cfg(windows)]
 mod launch_control;
 #[cfg(windows)]
+mod launch_diagnostics;
+#[cfg(windows)]
 mod launch_io;
 #[cfg(windows)]
 mod launch_pipe;

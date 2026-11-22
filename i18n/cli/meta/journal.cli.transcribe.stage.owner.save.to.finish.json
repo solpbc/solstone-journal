@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stage owner save to finish.",
+  "context": "Journal command-line text for stage owner save to finish.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "df09adbba1b15aeece4f9e6739b4f994ad00baad283a97a4adfdcc663c3685f3",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

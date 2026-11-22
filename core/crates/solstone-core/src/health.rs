@@ -883,7 +883,7 @@ mod tests {
     fn present_health_prefixes_ced_on_connection_failure() {
         let ced = CedVerdict::Degraded(CapabilityStatus::Absent {
             capability: CED_CAPABILITY.to_owned(),
-            detail: "sidecar missing".to_owned(),
+            detail: "sidecar missing".into(),
         });
         let rfdetr = RfdetrReadiness::Ready {
             binary: PathBuf::from("rfdetr-cli"),
@@ -936,7 +936,7 @@ mod tests {
         let status: SupervisorStatus = serde_json::from_value(status_value()).unwrap();
         let ced = CedVerdict::Degraded(CapabilityStatus::Absent {
             capability: CED_CAPABILITY.to_owned(),
-            detail: "sidecar missing".to_owned(),
+            detail: "sidecar missing".into(),
         });
         let rfdetr = RfdetrReadiness::Degraded {
             cause: solstone_core_local::install::rfdetr_readiness::RfdetrDegradedCause::Absent,
@@ -972,7 +972,7 @@ mod tests {
         let status: SupervisorStatus = serde_json::from_value(status_value()).unwrap();
         let ced = CedVerdict::Degraded(CapabilityStatus::Absent {
             capability: CED_CAPABILITY.to_owned(),
-            detail: "sidecar missing".to_owned(),
+            detail: "sidecar missing".into(),
         });
         let rfdetr = RfdetrReadiness::Ready {
             binary: PathBuf::from("rfdetr-cli"),

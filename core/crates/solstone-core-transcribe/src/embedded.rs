@@ -101,14 +101,14 @@ impl EmbeddedContext<'_> {
                 .transcribe(samples)
                 .map_err(|detail| TranscribeError::ParakeetCppFailure {
                     reason: "embedded-inference".to_owned(),
-                    detail,
+                    detail: detail.into(),
                 })?;
         self.checkpoint()?;
         let transcript =
             parakeet_cpp::parse_verbose_json(&payload.to_string()).map_err(|error| {
                 TranscribeError::ParakeetCppFailure {
                     reason: "embedded-word-contract".to_owned(),
-                    detail: format!("{error:?}"),
+                    detail: format!("{error:?}").into(),
                 }
             })?;
         let info = self.asr.model_info();
@@ -182,18 +182,21 @@ pub fn process_embedded(
     };
     context.checkpoint()?;
     std::fs::create_dir_all(scratch).map_err(|error| TranscribeError::VadTemporary {
-        detail: format!("could not create embedded scratch: {error}"),
+        detail: crate::TranscribeDetail::message(
+            "journal.cli.transcribe.stage.embedded.scratch",
+            [("error", &(error))],
+        ),
     })?;
     let config = crate::config::read_transcribe_config(journal).map_err(|error| {
         TranscribeError::ProcessingClaim {
             path: audio.to_path_buf(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         }
     })?;
     let backend = crate::requested_backend(None, &config).map_err(|detail| {
         TranscribeError::ProcessingClaim {
             path: audio.to_path_buf(),
-            detail,
+            detail: detail.into(),
         }
     })?;
     let outcome = crate::stage::process_one_with(
@@ -440,7 +443,7 @@ mod tests {
         );
         assert!(
             matches!(result, Err(TranscribeError::ProcessingClaim { detail, .. })
-            if detail.contains("invalid transcribe.backend"))
+            if detail.to_string().contains("invalid transcribe.backend"))
         );
     }
 

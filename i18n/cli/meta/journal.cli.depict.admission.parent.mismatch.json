@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission parent mismatch.",
+  "context": "Journal command-line text for admission parent mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "43e91101456c4ae043ff2fb3e67484261131efd4eb8049baa009b63a7fd0000b",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

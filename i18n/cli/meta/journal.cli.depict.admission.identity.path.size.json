@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission identity path size.",
+  "context": "Journal command-line text for admission identity path size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9f9b11a5a88adcc3f66b7ca1ae6194d959776378891c7fd61300dd1fbb2edda2",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "limit",
+      "kind": "accepted-input",
+      "value": "4096"
+    }
+  ]
+}

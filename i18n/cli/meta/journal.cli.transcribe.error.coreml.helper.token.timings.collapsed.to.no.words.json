@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error coreml helper token timings collapsed to no words.",
+  "context": "Journal command-line text for error coreml helper token timings collapsed to no words.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e93e9e016e2c45f77e2b1f96db7d9ae6142419b322772cc65c5459565e285b5",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

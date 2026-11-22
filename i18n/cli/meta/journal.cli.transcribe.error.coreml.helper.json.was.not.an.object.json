@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error coreml helper json was not an object.",
+  "context": "Journal command-line text for error coreml helper json was not an object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "824983728dc420768dcda91e0ace2da8af5e29e8d6f26b8d8f51f113938fd577",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

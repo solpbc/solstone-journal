@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for claim root unsupported.",
+  "context": "Journal command-line text for claim root unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e6b4e14cc58b5af131ae66a6b54294b0c87bf34b249bf034721fa6e7f0d39bc5",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission identity marker content.",
+  "context": "Journal command-line text for admission identity marker content.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ab38b5537d2723a91a7a96d42bbaaa60912d4efdd556a015fa7aa3a8e6fb80b3",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

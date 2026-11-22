@@ -5437,6 +5437,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-assets",
+ "solstone-core-cli-copy",
  "solstone-core-distribution",
  "solstone-core-journal-config",
  "solstone-core-local",
@@ -5625,6 +5626,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-assets",
+ "solstone-core-cli-copy",
  "solstone-core-generate",
  "solstone-core-journal",
  "solstone-core-journal-io",
@@ -6366,6 +6368,7 @@ dependencies = [
  "solstone-core-journal",
  "solstone-core-journal-io",
  "solstone-core-time",
+ "solstone-core-window-catalog",
  "whoami",
 ]
 
@@ -6467,6 +6470,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-time",
  "solstone-core-tokens",
+ "solstone-core-window-catalog",
  "tar",
  "tempfile",
  "thiserror 2.0.21",
@@ -6670,6 +6674,7 @@ version = "2.0.87"
 dependencies = [
  "ffmpeg-next",
  "ffmpeg-sys-next",
+ "solstone-core-cli-copy",
  "thiserror 2.0.21",
 ]
 
@@ -7059,6 +7064,7 @@ dependencies = [
  "serde_json",
  "solstone-core-assets",
  "solstone-core-check",
+ "solstone-core-cli-copy",
  "solstone-core-local",
  "tempfile",
 ]
@@ -7070,6 +7076,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-cli-copy",
  "solstone-core-journal-io",
  "solstone-core-npy",
  "solstone-core-speakers",
@@ -7091,6 +7098,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-cli-copy",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",
@@ -7120,6 +7128,7 @@ version = "2.0.87"
 dependencies = [
  "hdbscan",
  "serde_json",
+ "solstone-core-cli-copy",
  "tempfile",
 ]
 
@@ -7532,6 +7541,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-callosum",
+ "solstone-core-cli-copy",
  "solstone-core-convey-http",
  "solstone-core-entity",
  "solstone-core-facets",

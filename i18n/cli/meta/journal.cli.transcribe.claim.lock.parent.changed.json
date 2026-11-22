@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for claim lock parent changed.",
+  "context": "Journal command-line text for claim lock parent changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "172fccdb7018e4610aba95dd4d4c3a12012612eb20ebe47105bec8a8901e88a7",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

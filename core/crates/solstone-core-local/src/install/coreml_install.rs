@@ -65,7 +65,13 @@ fn hold_coreml_admission(
         default_parakeet_coreml_cache_dir(home).join(".admission.lock"),
         LockOptions::default(),
     )
-    .map_err(|error| CoremlInstallError::new("coreml_busy", error.to_string(), 74))
+    .map_err(|error| {
+        CoremlInstallError::new(
+            "coreml_busy",
+            solstone_core_journal_io::cli_diagnostics::lock_message(&error),
+            74,
+        )
+    })
 }
 
 /// Hold installed model reads through the helper lifetime. Readers coexist;
@@ -81,8 +87,13 @@ pub fn hold_parakeet_coreml_read_admission(
         let result = solstone_core_journal_io::hold_shared_lock(path, LockOptions::default());
         #[cfg(windows)]
         let result = hold_lock(path, LockOptions::default());
-        let guard = result
-            .map_err(|error| CoremlInstallError::new("coreml_busy", error.to_string(), 74))?;
+        let guard = result.map_err(|error| {
+            CoremlInstallError::new(
+                "coreml_busy",
+                solstone_core_journal_io::cli_diagnostics::lock_message(&error),
+                74,
+            )
+        })?;
         if !marker.exists() {
             return Ok(guard);
         }
@@ -100,7 +111,10 @@ pub fn hold_parakeet_coreml_read_admission(
     }
     Err(CoremlInstallError::new(
         "coreml_busy",
-        "parakeet CoreML publication lock busy",
+        solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.transcribe.error.coreml.publication.busy",
+            [],
+        ),
         74,
     ))
 }
@@ -257,12 +271,20 @@ pub const PARAKEET_COREML_DOWNLOAD_DISCLOSURE: &str = "parakeet assets: download
 #[error("{message}")]
 pub struct CoremlInstallError {
     pub reason_code: String,
-    message: String,
+    message: solstone_core_cli_copy::MessageDetail,
     pub exit_code: u8,
 }
 
 impl CoremlInstallError {
-    pub fn new(reason_code: impl Into<String>, message: impl Into<String>, exit_code: u8) -> Self {
+    pub fn into_detail(self) -> solstone_core_cli_copy::MessageDetail {
+        self.message
+    }
+
+    pub fn new(
+        reason_code: impl Into<String>,
+        message: impl Into<solstone_core_cli_copy::MessageDetail>,
+        exit_code: u8,
+    ) -> Self {
         Self {
             reason_code: reason_code.into(),
             message: message.into(),
@@ -818,9 +840,14 @@ fn install_observed_with_rows(
         },
     )
     .map_err(|e| match e {
-        LockError::Timeout(_) => {
-            CoremlInstallError::new("coreml_busy", "parakeet CoreML publication lock busy", 74)
-        }
+        LockError::Timeout(_) => CoremlInstallError::new(
+            "coreml_busy",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.transcribe.error.coreml.publication.busy",
+                [],
+            ),
+            74,
+        ),
         other => CoremlInstallError::new(
             "install_failed",
             format!("failed to acquire publication lock: {other}"),

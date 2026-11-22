@@ -1567,7 +1567,7 @@ fn run_job(
                     Duration::from_secs(5),
                 )
                 .map_err(|error| {
-                    solstone_core_system::process::LaunchError::Admission(error.to_string())
+                    solstone_core_system::process::LaunchError::Admission(error.to_string().into())
                 })
                 .and_then(|provenance| match provenance {
                     Some(provenance) => {

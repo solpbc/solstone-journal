@@ -42,7 +42,9 @@ impl From<TerminalWriteFailure> for TranscribeError {
     fn from(error: TerminalWriteFailure) -> Self {
         match error {
             TerminalWriteFailure::Typed(error) => Self::SpeakerTranscriptWrite(error),
-            TerminalWriteFailure::Untyped { detail } => Self::TerminalWrite { detail },
+            TerminalWriteFailure::Untyped { detail } => Self::TerminalWrite {
+                detail: detail.into(),
+            },
         }
     }
 }
@@ -102,7 +104,7 @@ where
 fn remove_temporary_payload(payload_path: &Path) -> Result<(), TranscribeError> {
     fs::remove_file(payload_path).map_err(|error| TranscribeError::TerminalPayload {
         path: Some(payload_path.to_path_buf()),
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })
 }
 
@@ -115,18 +117,21 @@ fn empty_payload_path(destination: &Path) -> Result<PathBuf, TranscribeError> {
                 .parent()
                 .ok_or_else(|| TranscribeError::TerminalPayload {
                     path: Some(destination.to_path_buf()),
-                    detail: "transcript destination has no parent".into(),
+                    detail: crate::TranscribeDetail::message(
+                        "journal.cli.transcribe.error.payload.parent",
+                        [],
+                    ),
                 })?,
         )
         .map_err(|error| TranscribeError::TerminalPayload {
             path: None,
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     let (file, path) = temporary
         .keep()
         .map_err(|error| TranscribeError::TerminalPayload {
             path: None,
-            detail: error.error.to_string(),
+            detail: error.error.to_string().into(),
         })?;
     drop(file);
     Ok(path)
@@ -156,7 +161,9 @@ fn build_terminal_request(
             request.raw_path,
             attempt,
         )
-        .map_err(|detail| TranscribeError::TerminalWrite { detail })?;
+        .map_err(|detail| TranscribeError::TerminalWrite {
+            detail: detail.into(),
+        })?;
     } else {
         solstone_core_system::work_retry::raw::stamp_failed_input(
             header
@@ -164,7 +171,9 @@ fn build_terminal_request(
                 .expect("processing record"),
             request.raw_path,
         )
-        .map_err(|detail| TranscribeError::TerminalWrite { detail })?;
+        .map_err(|detail| TranscribeError::TerminalWrite {
+            detail: detail.into(),
+        })?;
     }
     if let Some(sound_tags) = request.sound_tags {
         header.insert("sound_tags".to_owned(), sound_tags.clone());
@@ -173,7 +182,7 @@ fn build_terminal_request(
             "sound_tag_status".to_owned(),
             serde_json::to_value(sound_tag_status).map_err(|error| {
                 TranscribeError::TerminalWrite {
-                    detail: error.to_string(),
+                    detail: error.to_string().into(),
                 }
             })?,
         );
@@ -204,7 +213,7 @@ fn build_terminal_request(
         },
     }))
     .map_err(|error| TranscribeError::TerminalRequest {
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })
 }
 
@@ -243,7 +252,7 @@ mod tests {
                 Err(TerminalWriteFailure::Typed(
                     SpeakerTranscriptWriteError::PayloadInvalid {
                         path: "injected".to_owned(),
-                        detail: "injected writer failure".to_owned(),
+                        detail: "injected writer failure".into(),
                     },
                 ))
             },
@@ -252,7 +261,7 @@ mod tests {
                 fs::remove_file(payload_path).unwrap();
                 Err(TranscribeError::TerminalPayload {
                     path: Some(payload_path.to_path_buf()),
-                    detail: "injected cleanup failure".to_owned(),
+                    detail: "injected cleanup failure".into(),
                 })
             },
         )
@@ -275,8 +284,11 @@ mod tests {
         let npz_path = temporary.path().join("clip.npz");
         fs::write(&raw_path, b"owner-media").unwrap();
         let processing = json!({"state": "empty"});
-        let (sound_tags, sound_tag_status) =
-            crate::audio::tag_audio(&vec![0.0; 16_000], temporary.path());
+        let (sound_tags, sound_tag_status) = crate::audio::tag_audio(
+            &vec![0.0; 16_000],
+            temporary.path(),
+            solstone_core_cli_copy::ENGLISH,
+        );
         let meta = Map::from_iter([(
             "audio_capture".to_owned(),
             json!({"version": 1, "state": "partial"}),

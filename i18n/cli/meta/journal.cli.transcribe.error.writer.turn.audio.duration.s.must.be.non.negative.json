@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer turn audio duration s must be non negative.",
+  "context": "Journal command-line text for error writer turn audio duration s must be non negative.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1b0759e380a3d2af9cdc851094a5c57ee0135802d52086a143cd78621a7d912f",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_audio_duration_s",
+      "kind": "accepted-input",
+      "value": "audio_duration_s"
+    }
+  ]
+}

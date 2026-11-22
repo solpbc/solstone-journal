@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission identity tombstoned.",
+  "context": "Journal command-line text for admission identity tombstoned.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6dff29ffbf3fb4ae2b6a339fc41e83ffae0622d56a5d36addaf2daed8349d6d0",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error windows launch finalization failed.",
+  "context": "Journal command-line text for error windows launch finalization failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cb4ec67969ba64f10c2640424adb3bd84ec3a081a8ac7f88b6fc2c3a78c7b960",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

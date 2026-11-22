@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for error asset override.",
+  "context": "Journal command-line text for error asset override.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "directory",
+      "type": "string"
+    },
+    {
+      "name": "asset",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2d1510bdd4af1ab21d3a9e377adb94dff1990b4042022431d02cf0a92eb408d9",
+  "max_length": 142,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_solstone_transcribe_model_assets_dir",
+      "kind": "accepted-input",
+      "value": "SOLSTONE_TRANSCRIBE_MODEL_ASSETS_DIR"
+    }
+  ]
+}

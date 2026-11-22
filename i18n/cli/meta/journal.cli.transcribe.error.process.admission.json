@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error process admission.",
+  "context": "Journal command-line text for error process admission.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e42e24bfff9aaa7ed6e6780b62448f1a978cb948b69b3c40dbd8ad151e2cd666",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error vad could not serialize vad request error.",
+  "context": "Journal command-line text for error vad could not serialize vad request error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f5339d95c16face7aec3cd0aa93669393b028dec2c4a558b78c69f39f44694c4",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

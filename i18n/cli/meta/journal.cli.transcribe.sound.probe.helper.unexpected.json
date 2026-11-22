@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sound probe helper unexpected.",
+  "context": "Journal command-line text for sound probe helper unexpected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "response",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6e7e49d2498c0056ec28bc8daee36ca864b16794e5c12257193bb1d22c0489a7",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

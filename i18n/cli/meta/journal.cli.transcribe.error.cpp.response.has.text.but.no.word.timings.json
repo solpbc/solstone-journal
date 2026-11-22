@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error cpp response has text but no word timings.",
+  "context": "Journal command-line text for error cpp response has text but no word timings.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2911307d664a13460c2cc4dd80373c913be36917781e8f77e6ddf111b01c656d",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

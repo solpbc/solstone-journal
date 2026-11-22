@@ -82,18 +82,22 @@ pub fn read_detail(locale: &str, error: &crate::ReadError) -> String {
     }
 }
 
-pub fn lock_detail(locale: &str, error: &crate::LockError) -> String {
+pub fn lock_message(error: &crate::LockError) -> solstone_core_cli_copy::MessageDetail {
+    use solstone_core_cli_copy::MessageDetail;
     match error {
-        crate::LockError::Io { .. } => error.to_string(),
-        crate::LockError::Timeout(detail) => solstone_core_cli_copy::display_for(
-            locale,
+        crate::LockError::Io { .. } => error.to_string().into(),
+        crate::LockError::Timeout(detail) => MessageDetail::message(
             "journal.cli.backup.config.lock.timeout",
             [
-                ("path", &(detail.path.display())),
-                ("seconds", &(detail.timeout.as_secs_f64())),
+                ("path", &detail.path.display()),
+                ("seconds", &detail.timeout.as_secs_f64()),
             ],
         ),
     }
+}
+
+pub fn lock_detail(locale: &str, error: &crate::LockError) -> String {
+    lock_message(error).render(locale)
 }
 
 pub fn health_marker_detail(locale: &str, error: &crate::HealthMarkerError) -> String {

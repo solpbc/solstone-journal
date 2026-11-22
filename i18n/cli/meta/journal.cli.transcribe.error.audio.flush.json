@@ -1,0 +1,39 @@
+{
+  "description": "Journal command-line text for error audio flush.",
+  "context": "Journal command-line text for error audio flush.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "iterations",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "flushed",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "remaining",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "bc886ce018214de1f250aa425ae781b42b13f16c0ac8ab2fd3966b424dbd49c0",
+  "max_length": 739,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "iterations",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for error confidential word contract.",
+  "context": "Journal command-line text for error confidential word contract.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5adf8a67d871e3339c5ba72cdae32000988248c60cdee2331a318d33308f4ccf",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_stt",
+      "kind": "accepted-input",
+      "value": "STT"
+    },
+    {
+      "name": "code_json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for stage confidential verification clear.",
+  "context": "Journal command-line text for stage confidential verification clear.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "01984d2e9f4682940b16c9f4644743794ffcda6d9106bd235512cf8b6ea95c56",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

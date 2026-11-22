@@ -3,6 +3,7 @@
 
 //! Durable JSONL transcript and NPZ embedding-sidecar publication.
 
+use solstone_core_cli_copy::MessageDetail;
 use std::collections::HashSet;
 use std::fmt;
 use std::fs::{self, File};
@@ -28,7 +29,7 @@ const EMBEDDING_WIDTH: usize = 256;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpeakerTranscriptWriteError {
     MalformedRequest {
-        detail: String,
+        detail: MessageDetail,
     },
     UnknownSchema {
         schema: String,
@@ -38,7 +39,7 @@ pub enum SpeakerTranscriptWriteError {
     },
     InvalidStatementId {
         statement_index: usize,
-        detail: String,
+        detail: MessageDetail,
     },
     DuplicateStatementId {
         statement_index: usize,
@@ -46,24 +47,24 @@ pub enum SpeakerTranscriptWriteError {
     },
     InvalidStatement {
         statement_index: usize,
-        detail: String,
+        detail: MessageDetail,
     },
     InvalidHeader {
-        detail: String,
+        detail: MessageDetail,
     },
     InvalidOutputPath {
-        detail: String,
+        detail: MessageDetail,
     },
     DestinationExists {
         path: String,
     },
     PayloadUnreadable {
         path: String,
-        detail: String,
+        detail: MessageDetail,
     },
     PayloadInvalid {
         path: String,
-        detail: String,
+        detail: MessageDetail,
     },
     PayloadNonFinite {
         row: usize,
@@ -71,14 +72,14 @@ pub enum SpeakerTranscriptWriteError {
     },
     OutputUnwritable {
         path: String,
-        detail: String,
+        detail: MessageDetail,
     },
     NpzVerificationFailed {
         path: String,
-        detail: String,
+        detail: MessageDetail,
     },
     Internal {
-        detail: String,
+        detail: MessageDetail,
     },
     /// Publication stopped before the staged pair was admitted.
     Cancelled,
@@ -107,16 +108,25 @@ impl SpeakerTranscriptWriteError {
     }
 
     pub fn detail(&self) -> String {
+        self.render(solstone_core_cli_copy::ENGLISH)
+    }
+    pub fn render(&self, locale: &str) -> String {
         match self {
             Self::MalformedRequest { detail }
             | Self::InvalidHeader { detail }
             | Self::InvalidOutputPath { detail }
             | Self::PayloadInvalid { detail, .. }
-            | Self::Internal { detail } => detail.clone(),
-            Self::UnknownSchema { schema } => format!("unknown schema: {schema}"),
-            Self::MissingStatementId { statement_index } => {
-                format!("statement {statement_index} is missing id")
-            }
+            | Self::Internal { detail } => detail.render(locale),
+            Self::UnknownSchema { schema } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.writer.schema",
+                [("schema", &(schema))],
+            ),
+            Self::MissingStatementId { statement_index } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.writer.statement.id.missing",
+                [("index", &(statement_index))],
+            ),
             Self::InvalidStatementId {
                 statement_index,
                 detail,
@@ -124,19 +134,50 @@ impl SpeakerTranscriptWriteError {
             | Self::InvalidStatement {
                 statement_index,
                 detail,
-            } => format!("statement {statement_index}: {detail}"),
+            } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.writer.statement",
+                [
+                    ("index", &(statement_index)),
+                    ("detail", &(detail.render(locale))),
+                ],
+            ),
             Self::DuplicateStatementId {
                 statement_index,
                 id,
-            } => format!("statement {statement_index} duplicates id {id}"),
-            Self::DestinationExists { path } => format!("destination already exists: {path}"),
+            } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.writer.statement.duplicate",
+                [("index", &(statement_index)), ("id", &(id))],
+            ),
+            Self::DestinationExists { path } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.writer.destination",
+                [("path", &(path))],
+            ),
+            Self::PayloadNonFinite { row, col } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.writer.payload.finite",
+                [("row", &(row)), ("column", &(col))],
+            ),
+            Self::Cancelled => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.transcribe.error.writer.cancelled",
+                &[],
+            ),
             Self::PayloadUnreadable { path, detail }
             | Self::OutputUnwritable { path, detail }
-            | Self::NpzVerificationFailed { path, detail } => format!("{path}: {detail}"),
-            Self::PayloadNonFinite { row, col } => {
-                format!("embedding payload is non-finite at row {row}, column {col}")
+            | Self::NpzVerificationFailed { path, detail } => {
+                format!("{path}: {}", detail.render(locale))
             }
-            Self::Cancelled => "transcript publication was cancelled before admission".to_owned(),
+        }
+    }
+
+    fn into_detail(self) -> MessageDetail {
+        // These validators can only return MalformedRequest.
+        match self {
+            Self::MalformedRequest { detail } => detail,
+            other => other.detail().into(),
         }
     }
 }
@@ -161,7 +202,7 @@ pub struct WriteResponse {
 pub fn write_request(bytes: &[u8]) -> Result<WriteResponse, SpeakerTranscriptWriteError> {
     let value: Value = serde_json::from_slice(bytes).map_err(|error| {
         SpeakerTranscriptWriteError::MalformedRequest {
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         }
     })?;
     let request = Request::parse(value)?;
@@ -216,7 +257,10 @@ impl Request {
         )?;
         if base_time_us_of_day > MAX_BASE_TIME_US {
             return Err(SpeakerTranscriptWriteError::MalformedRequest {
-                detail: "base_time_us_of_day is outside a day".to_owned(),
+                detail: MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.base.time.us.of.day.is.outside.a.day",
+                    [],
+                ),
             });
         }
         let source = optional_string(object.get("source"), "source")?;
@@ -250,7 +294,9 @@ impl Request {
         if let Some(npz) = &self.npz {
             let bytes = npz
                 .archive()
-                .map_err(|detail| SpeakerTranscriptWriteError::Internal { detail })?;
+                .map_err(|detail| SpeakerTranscriptWriteError::Internal {
+                    detail: detail.into(),
+                })?;
             publish_file(&self.output.npz_path, &bytes, self.output.redo)?;
             npz.verify_at(&self.output.npz_path).map_err(|detail| {
                 SpeakerTranscriptWriteError::NpzVerificationFailed {
@@ -303,7 +349,7 @@ impl Output {
 impl Embeddings {
     fn parse(value: &Value, statements: &[Statement]) -> Result<Self, SpeakerTranscriptWriteError> {
         Self::parse_inner(value, statements).map_err(|error| match error {
-            SpeakerTranscriptWriteError::MalformedRequest { detail } => payload_invalid(&detail),
+            SpeakerTranscriptWriteError::MalformedRequest { detail } => payload_invalid(detail),
             error => error,
         })
     }
@@ -319,54 +365,87 @@ impl Embeddings {
             "embeddings.payload_format",
         )?;
         if payload_format != "raw-f32le-row-major-v1" {
-            return Err(payload_invalid(
-                "payload_format must be raw-f32le-row-major-v1",
-            ));
+            return Err(payload_invalid(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.payload.format.must.be.raw.f32le.row.major.v1",
+                [],
+            )));
         }
         let dtype = string(required(object, "dtype")?, "embeddings.dtype")?;
         if dtype != "float32-le" {
-            return Err(payload_invalid("dtype must be float32-le"));
+            return Err(payload_invalid(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.dtype.must.be.float32.le",
+                [],
+            )));
         }
         let shape = array(required(object, "shape")?, "embeddings.shape")?;
         if shape.len() != 2 || unsigned(&shape[1], "embeddings.shape[1]")? != EMBEDDING_WIDTH as u64
         {
-            return Err(payload_invalid("shape must be [row_count, 256]"));
+            return Err(payload_invalid(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.shape.must.be.row.count.width",
+                [],
+            )));
         }
-        let rows = usize::try_from(unsigned(&shape[0], "embeddings.shape[0]")?)
-            .map_err(|_| payload_invalid("shape row count is too large"))?;
+        let rows = usize::try_from(unsigned(&shape[0], "embeddings.shape[0]")?).map_err(|_| {
+            payload_invalid(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.shape.row.count.is.too.large",
+                [],
+            ))
+        })?;
         let byte_count = usize::try_from(unsigned(
             required(object, "byte_count")?,
             "embeddings.byte_count",
         )?)
-        .map_err(|_| payload_invalid("byte_count is too large"))?;
+        .map_err(|_| {
+            payload_invalid(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.byte.count.is.too.large",
+                [],
+            ))
+        })?;
         let expected_byte_count = rows
             .checked_mul(EMBEDDING_WIDTH)
             .and_then(|count| count.checked_mul(std::mem::size_of::<f32>()))
-            .ok_or_else(|| payload_invalid("shape byte count overflows"))?;
+            .ok_or_else(|| {
+                payload_invalid(MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.shape.byte.count.overflows",
+                    [],
+                ))
+            })?;
         if byte_count != expected_byte_count {
-            return Err(payload_invalid("byte_count does not match shape"));
+            return Err(payload_invalid(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.byte.count.does.not.match.shape",
+                [],
+            )));
         }
         let statement_ids =
             parse_embedding_ids(required(object, "statement_ids")?, statements, rows)?;
         let durations_s = parse_durations(required(object, "durations_s")?, rows)?;
         let encoder = string(required(object, "encoder")?, "embeddings.encoder")?.to_owned();
         if encoder.is_empty() {
-            return Err(payload_invalid("encoder must be nonempty"));
+            return Err(payload_invalid(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.encoder.must.be.nonempty",
+                [],
+            )));
         }
         let bytes = fs::read(payload_path).map_err(|error| {
             SpeakerTranscriptWriteError::PayloadUnreadable {
                 path: payload_path.to_owned(),
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             }
         })?;
         if bytes.len() != byte_count {
-            return Err(payload_invalid("payload size does not match byte_count"));
+            return Err(payload_invalid(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.payload.size.does.not.match.byte.count",
+                [],
+            )));
         }
         let mut values = Vec::with_capacity(rows * EMBEDDING_WIDTH);
         for (index, chunk) in bytes.chunks_exact(std::mem::size_of::<f32>()).enumerate() {
             let value = f32::from_le_bytes(chunk.try_into().map_err(|_| {
                 SpeakerTranscriptWriteError::Internal {
-                    detail: "invalid f32 payload chunk".to_owned(),
+                    detail: MessageDetail::message(
+                        "journal.cli.transcribe.error.writer.invalid.f32.payload.chunk",
+                        [],
+                    ),
                 }
             })?);
             if !value.is_finite() {
@@ -418,7 +497,7 @@ fn parse_statements(value: &Value) -> Result<Vec<Statement>, SpeakerTranscriptWr
             if id <= 0 || id > i64::from(i32::MAX) {
                 return Err(SpeakerTranscriptWriteError::InvalidStatementId {
                     statement_index,
-                    detail: "id must be in 1..=i32::MAX".to_owned(),
+                    detail: MessageDetail::message("journal.cli.transcribe.error.writer.id.range", []),
                 });
             }
             if !ids.insert(id) {
@@ -448,7 +527,7 @@ fn parse_statements(value: &Value) -> Result<Vec<Statement>, SpeakerTranscriptWr
                 return Err(invalid_statement(
                     statement_index,
                     SpeakerTranscriptWriteError::MalformedRequest {
-                        detail: "text must be a nonempty string".to_owned(),
+                        detail: MessageDetail::message("journal.cli.transcribe.error.writer.text.must.be.a.nonempty.string", []),
                     },
                 ));
             }
@@ -461,7 +540,7 @@ fn parse_statements(value: &Value) -> Result<Vec<Statement>, SpeakerTranscriptWr
                 Some(_) => {
                     return Err(SpeakerTranscriptWriteError::InvalidStatement {
                         statement_index,
-                        detail: "speaker must be a string, integer, null, or absent".to_owned(),
+                        detail: MessageDetail::message("journal.cli.transcribe.error.writer.speaker.must.be.a.string.integer.null.or.absent", []),
                     });
                 }
             };
@@ -470,7 +549,7 @@ fn parse_statements(value: &Value) -> Result<Vec<Statement>, SpeakerTranscriptWr
                 Some(value) => Some(SpeakerTurnEvidence::from_value(value).map_err(|error| {
                     SpeakerTranscriptWriteError::InvalidStatement {
                         statement_index,
-                        detail: format!("invalid speaker_turn_evidence: {error}"),
+                        detail: { let solstone_core_speakers::speaker_turns::SpeakerTurnError::Malformed {detail} = error; detail.context("journal.cli.transcribe.error.writer.turn.invalid") },
                     }
                 })?),
             };
@@ -496,7 +575,7 @@ fn parse_statements(value: &Value) -> Result<Vec<Statement>, SpeakerTranscriptWr
                 Some(_) => {
                     return Err(SpeakerTranscriptWriteError::InvalidStatement {
                         statement_index,
-                        detail: "turn_boundary_suspect must be true if present".to_owned(),
+                        detail: MessageDetail::message("journal.cli.transcribe.error.writer.turn.boundary.suspect.must.be.true.if.present", []),
                     });
                 }
             };
@@ -542,7 +621,10 @@ fn parse_embedding_ids(
 ) -> Result<Vec<i32>, SpeakerTranscriptWriteError> {
     let values = array(value, "embeddings.statement_ids")?;
     if values.len() != rows {
-        return Err(payload_invalid("statement_ids count does not match shape"));
+        return Err(payload_invalid(MessageDetail::message(
+            "journal.cli.transcribe.error.writer.statement.ids.count.does.not.match.shape",
+            [],
+        )));
     }
     let statement_ids: HashSet<_> = statements.iter().map(|statement| statement.id).collect();
     let mut seen = HashSet::with_capacity(values.len());
@@ -550,16 +632,14 @@ fn parse_embedding_ids(
         .iter()
         .map(|value| {
             let id = integer(value, "embeddings.statement_ids")
-                .map_err(|detail| payload_invalid(&detail))?;
+                .map_err(payload_invalid)?;
             let id =
-                i32::try_from(id).map_err(|_| payload_invalid("statement ID is outside i32"))?;
+                i32::try_from(id).map_err(|_| payload_invalid(MessageDetail::message("journal.cli.transcribe.error.writer.statement.id.is.outside.i32", [])))?;
             if id <= 0 || !statement_ids.contains(&id) {
-                return Err(payload_invalid(
-                    "statement ID is not a transcript statement ID",
-                ));
+                return Err(payload_invalid(MessageDetail::message("journal.cli.transcribe.error.writer.statement.id.is.not.a.transcript.statement.id", [])));
             }
             if !seen.insert(id) {
-                return Err(payload_invalid("statement IDs must be unique"));
+                return Err(payload_invalid(MessageDetail::message("journal.cli.transcribe.error.writer.statement.ids.must.be.unique", [])));
             }
             Ok(id)
         })
@@ -569,18 +649,24 @@ fn parse_embedding_ids(
 fn parse_durations(value: &Value, rows: usize) -> Result<Vec<f32>, SpeakerTranscriptWriteError> {
     let values = array(value, "embeddings.durations_s")?;
     if values.len() != rows {
-        return Err(payload_invalid("durations_s count does not match shape"));
+        return Err(payload_invalid(MessageDetail::message(
+            "journal.cli.transcribe.error.writer.durations.s.count.does.not.match.shape",
+            [],
+        )));
     }
     values
         .iter()
         .map(|value| {
             let value = number(value, "embeddings.durations_s")
-                .map_err(|error| payload_invalid(&error.detail()))?;
+                .map_err(|error| payload_invalid(error.into_detail()))?;
             let value = value as f32;
             if value.is_finite() {
                 Ok(value)
             } else {
-                Err(payload_invalid("durations_s must be finite f32 values"))
+                Err(payload_invalid(MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.durations.s.must.be.finite.f32.values",
+                    [],
+                )))
             }
         })
         .collect()
@@ -640,7 +726,10 @@ fn build_header(value: &Value) -> Result<Value, SpeakerTranscriptWriteError> {
         .is_some_and(|value| !value.is_null())
     {
         return Err(SpeakerTranscriptWriteError::InvalidHeader {
-            detail: "segment_meta must be an object".to_owned(),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.segment.meta.must.be.an.object",
+                [],
+            ),
         });
     }
     for key in ["_solstone_processing", "sound_tags", "sound_tag_status"] {
@@ -671,7 +760,10 @@ fn add_vad(
         }
         _ => {
             return Err(SpeakerTranscriptWriteError::InvalidHeader {
-                detail: "duration and noisy must be provided together".to_owned(),
+                detail: MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.duration.and.noisy.must.be.provided.together",
+                    [],
+                ),
             });
         }
     }
@@ -684,7 +776,7 @@ fn add_vad(
             .get("noisy_s")
             .filter(|value| !value.is_null())
             .ok_or_else(|| SpeakerTranscriptWriteError::InvalidHeader {
-                detail: "noisy_s is required when noisy_rms is present".to_owned(),
+                detail: MessageDetail::message("journal.cli.transcribe.error.writer.noisy.s.is.required.when.noisy.rms.is.present", []),
             })?;
         header.insert(
             "noisy_s".to_owned(),
@@ -700,8 +792,7 @@ fn add_vad(
                 .get("speech_loud_windows")
                 .filter(|value| !value.is_null())
                 .ok_or_else(|| SpeakerTranscriptWriteError::InvalidHeader {
-                    detail: "speech_loud_windows is required when loud_windows is positive"
-                        .to_owned(),
+                    detail: MessageDetail::message("journal.cli.transcribe.error.writer.speech.loud.windows.is.required.when.loud.windows.is", []),
                 })?;
             header.insert(
                 "speech_loud_windows".to_owned(),
@@ -759,7 +850,7 @@ fn add_speaker_evidence(
         .get("speaker_evidence_multi_fraction")
         .filter(|value| !value.is_null())
         .ok_or_else(|| SpeakerTranscriptWriteError::InvalidHeader {
-            detail: "speaker_evidence_multi_fraction is required with speaker_evidence".to_owned(),
+            detail: MessageDetail::message("journal.cli.transcribe.error.writer.speaker.evidence.multi.fraction.is.required.with.speaker.evidence", []),
         })?;
     header.insert(
         "speaker_evidence_multi_fraction".to_owned(),
@@ -772,7 +863,7 @@ fn add_speaker_evidence(
         .get("speaker_evidence_version")
         .filter(|value| !value.is_null())
         .ok_or_else(|| SpeakerTranscriptWriteError::InvalidHeader {
-            detail: "speaker_evidence_version is required with speaker_evidence".to_owned(),
+            detail: MessageDetail::message("journal.cli.transcribe.error.writer.speaker.evidence.version.is.required.with.speaker.evidence", []),
         })?;
     header.insert(
         "speaker_evidence_version".to_owned(),
@@ -856,10 +947,9 @@ pub fn stage_npz_from_files(
         encoder,
         cancel,
     )
-    .map_err(|detail| {
-        if detail == "cancelled" {
-            SpeakerTranscriptWriteError::Cancelled
-        } else {
+    .map_err(|error| match error {
+        crate::npz::StagedNpzError::Cancelled => SpeakerTranscriptWriteError::Cancelled,
+        crate::npz::StagedNpzError::Detail(detail) => {
             SpeakerTranscriptWriteError::NpzVerificationFailed {
                 path: destination.display().to_string(),
                 detail,
@@ -943,12 +1033,15 @@ fn copy_published(
             destination
                 .parent()
                 .ok_or_else(|| SpeakerTranscriptWriteError::InvalidOutputPath {
-                    detail: "output path has no parent".to_owned(),
+                    detail: MessageDetail::message(
+                        "journal.cli.transcribe.error.writer.output.path.has.no.parent",
+                        [],
+                    ),
                 })?;
         fs::create_dir_all(parent).map_err(|error| {
             SpeakerTranscriptWriteError::OutputUnwritable {
                 path: destination.display().to_string(),
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             }
         })?;
         let temporary = parent.join(format!(
@@ -969,7 +1062,7 @@ fn copy_published(
     let mut reader =
         File::open(source).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
             path: source.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     write_reader_exclusive(destination, &mut reader, AtomicWriteOptions::default())
         .map(|_| ())
@@ -980,12 +1073,12 @@ fn stream_copy(source: &Path, destination: &Path) -> Result<(), SpeakerTranscrip
     let mut input =
         File::open(source).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
             path: source.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     let mut output = File::create(destination).map_err(|error| {
         SpeakerTranscriptWriteError::OutputUnwritable {
             path: destination.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         }
     })?;
     let mut buffer = [0_u8; COPY_CHUNK];
@@ -993,7 +1086,7 @@ fn stream_copy(source: &Path, destination: &Path) -> Result<(), SpeakerTranscrip
         let read = input.read(&mut buffer).map_err(|error| {
             SpeakerTranscriptWriteError::OutputUnwritable {
                 path: source.display().to_string(),
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             }
         })?;
         if read == 0 {
@@ -1002,7 +1095,7 @@ fn stream_copy(source: &Path, destination: &Path) -> Result<(), SpeakerTranscrip
         output.write_all(&buffer[..read]).map_err(|error| {
             SpeakerTranscriptWriteError::OutputUnwritable {
                 path: destination.display().to_string(),
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             }
         })?;
     }
@@ -1010,7 +1103,7 @@ fn stream_copy(source: &Path, destination: &Path) -> Result<(), SpeakerTranscrip
         .sync_all()
         .map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
             path: destination.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })
 }
 
@@ -1032,7 +1125,10 @@ fn validate_output_paths(
 ) -> Result<(), SpeakerTranscriptWriteError> {
     if jsonl_path.as_os_str().is_empty() || npz_path.as_os_str().is_empty() {
         return Err(SpeakerTranscriptWriteError::InvalidOutputPath {
-            detail: "output paths must be nonempty".to_owned(),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.output.paths.must.be.nonempty",
+                [],
+            ),
         });
     }
     let valid = jsonl_path
@@ -1047,7 +1143,10 @@ fn validate_output_paths(
         Ok(())
     } else {
         Err(SpeakerTranscriptWriteError::InvalidOutputPath {
-            detail: "jsonl_path and npz_path must be sibling files sharing a stem".to_owned(),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.jsonl.path.and.npz.path.must.be.sibling.files",
+                [],
+            ),
         })
     }
 }
@@ -1069,7 +1168,7 @@ fn ensure_absent(path: &Path) -> Result<(), SpeakerTranscriptWriteError> {
         Ok(false) => Ok(()),
         Err(error) => Err(SpeakerTranscriptWriteError::OutputUnwritable {
             path: path.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         }),
     }
 }
@@ -1083,7 +1182,7 @@ fn atomic_error(path: &Path, error: AtomicWriteError) -> SpeakerTranscriptWriteE
         }
         error => SpeakerTranscriptWriteError::OutputUnwritable {
             path: path.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         },
     }
 }
@@ -1091,14 +1190,17 @@ fn atomic_error(path: &Path, error: AtomicWriteError) -> SpeakerTranscriptWriteE
 fn rounded_value(value: f64, places: u32) -> Result<Value, SpeakerTranscriptWriteError> {
     if !value.is_finite() {
         return Err(SpeakerTranscriptWriteError::InvalidHeader {
-            detail: "header numbers must be finite".to_owned(),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.header.numbers.must.be.finite",
+                [],
+            ),
         });
     }
     let scale = 10_f64.powi(places as i32);
     serde_json::Number::from_f64((value * scale).round_ties_even() / scale)
         .map(Value::Number)
         .ok_or_else(|| SpeakerTranscriptWriteError::InvalidHeader {
-            detail: "rounded header number is not JSON-representable".to_owned(),
+            detail: MessageDetail::message("journal.cli.transcribe.error.writer.rounded.header.number.is.not.json.representable", []),
         })
 }
 
@@ -1109,7 +1211,10 @@ fn required<'a>(
     object
         .get(key)
         .ok_or_else(|| SpeakerTranscriptWriteError::MalformedRequest {
-            detail: format!("missing required field {key}"),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.missing.required.field.key",
+                [("key", &(key))],
+            ),
         })
 }
 
@@ -1122,7 +1227,10 @@ fn required_statement<'a>(
         .get(key)
         .ok_or_else(|| SpeakerTranscriptWriteError::InvalidStatement {
             statement_index,
-            detail: format!("missing required field {key}"),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.missing.required.field.key",
+                [("key", &(key))],
+            ),
         })
 }
 
@@ -1133,14 +1241,20 @@ fn object<'a>(
     value
         .as_object()
         .ok_or_else(|| SpeakerTranscriptWriteError::MalformedRequest {
-            detail: format!("{field} must be an object"),
+            detail: MessageDetail::message(
+                "journal.cli.brain.writer.field.must.be.an.object",
+                [("field", &(field))],
+            ),
         })
 }
 
 fn array<'a>(value: &'a Value, field: &str) -> Result<&'a [Value], SpeakerTranscriptWriteError> {
     value.as_array().map(Vec::as_slice).ok_or_else(|| {
         SpeakerTranscriptWriteError::MalformedRequest {
-            detail: format!("{field} must be an array"),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.field.must.be.an.array",
+                [("field", &(field))],
+            ),
         }
     })
 }
@@ -1149,7 +1263,10 @@ fn string<'a>(value: &'a Value, field: &str) -> Result<&'a str, SpeakerTranscrip
     value
         .as_str()
         .ok_or_else(|| SpeakerTranscriptWriteError::MalformedRequest {
-            detail: format!("{field} must be a string"),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.field.must.be.a.string",
+                [("field", &(field))],
+            ),
         })
 }
 
@@ -1168,21 +1285,30 @@ fn number(value: &Value, field: &str) -> Result<f64, SpeakerTranscriptWriteError
         .as_f64()
         .filter(|value| value.is_finite())
         .ok_or_else(|| SpeakerTranscriptWriteError::MalformedRequest {
-            detail: format!("{field} must be a finite number"),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.field.must.be.a.finite.number",
+                [("field", &(field))],
+            ),
         })
 }
 
-fn integer(value: &Value, field: &str) -> Result<i64, String> {
-    value
-        .as_i64()
-        .ok_or_else(|| format!("{field} must be an integer"))
+fn integer(value: &Value, field: &str) -> Result<i64, MessageDetail> {
+    value.as_i64().ok_or_else(|| {
+        MessageDetail::message(
+            "journal.cli.transcribe.error.writer.field.must.be.an.integer",
+            [("field", &(field))],
+        )
+    })
 }
 
 fn unsigned(value: &Value, field: &str) -> Result<u64, SpeakerTranscriptWriteError> {
     value
         .as_u64()
         .ok_or_else(|| SpeakerTranscriptWriteError::MalformedRequest {
-            detail: format!("{field} must be an unsigned integer"),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.field.must.be.an.unsigned.integer",
+                [("field", &(field))],
+            ),
         })
 }
 
@@ -1190,7 +1316,10 @@ fn boolean(value: &Value, field: &str) -> Result<bool, SpeakerTranscriptWriteErr
     value
         .as_bool()
         .ok_or_else(|| SpeakerTranscriptWriteError::MalformedRequest {
-            detail: format!("{field} must be a boolean"),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.field.must.be.a.boolean",
+                [("field", &(field))],
+            ),
         })
 }
 
@@ -1200,14 +1329,14 @@ fn invalid_statement(
 ) -> SpeakerTranscriptWriteError {
     SpeakerTranscriptWriteError::InvalidStatement {
         statement_index,
-        detail: error.detail(),
+        detail: error.into_detail(),
     }
 }
 
-fn payload_invalid(detail: &str) -> SpeakerTranscriptWriteError {
+fn payload_invalid(detail: MessageDetail) -> SpeakerTranscriptWriteError {
     SpeakerTranscriptWriteError::PayloadInvalid {
         path: "embeddings.payload".to_owned(),
-        detail: detail.to_owned(),
+        detail,
     }
 }
 
@@ -1371,13 +1500,19 @@ fn create_stage_dir(parent: &Path) -> Result<PathBuf, SpeakerTranscriptWriteErro
     let path = parent.join(format!(".solstone-stage-{}-{seq}", std::process::id()));
     if let Ok(meta) = fs::symlink_metadata(&path) {
         let detail = if meta.file_type().is_symlink() {
-            "stage path is a symlink"
+            MessageDetail::message(
+                "journal.cli.transcribe.error.writer.stage.path.is.a.symlink",
+                [],
+            )
         } else {
-            "stage path already exists"
+            MessageDetail::message(
+                "journal.cli.transcribe.error.writer.stage.path.already.exists",
+                [],
+            )
         };
         return Err(SpeakerTranscriptWriteError::OutputUnwritable {
             path: path.display().to_string(),
-            detail: detail.to_owned(),
+            detail,
         });
     }
     #[cfg(unix)]
@@ -1389,12 +1524,12 @@ fn create_stage_dir(parent: &Path) -> Result<PathBuf, SpeakerTranscriptWriteErro
             .create(&path)
             .map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
                 path: path.display().to_string(),
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             })?;
         fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).map_err(|error| {
             SpeakerTranscriptWriteError::OutputUnwritable {
                 path: path.display().to_string(),
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             }
         })?;
     }
@@ -1402,19 +1537,22 @@ fn create_stage_dir(parent: &Path) -> Result<PathBuf, SpeakerTranscriptWriteErro
     {
         fs::create_dir(&path).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
             path: path.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     }
     let meta = fs::symlink_metadata(&path).map_err(|error| {
         SpeakerTranscriptWriteError::OutputUnwritable {
             path: path.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         }
     })?;
     if meta.file_type().is_symlink() || !meta.is_dir() {
         return Err(SpeakerTranscriptWriteError::OutputUnwritable {
             path: path.display().to_string(),
-            detail: "stage path is not a private directory".to_owned(),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.stage.path.is.not.a.private.directory",
+                [],
+            ),
         });
     }
     Ok(path)
@@ -1434,7 +1572,7 @@ pub fn prepare_private_pair(
     fs::create_dir_all(destination_dir).map_err(|error| {
         SpeakerTranscriptWriteError::OutputUnwritable {
             path: destination_dir.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         }
     })?;
     let stage = create_stage_dir(destination_dir)?;
@@ -1478,7 +1616,10 @@ pub fn snapshot_replaced_pair(
         .stage
         .as_deref()
         .ok_or_else(|| SpeakerTranscriptWriteError::Internal {
-            detail: "private stage is missing".to_owned(),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.private.stage.is.missing",
+                [],
+            ),
         })?;
     if regular_file(jsonl_path) {
         copy_cancellable(jsonl_path, &stage.join("prior.jsonl"), cancel)?;
@@ -1510,7 +1651,10 @@ pub fn admit_private_pair(
         .stage
         .clone()
         .ok_or_else(|| SpeakerTranscriptWriteError::Internal {
-            detail: "private stage is missing".to_owned(),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.private.stage.is.missing",
+                [],
+            ),
         })?;
     let mut prior_jsonl = None;
     let mut prior_npz = None;
@@ -1519,7 +1663,10 @@ pub fn admit_private_pair(
             let destination = stage.join("prior.jsonl");
             if !regular_file(&destination) {
                 return Err(SpeakerTranscriptWriteError::Internal {
-                    detail: "prior jsonl snapshot is missing".to_owned(),
+                    detail: MessageDetail::message(
+                        "journal.cli.transcribe.error.writer.prior.jsonl.snapshot.is.missing",
+                        [],
+                    ),
                 });
             }
             prior_jsonl = Some(destination);
@@ -1528,7 +1675,10 @@ pub fn admit_private_pair(
             let destination = stage.join("prior.npz");
             if !regular_file(&destination) {
                 return Err(SpeakerTranscriptWriteError::Internal {
-                    detail: "prior npz snapshot is missing".to_owned(),
+                    detail: MessageDetail::message(
+                        "journal.cli.transcribe.error.writer.prior.npz.snapshot.is.missing",
+                        [],
+                    ),
                 });
             }
             prior_npz = Some(destination);
@@ -1552,7 +1702,10 @@ pub fn admit_private_pair(
             let _ = fs::remove_file(npz_path);
         }
         return Err(SpeakerTranscriptWriteError::Internal {
-            detail: "private transcript jsonl is missing".to_owned(),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.private.transcript.jsonl.is.missing",
+                [],
+            ),
         });
     };
     if !redo && let Err(error) = ensure_absent(jsonl_path) {
@@ -1625,12 +1778,15 @@ fn remove_stale_npz(path: &Path) -> Result<(), SpeakerTranscriptWriteError> {
     if FAIL_STALE_NPZ_UNLINK.with(|cell| cell.get()) {
         return Err(SpeakerTranscriptWriteError::OutputUnwritable {
             path: path.display().to_string(),
-            detail: "stale npz unlink refused".to_owned(),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.stale.npz.unlink.refused",
+                [],
+            ),
         });
     }
     fs::remove_file(path).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
         path: path.display().to_string(),
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })
 }
 
@@ -1644,7 +1800,10 @@ fn restore_prior_pair(
     if FAIL_PRIOR_RESTORE.with(|cell| cell.get()) {
         return Err(SpeakerTranscriptWriteError::OutputUnwritable {
             path: jsonl_path.display().to_string(),
-            detail: "prior restore refused".to_owned(),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.prior.restore.refused",
+                [],
+            ),
         });
     }
     // Rename replaces the public file. Deleting it first would drop the only
@@ -1655,7 +1814,7 @@ fn restore_prior_pair(
         fs::remove_file(npz_path).map_err(|error| {
             SpeakerTranscriptWriteError::OutputUnwritable {
                 path: npz_path.display().to_string(),
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             }
         })?;
     }
@@ -1670,11 +1829,14 @@ fn install_retained(source: &Path, destination: &Path) -> Result<(), SpeakerTran
         destination
             .parent()
             .ok_or_else(|| SpeakerTranscriptWriteError::InvalidOutputPath {
-                detail: "output path has no parent".to_owned(),
+                detail: MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.output.path.has.no.parent",
+                    [],
+                ),
             })?;
     fs::create_dir_all(parent).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
         path: destination.display().to_string(),
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })?;
     install_retained_file(source, destination, AtomicWriteOptions::default())
         .map_err(|error| atomic_error(destination, error))
@@ -1685,11 +1847,14 @@ fn install_copied(source: &Path, destination: &Path) -> Result<(), SpeakerTransc
         destination
             .parent()
             .ok_or_else(|| SpeakerTranscriptWriteError::InvalidOutputPath {
-                detail: "output path has no parent".to_owned(),
+                detail: MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.output.path.has.no.parent",
+                    [],
+                ),
             })?;
     fs::create_dir_all(parent).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
         path: destination.display().to_string(),
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })?;
     install_file(source, destination, AtomicWriteOptions::default())
         .map_err(|error| atomic_error(destination, error))
@@ -1704,12 +1869,12 @@ fn copy_cancellable(
     let mut input =
         File::open(source).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
             path: source.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     let mut output = File::create(destination).map_err(|error| {
         SpeakerTranscriptWriteError::OutputUnwritable {
             path: destination.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         }
     })?;
     let mut buffer = [0_u8; COPY_CHUNK];
@@ -1718,7 +1883,7 @@ fn copy_cancellable(
         let read = input.read(&mut buffer).map_err(|error| {
             SpeakerTranscriptWriteError::OutputUnwritable {
                 path: source.display().to_string(),
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             }
         })?;
         if read == 0 {
@@ -1727,7 +1892,7 @@ fn copy_cancellable(
         output.write_all(&buffer[..read]).map_err(|error| {
             SpeakerTranscriptWriteError::OutputUnwritable {
                 path: destination.display().to_string(),
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             }
         })?;
     }
@@ -1735,7 +1900,7 @@ fn copy_cancellable(
         .sync_all()
         .map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
             path: destination.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })
 }
 
@@ -1747,12 +1912,12 @@ fn compare_private(
     let mut left_file =
         File::open(left).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
             path: left.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     let mut right_file =
         File::open(right).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
             path: right.display().to_string(),
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     let mut left_buffer = [0_u8; COPY_CHUNK];
     let mut right_buffer = [0_u8; COPY_CHUNK];
@@ -1761,13 +1926,13 @@ fn compare_private(
         let left_read = left_file.read(&mut left_buffer).map_err(|error| {
             SpeakerTranscriptWriteError::OutputUnwritable {
                 path: left.display().to_string(),
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             }
         })?;
         let right_read = right_file.read(&mut right_buffer).map_err(|error| {
             SpeakerTranscriptWriteError::OutputUnwritable {
                 path: right.display().to_string(),
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             }
         })?;
         if left_read == 0 && right_read == 0 {
@@ -1775,7 +1940,10 @@ fn compare_private(
         }
         if left_read != right_read || left_buffer[..left_read] != right_buffer[..right_read] {
             return Err(SpeakerTranscriptWriteError::Internal {
-                detail: "private transcript copy did not match the staged file".to_owned(),
+                detail: MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.private.transcript.copy.did.not.match.the.staged.file",
+                    [],
+                ),
             });
         }
     }
@@ -1865,7 +2033,10 @@ fn write_quoted_reader(
         if read == 0 {
             return Err(SpeakerTranscriptWriteError::InvalidStatement {
                 statement_index: 0,
-                detail: "statement text ended before its trimmed length".to_owned(),
+                detail: MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.statement.text.ended.before.its.trimmed.length",
+                    [],
+                ),
             });
         }
         left -= read as u64;
@@ -1878,7 +2049,10 @@ fn write_quoted_reader(
         let text = std::str::from_utf8(&raw[..split]).map_err(|_| {
             SpeakerTranscriptWriteError::InvalidStatement {
                 statement_index: 0,
-                detail: "statement text is not valid utf-8".to_owned(),
+                detail: MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.statement.text.is.not.valid.utf8",
+                    [],
+                ),
             }
         })?;
         ascii_json::write_escaped_to(output, text).map_err(staged_io)?;
@@ -1888,7 +2062,10 @@ fn write_quoted_reader(
     if pending_len != 0 {
         return Err(SpeakerTranscriptWriteError::InvalidStatement {
             statement_index: 0,
-            detail: "statement text is not valid utf-8".to_owned(),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.statement.text.is.not.valid.utf8",
+                [],
+            ),
         });
     }
     output.write_all(b"\"").map_err(staged_io)
@@ -1924,7 +2101,7 @@ fn utf8_floor(bytes: &[u8]) -> usize {
 fn staged_io(error: io::Error) -> SpeakerTranscriptWriteError {
     SpeakerTranscriptWriteError::OutputUnwritable {
         path: "staged-statement".to_owned(),
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     }
 }
 
@@ -2265,7 +2442,7 @@ mod replacement_tests {
         assert!(matches!(
             error,
             SpeakerTranscriptWriteError::OutputUnwritable { ref detail, .. }
-                if detail == "prior restore refused"
+                if detail.to_string() == "prior restore refused"
         ));
         assert_eq!(
             fs::read(stage_path.join("prior.jsonl")).unwrap(),

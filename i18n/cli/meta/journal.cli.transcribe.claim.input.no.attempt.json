@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for claim input no attempt.",
+  "context": "Journal command-line text for claim input no attempt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59fd0f68491e2c734dc6066c0462ef43169295b49b5a93470c498308c1297bd1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

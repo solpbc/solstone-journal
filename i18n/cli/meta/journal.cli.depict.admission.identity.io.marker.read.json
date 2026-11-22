@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for admission identity io marker read.",
+  "context": "Journal command-line text for admission identity io marker read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "909bc47e7182142ee57622ece2764ff448edbbf1e9c890b1d354b45cc59ab147",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

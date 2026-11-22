@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer base time us of day is outside a day.",
+  "context": "Journal command-line text for error writer base time us of day is outside a day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d1f012a7c68aec331d4291083add15ccd6174bd3ff0d2f5f5646666c5fb4953",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_base_time_us_of_day",
+      "kind": "accepted-input",
+      "value": "base_time_us_of_day"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error vad vad helper terminated without an exit code.",
+  "context": "Journal command-line text for error vad vad helper terminated without an exit code.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "44d8fc7d887d70106a05766667b1fda46e92fe53bf9959f02551b51835f426bc",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

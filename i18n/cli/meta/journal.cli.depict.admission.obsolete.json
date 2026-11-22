@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission obsolete.",
+  "context": "Journal command-line text for admission obsolete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b7fe96b3f872ef633388eca1be12fe09c77a65f67cf721afeedd0c0b940f74a4",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    }
+  ]
+}

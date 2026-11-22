@@ -233,7 +233,7 @@ fn blank_statement_text_refuses_before_publication() {
                 Err(SpeakerTranscriptWriteError::InvalidStatement {
                     statement_index: 0,
                     detail,
-                }) if detail == "text must be a nonempty string"
+                }) if detail.to_string() == "text must be a nonempty string"
             ),
             "{text:?}"
         );

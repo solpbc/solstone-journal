@@ -220,6 +220,110 @@ pub enum BoundedHelperError {
     JobNotQuiescent { identity: ProcessInstance },
 }
 
+impl From<&BoundedHelperError> for solstone_core_cli_copy::MessageDetail {
+    fn from(error: &BoundedHelperError) -> Self {
+        match error {
+            BoundedHelperError::CleanupPending => {
+                Self::message("journal.cli.transcribe.error.windows.cleanup.pending", [])
+            }
+            BoundedHelperError::CleanupContended => {
+                Self::message("journal.cli.transcribe.error.windows.cleanup.contended", [])
+            }
+            BoundedHelperError::AdmissionDeadlineExceeded => Self::message(
+                "journal.cli.transcribe.error.windows.admission.deadline.exceeded",
+                [],
+            ),
+            BoundedHelperError::ZeroTimeout => {
+                Self::message("journal.cli.transcribe.error.windows.zero.timeout", [])
+            }
+            BoundedHelperError::ZeroLimit { stream, .. } => Self::message(
+                "journal.cli.transcribe.error.windows.zero.limit",
+                [("stream", &(stream))],
+            ),
+            BoundedHelperError::InputLimitExceeded => Self::message(
+                "journal.cli.transcribe.error.windows.input.limit.exceeded",
+                [],
+            ),
+            BoundedHelperError::MissingSystemRoot => Self::message(
+                "journal.cli.transcribe.error.windows.missing.system.root",
+                [],
+            ),
+            BoundedHelperError::PathEnvironmentRefused => Self::message(
+                "journal.cli.transcribe.error.windows.path.environment.refused",
+                [],
+            ),
+            BoundedHelperError::PackageRootUnavailable => Self::message(
+                "journal.cli.transcribe.error.windows.package.root.unavailable",
+                [],
+            ),
+            BoundedHelperError::ExecutableUnavailable => Self::message(
+                "journal.cli.transcribe.error.windows.executable.unavailable",
+                [],
+            ),
+            BoundedHelperError::ExecutableOutsidePackage => Self::message(
+                "journal.cli.transcribe.error.windows.executable.outside.package",
+                [],
+            ),
+            BoundedHelperError::ExecutableNotFile => Self::message(
+                "journal.cli.transcribe.error.windows.executable.not.file",
+                [],
+            ),
+            BoundedHelperError::CurrentDirectoryUnavailable => Self::message(
+                "journal.cli.transcribe.error.windows.current.directory.unavailable",
+                [],
+            ),
+            BoundedHelperError::CurrentDirectoryOutsidePackage => Self::message(
+                "journal.cli.transcribe.error.windows.current.directory.outside.package",
+                [],
+            ),
+            BoundedHelperError::CurrentDirectoryNotDirectory => Self::message(
+                "journal.cli.transcribe.error.windows.current.directory.not.directory",
+                [],
+            ),
+            BoundedHelperError::PathNotRepresentable => Self::message(
+                "journal.cli.transcribe.error.windows.path.not.representable",
+                [],
+            ),
+            BoundedHelperError::LaunchFailed => {
+                Self::message("journal.cli.transcribe.error.windows.launch.failed", [])
+            }
+            BoundedHelperError::LaunchFinalizationFailed { detail, .. } => Self::message(
+                "journal.cli.transcribe.error.windows.launch.finalization.failed",
+                [("detail", &(detail))],
+            ),
+            BoundedHelperError::IoWorkerStartFailed { stream, .. } => Self::message(
+                "journal.cli.transcribe.error.windows.io.worker.start.failed",
+                [("stream", &(stream))],
+            ),
+            BoundedHelperError::InputWriteFailed { .. } => Self::message(
+                "journal.cli.transcribe.error.windows.input.write.failed",
+                [],
+            ),
+            BoundedHelperError::OutputLimitExceeded { stream, .. } => Self::message(
+                "journal.cli.transcribe.error.windows.output.limit.exceeded",
+                [("stream", &(stream))],
+            ),
+            BoundedHelperError::OutputReadFailed { stream, .. } => Self::message(
+                "journal.cli.transcribe.error.windows.output.read.failed",
+                [("stream", &(stream))],
+            ),
+            BoundedHelperError::DeadlineExceeded { .. } => {
+                Self::message("journal.cli.transcribe.error.windows.deadline.exceeded", [])
+            }
+            BoundedHelperError::Cancelled { .. } => {
+                Self::message("journal.cli.transcribe.error.windows.cancelled", [])
+            }
+            BoundedHelperError::ProcessObservationFailed { .. } => Self::message(
+                "journal.cli.transcribe.error.windows.process.observation.failed",
+                [],
+            ),
+            BoundedHelperError::JobNotQuiescent { .. } => {
+                Self::message("journal.cli.transcribe.error.windows.job.not.quiescent", [])
+            }
+        }
+    }
+}
+
 fn validate_request_shape(request: &BoundedHelperRequest) -> Result<(), BoundedHelperError> {
     if request.budget.timeout.is_zero() {
         return Err(BoundedHelperError::ZeroTimeout);
@@ -1141,6 +1245,26 @@ mod tests {
             resources: BoundedHelperResources::default(),
             stdout_sink: None,
             cancellation: None,
+        }
+    }
+
+    #[test]
+    fn bounded_helper_catalog_preserves_diagnostic_fields() {
+        for error in [
+            BoundedHelperError::CleanupPending,
+            BoundedHelperError::ZeroLimit {
+                stream: "synthetic-stream",
+            },
+            BoundedHelperError::LaunchFinalizationFailed {
+                detail: "unmodified child diagnostic".into(),
+                process_id: Some(17),
+            },
+        ] {
+            assert_eq!(
+                solstone_core_cli_copy::MessageDetail::from(&error)
+                    .render(solstone_core_cli_copy::ENGLISH),
+                error.to_string()
+            );
         }
     }
 

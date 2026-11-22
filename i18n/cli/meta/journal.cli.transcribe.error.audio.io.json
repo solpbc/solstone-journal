@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for error audio io.",
+  "context": "Journal command-line text for error audio io.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5b3beb25edff7c038e8b17ab7c7ea8cb1b740e5292f7db4d25d96fe4f65dec84",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_i_o",
+      "kind": "accepted-input",
+      "value": "I/O"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for feed unreadable.",
+  "context": "Journal command-line text for feed unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fe0d7579c8650a806ac8b46fa5e57b2d2c681e22b3a34129b88d59299243fdde",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

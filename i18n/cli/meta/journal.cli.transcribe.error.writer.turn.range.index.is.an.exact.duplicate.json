@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer turn range index is an exact duplicate.",
+  "context": "Journal command-line text for error writer turn range index is an exact duplicate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "91b446ff0d5a6e64dcc6058f5c908ff5c89542771a31990a6543937d8b6e4fc2",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

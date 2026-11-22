@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error cpp word timing item must be an object.",
+  "context": "Journal command-line text for error cpp word timing item must be an object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e2101a31ce861246040d286b83e772609ee887573fcad7ffce61544fc667ab0a",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

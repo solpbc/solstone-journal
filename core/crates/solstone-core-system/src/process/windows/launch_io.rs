@@ -3,6 +3,8 @@
 
 //! Bounded launch-pipe I/O with storage retained through definitive completion.
 
+use solstone_core_cli_copy::MessageDetail;
+
 use std::cell::UnsafeCell;
 use std::io;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
@@ -141,9 +143,10 @@ impl PendingIo {
                     }
                     let count = result?;
                     if count > self.buffer.len() {
-                        return Err(io::Error::other(
-                            "launch pipe returned an invalid byte count",
-                        ));
+                        return Err(io::Error::other(MessageDetail::message(
+                            "journal.cli.depict.admission.byte.count",
+                            [],
+                        )));
                     }
                     self.buffer.truncate(count);
                     return Ok(std::mem::take(&mut self.buffer));
@@ -163,21 +166,31 @@ impl PendingIo {
         if incomplete {
             retain(self);
         }
-        let cleanup = if incomplete {
-            "I/O cleanup incomplete and retained"
-        } else {
-            "I/O cancellation completed"
-        };
-        match wait_error {
-            Some(error) => Err(io::Error::new(
+        let (kind, detail) = match (wait_error, incomplete) {
+            (Some(error), true) => (
                 error.kind(),
-                format!("launch I/O wait failed: {error}; {cleanup}"),
-            )),
-            None => Err(io::Error::new(
+                MessageDetail::message(
+                    "journal.cli.depict.admission.wait.incomplete",
+                    [("error", &error)],
+                ),
+            ),
+            (Some(error), false) => (
+                error.kind(),
+                MessageDetail::message(
+                    "journal.cli.depict.admission.wait.complete",
+                    [("error", &error)],
+                ),
+            ),
+            (None, true) => (
                 io::ErrorKind::TimedOut,
-                format!("launch deadline elapsed; {cleanup}"),
-            )),
-        }
+                MessageDetail::message("journal.cli.depict.admission.wait.deadline.incomplete", []),
+            ),
+            (None, false) => (
+                io::ErrorKind::TimedOut,
+                MessageDetail::message("journal.cli.depict.admission.wait.deadline.complete", []),
+            ),
+        };
+        Err(io::Error::new(kind, detail))
     }
 
     fn cancel_and_drain(&mut self) {
@@ -228,9 +241,10 @@ pub(super) fn require_completed_cleanup() -> io::Result<()> {
     if retained.is_empty() {
         Ok(())
     } else {
-        Err(io::Error::other(
-            "previous launch I/O cleanup remains incomplete",
-        ))
+        Err(io::Error::other(MessageDetail::message(
+            "journal.cli.depict.admission.cleanup.pending",
+            [],
+        )))
     }
 }
 
@@ -296,7 +310,7 @@ fn ensure_time(deadline: Instant) -> io::Result<()> {
     if Instant::now() >= deadline {
         Err(io::Error::new(
             io::ErrorKind::TimedOut,
-            "launch deadline elapsed",
+            MessageDetail::message("journal.cli.depict.admission.deadline.elapsed", []),
         ))
     } else {
         Ok(())
@@ -357,7 +371,7 @@ pub(super) fn write_frame(
     if data.is_empty() || data.len() > MAX_FRAME {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "invalid launch frame size",
+            MessageDetail::message("journal.cli.depict.admission.frame.size", []),
         ));
     }
     let mut frame = Vec::with_capacity(data.len() + 4);
@@ -394,7 +408,7 @@ pub(super) fn read_frame(pipe: &Arc<OwnedHandle>, deadline: Instant) -> io::Resu
     if length == 0 || length > MAX_FRAME {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "invalid launch frame size",
+            MessageDetail::message("journal.cli.depict.admission.frame.size", []),
         ));
     }
     read_exact(pipe, length, deadline)

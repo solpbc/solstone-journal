@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission record size.",
+  "context": "Journal command-line text for admission record size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7542f70f1e3c4284eb8d899426599fe5a7969c23ccd43dde47761653ed0b6b40",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "size",
+      "kind": "accepted-input",
+      "value": "24 KiB"
+    }
+  ]
+}

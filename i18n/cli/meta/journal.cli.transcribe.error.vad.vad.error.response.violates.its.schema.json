@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error vad vad error response violates its schema.",
+  "context": "Journal command-line text for error vad vad error response violates its schema.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "285eaa599cb6fb316f0109015e1489fcdb20d13c00752f41ab36f3faeaf47b39",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

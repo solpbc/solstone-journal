@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer prior npz snapshot is missing.",
+  "context": "Journal command-line text for error writer prior npz snapshot is missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c8d48f2e09ae3759fdf9b3137bea1b4e105f3d066cdd3d7c93fe9b4e0983e203",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

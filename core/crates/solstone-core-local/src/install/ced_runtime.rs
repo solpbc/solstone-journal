@@ -18,6 +18,7 @@
 //! tiny shell script) to exercise the JSON wire contract and error
 //! classification without needing a compiled `solstone-core-ced-analyze`.
 
+use solstone_core_cli_copy::MessageDetail;
 use std::ffi::OsString;
 use std::fmt;
 #[cfg(not(windows))]
@@ -105,14 +106,14 @@ pub enum CedAnalyzeProgram {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CedAnalyzeError {
     Unresolved {
-        detail: String,
+        detail: MessageDetail,
     },
     Spawn {
-        detail: String,
+        detail: MessageDetail,
     },
     Timeout,
     Io {
-        detail: String,
+        detail: MessageDetail,
     },
     /// Non-zero exit. `stderr`'s first line is typically a
     /// `solstone-ced-error-v1` JSON line the caller can parse further.
@@ -121,30 +122,40 @@ pub enum CedAnalyzeError {
         stderr: String,
     },
     MalformedResponse {
-        detail: String,
+        detail: MessageDetail,
     },
 }
 
-impl fmt::Display for CedAnalyzeError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl CedAnalyzeError {
+    pub fn detail(&self) -> MessageDetail {
         match self {
-            Self::Unresolved { detail } => write!(formatter, "ced helper unresolved: {detail}"),
-            Self::Spawn { detail } => write!(formatter, "ced helper could not start: {detail}"),
-            Self::Timeout => write!(
-                formatter,
-                "ced helper did not exit within {CED_ANALYZE_TIMEOUT:?}"
+            Self::Unresolved { detail } => detail
+                .clone()
+                .context("journal.cli.transcribe.sound.helper.unresolved"),
+            Self::Spawn { detail } => detail
+                .clone()
+                .context("journal.cli.transcribe.sound.helper.spawn"),
+            Self::Io { detail } => detail
+                .clone()
+                .context("journal.cli.transcribe.sound.helper.io"),
+            Self::MalformedResponse { detail } => detail
+                .clone()
+                .context("journal.cli.transcribe.sound.helper.response"),
+            Self::Timeout => MessageDetail::message(
+                "journal.cli.transcribe.sound.helper.timeout",
+                [("timeout", &(format!("{CED_ANALYZE_TIMEOUT:?}")))],
             ),
-            Self::Io { detail } => write!(formatter, "ced helper I/O failed: {detail}"),
-            Self::Exit { code, stderr } => {
-                write!(formatter, "ced helper exited {code:?}: {stderr}")
-            }
-            Self::MalformedResponse { detail } => {
-                write!(
-                    formatter,
-                    "ced helper response was not valid JSON: {detail}"
-                )
-            }
+            Self::Exit { code, stderr } => MessageDetail::message(
+                "journal.cli.transcribe.sound.helper.exit",
+                [("code", &(format!("{code:?}"))), ("stderr", &(stderr))],
+            ),
         }
+    }
+}
+
+impl fmt::Display for CedAnalyzeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.detail(), f)
     }
 }
 
@@ -172,12 +183,18 @@ fn resolve_program(program: &CedAnalyzeProgram) -> Result<ResolvedProgram, CedAn
                 None => {
                     let current =
                         std::env::current_exe().map_err(|error| CedAnalyzeError::Unresolved {
-                            detail: format!("could not determine current executable: {error}"),
+                            detail: MessageDetail::message(
+                                "journal.cli.transcribe.error.asset.executable",
+                                [("error", &(error))],
+                            ),
                         })?;
                     current
                         .parent()
                         .ok_or_else(|| CedAnalyzeError::Unresolved {
-                            detail: "current executable has no parent directory".to_owned(),
+                            detail: MessageDetail::message(
+                                "journal.cli.transcribe.sound.helper.parent",
+                                [],
+                            ),
                         })?
                         .to_path_buf()
                 }
@@ -185,16 +202,19 @@ fn resolve_program(program: &CedAnalyzeProgram) -> Result<ResolvedProgram, CedAn
             let executable = base_dir.join(HELPER);
             let metadata =
                 fs::metadata(&executable).map_err(|_error| CedAnalyzeError::Unresolved {
-                    detail: format!("ced helper binary is missing: {}", executable.display()),
+                    detail: MessageDetail::message(
+                        "journal.cli.transcribe.sound.helper.missing",
+                        [("path", &(executable.display()))],
+                    ),
                 })?;
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
                 if metadata.permissions().mode() & 0o111 == 0 {
                     return Err(CedAnalyzeError::Unresolved {
-                        detail: format!(
-                            "ced helper binary is not executable: {}",
-                            executable.display()
+                        detail: MessageDetail::message(
+                            "journal.cli.transcribe.sound.helper.executable",
+                            [("path", &(executable.display()))],
                         ),
                     });
                 }
@@ -255,7 +275,7 @@ pub fn invoke_ced_analyze_with_args(
             .stderr(Stdio::from(stderr.try_clone().map_err(helper_io)?))
             .spawn()
             .map_err(|error| CedAnalyzeError::Spawn {
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             })?,
     );
     let started = Instant::now();
@@ -283,13 +303,13 @@ pub fn invoke_ced_analyze_with_args(
     const MAX_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
     if stdout.metadata().map_err(helper_io)?.len() > MAX_RESPONSE_BYTES {
         return Err(CedAnalyzeError::MalformedResponse {
-            detail: "ced response exceeded 64 MiB".to_owned(),
+            detail: MessageDetail::message("journal.cli.transcribe.sound.helper.large", []),
         });
     }
     stdout.rewind().map_err(helper_io)?;
     serde_json::from_reader(BufReader::new(stdout)).map_err(|error| {
         CedAnalyzeError::MalformedResponse {
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         }
     })
 }
@@ -297,7 +317,7 @@ pub fn invoke_ced_analyze_with_args(
 #[cfg(not(windows))]
 fn helper_io(error: std::io::Error) -> CedAnalyzeError {
     CedAnalyzeError::Io {
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     }
 }
 
@@ -498,6 +518,6 @@ pub fn invoke_ced_analyze_with_args(
     _timeout: Duration,
 ) -> Result<Value, CedAnalyzeError> {
     Err(CedAnalyzeError::Unresolved {
-        detail: "CED requires the Windows host caller".to_owned(),
+        detail: MessageDetail::message("journal.cli.transcribe.sound.helper.windows", []),
     })
 }

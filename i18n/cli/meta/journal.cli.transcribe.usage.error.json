@@ -1,0 +1,53 @@
+{
+  "description": "Journal command-line text for usage error.",
+  "context": "Journal command-line text for usage error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "message",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "778f8ab0ee6fcabda65c3ff954546b759515221a0a9c0dc230fd25d702343f74",
+  "max_length": 221,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal transcribe [-h] [--all] [--redo]"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                          [--backend {parakeet,parakeet-cpp,confidential}]"
+    },
+    {
+      "name": "syntax_continuation_2",
+      "kind": "accepted-input",
+      "value": "                          [-v] [-d]"
+    },
+    {
+      "name": "syntax_continuation_3",
+      "kind": "accepted-input",
+      "value": "                          [audio_path]"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal transcribe"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

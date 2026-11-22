@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_cli_copy::MessageDetail;
 use std::error::Error;
 use std::fmt;
 
@@ -24,13 +25,13 @@ pub struct SpeakerTurnEvidence {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpeakerTurnError {
-    Malformed { detail: String },
+    Malformed { detail: MessageDetail },
 }
 
 impl fmt::Display for SpeakerTurnError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Malformed { detail } => formatter.write_str(detail),
+            Self::Malformed { detail } => std::fmt::Display::fmt(detail, formatter),
         }
     }
 }
@@ -97,59 +98,99 @@ impl SpeakerTurnEvidence {
     }
 
     pub fn from_value(value: &Value) -> Result<Self, SpeakerTurnError> {
-        let object = value
-            .as_object()
-            .ok_or_else(|| malformed("speaker turns evidence must be an object"))?;
+        let object = value.as_object().ok_or_else(|| {
+            malformed(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.turn.speaker.turns.evidence.must.be.an.object",
+                [],
+            ))
+        })?;
         if object.len() != 3 {
-            return Err(malformed("speaker turns evidence has unexpected keys"));
+            return Err(malformed(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.turn.speaker.turns.evidence.has.unexpected.keys",
+                [],
+            )));
         }
 
         let version = object
             .get("version")
             .and_then(Value::as_str)
-            .ok_or_else(|| malformed("version must be a string"))?;
+            .ok_or_else(|| {
+                malformed(MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.turn.version.must.be.a.string",
+                    [],
+                ))
+            })?;
         if version != SPEAKER_TURN_EVIDENCE_VERSION {
-            return Err(malformed(format!(
-                "expected version {SPEAKER_TURN_EVIDENCE_VERSION}, got {version}"
+            return Err(malformed(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.turn.expected.version.expected.got.version",
+                [
+                    ("expected", &(SPEAKER_TURN_EVIDENCE_VERSION)),
+                    ("version", &(version)),
+                ],
             )));
         }
 
         let audio_duration_s =
             parse_finite_f64(object.get("audio_duration_s"), "audio_duration_s")?;
         if audio_duration_s < 0.0 {
-            return Err(malformed("audio_duration_s must be non-negative"));
+            return Err(malformed(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.turn.audio.duration.s.must.be.non.negative",
+                [],
+            )));
         }
 
         let ranges_array = object
             .get("ranges")
             .and_then(Value::as_array)
-            .ok_or_else(|| malformed("ranges must be an array"))?;
+            .ok_or_else(|| {
+                malformed(MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.turn.ranges.must.be.an.array",
+                    [],
+                ))
+            })?;
 
         let mut ranges: Vec<SpeakerTurnRange> = Vec::with_capacity(ranges_array.len());
         for (index, item) in ranges_array.iter().enumerate() {
-            let range_obj = item
-                .as_object()
-                .ok_or_else(|| malformed(format!("range {index} must be an object")))?;
+            let range_obj = item.as_object().ok_or_else(|| {
+                malformed(MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.turn.range.index.must.be.an.object",
+                    [("index", &(index))],
+                ))
+            })?;
             if range_obj.len() != 2 {
-                return Err(malformed(format!("range {index} has unexpected keys")));
+                return Err(malformed(MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.turn.range.index.has.unexpected.keys",
+                    [("index", &(index))],
+                )));
             }
 
             let start_s = parse_finite_f64(range_obj.get("start_s"), "start_s")?;
             let end_s = parse_finite_f64(range_obj.get("end_s"), "end_s")?;
 
             if start_s < 0.0 {
-                return Err(malformed(format!(
-                    "range {index} start_s must be non-negative"
+                return Err(malformed(MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.turn.range.index.start.s.must.be.non.negative",
+                    [("index", &(index))],
                 )));
             }
             if start_s > end_s {
-                return Err(malformed(format!(
-                    "range {index} is inverted: start_s {start_s} > end_s {end_s}"
+                return Err(malformed(MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.turn.range.index.is.inverted.start.s.start.s",
+                    [
+                        ("index", &(index)),
+                        ("start_s", &(start_s)),
+                        ("end_s", &(end_s)),
+                    ],
                 )));
             }
             if end_s > audio_duration_s {
-                return Err(malformed(format!(
-                    "range {index} end_s {end_s} exceeds audio_duration_s {audio_duration_s}"
+                return Err(malformed(MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.turn.range.index.end.s.end.s.exceeds.audio",
+                    [
+                        ("index", &(index)),
+                        ("end_s", &(end_s)),
+                        ("audio_duration_s", &(audio_duration_s)),
+                    ],
                 )));
             }
 
@@ -160,11 +201,15 @@ impl SpeakerTurnEvidence {
                     .total_cmp(&range.start_s)
                     .then_with(|| prev.end_s.total_cmp(&range.end_s));
                 if cmp == std::cmp::Ordering::Equal {
-                    return Err(malformed(format!("range {index} is an exact duplicate")));
+                    return Err(malformed(MessageDetail::message(
+                        "journal.cli.transcribe.error.writer.turn.range.index.is.an.exact.duplicate",
+                        [("index", &(index))],
+                    )));
                 }
                 if cmp == std::cmp::Ordering::Greater {
-                    return Err(malformed(format!(
-                        "ranges must be sorted: range {index} is out of order"
+                    return Err(malformed(MessageDetail::message(
+                        "journal.cli.transcribe.error.writer.turn.ranges.must.be.sorted.range.index.is.out",
+                        [("index", &(index))],
                     )));
                 }
             }
@@ -180,20 +225,29 @@ impl SpeakerTurnEvidence {
 }
 
 fn parse_finite_f64(value: Option<&Value>, field: &str) -> Result<f64, SpeakerTurnError> {
-    let value = value.ok_or_else(|| malformed(format!("{field} is missing")))?;
-    let number = value
-        .as_f64()
-        .ok_or_else(|| malformed(format!("{field} must be a finite number")))?;
+    let value = value.ok_or_else(|| {
+        malformed(MessageDetail::message(
+            "journal.cli.transcribe.error.writer.turn.field.is.missing",
+            [("field", &(field))],
+        ))
+    })?;
+    let number = value.as_f64().ok_or_else(|| {
+        malformed(MessageDetail::message(
+            "journal.cli.transcribe.error.writer.field.must.be.a.finite.number",
+            [("field", &(field))],
+        ))
+    })?;
     if !number.is_finite() {
-        return Err(malformed(format!("{field} must be finite")));
+        return Err(malformed(MessageDetail::message(
+            "journal.cli.transcribe.error.writer.turn.field.must.be.finite",
+            [("field", &(field))],
+        )));
     }
     Ok(number)
 }
 
-fn malformed(detail: impl Into<String>) -> SpeakerTurnError {
-    SpeakerTurnError::Malformed {
-        detail: detail.into(),
-    }
+fn malformed(detail: MessageDetail) -> SpeakerTurnError {
+    SpeakerTurnError::Malformed { detail }
 }
 
 #[cfg(test)]

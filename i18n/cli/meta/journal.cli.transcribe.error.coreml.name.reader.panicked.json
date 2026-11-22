@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error coreml name reader panicked.",
+  "context": "Journal command-line text for error coreml name reader panicked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "de0a0f8e2d1b4627fc1425e9b5d044b491968369ad21ec479c1e2da06c85f032",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

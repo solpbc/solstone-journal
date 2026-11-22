@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error vad write.",
+  "context": "Journal command-line text for error vad write.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0d3f2f58e4107f47c9c997eb5bcc2824b1712e2dcdd288319afefe3f052feb15",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

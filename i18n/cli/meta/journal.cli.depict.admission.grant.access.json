@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission grant access.",
+  "context": "Journal command-line text for admission grant access.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "955dbb346752c4d96003036db970d9d82cd082ab5032fee94cda27e1f86e611e",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

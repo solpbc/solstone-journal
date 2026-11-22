@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer statement text ended before its trimmed length.",
+  "context": "Journal command-line text for error writer statement text ended before its trimmed length.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ee1c4c2afc2fa175b88a8866c68cc48f382b2c6750c4f06861b125284d135657",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

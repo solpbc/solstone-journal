@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error windows missing system root.",
+  "context": "Journal command-line text for error windows missing system root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "94938d2831d5626fc45049510d3b1294b14267c52301b85e4c89b00b4df51d51",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_systemroot",
+      "kind": "accepted-input",
+      "value": "SystemRoot"
+    }
+  ]
+}

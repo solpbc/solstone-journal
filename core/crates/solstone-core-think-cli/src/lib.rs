@@ -168,13 +168,7 @@ pub fn activity_settle_holds_day(journal: &Path, day: &str) -> bool {
     settle::holds_day(journal, day)
 }
 
-pub fn terminal_locale() -> Option<&'static str> {
-    if std::env::var("SOL_SUPERVISOR_SPAWNED").as_deref() == Ok("1") {
-        None
-    } else {
-        Some(solstone_core_cli_copy::cli_locale())
-    }
-}
+pub use solstone_core_cli_copy::terminal_locale;
 
 pub fn run_cli(
     args: &[String],

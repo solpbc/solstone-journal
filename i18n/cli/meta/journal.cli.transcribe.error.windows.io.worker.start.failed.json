@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error windows io worker start failed.",
+  "context": "Journal command-line text for error windows io worker start failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ff359b2b40bba724a576fe07f17aabaf9b690eaab7d7d043043f0c73a1e1c56c",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_i_o",
+      "kind": "accepted-input",
+      "value": "I/O"
+    }
+  ]
+}

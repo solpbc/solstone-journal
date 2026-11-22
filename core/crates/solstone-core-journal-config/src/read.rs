@@ -81,6 +81,17 @@ impl fmt::Display for ConfigLoadError {
     }
 }
 
+impl ConfigLoadError {
+    pub fn render(&self, locale: &str) -> String {
+        let Self::Corrupt { path, .. } = self;
+        solstone_core_window_catalog::strings(
+            locale,
+            "journal.window.facets.awareness.response.detail.unreadable.settings",
+            [("settings_path", path.display().to_string().as_str())],
+        )
+    }
+}
+
 impl Error for ConfigLoadError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {

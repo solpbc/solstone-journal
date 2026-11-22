@@ -125,14 +125,23 @@ pub(crate) fn probe_health(base_url: &str, timeout: Duration) -> HealthState {
 /// Connect to the service only after the supervisor has published a ready port.
 pub(crate) fn connect(journal_path: &Path) -> Result<ParakeetServer, TranscribeError> {
     let Some(port) = read_port(journal_path) else {
-        return Err(deferred("no_port", "Parakeet server is not ready yet."));
+        return Err(deferred(
+            "no_port",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.parakeet.server.is.not.ready.yet",
+                [],
+            ),
+        ));
     };
     let base_url = base_url(port);
     let auth_headers = solstone_core_system::provider_runtime::parakeet_auth_headers(port);
     if cfg!(windows) && auth_headers.is_none() {
         return Err(deferred(
             "server_not_ready",
-            "Parakeet server credentials are unavailable in this process.",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.parakeet.server.credentials.are.unavailable.in.this.process",
+                [],
+            ),
         ));
     }
     if probe_health_with_headers(&base_url, HEALTH_TIMEOUT, auth_headers.as_ref())
@@ -140,7 +149,10 @@ pub(crate) fn connect(journal_path: &Path) -> Result<ParakeetServer, TranscribeE
     {
         return Err(deferred(
             "server_not_ready",
-            "Parakeet server is not ready yet.",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.parakeet.server.is.not.ready.yet",
+                [],
+            ),
         ));
     }
     Ok(ParakeetServer {
@@ -204,7 +216,10 @@ pub(crate) fn transcribe_transport_with_timeout(
     if response.status().as_u16() != 200 {
         return Err(failure(
             "transcription_http_error",
-            format!("HTTP {}", response.status().as_u16()),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.http.status",
+                [("status", &(response.status().as_u16()))],
+            ),
         ));
     }
     let mut body = response.into_body();
@@ -219,27 +234,59 @@ fn parse_transcription_response(text: &str) -> Result<TranscriptionResponse, Tra
     parse_verbose_json(text).map_err(|error| match error {
         WordContractError::InvalidJson(error) => failure(
             "invalid_json",
-            format!("response JSON was invalid: {error}"),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.response.json.was.invalid.error",
+                [("error", &(error))],
+            ),
         ),
-        WordContractError::NotObject => failure("invalid_json", "response JSON was not an object"),
-        WordContractError::MissingWords => {
-            failure("contract_violation", "response missing top-level words[]")
-        }
+        WordContractError::NotObject => failure(
+            "invalid_json",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.response.json.was.not.an.object",
+                [],
+            ),
+        ),
+        WordContractError::MissingWords => failure(
+            "contract_violation",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.response.missing.top.level.words",
+                [],
+            ),
+        ),
         WordContractError::TextWithoutTimings => failure(
             "contract_violation",
-            "response has text but no word timings",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.response.has.text.but.no.word.timings",
+                [],
+            ),
         ),
-        WordContractError::WordNotObject => {
-            failure("contract_violation", "word timing item must be an object")
-        }
+        WordContractError::WordNotObject => failure(
+            "contract_violation",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.word.timing.item.must.be.an.object",
+                [],
+            ),
+        ),
         WordContractError::MissingKey(key) => failure(
             "contract_violation",
-            format!("word timing missing key: {key}"),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.word.timing.missing.key.key",
+                [("key", &(key))],
+            ),
         ),
-        WordContractError::BlankWord => failure("contract_violation", "word timing text was blank"),
+        WordContractError::BlankWord => failure(
+            "contract_violation",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.word.timing.text.was.blank",
+                [],
+            ),
+        ),
         WordContractError::InvalidNumber { .. } => failure(
             "contract_violation",
-            "word timing contains invalid numeric value",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.word.timing.contains.invalid.numeric.value",
+                [],
+            ),
         ),
     })
 }
@@ -360,7 +407,10 @@ fn require_supported_platform() -> Result<(), TranscribeError> {
         .ok_or_else(|| {
             failure(
                 "unsupported_platform",
-                "parakeet-cpp is only supported on linux and windows",
+                crate::TranscribeDetail::message(
+                    "journal.cli.transcribe.error.cpp.parakeet.cpp.is.only.supported.on.linux.and",
+                    [],
+                ),
             )
         })
 }
@@ -406,7 +456,15 @@ fn validated_device(configured_device: Option<&str>) -> Result<&str, TranscribeE
     let device = configured_device.unwrap_or(DEFAULT_DEVICE);
     matches!(device, "auto" | "cpu")
         .then_some(device)
-        .ok_or_else(|| failure("invalid_config", "device must be one of: auto, cpu"))
+        .ok_or_else(|| {
+            failure(
+                "invalid_config",
+                crate::TranscribeDetail::message(
+                    "journal.cli.transcribe.error.cpp.device.must.be.one.of.auto.cpu",
+                    [],
+                ),
+            )
+        })
 }
 
 fn health_path(journal_path: &Path, name: &str) -> PathBuf {
@@ -430,7 +488,13 @@ fn agent(timeout: Duration) -> ureq::Agent {
 
 fn map_ureq_error(error: ureq::Error) -> TranscribeError {
     match error {
-        ureq::Error::Timeout(_) => deferred("read_timeout", "transcription request timed out"),
+        ureq::Error::Timeout(_) => deferred(
+            "read_timeout",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.transcription.request.timed.out",
+                [],
+            ),
+        ),
         ureq::Error::Protocol(error) => deferred("server_disconnected", error.to_string()),
         ureq::Error::HostNotFound | ureq::Error::ConnectionFailed => {
             deferred("connect_error", error.to_string())
@@ -439,10 +503,20 @@ fn map_ureq_error(error: ureq::Error) -> TranscribeError {
         ureq::Error::Http(error) => failure("local_protocol_error", error.to_string()),
         ureq::Error::BadUri(error) => failure("local_protocol_error", error),
         ureq::Error::RequireHttpsOnly(error) => failure("unsupported_protocol", error.to_string()),
-        ureq::Error::TlsRequired => failure("unsupported_protocol", "TLS is required"),
-        ureq::Error::StatusCode(status) => {
-            failure("transcription_http_error", format!("HTTP {status}"))
-        }
+        ureq::Error::TlsRequired => failure(
+            "unsupported_protocol",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.tls.is.required",
+                [],
+            ),
+        ),
+        ureq::Error::StatusCode(status) => failure(
+            "transcription_http_error",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.cpp.http.status",
+                [("status", &(status))],
+            ),
+        ),
         error => deferred("transport_error", error.to_string()),
     }
 }
@@ -464,14 +538,20 @@ fn map_io_error(error: io::Error) -> TranscribeError {
     }
 }
 
-fn deferred(reason: impl Into<String>, detail: impl Into<String>) -> TranscribeError {
+fn deferred(
+    reason: impl Into<String>,
+    detail: impl Into<crate::TranscribeDetail>,
+) -> TranscribeError {
     TranscribeError::ParakeetCppDeferred {
         reason: reason.into(),
         detail: detail.into(),
     }
 }
 
-fn failure(reason: impl Into<String>, detail: impl Into<String>) -> TranscribeError {
+fn failure(
+    reason: impl Into<String>,
+    detail: impl Into<crate::TranscribeDetail>,
+) -> TranscribeError {
     TranscribeError::ParakeetCppFailure {
         reason: reason.into(),
         detail: detail.into(),

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer field must be an unsigned integer.",
+  "context": "Journal command-line text for error writer field must be an unsigned integer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4d47dd875c301e50cf40d6bb1c256c479f14bf9854b972ddb0393d39e10f1c40",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

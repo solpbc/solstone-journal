@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for installation grant required.",
+  "context": "Journal command-line text for installation grant required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5a3ed71144cbd082e7cf6edc764441d7b192b19ee3ca617b3d499f40730db196",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

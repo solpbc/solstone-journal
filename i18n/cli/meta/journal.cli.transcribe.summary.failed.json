@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for summary failed.",
+  "context": "Journal command-line text for summary failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "processed",
+      "type": "string"
+    },
+    {
+      "name": "skipped",
+      "type": "string"
+    },
+    {
+      "name": "failed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "05029317237e83950611feb4556d1c52b75397e2b61d2c18b83efe0e845ec26c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

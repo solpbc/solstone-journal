@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for admission identity path nul.",
+  "context": "Journal command-line text for admission identity path nul.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d397e613071307927fa90cdd5716b2f4e6528a18b0f18826747eda753a022c9",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    },
+    {
+      "name": "nul",
+      "kind": "accepted-input",
+      "value": "NUL"
+    }
+  ]
+}

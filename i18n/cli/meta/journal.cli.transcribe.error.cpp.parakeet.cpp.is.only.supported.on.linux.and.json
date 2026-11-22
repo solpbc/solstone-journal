@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error cpp parakeet cpp is only supported on linux and.",
+  "context": "Journal command-line text for error cpp parakeet cpp is only supported on linux and.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a5d3bdf24e6f96a504fcbbb7582794d0a9ccd8835dc9278dc87797acaa2acae7",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_parakeet_cpp",
+      "kind": "accepted-input",
+      "value": "parakeet-cpp"
+    }
+  ]
+}

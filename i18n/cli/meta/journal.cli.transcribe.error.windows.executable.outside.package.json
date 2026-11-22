@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows executable outside package.",
+  "context": "Journal command-line text for error windows executable outside package.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6218c7ba5ce5e096f7821892bd59da39785af422de28a0b270e25aae023d90b1",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

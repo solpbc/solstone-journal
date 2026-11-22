@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for error orphan.",
+  "context": "Journal command-line text for error orphan.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eb7a82134965f8b8c035f8062e1e26f223952f1bd475a151a83de205ee5bb8c4",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_npz",
+      "kind": "accepted-input",
+      "value": "NPZ"
+    }
+  ]
+}

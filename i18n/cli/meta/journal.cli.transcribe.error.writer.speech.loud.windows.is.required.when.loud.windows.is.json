@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error writer speech loud windows is required when loud windows is.",
+  "context": "Journal command-line text for error writer speech loud windows is required when loud windows is.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5e69bf1cb5b0afc0d56dcd61b74065a8c0615b9a87a78053d1eb4e2e874da870",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_speech_loud_windows",
+      "kind": "accepted-input",
+      "value": "speech_loud_windows"
+    },
+    {
+      "name": "code_loud_windows",
+      "kind": "accepted-input",
+      "value": "loud_windows"
+    }
+  ]
+}

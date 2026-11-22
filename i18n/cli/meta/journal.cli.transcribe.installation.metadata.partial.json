@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for installation metadata partial.",
+  "context": "Journal command-line text for installation metadata partial.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ec31eb09cbbfd01c593aefc13f944936a812c8e7824bf39f02a5114b2e1b21b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

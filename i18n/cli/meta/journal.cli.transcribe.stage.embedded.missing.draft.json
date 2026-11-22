@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stage embedded missing draft.",
+  "context": "Journal command-line text for stage embedded missing draft.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "107185a4a0735307ec8794c42de9d15fe590bbf2fa42436b321fb01ed992b3f2",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for admission birth invalid.",
+  "context": "Journal command-line text for admission birth invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce464b7fb8e3786dbc05bb582884722acf6c5f75689be9cb76481a3b71ea1aa8",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "boot",
+      "kind": "accepted-input",
+      "value": "boot_id"
+    },
+    {
+      "name": "linux",
+      "kind": "accepted-input",
+      "value": "linux"
+    }
+  ]
+}

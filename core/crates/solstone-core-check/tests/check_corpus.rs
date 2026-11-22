@@ -53,7 +53,7 @@ fn python_corpus_matches_the_pure_native_verdict() {
             );
             case.inputs.ced = Some(CapabilityStatus::ResourceOrOwnerScopeUnavailable {
                 capability: "ced".into(),
-                detail: detail.clone(),
+                detail: detail.clone().into(),
             });
             case.human_stdout = case.human_stdout.replace(OLD_GUIDANCE, &detail);
             let json_str = case.json_payload.to_string().replace(OLD_GUIDANCE, &detail);

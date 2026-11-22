@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error backend platform.",
+  "context": "Journal command-line text for error backend platform.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "047754564a3e79b6d0e29f620cd2df665ab7540f0cc7d530c56770ce649efe4c",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_stt",
+      "kind": "accepted-input",
+      "value": "STT"
+    }
+  ]
+}

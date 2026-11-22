@@ -1,0 +1,37 @@
+{
+  "description": "Journal command-line text for admission birth position.",
+  "context": "Journal command-line text for admission birth position.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "line",
+      "type": "string"
+    },
+    {
+      "name": "column",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "db86311beb95216dc36f523c61aada1f606eb8772703ee6d408f97eb54f4ac7d",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "boot",
+      "kind": "accepted-input",
+      "value": "boot_id"
+    },
+    {
+      "name": "linux",
+      "kind": "accepted-input",
+      "value": "linux"
+    }
+  ]
+}

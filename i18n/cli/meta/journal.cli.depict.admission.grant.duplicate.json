@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission grant duplicate.",
+  "context": "Journal command-line text for admission grant duplicate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "68e4f29b3444ad3f060fc540b3312302720ffe4ba7103189eefe4c169f7c3544",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

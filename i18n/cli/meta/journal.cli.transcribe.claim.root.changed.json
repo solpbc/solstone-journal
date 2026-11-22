@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for claim root changed.",
+  "context": "Journal command-line text for claim root changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "069fef4dc892a24cbfceb3db27e20989835b7969ac39f482272f8d5065280c10",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

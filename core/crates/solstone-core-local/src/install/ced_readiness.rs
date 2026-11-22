@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::ffi::OsStr;
 
 use serde_json::{Value, json};
-#[cfg(any(windows, test))]
 use solstone_core_installed_payload::guidance;
 #[cfg(windows)]
 use solstone_core_installed_payload::windows_payload::{
@@ -20,7 +19,7 @@ use solstone_core_installed_payload::{
     locate_installed_package,
 };
 
-use super::capability_status::CapabilityStatus;
+use super::capability_status::{CapabilityDetail, CapabilityStatus};
 use super::ced_runtime::{
     CED_ANALYZE_TIMEOUT, CED_PROBE_COMMAND, CedAnalyzeError, CedAnalyzeProgram,
     invoke_ced_analyze_with_args,
@@ -55,21 +54,34 @@ pub struct WindowsCedPackage {
 
 #[cfg(windows)]
 pub fn verified_windows_ced_package() -> Result<WindowsCedPackage, String> {
+    verified_windows_ced_package_detail().map_err(|error| error.to_string())
+}
+
+#[cfg(windows)]
+pub fn verified_windows_ced_package_detail()
+-> Result<WindowsCedPackage, solstone_core_cli_copy::MessageDetail> {
+    use solstone_core_cli_copy::MessageDetail;
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-    let bin = executable
-        .parent()
-        .ok_or("running executable has no containing directory")?;
+    let bin = executable.parent().ok_or_else(|| {
+        MessageDetail::message("journal.cli.transcribe.sound.windows.package.parent", [])
+    })?;
     if bin.file_name() != Some(OsStr::new("bin")) {
-        return Err("running executable is not in the package bin directory".to_owned());
+        return Err(MessageDetail::message(
+            "journal.cli.transcribe.sound.windows.package.bin",
+            [],
+        ));
     }
-    let root = bin
-        .parent()
-        .ok_or("package bin directory has no package root")?;
+    let root = bin.parent().ok_or_else(|| {
+        MessageDetail::message("journal.cli.transcribe.sound.windows.package.root", [])
+    })?;
     let payload = verify_windows_payload(root).map_err(|error| error.to_string())?;
     let member = |path| {
-        payload
-            .declared_path(path)
-            .map_err(|error| format!("signed CED app payload refuses {path}: {error}"))
+        payload.declared_path(path).map_err(|error| {
+            MessageDetail::message(
+                "journal.cli.transcribe.sound.windows.package.member",
+                [("member", &(path)), ("error", &(error))],
+            )
+        })
     };
     Ok(WindowsCedPackage {
         root: root.to_path_buf(),
@@ -118,9 +130,29 @@ impl PosixReason {
     }
 }
 
+// Guidance is supplied by the package verifier, separate from its technical facts.
+// Preserve an unfamiliar instruction as given, including for a newer verifier.
+fn package_detail(technical: String, guidance_text: &str) -> CapabilityDetail {
+    let id = match guidance_text {
+        guidance::RESTART_UPDATE => "journal.window.backup.response.tool.restart.update",
+        guidance::MANIFEST_MISSING => "journal.window.backup.response.tool.manifest.missing",
+        guidance::MANIFEST_INVALID => "journal.window.backup.response.tool.manifest.invalid",
+        guidance::WRONG_PRODUCT => "journal.window.backup.response.tool.wrong.product",
+        guidance::WRONG_TARGET => "journal.window.backup.response.tool.wrong.target",
+        guidance::MEMBER_UNREADABLE => "journal.window.backup.response.tool.member.unreadable",
+        guidance::UNSUPPORTED_LOCATION => {
+            "journal.window.backup.response.tool.unsupported.location"
+        }
+        guidance::PACKAGE_MISMATCH => "journal.window.backup.response.tool.package.mismatch",
+        guidance::UNSAFE_PATH => "journal.window.backup.response.tool.unsafe.path",
+        other => return format!("{technical} {other}").into(),
+    };
+    CapabilityDetail::guidance(technical, id)
+}
+
 pub fn map_posix_refusal(refusal: InstalledPayloadRefusal) -> CapabilityStatus {
     let reason = PosixReason::from_code(refusal.code);
-    let detail = format!("{refusal} {}", refusal.guidance);
+    let detail = package_detail(refusal.to_string(), refusal.guidance);
     match reason {
         PosixReason::RestartToFinishUpdate | PosixReason::ManifestMissing => {
             CapabilityStatus::ResourceOrOwnerScopeUnavailable {
@@ -197,7 +229,10 @@ pub fn map_windows_refusal(
             guidance::MANIFEST_INVALID
         }
     };
-    let detail = format!("{}: {} {}", kind.as_str(), error.detail, guidance_text);
+    let detail = package_detail(
+        format!("{}: {}", kind.as_str(), error.detail),
+        guidance_text,
+    );
     match kind {
         solstone_core_installed_payload::windows_payload::WindowsPayloadRefusal::MissingMember => {
             CapabilityStatus::Absent {
@@ -309,7 +344,10 @@ fn resolve_in_package_or_exe(
             let _ = package_root_or_exe;
             Err(CapabilityStatus::ResourceOrOwnerScopeUnavailable {
                 capability: CED_CAPABILITY.to_owned(),
-                detail: "Windows CED package verification requires a Windows runtime".to_owned(),
+                detail: CapabilityDetail::message(
+                    "journal.cli.transcribe.sound.package.windows.runtime",
+                    [],
+                ),
             })
         }
     } else {
@@ -331,7 +369,7 @@ fn resolve_in_current_exe(os: &str, arch: &str) -> Result<ResolvedMembers, Capab
     let current_exe = std::env::current_exe().map_err(|err| {
         CapabilityStatus::ResourceOrOwnerScopeUnavailable {
             capability: CED_CAPABILITY.to_owned(),
-            detail: err.to_string(),
+            detail: err.to_string().into(),
         }
     })?;
     resolve_in_package_or_exe(&current_exe, os, arch)
@@ -339,8 +377,8 @@ fn resolve_in_current_exe(os: &str, arch: &str) -> Result<ResolvedMembers, Capab
 
 /// Production verdict: admits from `current_exe()`.
 pub fn evaluate_ced_readiness(_journal: &Path, os: &str, arch: &str) -> CedVerdict {
-    evaluate_ced_readiness_with_probe(_journal, os, arch, |library, model| {
-        probe_ced_engine(&CedAnalyzeProgram::SiblingHelper, library, model)
+    evaluate_ced_readiness_with_probe_detail(_journal, os, arch, |library, model| {
+        probe_ced_engine_detail(&CedAnalyzeProgram::SiblingHelper, library, model)
     })
 }
 
@@ -350,6 +388,17 @@ pub fn evaluate_ced_readiness_with_probe(
     os: &str,
     arch: &str,
     probe: impl FnOnce(&Path, &Path) -> Result<(), String>,
+) -> CedVerdict {
+    evaluate_ced_readiness_with_probe_detail(_journal, os, arch, |library, model| {
+        probe(library, model).map_err(Into::into)
+    })
+}
+
+pub fn evaluate_ced_readiness_with_probe_detail(
+    _journal: &Path,
+    os: &str,
+    arch: &str,
+    probe: impl FnOnce(&Path, &Path) -> Result<(), CapabilityDetail>,
 ) -> CedVerdict {
     if ced_target_and_library(os, arch).is_none() {
         return CedVerdict::Unsupported {
@@ -380,9 +429,12 @@ pub fn evaluate_ced_readiness_in_package(
     os: &str,
     arch: &str,
 ) -> CedVerdict {
-    evaluate_ced_readiness_in_package_with_probe(package_root_or_exe, os, arch, |library, model| {
-        probe_ced_engine(&CedAnalyzeProgram::SiblingHelper, library, model)
-    })
+    evaluate_ced_readiness_in_package_with_probe_detail(
+        package_root_or_exe,
+        os,
+        arch,
+        |library, model| probe_ced_engine_detail(&CedAnalyzeProgram::SiblingHelper, library, model),
+    )
 }
 
 /// Package-based verdict with caller-supplied probe.
@@ -391,6 +443,20 @@ pub fn evaluate_ced_readiness_in_package_with_probe(
     os: &str,
     arch: &str,
     probe: impl FnOnce(&Path, &Path) -> Result<(), String>,
+) -> CedVerdict {
+    evaluate_ced_readiness_in_package_with_probe_detail(
+        package_root_or_exe,
+        os,
+        arch,
+        |library, model| probe(library, model).map_err(Into::into),
+    )
+}
+
+fn evaluate_ced_readiness_in_package_with_probe_detail(
+    package_root_or_exe: &Path,
+    os: &str,
+    arch: &str,
+    probe: impl FnOnce(&Path, &Path) -> Result<(), CapabilityDetail>,
 ) -> CedVerdict {
     if ced_target_and_library(os, arch).is_none() {
         return CedVerdict::Unsupported {
@@ -420,7 +486,7 @@ pub fn fresh_model_check(os: &str, arch: &str) -> Result<PathBuf, CapabilityStat
     let current_exe = std::env::current_exe().map_err(|err| {
         CapabilityStatus::ResourceOrOwnerScopeUnavailable {
             capability: CED_CAPABILITY.to_owned(),
-            detail: err.to_string(),
+            detail: err.to_string().into(),
         }
     })?;
     fresh_model_check_in_package(&current_exe, os, arch)
@@ -435,7 +501,10 @@ pub fn fresh_model_check_in_package(
     let (target, _) = ced_target_and_library(os, arch).ok_or_else(|| {
         CapabilityStatus::ResourceOrOwnerScopeUnavailable {
             capability: CED_CAPABILITY.to_owned(),
-            detail: format!("unsupported CED platform {os}/{arch}"),
+            detail: CapabilityDetail::message(
+                "journal.cli.transcribe.sound.package.platform",
+                [("os", &(os)), ("arch", &(arch))],
+            ),
         }
     })?;
 
@@ -460,7 +529,10 @@ pub fn fresh_model_check_in_package(
             let _ = package_root_or_exe;
             Err(CapabilityStatus::ResourceOrOwnerScopeUnavailable {
                 capability: CED_CAPABILITY.to_owned(),
-                detail: "Windows CED package verification requires a Windows runtime".to_owned(),
+                detail: CapabilityDetail::message(
+                    "journal.cli.transcribe.sound.package.windows.runtime",
+                    [],
+                ),
             })
         }
     } else {
@@ -484,6 +556,14 @@ pub fn probe_ced_engine(
     library: &Path,
     model: &Path,
 ) -> Result<(), String> {
+    probe_ced_engine_detail(program, library, model).map_err(|detail| detail.to_string())
+}
+
+pub fn probe_ced_engine_detail(
+    program: &CedAnalyzeProgram,
+    library: &Path,
+    model: &Path,
+) -> Result<(), CapabilityDetail> {
     let request = json!({
         "schema": PROBE_REQUEST_SCHEMA,
         "models": {
@@ -494,12 +574,19 @@ pub fn probe_ced_engine(
     match invoke_ced_analyze_with_args(program, &[CED_PROBE_COMMAND], &request, CED_ANALYZE_TIMEOUT)
     {
         Ok(response) if response.get("ok") == Some(&Value::Bool(true)) => Ok(()),
-        Ok(response) => Err(format!(
-            "ced probe helper returned an unexpected response: {response}"
+        Ok(response) => Err(CapabilityDetail::message(
+            "journal.cli.transcribe.sound.probe.helper.unexpected",
+            [("response", &(response))],
         )),
         Err(CedAnalyzeError::Exit { stderr, code }) => Err(helper_error_detail(&stderr)
-            .unwrap_or_else(|| format!("ced probe helper exited {code:?}: {stderr}"))),
-        Err(error) => Err(error.to_string()),
+            .map(CapabilityDetail::from)
+            .unwrap_or_else(|| {
+                CapabilityDetail::message(
+                    "journal.cli.transcribe.sound.probe.helper.exit",
+                    [("code", &(format!("{code:?}"))), ("stderr", &(stderr))],
+                )
+            })),
+        Err(error) => Err(error.detail().into()),
     }
 }
 

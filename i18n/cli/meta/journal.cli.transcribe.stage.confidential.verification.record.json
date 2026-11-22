@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for stage confidential verification record.",
+  "context": "Journal command-line text for stage confidential verification record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a2b0bb609a80cbb239aea8eaa0fd08f84d48ee5d350128c0f28091d78e8c5207",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

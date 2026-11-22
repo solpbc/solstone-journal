@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sound windows probe.",
+  "context": "Journal command-line text for sound windows probe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "477107e51520a3b7b3078bac9913e9984359076660ee1b1932c3c2db64d58bf0",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -79,7 +79,7 @@ pub use args::{
     CliError, ParsedArgs, check_speakers_analyze_installation,
     check_speakers_analyze_installation_in, check_speakers_analyze_installation_with,
     check_vad_runtime_with, parse_arguments, require_solstone, speakers_analyze_repair_text,
-    speakers_installation_detail_in, speakers_repair_in, vad_runtime_repair_for,
+    speakers_installation_detail_in, speakers_repair_in, usage_error, vad_runtime_repair_for,
 };
 pub use model_assets::{
     FIRERED_VAD_SHA256, ModelAssetError, PYANNOTE_SEGMENTATION_SHA256, SFACE_SHA256,
@@ -90,7 +90,8 @@ pub use scratch::{ANALYSIS_SCRATCH_MAX_AGE, sweep_stale_analysis_scratch};
 pub use speakers::SpeakerAnalyzeError;
 pub use speakers_installation::{
     SpeakersAnalyzeGeneration, SpeakersAnalyzeOwnerRole, SpeakersAnalyzeOwnerView,
-    enter_speakers_analyze_generation, read_speakers_analyze_owner,
+    enter_speakers_analyze_generation, enter_speakers_analyze_generation_in,
+    read_speakers_analyze_owner,
 };
 pub use vad_runtime::{
     VAD_RUNTIME_PROBE_TIMEOUT, VadRuntimeStatus, probe_from_executable, probe_from_executable_in,
@@ -145,6 +146,16 @@ impl CliRunError {
         }
     }
 
+    pub fn render(&self, locale: &str) -> String {
+        match self {
+            Self::Cli(cause) => {
+                speakers_installation_detail_in(cause, locale).unwrap_or_else(|| self.to_string())
+            }
+            Self::Transcribe(cause) => cause.render(locale),
+            Self::Runtime(message) => message.clone(),
+        }
+    }
+
     pub fn message(&self) -> Option<&str> {
         match self {
             Self::Cli(error) => error.message(),
@@ -166,24 +177,37 @@ impl std::fmt::Display for CliRunError {
     }
 }
 
+#[cfg(test)]
+fn owner_route_when_stopped(error: CliError) -> CliRunError {
+    owner_route_when_stopped_in(solstone_core_cli_copy::ENGLISH, error)
+}
+
 /// An owner-typed `journal transcribe` refuses in both of the journal's states:
 /// stopped, because transcription needs the running journal, and running,
 /// because the running journal holds the speaker-analysis generation and does
 /// its own transcription. Both refusals name the route that works: importing
 /// the recording, which the running journal then transcribes.
-const TRANSCRIBE_STOPPED: &str = "your journal isn't running. start it with 'solstone journal up', then bring the recording in with 'solstone import <file>'; your journal transcribes it.";
-const TRANSCRIBE_BESIDE_RUNNING_JOURNAL: &str = "your journal is running and transcribes recordings itself. bring the recording in with 'solstone import <file>' instead.";
-
-fn owner_route_when_stopped(error: CliError) -> CliRunError {
+fn owner_route_when_stopped_in(locale: &str, error: CliError) -> CliRunError {
     match error {
-        CliError::SupervisorUnavailable => CliRunError::Runtime(TRANSCRIBE_STOPPED.to_owned()),
+        CliError::SupervisorUnavailable => CliRunError::Runtime(
+            solstone_core_cli_copy::render_for(locale, "journal.cli.transcribe.owner.stopped", &[]),
+        ),
         other => CliRunError::Cli(other),
     }
 }
 
+#[cfg(test)]
+fn owner_route_when_contended(owner: SpeakersAnalyzeOwnerView, error: CliError) -> CliRunError {
+    owner_route_when_contended_in(solstone_core_cli_copy::ENGLISH, owner, error)
+}
+
 /// Only the running journal's own hold gets the import route; a hold by any
 /// other process keeps the refusal that names that process.
-fn owner_route_when_contended(owner: SpeakersAnalyzeOwnerView, error: CliError) -> CliRunError {
+fn owner_route_when_contended_in(
+    locale: &str,
+    owner: SpeakersAnalyzeOwnerView,
+    error: CliError,
+) -> CliRunError {
     let held_by_running_journal = matches!(
         owner,
         SpeakersAnalyzeOwnerView::Available {
@@ -191,23 +215,26 @@ fn owner_route_when_contended(owner: SpeakersAnalyzeOwnerView, error: CliError) 
             ..
         }
     );
-    match error {
-        CliError::SpeakersGenerationHeld { message, .. } if held_by_running_journal => {
-            CliRunError::Cli(CliError::SpeakersInstallation {
-                message: format!("{TRANSCRIBE_BESIDE_RUNNING_JOURNAL}\n{message}"),
-            })
-        }
-        CliError::SpeakersInstallation { message }
-            if held_by_running_journal
-                && message.starts_with(speakers_installation::GENERATION_CONTENDED) =>
-        {
-            CliRunError::Cli(CliError::SpeakersInstallation {
-                message: format!("{TRANSCRIBE_BESIDE_RUNNING_JOURNAL}\n{message}"),
-            })
-        }
-        other => CliRunError::Cli(other),
+    if !held_by_running_journal {
+        return CliRunError::Cli(error);
     }
+    let detail = match &error {
+        CliError::SpeakersGenerationHeld { diagnostic, .. } => diagnostic.render(locale),
+        CliError::SpeakersInstallation { message }
+            if message.starts_with(speakers_installation::GENERATION_CONTENDED) =>
+        {
+            message.clone()
+        }
+        _ => return CliRunError::Cli(error),
+    };
+    let route =
+        solstone_core_cli_copy::render_for(locale, "journal.cli.transcribe.owner.running", &[]);
+    CliRunError::Cli(CliError::SpeakersInstallation {
+        message: format!("{route}\n{detail}"),
+    })
 }
+
+pub use solstone_core_cli_copy::terminal_locale;
 
 /// Run the standalone transcription contract against an explicitly resolved journal root.
 pub fn run_cli(
@@ -216,13 +243,36 @@ pub fn run_cli(
     on_day: &mut dyn FnMut(&Path),
     #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> Result<CliRun, CliRunError> {
-    let parsed = args::parse_arguments(arguments).map_err(CliRunError::Cli)?;
-    args::require_solstone(journal_path).map_err(owner_route_when_stopped)?;
-    args::validate_selection(&parsed).map_err(CliRunError::Cli)?;
-    let config = config::read_transcribe_config(journal_path)
-        .map_err(|error| CliRunError::Runtime(format!("failed to read journal config: {error}")))?;
-    let requested_backend =
-        requested_backend(parsed.backend.as_deref(), &config).map_err(CliRunError::Runtime)?;
+    run_cli_in(
+        None,
+        arguments,
+        journal_path,
+        on_day,
+        #[cfg(windows)]
+        admitted,
+    )
+}
+
+pub fn run_cli_in(
+    terminal: Option<&str>,
+    arguments: impl IntoIterator<Item = String>,
+    journal_path: &Path,
+    on_day: &mut dyn FnMut(&Path),
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> Result<CliRun, CliRunError> {
+    let locale = terminal.unwrap_or(solstone_core_cli_copy::ENGLISH);
+    let parsed = args::parse_arguments_in(locale, arguments).map_err(CliRunError::Cli)?;
+    args::require_solstone(journal_path).map_err(|e| owner_route_when_stopped_in(locale, e))?;
+    args::validate_selection_in(locale, &parsed).map_err(CliRunError::Cli)?;
+    let config = config::read_transcribe_config(journal_path).map_err(|error| {
+        CliRunError::Runtime(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.compose.settings",
+            [("detail", &error.render(locale))],
+        ))
+    })?;
+    let requested_backend = requested_backend_in(locale, parsed.backend.as_deref(), &config)
+        .map_err(CliRunError::Runtime)?;
     let backend = backend::resolve_default_backend(
         requested_backend,
         backend::local_stt_backend(),
@@ -232,20 +282,22 @@ pub fn run_cli(
         config::confidential_audio_enabled(&config),
     )
     .map_err(CliRunError::Transcribe)?;
-    let _generation = enter_speakers_analyze_generation(
+    let _generation = enter_speakers_analyze_generation_in(
+        locale,
         journal_path,
         SpeakersAnalyzeOwnerRole::Transcribe,
         #[cfg(windows)]
         admitted,
     )
     .map_err(|error| {
-        owner_route_when_contended(read_speakers_analyze_owner(journal_path), error)
+        owner_route_when_contended_in(locale, read_speakers_analyze_owner(journal_path), error)
     })?;
     #[cfg(windows)]
     let generation_context = _generation.child_launch_context();
     let attestation_state = AttestationStateStore::new();
     if parsed.all {
         return run_all(
+            terminal,
             journal_path,
             parsed.redo,
             &backend.backend,
@@ -256,7 +308,8 @@ pub fn run_cli(
             &generation_context,
         );
     }
-    let audio_path = args::resolve_single_audio_path(
+    let audio_path = args::resolve_single_audio_path_in(
+        locale,
         parsed
             .audio_path
             .as_deref()
@@ -264,7 +317,8 @@ pub fn run_cli(
         journal_path,
     )
     .map_err(CliRunError::Cli)?;
-    let outcome = stage::process_one(
+    let outcome = stage::process_one_in(
+        terminal,
         &audio_path,
         journal_path,
         parsed.redo,
@@ -275,20 +329,29 @@ pub fn run_cli(
         &generation_context,
     )
     .map_err(CliRunError::Transcribe)?;
-    Ok(single_file_result(outcome, &audio_path))
+    Ok(single_file_result_in(locale, outcome, &audio_path))
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 fn single_file_result(outcome: stage::ProcessOutcome, audio_path: &Path) -> CliRun {
+    single_file_result_in(solstone_core_cli_copy::ENGLISH, outcome, audio_path)
+}
+
+fn single_file_result_in(
+    locale: &str,
+    outcome: stage::ProcessOutcome,
+    audio_path: &Path,
+) -> CliRun {
     let failed = outcome == stage::ProcessOutcome::Failed;
     CliRun {
         exit_code: if failed { 1 } else { 0 },
-        stderr: failed.then(|| format!("{}\n", failed_transcription_line(audio_path))),
+        stderr: failed.then(|| format!("{}\n", failed_transcription_line(locale, audio_path))),
         files: vec![record_transcribe_file(outcome, audio_path)],
         ..CliRun::default()
     }
 }
 
-fn failed_transcription_line(audio_path: &Path) -> String {
+fn failed_transcription_line(locale: &str, audio_path: &Path) -> String {
     let output = audio_path.with_extension("jsonl");
     let record = solstone_core_processing_record::read_processing_record_header(&output);
     let reason = record
@@ -296,10 +359,14 @@ fn failed_transcription_line(audio_path: &Path) -> String {
         .and_then(|value| value.get("reason_code"))
         .and_then(serde_json::Value::as_str)
         .unwrap_or("unknown");
-    format!(
-        "{}: transcription failed ({reason}); details: {}",
-        audio_path.display(),
-        output.display()
+    solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.transcribe.file.failed",
+        [
+            ("file", &(audio_path.display())),
+            ("reason", &reason),
+            ("output", &(output.display())),
+        ],
     )
 }
 
@@ -320,17 +387,28 @@ fn record_transcribe_file(outcome: stage::ProcessOutcome, audio_path: &Path) -> 
 
 /// Resolve the effective request without touching host policy: command-line
 /// choice wins, then journal configuration, then the resource-aware default.
+#[cfg(any(test, all(feature = "embedded", unix)))]
 fn requested_backend<'a>(
+    cli_backend: Option<&'a str>,
+    config: &'a solstone_core_journal_config::JournalConfigRead,
+) -> Result<Option<&'a str>, String> {
+    requested_backend_in(solstone_core_cli_copy::ENGLISH, cli_backend, config)
+}
+
+fn requested_backend_in<'a>(
+    locale: &str,
     cli_backend: Option<&'a str>,
     config: &'a solstone_core_journal_config::JournalConfigRead,
 ) -> Result<Option<&'a str>, String> {
     match cli_backend {
         Some(backend) => Ok(Some(backend)),
-        None => config::transcribe_backend(config),
+        None => config::transcribe_backend_in(locale, config),
     }
 }
 
+#[cfg_attr(windows, allow(clippy::too_many_arguments))]
 fn run_all(
+    terminal: Option<&str>,
     journal_path: &Path,
     redo: bool,
     backend: &str,
@@ -339,14 +417,17 @@ fn run_all(
     on_day: &mut dyn FnMut(&Path),
     #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<CliRun, CliRunError> {
+    let locale = terminal.unwrap_or(solstone_core_cli_copy::ENGLISH);
     let mut day_errors = Vec::new();
-    let mut result = run_all_with(
-        discover_audio_files(journal_path, on_day, &mut |day, detail| {
+    let mut result = run_all_with_in(
+        locale,
+        discover_audio_files_in(locale, journal_path, on_day, &mut |day, detail| {
             day_errors.push(format!("{}: {detail}", day.display()));
         }),
         redo,
         |audio_path| {
-            stage::process_one(
+            stage::process_one_in(
+                terminal,
                 audio_path,
                 journal_path,
                 redo,
@@ -360,10 +441,24 @@ fn run_all(
     )?;
     if !day_errors.is_empty() {
         result.exit_code = 1;
-        let mut block = format!(
-            "transcribe --all: {} day(s) could not be read\n",
-            day_errors.len()
-        );
+        let count = day_errors.len();
+        let message = if terminal.is_some() {
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.transcribe.batch.day",
+                &[(
+                    "count",
+                    solstone_core_cli_copy::Value::Cardinal(count as i64),
+                )],
+            )
+        } else {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.batch.day.record",
+                [("count", &count)],
+            )
+        };
+        let mut block = format!("{message}\n");
         for line in &day_errors {
             block.push_str(line);
             block.push('\n');
@@ -376,7 +471,21 @@ fn run_all(
     Ok(result)
 }
 
-fn run_all_with<I, F>(audio_paths: I, redo: bool, mut process: F) -> Result<CliRun, CliRunError>
+#[cfg(test)]
+fn run_all_with<I, F>(audio_paths: I, redo: bool, process: F) -> Result<CliRun, CliRunError>
+where
+    I: IntoIterator<Item = PathBuf>,
+    F: FnMut(&Path) -> Result<stage::ProcessOutcome, TranscribeError>,
+{
+    run_all_with_in(solstone_core_cli_copy::ENGLISH, audio_paths, redo, process)
+}
+
+fn run_all_with_in<I, F>(
+    locale: &str,
+    audio_paths: I,
+    redo: bool,
+    mut process: F,
+) -> Result<CliRun, CliRunError>
 where
     I: IntoIterator<Item = PathBuf>,
     F: FnMut(&Path) -> Result<stage::ProcessOutcome, TranscribeError>,
@@ -393,31 +502,68 @@ where
             Ok(outcome) => {
                 if outcome == stage::ProcessOutcome::Failed {
                     failed += 1;
-                    failed_lines.push(failed_transcription_line(&audio_path));
+                    failed_lines.push(failed_transcription_line(locale, &audio_path));
                 } else {
                     processed += 1;
                 }
                 files.push(record_transcribe_file(outcome, &audio_path));
             }
-            Err(TranscribeError::SpeakerAnalysis(error)) => {
+            Err(error @ TranscribeError::SpeakerAnalysis(_)) => {
                 failed += 1;
-                failed_lines.push(format!("{}: {error}", audio_path.display()));
+                failed_lines.push(format!(
+                    "{}: {}",
+                    audio_path.display(),
+                    error.render(locale)
+                ));
             }
             Err(error) if error.exit_code() == 69 => deferred += 1,
             Err(error) => return Err(CliRunError::Transcribe(error)),
         }
     }
-    let mut summary = format!("{processed} processed, {skipped} skipped (already transcribed)");
-    if deferred > 0 {
-        summary.push_str(&format!(
-            ", {deferred} deferred (provider not ready, will retry)"
-        ));
-    }
-    if failed > 0 {
-        summary.push_str(&format!(", {failed} failed"));
-    }
+    let summary = match (deferred > 0, failed > 0) {
+        (false, false) => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.transcribe.summary",
+            [("processed", &processed), ("skipped", &skipped)],
+        ),
+        (false, true) => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.transcribe.summary.failed",
+            [
+                ("processed", &processed),
+                ("skipped", &skipped),
+                ("failed", &failed),
+            ],
+        ),
+        (true, false) => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.transcribe.summary.deferred",
+            [
+                ("processed", &processed),
+                ("skipped", &skipped),
+                ("deferred", &deferred),
+            ],
+        ),
+        (true, true) => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.transcribe.summary.deferred.failed",
+            [
+                ("processed", &processed),
+                ("skipped", &skipped),
+                ("deferred", &deferred),
+                ("failed", &failed),
+            ],
+        ),
+    };
     let stderr = (failed > 0).then(|| {
-        let mut block = format!("transcription: {failed} failed\n");
+        let mut block = format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.batch.failed",
+                [("failed", &failed)]
+            )
+        );
         for line in &failed_lines {
             block.push_str(line);
             block.push('\n');
@@ -454,6 +600,20 @@ pub fn discover_audio_files<'a>(
     on_day: &'a mut dyn FnMut(&Path),
     on_day_error: &'a mut dyn FnMut(&Path, String),
 ) -> impl Iterator<Item = PathBuf> + 'a {
+    discover_audio_files_in(
+        solstone_core_cli_copy::ENGLISH,
+        journal_path,
+        on_day,
+        on_day_error,
+    )
+}
+
+fn discover_audio_files_in<'a>(
+    locale: &'a str,
+    journal_path: &'a Path,
+    on_day: &'a mut dyn FnMut(&Path),
+    on_day_error: &'a mut dyn FnMut(&Path, String),
+) -> impl Iterator<Item = PathBuf> + 'a {
     let mut days = read_child_directories(&journal_path.join("chronicle"));
     days.sort_by(|left, right| right.cmp(left));
     days.into_iter().flat_map(move |day| {
@@ -485,7 +645,10 @@ pub fn discover_audio_files<'a>(
                     }
                 }
             }
-            Err(error) => on_day_error(&day, error.to_string()),
+            Err(error) => on_day_error(
+                &day,
+                solstone_core_journal_io::cli_diagnostics::path_detail(locale, &error),
+            ),
         }
         day_files.sort();
         day_files
@@ -513,42 +676,51 @@ pub enum TranscribeError {
     /// The transcript writer refused or could not publish its requested output.
     SpeakerTranscriptWrite(SpeakerTranscriptWriteError),
     /// A stale NPZ sidecar could not be removed before publication.
-    OrphanNpzRemove { path: PathBuf, detail: String },
+    OrphanNpzRemove {
+        path: PathBuf,
+        detail: TranscribeDetail,
+    },
     /// The temporary zero-row embedding payload could not be prepared or removed.
     TerminalPayload {
         path: Option<PathBuf>,
-        detail: String,
+        detail: TranscribeDetail,
     },
     /// A non-writer terminal publication failure occurred.
-    TerminalWrite { detail: String },
+    TerminalWrite { detail: TranscribeDetail },
     /// Exclusive ownership of this transcription attempt could not be acquired.
-    ProcessingClaim { path: PathBuf, detail: String },
+    ProcessingClaim {
+        path: PathBuf,
+        detail: TranscribeDetail,
+    },
     /// Input metadata could not be captured before processing began.
-    InputMetadata { path: PathBuf, detail: String },
+    InputMetadata {
+        path: PathBuf,
+        detail: TranscribeDetail,
+    },
     /// A terminal writer request could not be serialized.
-    TerminalRequest { detail: String },
+    TerminalRequest { detail: TranscribeDetail },
     /// A full transcript writer request could not be serialized.
-    TranscriptRequest { detail: String },
+    TranscriptRequest { detail: TranscribeDetail },
     /// The temporary embedding payload for a full transcript could not be handled.
     TranscriptPayload {
         path: Option<PathBuf>,
-        detail: String,
+        detail: TranscribeDetail,
     },
     /// The VAD helper binary is unavailable from this installation.
-    VadBinary { detail: String },
+    VadBinary { detail: TranscribeDetail },
     /// Preparing or invoking the VAD helper failed temporarily.
-    VadTemporary { detail: String },
+    VadTemporary { detail: TranscribeDetail },
     /// The VAD helper returned a typed non-success outcome.
     VadHelper {
         helper_exit_code: i32,
         reason: String,
-        detail: String,
+        detail: TranscribeDetail,
     },
     /// The VAD helper violated its JSON wire contract.
     VadResponse {
         helper_exit_code: Option<i32>,
         stderr: String,
-        detail: String,
+        detail: TranscribeDetail,
     },
     /// No configured, confidential, or resource-admissible STT backend exists.
     SttSurface {
@@ -556,21 +728,36 @@ pub enum TranscribeError {
         floor_bytes: Option<u64>,
     },
     /// The supervised parakeet.cpp service is unavailable for retryable work.
-    ParakeetCppDeferred { reason: String, detail: String },
+    ParakeetCppDeferred {
+        reason: String,
+        detail: TranscribeDetail,
+    },
     /// The parakeet.cpp service or client contract failed permanently.
-    ParakeetCppFailure { reason: String, detail: String },
+    ParakeetCppFailure {
+        reason: String,
+        detail: TranscribeDetail,
+    },
     /// The CoreML Parakeet helper is unavailable for retryable work.
-    ParakeetCoremlDeferred { reason: String, detail: String },
+    ParakeetCoremlDeferred {
+        reason: String,
+        detail: TranscribeDetail,
+    },
     /// The CoreML Parakeet helper or its contract failed permanently.
-    ParakeetCoremlFailure { reason: String, detail: String },
+    ParakeetCoremlFailure {
+        reason: String,
+        detail: TranscribeDetail,
+    },
     /// Confidential transcription was refused or unavailable for retryable work.
-    ConfidentialDeferred { reason: String, detail: String },
+    ConfidentialDeferred {
+        reason: String,
+        detail: TranscribeDetail,
+    },
     /// Voice-only transcription applies but no saved owner voice is usable; the input waits.
-    OwnerVoiceUnavailable { detail: String },
+    OwnerVoiceUnavailable { detail: TranscribeDetail },
     /// The native speaker-analysis helper could not produce a usable result.
     SpeakerAnalysis(SpeakerAnalyzeError),
     /// Audio decoding failed before a terminal failure record was written.
-    Decode { detail: String },
+    Decode { detail: TranscribeDetail },
     /// The resolved backend is unavailable on this host platform.
     BackendNotImplemented { backend: String },
 }
@@ -643,125 +830,209 @@ impl From<SpeakerTranscriptWriteError> for TranscribeError {
     }
 }
 
-impl std::fmt::Display for TranscribeError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+pub use solstone_core_cli_copy::MessageDetail as TranscribeDetail;
+
+impl TranscribeError {
+    /// Render a terminal diagnostic while keeping stored and wire errors in English.
+    pub fn render(&self, locale: &str) -> String {
+        self.render_for_output(Some(locale))
+    }
+    fn render_for_output(&self, requested: Option<&str>) -> String {
+        let locale = requested.unwrap_or(solstone_core_cli_copy::ENGLISH);
         match self {
-            Self::Cancelled => {
-                formatter.write_str("embedded transcription cancelled before publication")
-            }
-            Self::ModelAsset(error) => error.fmt(formatter),
-            Self::SpeakerTranscriptWrite(error) => error.fmt(formatter),
-            Self::OrphanNpzRemove { path, detail } => {
-                write!(
-                    formatter,
-                    "could not remove orphan NPZ {}: {detail}",
-                    path.display()
-                )
-            }
-            Self::TerminalPayload { path, detail } => match path {
-                Some(path) => write!(
-                    formatter,
-                    "could not prepare or remove terminal payload {}: {detail}",
-                    path.display()
-                ),
-                None => write!(formatter, "could not prepare terminal payload: {detail}"),
-            },
-            Self::TerminalWrite { detail } => formatter.write_str(detail),
-            Self::ProcessingClaim { path, detail } => write!(
-                formatter,
-                "could not acquire transcription ownership for {}: {detail}",
-                path.display()
+            Self::Cancelled => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.transcribe.error.cancelled",
+                &[],
             ),
-            Self::InputMetadata { path, detail } => {
-                write!(
-                    formatter,
-                    "could not inspect input {}: {detail}",
-                    path.display()
-                )
-            }
-            Self::TerminalRequest { detail } => {
-                write!(
-                    formatter,
-                    "could not serialize terminal writer request: {detail}"
-                )
-            }
-            Self::TranscriptRequest { detail } => {
-                write!(
-                    formatter,
-                    "could not serialize transcript writer request: {detail}"
-                )
-            }
-            Self::TranscriptPayload { path, detail } => match path {
-                Some(path) => write!(
-                    formatter,
-                    "could not prepare or remove transcript payload {}: {detail}",
-                    path.display()
-                ),
-                None => write!(formatter, "could not prepare transcript payload: {detail}"),
-            },
-            Self::VadBinary { detail } | Self::VadTemporary { detail } => {
-                formatter.write_str(detail)
-            }
+            Self::ModelAsset(error) => error.render(locale),
+            Self::SpeakerTranscriptWrite(error) => error.render(locale),
+            Self::SpeakerAnalysis(error) => error.render(locale),
+            Self::OrphanNpzRemove { path, detail } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.orphan",
+                [
+                    ("path", &(path.display())),
+                    ("detail", &(detail.render_for_output(requested))),
+                ],
+            ),
+            Self::ProcessingClaim { path, detail } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.claim",
+                [
+                    ("path", &(path.display())),
+                    ("detail", &(detail.render_for_output(requested))),
+                ],
+            ),
+            Self::InputMetadata { path, detail } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.input.inspect",
+                [
+                    ("path", &(path.display())),
+                    ("detail", &(detail.render_for_output(requested))),
+                ],
+            ),
+            Self::TerminalRequest { detail } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.terminal.request",
+                [("detail", &(detail.render_for_output(requested)))],
+            ),
+            Self::TerminalPayload {
+                path: Some(path),
+                detail,
+            } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.terminal.payload.path",
+                [
+                    ("path", &(path.display())),
+                    ("detail", &(detail.render_for_output(requested))),
+                ],
+            ),
+            Self::TerminalPayload { path: None, detail } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.terminal.payload",
+                [("detail", &(detail.render_for_output(requested)))],
+            ),
+            Self::TranscriptRequest { detail } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.transcript.request",
+                [("detail", &(detail.render_for_output(requested)))],
+            ),
+            Self::TranscriptPayload {
+                path: Some(path),
+                detail,
+            } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.transcript.payload.path",
+                [
+                    ("path", &(path.display())),
+                    ("detail", &(detail.render_for_output(requested))),
+                ],
+            ),
+            Self::TranscriptPayload { path: None, detail } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.transcript.payload",
+                [("detail", &(detail.render_for_output(requested)))],
+            ),
+            Self::TerminalWrite { detail }
+            | Self::VadBinary { detail }
+            | Self::VadTemporary { detail }
+            | Self::Decode { detail } => detail.render_for_output(requested),
             Self::VadResponse {
-                helper_exit_code,
+                helper_exit_code: Some(code),
                 stderr,
                 detail,
-            } => match (helper_exit_code, stderr.is_empty()) {
-                (Some(code), true) => write!(
-                    formatter,
-                    "VAD helper contract error (exit {code}): {detail}"
-                ),
-                (Some(code), false) => write!(
-                    formatter,
-                    "VAD helper contract error (exit {code}): {detail}: {stderr}"
-                ),
-                (None, true) => write!(
-                    formatter,
-                    "VAD helper contract error (no exit code): {detail}"
-                ),
-                (None, false) => write!(
-                    formatter,
-                    "VAD helper contract error (no exit code): {detail}: {stderr}"
-                ),
-            },
+            } if !stderr.is_empty() => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.vad.contract.exit.stderr",
+                [
+                    ("code", &(code)),
+                    ("detail", &(detail.render_for_output(requested))),
+                    ("stderr", &(stderr)),
+                ],
+            ),
+            Self::VadResponse {
+                helper_exit_code: Some(code),
+                stderr: _,
+                detail,
+            } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.vad.contract.exit",
+                [
+                    ("code", &(code)),
+                    ("detail", &(detail.render_for_output(requested))),
+                ],
+            ),
+            Self::VadResponse {
+                helper_exit_code: None,
+                stderr,
+                detail,
+            } if !stderr.is_empty() => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.vad.contract.signal.stderr",
+                [
+                    ("detail", &(detail.render_for_output(requested))),
+                    ("stderr", &(stderr)),
+                ],
+            ),
+            Self::VadResponse {
+                helper_exit_code: None,
+                stderr: _,
+                detail,
+            } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.vad.contract.signal",
+                [("detail", &(detail.render_for_output(requested)))],
+            ),
             Self::VadHelper {
                 helper_exit_code,
                 reason,
                 detail,
-            } => write!(
-                formatter,
-                "VAD helper {reason} (exit {helper_exit_code}): {detail}"
+            } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.vad.helper",
+                [
+                    ("reason", &reason),
+                    ("code", &(helper_exit_code)),
+                    ("detail", &(detail.render_for_output(requested))),
+                ],
             ),
             Self::SttSurface {
                 available_bytes,
                 floor_bytes,
-            } => write!(
-                formatter,
-                "no viable STT backend (available memory: {available_bytes:?}, local floor: {floor_bytes:?})"
+            } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.backend.memory",
+                [
+                    ("available", &(format!("{available_bytes:?}"))),
+                    ("floor", &(format!("{floor_bytes:?}"))),
+                ],
             ),
             Self::ParakeetCppDeferred { reason, detail }
-            | Self::ParakeetCppFailure { reason, detail } => {
-                write!(formatter, "parakeet.cpp {reason}: {detail}")
-            }
+            | Self::ParakeetCppFailure { reason, detail } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.cpp.failure",
+                [
+                    ("reason", &reason),
+                    ("detail", &(detail.render_for_output(requested))),
+                ],
+            ),
             Self::ParakeetCoremlDeferred { reason, detail }
             | Self::ParakeetCoremlFailure { reason, detail } => {
-                write!(formatter, "parakeet CoreML {reason}: {detail}")
-            }
-            Self::ConfidentialDeferred { reason, detail } => {
-                write!(formatter, "confidential transcription {reason}: {detail}")
-            }
-            Self::OwnerVoiceUnavailable { detail } => {
-                write!(formatter, "voice-only transcription is waiting: {detail}")
-            }
-            Self::SpeakerAnalysis(error) => error.fmt(formatter),
-            Self::Decode { detail } => formatter.write_str(detail),
-            Self::BackendNotImplemented { backend } => {
-                write!(
-                    formatter,
-                    "STT backend is unavailable on this host platform: {backend}"
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.transcribe.error.coreml.failure",
+                    [
+                        ("reason", &reason),
+                        ("detail", &(detail.render_for_output(requested))),
+                    ],
                 )
             }
+            Self::ConfidentialDeferred { reason, detail } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.confidential.failure",
+                [
+                    ("reason", &reason),
+                    ("detail", &(detail.render_for_output(requested))),
+                ],
+            ),
+            Self::OwnerVoiceUnavailable { detail } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.voice.wait",
+                [("detail", &(detail.render_for_output(requested)))],
+            ),
+            Self::BackendNotImplemented { backend } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.error.backend.platform",
+                [("backend", &(backend))],
+            ),
         }
+    }
+}
+
+impl std::fmt::Display for TranscribeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.render_for_output(None))
     }
 }
 
@@ -827,6 +1098,28 @@ mod tests {
 
     /// Stopped, the owner is sent somewhere that works, not into the running
     /// journal's refusal; the exit status stays the stopped-journal one.
+    #[test]
+    fn nested_audio_error_preserves_supervised_spelling() {
+        let error = solstone_core_observe_audio::AudioError::ResamplerFlushDidNotConverge {
+            path: "synthetic.wav".into(),
+            iterations: 1,
+            flushed_samples: 1,
+            remaining_samples: 0,
+        };
+        let error = super::TranscribeError::VadTemporary {
+            detail: super::TranscribeDetail::from(&error)
+                .context("journal.cli.transcribe.error.vad.write"),
+        };
+        assert_eq!(
+            error.to_string(),
+            "could not write VAD input: resampler flush did not converge for synthetic.wav after 1 iterations (1 samples flushed; 0 still delayed)"
+        );
+        assert_eq!(
+            error.render(solstone_core_cli_copy::ENGLISH),
+            "could not write VAD input: resampler flush did not converge for synthetic.wav after 1 iteration (1 sample flushed; 0 still delayed)"
+        );
+    }
+
     #[test]
     fn a_stopped_journal_names_the_import_route_and_keeps_its_exit() {
         let error = owner_route_when_stopped(CliError::SupervisorUnavailable);
@@ -1083,7 +1376,7 @@ mod tests {
             if path.file_stem().unwrap() == "deferred" {
                 return Err(TranscribeError::ParakeetCppDeferred {
                     reason: "server_not_ready".to_owned(),
-                    detail: "test".to_owned(),
+                    detail: "test".into(),
                 });
             }
             Err(TranscribeError::SpeakerAnalysis(SpeakerAnalyzeError::new(
@@ -1186,7 +1479,7 @@ mod tests {
         let result = run_all_with(vec![deferred], false, |_| {
             Err(TranscribeError::ParakeetCppDeferred {
                 reason: "server_not_ready".to_owned(),
-                detail: "test".to_owned(),
+                detail: "test".into(),
             })
         })
         .unwrap();
@@ -1473,7 +1766,7 @@ mod tests {
             } else {
                 Err(TranscribeError::ParakeetCppDeferred {
                     reason: "provider not ready".to_owned(),
-                    detail: "busy".to_owned(),
+                    detail: "busy".into(),
                 })
             }
         })

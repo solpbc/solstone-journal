@@ -215,7 +215,10 @@ pub(super) fn peer(pipe: &OwnedHandle, server: bool) -> io::Result<ProcessInstan
         WindowsProcessProbe::Live(instance) => Ok(instance),
         _ => Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "launch pipe peer is not verifiably live",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.depict.admission.peer.unverified",
+                [],
+            ),
         )),
     }
 }
@@ -255,7 +258,10 @@ pub(super) fn require_direct_parent(parent: ProcessInstance) -> io::Result<()> {
             } else {
                 Err(io::Error::new(
                     io::ErrorKind::PermissionDenied,
-                    "launch server is not the exact direct parent",
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.depict.admission.parent.mismatch",
+                        [],
+                    ),
                 ))
             };
         }
@@ -266,6 +272,9 @@ pub(super) fn require_direct_parent(parent: ProcessInstance) -> io::Result<()> {
         }
     }
     Err(io::Error::other(
-        "current process is absent from the parent snapshot",
+        solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.depict.admission.snapshot.absent",
+            [],
+        ),
     ))
 }

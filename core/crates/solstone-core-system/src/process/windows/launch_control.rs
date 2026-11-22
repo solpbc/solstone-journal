@@ -3,6 +3,8 @@
 
 //! Exact-child launch admission and noninherited capability transfer.
 
+use solstone_core_cli_copy::MessageDetail;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::io;
@@ -21,7 +23,7 @@ use windows_sys::Win32::System::Threading::{
 
 use super::identity::current_windows_process_instance;
 use super::job_process::WindowsJobProcess;
-use super::{launch_io, launch_pipe};
+use super::{launch_diagnostics, launch_io, launch_pipe};
 use crate::lifecycle::HostedServiceKind;
 use crate::process::launch_context::require_handle_access;
 use crate::process::{
@@ -227,8 +229,8 @@ fn tick() -> u64 {
     }
 }
 
-fn refusal(message: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::PermissionDenied, message)
+fn refusal(message: impl Into<MessageDetail>) -> io::Error {
+    io::Error::new(io::ErrorKind::PermissionDenied, message.into())
 }
 
 fn guard_environment(
@@ -239,14 +241,17 @@ fn guard_environment(
         if let Some(value) = lookup(name) {
             values.insert(
                 name.to_owned(),
-                value
-                    .into_string()
-                    .map_err(|_| refusal("non-Unicode installation guard"))?,
+                value.into_string().map_err(|_| {
+                    refusal(MessageDetail::message(
+                        "journal.cli.depict.admission.guard.encoding",
+                        [],
+                    ))
+                })?,
             );
         }
     }
     solstone_core_installation_identity::parse_service_guard_environment(&values)
-        .map_err(|error| refusal(&format!("installation guard: {error}")))?;
+        .map_err(launch_diagnostics::guard_refusal)?;
     Ok(values)
 }
 
@@ -256,7 +261,10 @@ fn validate_tuple(tuple: &LaunchTuple) -> io::Result<()> {
         || !tuple.journal().is_absolute()
         || tuple.parent().birth.windows_filetime().is_none()
     {
-        return Err(refusal("invalid launch provenance"));
+        return Err(refusal(MessageDetail::message(
+            "journal.cli.depict.admission.provenance",
+            [],
+        )));
     }
     match tuple {
         LaunchTuple::Hosted(hosted)
@@ -265,38 +273,52 @@ fn validate_tuple(tuple: &LaunchTuple) -> io::Result<()> {
                 .as_ref()
                 .is_some_and(|id| id.is_empty() || id.len() > 256) =>
         {
-            return Err(refusal("invalid parent launch provenance"));
+            return Err(refusal(MessageDetail::message(
+                "journal.cli.depict.admission.parent.provenance",
+                [],
+            )));
         }
         LaunchTuple::InstalledTask(root)
             if root.guards.len() != GUARDS.len()
                 || root.arguments.is_empty()
                 || root.arguments.iter().any(|arg| arg.contains('\0')) =>
         {
-            return Err(refusal("invalid installed task provenance"));
+            return Err(refusal(MessageDetail::message(
+                "journal.cli.depict.admission.task.provenance",
+                [],
+            )));
         }
         _ => {}
     }
     let guard =
         solstone_core_installation_identity::parse_service_guard_environment(tuple.guards())
-            .map_err(|error| refusal(&format!("installation guard: {error}")))?;
+            .map_err(launch_diagnostics::guard_refusal)?;
     if let Some(guard) = guard {
         let owner = solstone_core_installation_identity::owner_base()
-            .map_err(|e| refusal(&e.to_string()))?;
+            .map_err(launch_diagnostics::identity_refusal)?;
         let exe = std::env::current_exe()?;
         let root = exe
             .parent()
             .and_then(solstone_core_journal::resolve_identity_root_from_executable_dir)
-            .ok_or_else(|| refusal("launch executable has no installation root"))?;
+            .ok_or_else(|| {
+                refusal(MessageDetail::message(
+                    "journal.cli.depict.admission.root.missing",
+                    [],
+                ))
+            })?;
         let root = solstone_core_installation_identity::root_token_from_path(&root)
-            .map_err(|e| refusal(&e.to_string()))?;
+            .map_err(launch_diagnostics::identity_refusal)?;
         let binding = solstone_core_installation_identity::load_installation_binding(&owner, &root)
-            .map_err(|e| refusal(&e.to_string()))?;
+            .map_err(launch_diagnostics::identity_refusal)?;
         let journal = solstone_core_installation_identity::journal_token_from_path(tuple.journal())
-            .map_err(|e| refusal(&e.to_string()))?;
+            .map_err(launch_diagnostics::identity_refusal)?;
         if guard != solstone_core_installation_identity::GuardFields::from_binding(&binding)
             || journal != binding.journal_token
         {
-            return Err(refusal("launch installation binding mismatch"));
+            return Err(refusal(MessageDetail::message(
+                "journal.cli.depict.admission.binding.mismatch",
+                [],
+            )));
         }
     }
     Ok(())
@@ -338,7 +360,10 @@ impl LaunchControl {
             if std::env::var_os(name).is_some()
                 || environment.contains_key(std::ffi::OsStr::new(name))
             {
-                return Err(refusal("obsolete Windows launch marker"));
+                return Err(refusal(MessageDetail::message(
+                    "journal.cli.depict.admission.obsolete",
+                    [],
+                )));
             }
         }
         let guards = guard_environment(|name| {
@@ -539,7 +564,7 @@ fn duplicate_into(
 }
 
 pub fn receive_windows_launch() -> Result<Option<AdmittedWindowsLaunch>, LaunchError> {
-    let received = receive(None).map_err(|error| LaunchError::Admission(error.to_string()))?;
+    let received = receive(None).map_err(launch_diagnostics::admission)?;
     received
         .map(|received| match received.tuple {
             LaunchTuple::Hosted(tuple) => Ok(AdmittedWindowsLaunch {
@@ -547,9 +572,10 @@ pub fn receive_windows_launch() -> Result<Option<AdmittedWindowsLaunch>, LaunchE
                 stop: received.stop,
                 grants: received.grants,
             }),
-            LaunchTuple::InstalledTask(_) => Err(LaunchError::Admission(
-                "installed task at hosted entry".into(),
-            )),
+            LaunchTuple::InstalledTask(_) => Err(LaunchError::Admission(MessageDetail::message(
+                "journal.cli.depict.admission.entry.hosted",
+                [],
+            ))),
         })
         .transpose()
 }
@@ -558,7 +584,7 @@ pub fn receive_windows_installed_task_launch(
     expected: &InstalledTaskLaunchRequest,
 ) -> Result<AdmittedInstalledTaskLaunch, LaunchError> {
     let received = receive(Some(expected))
-        .map_err(|error| LaunchError::Admission(error.to_string()))?
+        .map_err(launch_diagnostics::admission)?
         .ok_or_else(|| LaunchError::Admission("missing installed task launch admission".into()))?;
     match received.tuple {
         LaunchTuple::InstalledTask(tuple) => Ok(AdmittedInstalledTaskLaunch {
@@ -595,7 +621,10 @@ fn validate_entry(
         {
             Ok(())
         }
-        _ => Err(refusal("launch variant or installed action mismatch")),
+        _ => Err(refusal(MessageDetail::message(
+            "journal.cli.depict.admission.entry.mismatch",
+            [],
+        ))),
     }
 }
 
@@ -609,7 +638,10 @@ fn validate_offered_grants(tuple: &LaunchTuple, grants: &[WireGrant]) -> io::Res
 fn receive(expected: Option<&InstalledTaskLaunchRequest>) -> io::Result<Option<ReceivedLaunch>> {
     for name in OBSOLETE {
         if std::env::var_os(name).is_some() {
-            return Err(refusal("obsolete Windows launch marker"));
+            return Err(refusal(MessageDetail::message(
+                "journal.cli.depict.admission.obsolete",
+                [],
+            )));
         }
     }
     let guards = guard_environment(|name| std::env::var_os(name))?;
@@ -617,40 +649,70 @@ fn receive(expected: Option<&InstalledTaskLaunchRequest>) -> io::Result<Option<R
         return Ok(None);
     };
     launch_io::require_completed_cleanup()?;
-    let value = value
-        .into_string()
-        .map_err(|_| refusal("non-Unicode Windows launch descriptor"))?;
+    let value = value.into_string().map_err(|_| {
+        refusal(MessageDetail::message(
+            "journal.cli.depict.admission.descriptor.encoding",
+            [],
+        ))
+    })?;
     if value.len() > 16384 {
-        return Err(refusal("oversized Windows launch descriptor"));
+        return Err(refusal(MessageDetail::message(
+            "journal.cli.depict.admission.descriptor.size",
+            [],
+        )));
     }
-    let descriptor: Descriptor = serde_json::from_str(&value)?;
+    let descriptor: Descriptor =
+        serde_json::from_str(&value).map_err(launch_diagnostics::decode_error)?;
     let suffix = descriptor
         .pipe
         .strip_prefix(launch_pipe::PIPE_PREFIX)
-        .ok_or_else(|| refusal("invalid launch endpoint"))?;
+        .ok_or_else(|| {
+            refusal(MessageDetail::message(
+                "journal.cli.depict.admission.endpoint",
+                [],
+            ))
+        })?;
     if suffix.len() != 48 || !suffix.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(refusal("invalid launch endpoint nonce"));
+        return Err(refusal(MessageDetail::message(
+            "journal.cli.depict.admission.nonce",
+            [],
+        )));
     }
     let remaining = descriptor
         .expires_at_tick
         .checked_sub(tick())
         .filter(|remaining| *remaining > 0 && *remaining <= 60_000)
-        .ok_or_else(|| refusal("expired or invalid Windows launch deadline"))?;
+        .ok_or_else(|| {
+            refusal(MessageDetail::message(
+                "journal.cli.depict.admission.deadline.invalid",
+                [],
+            ))
+        })?;
     let deadline = Instant::now() + Duration::from_millis(remaining);
     if descriptor.tuple.guards() != &guards {
-        return Err(refusal("launch guard tuple differs from inherited guard"));
+        return Err(refusal(MessageDetail::message(
+            "journal.cli.depict.admission.guard.mismatch",
+            [],
+        )));
     }
     validate_tuple(&descriptor.tuple)?;
     validate_entry(&descriptor.tuple, expected)?;
     launch_pipe::require_direct_parent(descriptor.tuple.parent())?;
     let pipe = launch_pipe::open(&descriptor.pipe, deadline)?;
     if launch_pipe::peer(&pipe, true)? != descriptor.tuple.parent() {
-        return Err(refusal("launch pipe server identity mismatch"));
+        return Err(refusal(MessageDetail::message(
+            "journal.cli.depict.admission.server.mismatch",
+            [],
+        )));
     }
-    let offer: Offer = serde_json::from_slice(&launch_io::read_frame(&pipe, deadline)?)?;
+    let offer: Offer = serde_json::from_slice(&launch_io::read_frame(&pipe, deadline)?)
+        .map_err(launch_diagnostics::decode_error)?;
     let child = current_windows_process_instance()?;
     if offer.descriptor != descriptor || offer.child != child {
-        return Err(refusal("launch offer provenance mismatch"));
+        return Err(refusal(MessageDetail::message(
+            "journal.cli.depict.admission.offer.mismatch",
+            [],
+        )));
     }
     validate_offered_grants(&descriptor.tuple, &offer.grants)?;
     let mut kinds = BTreeSet::new();
@@ -658,7 +720,10 @@ fn receive(expected: Option<&InstalledTaskLaunchRequest>) -> io::Result<Option<R
     handles.insert(offer.stop);
     for grant in &offer.grants {
         if !kinds.insert(grant.kind) || !handles.insert(grant.handle) {
-            return Err(refusal("duplicate launch handle or grant kind"));
+            return Err(refusal(MessageDetail::message(
+                "journal.cli.depict.admission.grant.duplicate",
+                [],
+            )));
         }
     }
     // Handle values are adopted only after authenticating the server and tuple.
@@ -678,7 +743,10 @@ fn receive(expected: Option<&InstalledTaskLaunchRequest>) -> io::Result<Option<R
     };
     launch_io::write_frame(&pipe, &serde_json::to_vec(&acknowledgement)?, deadline)?;
     if launch_io::read_frame(&pipe, deadline)? != b"admit" {
-        return Err(refusal("launch admission commit mismatch"));
+        return Err(refusal(MessageDetail::message(
+            "journal.cli.depict.admission.commit.mismatch",
+            [],
+        )));
     }
     Ok(Some(ReceivedLaunch {
         tuple: descriptor.tuple,
@@ -690,7 +758,10 @@ fn receive(expected: Option<&InstalledTaskLaunchRequest>) -> io::Result<Option<R
 fn adopt(value: usize, rights: u32, object_type: &str) -> io::Result<OwnedHandle> {
     use windows_sys::Win32::Foundation::{GetHandleInformation, HANDLE};
     if value == 0 || value >= usize::MAX - 16 {
-        return Err(refusal("invalid transferred handle"));
+        return Err(refusal(MessageDetail::message(
+            "journal.cli.depict.admission.handle.invalid",
+            [],
+        )));
     }
     let mut flags = 0;
     // SAFETY: GetHandleInformation accepts an untrusted scalar and refuses an

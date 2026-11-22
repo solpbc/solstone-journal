@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error writer zip central header at central header start error.",
+  "context": "Journal command-line text for error writer zip central header at central header start error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "central_header_start",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a31646d2d1fa706765872c99102ad97da2941035a1782cf24f5a961d729f5b74",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

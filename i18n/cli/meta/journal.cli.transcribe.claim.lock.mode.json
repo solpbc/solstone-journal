@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for claim lock mode.",
+  "context": "Journal command-line text for claim lock mode.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "mode",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7b21b257d987d5098af674f64880f7cd1af466395d1a5fb3eb4e0cec858562a7",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

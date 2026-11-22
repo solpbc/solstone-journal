@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error vad could not remove vad input directory error.",
+  "context": "Journal command-line text for error vad could not remove vad input directory error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "135003de2653417756688919d1ba799a13d4b3c22dc78bf72300ecd81749184c",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

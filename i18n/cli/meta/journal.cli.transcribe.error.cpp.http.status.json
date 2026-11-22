@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error cpp http status.",
+  "context": "Journal command-line text for error cpp http status.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4d7577a81166e2ac7710c03dc94bd96228e4aa91f78235ac14ed99470ae0e967",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_http",
+      "kind": "accepted-input",
+      "value": "HTTP"
+    }
+  ]
+}

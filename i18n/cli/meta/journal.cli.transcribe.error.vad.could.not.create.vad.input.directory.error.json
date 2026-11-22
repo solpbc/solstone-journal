@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error vad could not create vad input directory error.",
+  "context": "Journal command-line text for error vad could not create vad input directory error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "af5b17915f2876a78f6cbbdfdfab2446532d9c177e098025e31303713cc0f152",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

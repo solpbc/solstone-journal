@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error vad could not send vad request error.",
+  "context": "Journal command-line text for error vad could not send vad request error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "37ccdb52b56e72d0722d0e161cd8f8c7c3b0e758e1e0b0d22494500d101e2764",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer field must be a boolean.",
+  "context": "Journal command-line text for error writer field must be a boolean.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a09e07d6a56e2890de9fbc96ef8c21d8f44fb888266daf8a480a4af010ad2c7e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

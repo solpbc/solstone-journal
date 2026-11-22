@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for admission identity path share.",
+  "context": "Journal command-line text for admission identity path share.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1316af4a098043515dc8d5f156349a561a3909d53e14d33852e1c574219504bb",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    },
+    {
+      "name": "unc",
+      "kind": "accepted-input",
+      "value": "UNC"
+    }
+  ]
+}

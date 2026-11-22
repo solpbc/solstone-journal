@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error coreml parakeet helper is not a file path.",
+  "context": "Journal command-line text for error coreml parakeet helper is not a file path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f6b64c3d937697636eb0afdb50e10af02bec5acab72c611d3ecf22af845aea53",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_parakeet",
+      "kind": "accepted-input",
+      "value": "Parakeet"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer durations s count does not match shape.",
+  "context": "Journal command-line text for error writer durations s count does not match shape.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "35eaa9a7352f23a750c85f60a27b8abcfe2d544915dafe47c6d0f65a8272ecfb",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_durations_s",
+      "kind": "accepted-input",
+      "value": "durations_s"
+    }
+  ]
+}

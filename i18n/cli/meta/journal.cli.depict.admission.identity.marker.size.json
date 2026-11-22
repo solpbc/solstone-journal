@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission identity marker size.",
+  "context": "Journal command-line text for admission identity marker size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0dee6db9f8c2547697d3c08562741cb5e7557c2b82faa4a89ad68b26d5e37c58",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

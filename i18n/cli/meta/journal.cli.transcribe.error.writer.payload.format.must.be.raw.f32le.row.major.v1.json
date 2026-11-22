@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error writer payload format must be raw f32le row major v1.",
+  "context": "Journal command-line text for error writer payload format must be raw f32le row major v1.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a92938c1fde5fc8d8fce0556d58d04ba36461c21a8d1a2c17f58fb34a4601018",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_payload_format",
+      "kind": "accepted-input",
+      "value": "payload_format"
+    },
+    {
+      "name": "code_raw_f32le_row_major_v1",
+      "kind": "accepted-input",
+      "value": "raw-f32le-row-major-v1"
+    }
+  ]
+}

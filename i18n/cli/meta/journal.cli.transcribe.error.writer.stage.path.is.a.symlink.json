@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer stage path is a symlink.",
+  "context": "Journal command-line text for error writer stage path is a symlink.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5bb585cef2ab867ae73ae98b2d1d39a932e828bae50d57f43cbc88d324becfb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

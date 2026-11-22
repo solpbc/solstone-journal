@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error confidential the confidential attestation channel is not ready.",
+  "context": "Journal command-line text for error confidential the confidential attestation channel is not ready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f96b2f246b402a0f9a583fbf09f43749908d58f76f092003151bd4acd3933410",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

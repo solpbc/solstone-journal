@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error writer speaker evidence version is required with speaker evidence.",
+  "context": "Journal command-line text for error writer speaker evidence version is required with speaker evidence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cc7de2923d786f21db6eadf809464b54359835dc4bf1e9948dd03bb776973e29",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_speaker_evidence_version",
+      "kind": "accepted-input",
+      "value": "speaker_evidence_version"
+    },
+    {
+      "name": "code_speaker_evidence",
+      "kind": "accepted-input",
+      "value": "speaker_evidence"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer npz members.",
+  "context": "Journal command-line text for error writer npz members.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9e29aa00ca777f84fb0fb90b03fced761c19d7dc166ad8dc2b025cacaebe7747",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_npz",
+      "kind": "accepted-input",
+      "value": "NPZ"
+    }
+  ]
+}

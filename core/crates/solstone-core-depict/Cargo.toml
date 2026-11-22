@@ -19,6 +19,7 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 solstone-core-segment.workspace = true
 base64 = "0.22.1"
 env_logger.workspace = true

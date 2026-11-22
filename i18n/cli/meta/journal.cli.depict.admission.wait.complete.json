@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for admission wait complete.",
+  "context": "Journal command-line text for admission wait complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "25e84244d0600b29301ec452c2856807ad76f8202a26dba796dd2df556a81441",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "io",
+      "kind": "accepted-input",
+      "value": "I/O"
+    }
+  ]
+}

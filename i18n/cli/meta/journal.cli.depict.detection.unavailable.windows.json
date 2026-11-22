@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for detection unavailable windows.",
+  "context": "Journal command-line text for detection unavailable windows.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3129cd2e72d923cbd4e90d0e3048784612b2144e6ab82cc2bfd9a1f5158ae0f5",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

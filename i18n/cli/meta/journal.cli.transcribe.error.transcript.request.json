@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error transcript request.",
+  "context": "Journal command-line text for error transcript request.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "34e2f22c6c6875a708342f3bbce0a5cbd2fc082737046d96be46026eb2b23dc3",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

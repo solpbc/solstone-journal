@@ -27,6 +27,7 @@ test-fixture-pin = ["solstone-core-distribution/test-fixture-pin"]
 
 [dependencies]
 solstone-core-cli-copy.workspace = true
+solstone-core-window-catalog.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ureq.workspace = true

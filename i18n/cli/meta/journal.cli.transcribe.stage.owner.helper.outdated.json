@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stage owner helper outdated.",
+  "context": "Journal command-line text for stage owner helper outdated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "86c2039b406f23bbab72b7deb0494f0b4b13eed1d0038f95d120544f4db52a14",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

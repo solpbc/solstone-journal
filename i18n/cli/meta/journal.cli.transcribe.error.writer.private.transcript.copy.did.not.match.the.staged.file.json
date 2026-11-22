@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer private transcript copy did not match the staged file.",
+  "context": "Journal command-line text for error writer private transcript copy did not match the staged file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a7f2612afbe306bf037ff9533ef1f316ccf7f2854c24497970b1b6b44e16ac89",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -33,7 +33,7 @@ fn windows_generation_cleanup_bag_receipt() {
     }
     // This runs the real signed helper/model admission before touching generation
     // state. Missing staging/pin/runtime is a prerequisite failure, never a skip.
-    installation_proof().expect("real signed Windows ONNX fixture admission");
+    installation_proof(ENGLISH).expect("real signed Windows ONNX fixture admission");
     let journal = Arc::new(tempfile::tempdir().unwrap());
     let generation = Arc::new(
         enter_speakers_analyze_generation(journal.path(), SpeakersAnalyzeOwnerRole::Convey, None)
@@ -155,7 +155,7 @@ fn windows_generation_unrelated_root_probe() {
         assert!(env::var_os(GENERATION_TOKEN_ENV_KEY).is_none());
     }
     // A missing signed fixture must fail independently of the expected refusal.
-    installation_proof().expect("real signed Windows ONNX fixture admission");
+    installation_proof(ENGLISH).expect("real signed Windows ONNX fixture admission");
     let result =
         enter_speakers_analyze_generation(&journal, SpeakersAnalyzeOwnerRole::Maintenance, None);
     match mode.as_str() {
@@ -293,7 +293,7 @@ fn windows_generation_unrelated_root_receipt() {
             "receipt root has inherited markers"
         );
     }
-    installation_proof().expect("real signed Windows ONNX fixture admission");
+    installation_proof(ENGLISH).expect("real signed Windows ONNX fixture admission");
     let journal = Arc::new(tempfile::tempdir().unwrap());
     let generation = Arc::new(
         enter_speakers_analyze_generation(journal.path(), SpeakersAnalyzeOwnerRole::Convey, None)
@@ -456,7 +456,10 @@ fn launch_generation_descendant(
         HostedLaunchProvenance {
             journal: journal.to_owned(),
             generation: 1,
-            launch_id: format!("generation-descendant-{index}-{}", random_hex().unwrap()),
+            launch_id: format!(
+                "generation-descendant-{index}-{}",
+                random_hex(ENGLISH).unwrap()
+            ),
             service: None,
             parent_launch_id: None,
             acknowledgement_timeout: deadline
@@ -549,7 +552,7 @@ fn windows_generation_descendant_receipt() {
         observe_bounded_helper_admission(),
         HelperAdmissionStatus::Ready
     ));
-    installation_proof().expect("actual signed Windows fixture admission");
+    installation_proof(ENGLISH).expect("actual signed Windows fixture admission");
     // Deliberately keep the path until explicit native cleanup succeeds. A
     // failed cleanup retains this exact artifact instead of TempDir::drop
     // removing inputs beneath a still-owned process. It is reported below.
@@ -741,7 +744,7 @@ fn windows_generation_installed_entry_probe() {
     let refusal = receive_windows_installed_task_launch(&expected)
         .expect_err("hosted tuple must refuse the installed entry before pipe/ACK");
     assert!(matches!(refusal, LaunchError::Admission(ref message)
-        if message == "launch variant or installed action mismatch"));
+        if message.to_string() == "launch variant or installed action mismatch"));
     // The refused entry must leave this same transaction available for its
     // correct hosted recipient. Completing it provides an actual exit/status
     // witness without inferring child completion from an admission error.
@@ -782,7 +785,7 @@ fn windows_generation_installed_entry_receipt() {
         observe_windows_launch_cleanup(),
         HelperAdmissionStatus::Ready
     ));
-    installation_proof().expect("real signed ONNX package admission");
+    installation_proof(ENGLISH).expect("real signed ONNX package admission");
     let request = installed_cross_request();
     let generation = enter_speakers_analyze_generation(
         &request.journal,
@@ -828,7 +831,10 @@ fn windows_generation_installed_entry_receipt() {
                     command,
                     options: SpawnOptions {
                         journal_root: request.journal.clone(),
-                        reference: format!("generation-installed-entry-{}", random_hex().unwrap()),
+                        reference: format!(
+                            "generation-installed-entry-{}",
+                            random_hex(ENGLISH).unwrap()
+                        ),
                         day: None,
                         sink: Some(output.clone()),
                         environment,
@@ -838,7 +844,10 @@ fn windows_generation_installed_entry_receipt() {
                 HostedLaunchProvenance {
                     journal: request.journal.clone(),
                     generation: 1,
-                    launch_id: format!("generation-installed-entry-{}", random_hex().unwrap()),
+                    launch_id: format!(
+                        "generation-installed-entry-{}",
+                        random_hex(ENGLISH).unwrap()
+                    ),
                     service: None,
                     parent_launch_id: None,
                     acknowledgement_timeout: Duration::from_secs(3),

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer shape must be row count width.",
+  "context": "Journal command-line text for error writer shape must be row count width.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7b3f27ec40f7690fe5fc283377a2ea1edc08c91964540c94d9f4ccb725bcbb1f",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_row_count_256",
+      "kind": "accepted-input",
+      "value": "[row_count, 256]"
+    }
+  ]
+}

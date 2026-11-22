@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission parent provenance.",
+  "context": "Journal command-line text for admission parent provenance.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e609bcc8d9f614cf4c58c7fa80857a358c0884bbf10ccc6404f009c6f09fcfa3",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

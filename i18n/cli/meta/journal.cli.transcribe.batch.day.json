@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for batch day.",
+  "context": "Journal command-line text for batch day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "548e5ecbd27d59a7f24573d0b1a508d0f7d3b69ed011343e8645595cb3e58fcc",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "count",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "verb",
+      "kind": "command",
+      "value": "transcribe --all"
+    }
+  ]
+}

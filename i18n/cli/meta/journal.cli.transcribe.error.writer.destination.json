@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer destination.",
+  "context": "Journal command-line text for error writer destination.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eca13217a0839dff021113db0af7d64c7396f7fa8640aeb118675eda4269e193",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

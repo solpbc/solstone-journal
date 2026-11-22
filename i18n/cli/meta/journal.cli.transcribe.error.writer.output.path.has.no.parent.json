@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer output path has no parent.",
+  "context": "Journal command-line text for error writer output path has no parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ac5ea20d7932d4f1a06ef364254c01dfb14fd32a579f2b383bc6b3ca05cff5cd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

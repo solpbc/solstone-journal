@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error confidential word response had text but no word timings.",
+  "context": "Journal command-line text for error confidential word response had text but no word timings.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "56e83e877d64410b8e463e3bb36d79f145b3dad21732e2a94261b1f7cc83909a",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

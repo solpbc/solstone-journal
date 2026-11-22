@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer field must be an integer.",
+  "context": "Journal command-line text for error writer field must be an integer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c487612c6784463450d0dbf124ec16c77a14fd03d6c962983bd06f3c30c8b091",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

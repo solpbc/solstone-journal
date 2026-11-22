@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for installation grant kind.",
+  "context": "Journal command-line text for installation grant kind.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6c7f3941cd6679e0ae670c73851ed9d87d6f294aaeb7d3dc44b6e791884ca19a",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

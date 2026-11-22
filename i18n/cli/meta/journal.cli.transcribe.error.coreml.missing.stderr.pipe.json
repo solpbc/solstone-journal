@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error coreml missing stderr pipe.",
+  "context": "Journal command-line text for error coreml missing stderr pipe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0140bb114d270e1c57af9918fb1833968346c370f1a00abec4f8fc8ef2a149aa",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_stderr",
+      "kind": "accepted-input",
+      "value": "stderr"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer turn field is missing.",
+  "context": "Journal command-line text for error writer turn field is missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4071759165ef649cf7cc2a15cf6400b472ca4de17c5acdc74a5d2a04d19a2179",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

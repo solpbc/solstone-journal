@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission grant ordinary.",
+  "context": "Journal command-line text for admission grant ordinary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2b1e08323bb5b52afa222f607f932aafa7cec9a0c0070d818b132894a8974f55",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

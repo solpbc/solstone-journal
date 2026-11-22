@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for installation metadata unverified.",
+  "context": "Journal command-line text for installation metadata unverified.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a98a57306de6f0ceb67262052315a0ad8174cfed3d4326f92c0455a98a347ce",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

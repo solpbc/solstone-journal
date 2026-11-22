@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for error windows cleanup blocked.",
+  "context": "Journal command-line text for error windows cleanup blocked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "cleanup",
+      "type": "string"
+    },
+    {
+      "name": "blockers",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "26cc48a0ae9003677ec6d74129e61c9eb55ed64e7885945e63396bb8a41b602f",
+  "max_length": 145,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -648,7 +648,7 @@ fn transcribe_walk(
 fn spool_stop(scratch: &Path, error: std::io::Error) -> WalkStop {
     WalkStop::Bare(TranscribeError::TranscriptPayload {
         path: Some(scratch.to_path_buf()),
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })
 }
 
@@ -672,6 +672,7 @@ fn recognize_unit(
     let dispatch = |samples: &[f32]| {
         if job.backend == "confidential" {
             dispatch_backend(
+                solstone_core_cli_copy::ENGLISH,
                 job.config,
                 job.journal_path,
                 &job.backend,
@@ -1392,12 +1393,7 @@ fn filter_stop(
 fn record_helper_outdated(job: &EmbeddedJob<'_>) -> Result<(), TranscribeError> {
     let checkpoint = || job.embedded.checkpoint();
     let commit = commit_input(&job.observation, &job.claim, job.audio_path, &checkpoint)?;
-    let mut processing = crate::processing::backend_failure_record(
-        job.facts.input_size,
-        vocab::REASON_ANALYSIS_FAILED,
-    );
-    processing["error"] =
-        json!("the speaker-analysis helper predates overlap ranges or speaker turns");
+    let processing = crate::processing::outdated_helper_record(job.facts.input_size);
     write_failed_record(
         &job.facts,
         job.redo,
@@ -1434,7 +1430,7 @@ fn record_helper_outdated(job: &EmbeddedJob<'_>) -> Result<(), TranscribeError> 
 fn stop_decode(job: &mut EmbeddedJob<'_>, held: bool, error: AudioError) -> WalkStop {
     if held {
         return WalkStop::Bare(TranscribeError::Decode {
-            detail: error.to_string(),
+            detail: (&error).into(),
         });
     }
     if let Err(error) = job.embedded.checkpoint() {
@@ -1448,7 +1444,7 @@ fn stop_decode(job: &mut EmbeddedJob<'_>, held: bool, error: AudioError) -> Walk
 
 fn record_decode(job: &EmbeddedJob<'_>, error: &AudioError) -> Result<(), TranscribeError> {
     let decode_error = TranscribeError::Decode {
-        detail: error.to_string(),
+        detail: error.into(),
     };
     let checkpoint = || job.embedded.checkpoint();
     let commit = commit_input(&job.observation, &job.claim, job.audio_path, &checkpoint)?;
@@ -1638,7 +1634,14 @@ fn publish_empty(
         audio_path,
     )?;
     if checkpoint().is_ok() {
-        finish_voice_only_deletion(journal_path, &facts, &claim, &commit, Some(embedded));
+        finish_voice_only_deletion(
+            solstone_core_cli_copy::ENGLISH,
+            journal_path,
+            &facts,
+            &claim,
+            &commit,
+            Some(embedded),
+        );
     }
     drop(commit);
     let outcome = match terminal {
@@ -1724,7 +1727,10 @@ fn publish_transcript(
         .parent()
         .ok_or_else(|| TranscribeError::TranscriptPayload {
             path: Some(jsonl_path.clone()),
-            detail: "transcript path has no parent".to_owned(),
+            detail: crate::TranscribeDetail::message(
+                "journal.cli.transcribe.stage.output.parent",
+                [],
+            ),
         })?;
     let private_pair = solstone_core_speaker_id::writer::prepare_private_pair(
         &staged.jsonl,
@@ -1764,7 +1770,14 @@ fn publish_transcript(
         audio_path,
     )?;
     if checkpoint().is_ok() {
-        finish_voice_only_deletion(journal_path, &facts, &claim, &commit, Some(embedded));
+        finish_voice_only_deletion(
+            solstone_core_cli_copy::ENGLISH,
+            journal_path,
+            &facts,
+            &claim,
+            &commit,
+            Some(embedded),
+        );
     }
     drop(commit);
     timings.add_ms("write", elapsed_ms(write_at));
@@ -1803,7 +1816,10 @@ fn stage_recording(
             .as_mut()
             .ok_or_else(|| TranscribeError::TranscriptPayload {
                 path: Some(scratch.to_path_buf()),
-                detail: "recognize walk has no draft spool".to_owned(),
+                detail: crate::TranscribeDetail::message(
+                    "journal.cli.transcribe.stage.embedded.missing.draft",
+                    [],
+                ),
             })?;
         spool
             .sync_rows()
@@ -1845,13 +1861,13 @@ fn stage_recording(
         solstone_core_system::work_retry::raw::stamp_attempt_from(&mut processing, attempt)
             .map_err(|detail| TranscribeError::ProcessingClaim {
                 path: job.audio_path.to_path_buf(),
-                detail,
+                detail: detail.into(),
             })?;
     } else {
         solstone_core_system::work_retry::raw::stamp_attempt(&mut processing).map_err(
             |detail| TranscribeError::ProcessingClaim {
                 path: job.audio_path.to_path_buf(),
-                detail,
+                detail: detail.into(),
             },
         )?;
     }
@@ -1907,7 +1923,10 @@ fn stage_recording(
         .as_mut()
         .ok_or_else(|| TranscribeError::TranscriptPayload {
             path: Some(scratch.to_path_buf()),
-            detail: "recognize walk has no draft spool".to_owned(),
+            detail: crate::TranscribeDetail::message(
+                "journal.cli.transcribe.stage.embedded.missing.draft",
+                [],
+            ),
         })?;
     let turns_known = spool.turns_known();
     let directory = spool.directory().to_path_buf();
@@ -1946,7 +1965,10 @@ fn stage_recording(
             return Err(
                 solstone_core_speaker_id::writer::SpeakerTranscriptWriteError::InvalidStatementId {
                     statement_index: 0,
-                    detail: "id must be in 1..=i32::MAX".to_owned(),
+                    detail: crate::TranscribeDetail::message(
+                        "journal.cli.transcribe.error.writer.id.range",
+                        [],
+                    ),
                 }
                 .into(),
             );
@@ -2043,7 +2065,10 @@ fn stage_recording(
             return Err(
                 solstone_core_speaker_id::writer::SpeakerTranscriptWriteError::InvalidStatement {
                     statement_index: 0,
-                    detail: "text must be a nonempty string".to_owned(),
+                    detail: crate::TranscribeDetail::message(
+                        "journal.cli.transcribe.error.writer.text.must.be.a.nonempty.string",
+                        [],
+                    ),
                 }
                 .into(),
             );
@@ -2059,14 +2084,17 @@ fn stage_recording(
             let Some(file) = turn_file.as_mut() else {
                 return Err(
                     solstone_core_speaker_id::writer::SpeakerTranscriptWriteError::Internal {
-                        detail: "merged turn range is missing".to_owned(),
+                        detail: crate::TranscribeDetail::message(
+                            "journal.cli.transcribe.stage.embedded.range.missing",
+                            [],
+                        ),
                     },
                 );
             };
             crate::embedded_spool::DraftSpool::read_merged_range(file).map_err(|error| {
                 solstone_core_speaker_id::writer::SpeakerTranscriptWriteError::OutputUnwritable {
                     path: scratch.display().to_string(),
-                    detail: error.to_string(),
+                    detail: error.to_string().into(),
                 }
             })
         };
@@ -2097,7 +2125,7 @@ fn stage_recording(
                     spool.seek_words(span.origin).map_err(|error| {
                         solstone_core_speaker_id::writer::SpeakerTranscriptWriteError::OutputUnwritable {
                             path: scratch.display().to_string(),
-                            detail: error.to_string(),
+                            detail: error.to_string().into(),
                         }
                     })?;
                     prepared = true;
@@ -2108,7 +2136,7 @@ fn stage_recording(
                 let word = spool.read_next_word().map_err(|error| {
                     solstone_core_speaker_id::writer::SpeakerTranscriptWriteError::OutputUnwritable {
                         path: scratch.display().to_string(),
-                        detail: error.to_string(),
+                        detail: error.to_string().into(),
                     }
                 })?;
                 emitted += 1;
@@ -2122,7 +2150,7 @@ fn stage_recording(
                     other => {
                         solstone_core_speaker_id::writer::SpeakerTranscriptWriteError::OutputUnwritable {
                             path: scratch.display().to_string(),
-                            detail: other.to_string(),
+                            detail: other.to_string().into(),
                         }
                     }
                 })?;
@@ -2337,7 +2365,7 @@ fn write_embedding_row(
 fn spool_payload(scratch: &Path, error: std::io::Error) -> TranscribeError {
     TranscribeError::TranscriptPayload {
         path: Some(scratch.to_path_buf()),
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     }
 }
 
@@ -2538,7 +2566,14 @@ impl SoundTagRun {
     fn apply_verdict(&mut self, os: &str, arch: &str, verdict: CedVerdict) {
         match verdict {
             CedVerdict::Unsupported { os, arch } => {
-                log::warn!("sound tagger disabled: ced assets unsupported on {os}/{arch}");
+                log::warn!(
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        solstone_core_cli_copy::ENGLISH,
+                        "journal.cli.transcribe.sound.unsupported",
+                        [("os", &(os)), ("arch", &(arch))]
+                    )
+                );
                 self.finish(None, None);
             }
             CedVerdict::Degraded(status) => {
@@ -2567,11 +2602,25 @@ impl SoundTagRun {
     fn absorb(&mut self, step: Result<SoundTagWindows, SoundTagFailure>) {
         match step {
             Err(SoundTagFailure::Prepare(error)) => {
-                log::warn!("sound tagging could not prepare audio: {error}");
+                log::warn!(
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        solstone_core_cli_copy::ENGLISH,
+                        "journal.cli.transcribe.sound.prepare",
+                        [("error", &(error))]
+                    )
+                );
                 self.finish(None, None);
             }
             Err(SoundTagFailure::Run(error)) => {
-                log::warn!("sound tagging failed: {error}");
+                log::warn!(
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        solstone_core_cli_copy::ENGLISH,
+                        "journal.cli.transcribe.sound.failed",
+                        [("error", &(error))]
+                    )
+                );
                 self.finish(None, None);
             }
             Err(SoundTagFailure::Cancelled) => {
@@ -2622,8 +2671,10 @@ fn probe_ced_in_process(library: &Path, model: &Path) -> Result<(), String> {
     let text = serde_json::to_string(&request).map_err(|error| error.to_string())?;
     match solstone_core_ced_analyze::run_probe_request(&text) {
         Ok(response) if response.get("ok") == Some(&Value::Bool(true)) => Ok(()),
-        Ok(response) => Err(format!(
-            "ced probe returned an unexpected response: {response}"
+        Ok(response) => Err(solstone_core_cli_copy::display_for(
+            solstone_core_cli_copy::ENGLISH,
+            "journal.cli.transcribe.sound.probe.unexpected",
+            [("response", &(response))],
         )),
         Err(error) => Err(error.detail()),
     }
@@ -2648,7 +2699,7 @@ fn prepare_mobile_sound_tags(job: &mut EmbeddedJob<'_>) -> Result<(), WalkStop> 
                     None,
                     Some(CapabilityStatus::UnloadableOrUnrunnable {
                         capability: CED_CAPABILITY.to_owned(),
-                        detail,
+                        detail: detail.into(),
                     }),
                 );
                 return Ok(());
@@ -2663,7 +2714,7 @@ fn prepare_mobile_sound_tags(job: &mut EmbeddedJob<'_>) -> Result<(), WalkStop> 
                         None,
                         Some(CapabilityStatus::UnloadableOrUnrunnable {
                             capability: CED_CAPABILITY.to_owned(),
-                            detail: error,
+                            detail: error.into(),
                         }),
                     );
                     return Ok(());
@@ -2690,13 +2741,13 @@ fn resolve_mobile_ced_model(models: &Path) -> Result<PathBuf, CapabilityStatus> 
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Err(CapabilityStatus::Absent {
                 capability: CED_CAPABILITY.to_owned(),
-                detail: pin.filename.to_owned(),
+                detail: pin.filename.to_owned().into(),
             });
         }
         Err(_) => {
             return Err(CapabilityStatus::UnloadableOrUnrunnable {
                 capability: CED_CAPABILITY.to_owned(),
-                detail: path.display().to_string(),
+                detail: path.display().to_string().into(),
             });
         }
     };
@@ -2705,14 +2756,14 @@ fn resolve_mobile_ced_model(models: &Path) -> Result<PathBuf, CapabilityStatus> 
         Err(_) => {
             return Err(CapabilityStatus::UnloadableOrUnrunnable {
                 capability: CED_CAPABILITY.to_owned(),
-                detail: path.display().to_string(),
+                detail: path.display().to_string().into(),
             });
         }
     };
     if size != pin.size_bytes {
         return Err(CapabilityStatus::IntegrityInvalid {
             capability: CED_CAPABILITY.to_owned(),
-            detail: path.display().to_string(),
+            detail: path.display().to_string().into(),
         });
     }
     let mut hasher = sha2::Sha256::new();
@@ -2724,7 +2775,7 @@ fn resolve_mobile_ced_model(models: &Path) -> Result<PathBuf, CapabilityStatus> 
             Err(_) => {
                 return Err(CapabilityStatus::UnloadableOrUnrunnable {
                     capability: CED_CAPABILITY.to_owned(),
-                    detail: path.display().to_string(),
+                    detail: path.display().to_string().into(),
                 });
             }
         }
@@ -2732,7 +2783,7 @@ fn resolve_mobile_ced_model(models: &Path) -> Result<PathBuf, CapabilityStatus> 
     if format!("{:x}", hasher.finalize()) != pin.sha256 {
         return Err(CapabilityStatus::IntegrityInvalid {
             capability: CED_CAPABILITY.to_owned(),
-            detail: path.display().to_string(),
+            detail: path.display().to_string().into(),
         });
     }
     Ok(path)
@@ -2811,9 +2862,11 @@ fn classify_sound_tag_unit(
     }
     if job.sound_tags.route == SoundTagRoute::MobileModels {
         let Some(engine) = mobile_ced_engine() else {
-            return Err(SoundTagFailure::Run(
-                "ced engine is not installed".to_owned(),
-            ));
+            return Err(SoundTagFailure::Run(solstone_core_cli_copy::render_for(
+                solstone_core_cli_copy::ENGLISH,
+                "journal.cli.transcribe.sound.engine.absent",
+                &[],
+            )));
         };
         let value = (engine.classify)(&job.sound_tags.model, view.samples, &view.windows, &|| {
             job.embedded.checkpoint().is_err()
@@ -2854,7 +2907,14 @@ fn classify_sound_tag_unit(
     let result = solstone_core_ced_analyze::run_classify_request(&text)
         .map_err(|error| SoundTagFailure::Run(error.to_string()));
     if let Err(error) = temporary.close() {
-        log::warn!("sound tagging could not prepare audio: {error}");
+        log::warn!(
+            "{}",
+            solstone_core_cli_copy::display_for(
+                solstone_core_cli_copy::ENGLISH,
+                "journal.cli.transcribe.sound.prepare",
+                [("error", &(error))]
+            )
+        );
     }
     Ok(read_sound_tag_windows(&result?, view.windows.len()))
 }

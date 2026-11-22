@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows admission deadline exceeded.",
+  "context": "Journal command-line text for error windows admission deadline exceeded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "79c0e51847759e8486c191cb5e0ae8e7257b1fcaeed506e63b75f50be2a26237",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

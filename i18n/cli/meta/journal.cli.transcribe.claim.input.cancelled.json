@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for claim input cancelled.",
+  "context": "Journal command-line text for claim input cancelled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "54f5633ab8dcb3a43c59c5a41ea010d9bdfb6c2918e9633e1d47ea694f6973b6",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

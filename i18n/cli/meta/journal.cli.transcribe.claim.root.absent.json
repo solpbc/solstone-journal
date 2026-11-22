@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for claim root absent.",
+  "context": "Journal command-line text for claim root absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "39e250eabefa61a0019300e84efdd7d2985ec7b7616f7b85235a1ec7072d9367",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

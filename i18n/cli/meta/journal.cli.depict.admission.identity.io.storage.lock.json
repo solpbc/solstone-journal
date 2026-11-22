@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for admission identity io storage lock.",
+  "context": "Journal command-line text for admission identity io storage lock.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5f0e22cea4ca3a6b74d95b423afd9c2a8939f17bb36861cd637e99fe3653cfaf",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

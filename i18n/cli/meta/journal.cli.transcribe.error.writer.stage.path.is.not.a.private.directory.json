@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer stage path is not a private directory.",
+  "context": "Journal command-line text for error writer stage path is not a private directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "73f22523b81be2f98b3ab7093ab1e2fe1e96355384a3fade6099b91d22a1814b",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

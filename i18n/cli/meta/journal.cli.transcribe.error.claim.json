@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error claim.",
+  "context": "Journal command-line text for error claim.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f37a8fd3479063abddbf778c2c3518f1277300b6bb4f84108f815be7524692ba",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission wait deadline complete.",
+  "context": "Journal command-line text for admission wait deadline complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81d314034b6824784b0e505fadd075b460b26158ee2fb84b29fe07a66fbc58e6",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "io",
+      "kind": "accepted-input",
+      "value": "I/O"
+    }
+  ]
+}

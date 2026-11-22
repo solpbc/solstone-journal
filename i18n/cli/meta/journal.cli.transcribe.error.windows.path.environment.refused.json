@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error windows path environment refused.",
+  "context": "Journal command-line text for error windows path environment refused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9dca80693f8d36148db0d8ad10c5ffb76c8921c8350e6526d5b05152cee4a63d",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_path",
+      "kind": "accepted-input",
+      "value": "PATH"
+    }
+  ]
+}

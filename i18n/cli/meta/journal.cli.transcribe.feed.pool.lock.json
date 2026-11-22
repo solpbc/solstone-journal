@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for feed pool lock.",
+  "context": "Journal command-line text for feed pool lock.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fddfc2cc77076ca84ddd191be8fe458cffb6a6b69fef094e01ae8b525637bb5e",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

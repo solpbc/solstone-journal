@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error confidential word a word entry was blank.",
+  "context": "Journal command-line text for error confidential word a word entry was blank.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eb2049f948310393cf7c31692d83439b5988d575200c51b6a398ac2de82a928b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

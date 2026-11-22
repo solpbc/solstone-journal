@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission entry hosted.",
+  "context": "Journal command-line text for admission entry hosted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b67f2b94bcd21653a5c10b80e4165df12198feda29bbc244e90e5349657e26dc",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

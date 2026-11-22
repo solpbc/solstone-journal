@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sound helper windows.",
+  "context": "Journal command-line text for sound helper windows.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8597b26a0f6bc0854735b0700d95e3e67e5ba2ea2f797d52965eaa6e9ade6b6d",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

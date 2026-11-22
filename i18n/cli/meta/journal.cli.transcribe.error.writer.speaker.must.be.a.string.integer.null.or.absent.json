@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer speaker must be a string integer null or absent.",
+  "context": "Journal command-line text for error writer speaker must be a string integer null or absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d1d4934ccd55027fd4d5a9faff640850d5c0468b8831c4407a341bae327a69b7",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

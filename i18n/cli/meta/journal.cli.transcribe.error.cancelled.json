@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error cancelled.",
+  "context": "Journal command-line text for error cancelled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dfcc77228d46c468729ce748a8f05d81e8976548858dcd1082837a99c7d4dc7b",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

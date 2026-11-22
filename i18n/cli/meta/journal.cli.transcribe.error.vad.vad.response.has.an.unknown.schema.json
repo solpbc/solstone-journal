@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error vad vad response has an unknown schema.",
+  "context": "Journal command-line text for error vad vad response has an unknown schema.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e717861e17161feb6c2d21bb1dd4e3e154cb0a5bb91406b62a861d571a12763",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

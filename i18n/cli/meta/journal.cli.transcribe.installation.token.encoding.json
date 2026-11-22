@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for installation token encoding.",
+  "context": "Journal command-line text for installation token encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eb5d1627e3aba94f8051a689ca72a4f2a4235ae765ec56462bf2f3afc3df3c4f",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "unicode",
+      "kind": "accepted-input",
+      "value": "Unicode"
+    }
+  ]
+}

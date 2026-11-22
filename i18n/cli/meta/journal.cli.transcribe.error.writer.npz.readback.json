@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error writer npz readback.",
+  "context": "Journal command-line text for error writer npz readback.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "299868ecd86b83314174aadd5c3e3337e186e7f0d7d01a2c9a6c73f86ed05eef",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_npz",
+      "kind": "accepted-input",
+      "value": "NPZ"
+    }
+  ]
+}

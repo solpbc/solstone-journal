@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for admission identity io marker clone.",
+  "context": "Journal command-line text for admission identity io marker clone.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "17dfd469e9ffe4f8f0ad7dc2884c8c4b85ff0d7b32d59efcaed0e232eb6860df",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

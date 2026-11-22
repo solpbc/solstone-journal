@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer zip local signature at header start.",
+  "context": "Journal command-line text for error writer zip local signature at header start.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "header_start",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7345776170c35482e97b584fed770beba0ba252ed8a3e8651895fe8673252c17",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

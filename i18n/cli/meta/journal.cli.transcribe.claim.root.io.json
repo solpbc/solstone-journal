@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for claim root io.",
+  "context": "Journal command-line text for claim root io.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "174b9ae0daa30e4f7b52f134ed39e8e9e8dba38a45218d1ebc1b2fd3495cb37d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

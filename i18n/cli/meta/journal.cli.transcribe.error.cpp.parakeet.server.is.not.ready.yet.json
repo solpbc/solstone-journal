@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error cpp parakeet server is not ready yet.",
+  "context": "Journal command-line text for error cpp parakeet server is not ready yet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fd68db63bb35fc8389ccd1fc1050dabf6c4ccc2834df42191668899d09ae044b",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_parakeet",
+      "kind": "accepted-input",
+      "value": "Parakeet"
+    }
+  ]
+}

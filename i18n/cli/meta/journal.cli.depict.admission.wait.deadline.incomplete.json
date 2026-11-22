@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission wait deadline incomplete.",
+  "context": "Journal command-line text for admission wait deadline incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "51f72bd7bd9a4b71ef5b418bbed53bd9cae8b3a2f0d4ee9fbae329099c26d45d",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "io",
+      "kind": "accepted-input",
+      "value": "I/O"
+    }
+  ]
+}

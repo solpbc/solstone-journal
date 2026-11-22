@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error terminal payload path.",
+  "context": "Journal command-line text for error terminal payload path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d1837ae04ba92f58d09224eae2ba98b6f3bf44e9c57b160b3b5cca795b1f9795",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

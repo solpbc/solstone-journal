@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for claim root ancestor.",
+  "context": "Journal command-line text for claim root ancestor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "28ac59a8e59adb894cd18ac5ed9f441f957f1ba64006d5ec6081b5fdc114b148",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

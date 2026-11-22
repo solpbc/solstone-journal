@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sound prepare.",
+  "context": "Journal command-line text for sound prepare.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "436dc23c2ac8974b0cce7c6a51dd577da59bb074b5d821364e36b050f148dce8",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

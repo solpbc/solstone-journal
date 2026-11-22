@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows current directory outside package.",
+  "context": "Journal command-line text for error windows current directory outside package.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6178b479943daf703a6e33093fadcd7aa41a07b0fc5468c1fd0159e02e3767ee",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

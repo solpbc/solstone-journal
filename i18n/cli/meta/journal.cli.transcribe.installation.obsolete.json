@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for installation obsolete.",
+  "context": "Journal command-line text for installation obsolete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a28406696f096a4a622e8b4f81e11194d9fecc8ef5670a50359105d35b01a21b",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    }
+  ]
+}

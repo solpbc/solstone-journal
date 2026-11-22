@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for claim input not file.",
+  "context": "Journal command-line text for claim input not file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2b60906fce3baac531046ce936ad8b1d4f71751a7f9fe677f50127baab8018a8",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

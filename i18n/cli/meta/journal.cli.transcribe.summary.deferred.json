@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for summary deferred.",
+  "context": "Journal command-line text for summary deferred.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "processed",
+      "type": "string"
+    },
+    {
+      "name": "skipped",
+      "type": "string"
+    },
+    {
+      "name": "deferred",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "865f101e21304718f66ea525388c6af43d5d9c4f8437e34f6a19584e48766db7",
+  "max_length": 157,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

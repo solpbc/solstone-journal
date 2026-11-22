@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error writer turn range index start s must be non negative.",
+  "context": "Journal command-line text for error writer turn range index start s must be non negative.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ce75fee647405ad48ded9e6122a064e40023935eef04f3b89a7512840871cef6",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_start_s",
+      "kind": "accepted-input",
+      "value": "start_s"
+    }
+  ]
+}

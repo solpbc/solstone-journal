@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer stage path already exists.",
+  "context": "Journal command-line text for error writer stage path already exists.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ccaef1a1df07dca30e688285802450bbd530f5dc10184e7a9f9717360e35d38e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

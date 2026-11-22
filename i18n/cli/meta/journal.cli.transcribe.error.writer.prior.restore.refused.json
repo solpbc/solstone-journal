@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer prior restore refused.",
+  "context": "Journal command-line text for error writer prior restore refused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5809c6067275bc938ca6977ea6e4b13be627393974bdc549fe50c07fffb9e2ac",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

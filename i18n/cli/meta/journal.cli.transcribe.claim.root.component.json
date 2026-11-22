@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for claim root component.",
+  "context": "Journal command-line text for claim root component.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b50e46d160f735ea24b7a5c7c6f5b90bdcea402118700ccf59bbe8d5f19259e9",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

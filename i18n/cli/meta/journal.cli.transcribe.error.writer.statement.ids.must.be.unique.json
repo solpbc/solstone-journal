@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer statement ids must be unique.",
+  "context": "Journal command-line text for error writer statement ids must be unique.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b8ae590807c2376d0ae1d7b41a3999499170f66298f75f28a63a7f73eafe8eeb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

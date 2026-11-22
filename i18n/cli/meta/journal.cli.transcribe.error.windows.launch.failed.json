@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows launch failed.",
+  "context": "Journal command-line text for error windows launch failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e28587a5b57db026a2bd32b64b4608415627c09299b446d42a664a564e3b2de5",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -584,7 +584,7 @@ pub fn launch_command_hosted(
             };
             record_unidentified_reject(&mut authority, &admitted, &provenance.launch_id, detail)?;
             return Err(LaunchError::Admission(
-                "exact launch identity unavailable".to_owned(),
+                "exact launch identity unavailable".into(),
             ));
         }
     };
@@ -675,7 +675,7 @@ pub fn launch_managed_hosted(
             };
             record_unidentified_reject(&mut authority, &admitted, &provenance.launch_id, detail)?;
             Err(LaunchError::Admission(
-                "exact launch identity unavailable".to_owned(),
+                "exact launch identity unavailable".into(),
             ))
         }
         Err(error) => {
@@ -687,9 +687,9 @@ pub fn launch_managed_hosted(
                     detail: error.to_string(),
                 },
             )?;
-            Err(LaunchError::Admission(format!(
-                "failed to poll early-exited child: {error}"
-            )))
+            Err(LaunchError::Admission(
+                format!("failed to poll early-exited child: {error}").into(),
+            ))
         }
     }
 }
@@ -783,16 +783,16 @@ fn finish_generation_child_admission(
                         let _ = authority.terminate_exact(Duration::from_secs(2));
                     }
                     return Err(LaunchError::Admission(
-                        "exact launch identity unavailable".to_owned(),
+                        "exact launch identity unavailable".into(),
                     ));
                 }
                 Err(error) => {
                     if retire {
                         let _ = authority.terminate_exact(Duration::from_secs(2));
                     }
-                    return Err(LaunchError::Admission(format!(
-                        "failed to poll child without an exact identity: {error}"
-                    )));
+                    return Err(LaunchError::Admission(
+                        format!("failed to poll child without an exact identity: {error}").into(),
+                    ));
                 }
             },
         },
@@ -806,7 +806,7 @@ fn finish_generation_child_admission(
         parent_launch_id: None,
     };
     write_parent_loss_admission_spawn_identity(journal, &expected)
-        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+        .map_err(|error| LaunchError::Admission(error.to_string().into()))?;
 
     let result = AdmissionResult {
         schema: 1,
@@ -814,7 +814,7 @@ fn finish_generation_child_admission(
         state: AdmissionResultState::Admitted,
     };
     write_parent_loss_admission_result(journal, generation, launch_id, &result)
-        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+        .map_err(|error| LaunchError::Admission(error.to_string().into()))?;
 
     Ok(true)
 }
@@ -888,7 +888,7 @@ fn admit_under_lock(
     generation: Option<ParentLossGeneration>,
     timeout: Duration,
 ) -> Result<Admitted, LaunchError> {
-    let refuse = |detail: String| LaunchError::Admission(detail);
+    let refuse = |detail: String| LaunchError::Admission(detail.into());
     let ledger = ParentLossLedger::open(journal).map_err(|error| refuse(error.to_string()))?;
     let read_pointer = || {
         ledger
@@ -934,7 +934,7 @@ fn hosted_intent(provenance: &HostedLaunchProvenance) -> AdmissionIntent {
 /// replaces, still under the same lock.
 fn write_launch_intent(admitted: &Admitted, intent: &AdmissionIntent) -> Result<(), LaunchError> {
     write_parent_loss_admission_intent(&admitted.journal, intent)
-        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+        .map_err(|error| LaunchError::Admission(error.to_string().into()))?;
     if let Some(service) = intent.service {
         discharge_replaced_service_roots(
             &admitted.ledger,
@@ -1017,7 +1017,7 @@ fn record_unidentified_admission_result(
         state,
     };
     write_parent_loss_admission_result(journal, generation, launch_id, &result)
-        .map_err(|error| LaunchError::Admission(error.to_string()))
+        .map_err(|error| LaunchError::Admission(error.to_string().into()))
 }
 
 fn inject_hosted_provenance(
@@ -1079,7 +1079,7 @@ fn finish_hosted_admission(
         parent_launch_id: provenance.parent_launch_id.clone(),
     };
     write_parent_loss_admission_spawn_identity(&provenance.journal, &expected)
-        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+        .map_err(|error| LaunchError::Admission(error.to_string().into()))?;
     let deadline = Instant::now() + provenance.acknowledgement_timeout;
     loop {
         if Instant::now() >= deadline {
@@ -1102,7 +1102,7 @@ fn finish_hosted_admission(
                     &provenance.launch_id,
                     &result,
                 )
-                .map_err(|error| LaunchError::Admission(error.to_string()))?;
+                .map_err(|error| LaunchError::Admission(error.to_string().into()))?;
                 return Ok(());
             }
             Ok(Some(_)) => break,
@@ -1139,7 +1139,7 @@ fn finish_hosted_admission(
         admitted.discharge(&provenance.launch_id);
     }
     Err(LaunchError::Admission(
-        "hosted child did not complete matching admission acknowledgement".to_owned(),
+        "hosted child did not complete matching admission acknowledgement".into(),
     ))
 }
 
@@ -1149,14 +1149,14 @@ fn terminate_rejected_hosted_child(
     #[cfg(any(test, feature = "test-hooks"))]
     if hosted_admission_test_fault() == Some(HostedAdmissionTestFault::ExactReap) {
         return Err(LaunchError::Admission(
-            "test hook forced exact reap failure".to_owned(),
+            "test hook forced exact reap failure".into(),
         ));
     }
     authority.terminate_exact(Duration::from_secs(2))?;
     #[cfg(any(test, feature = "test-hooks"))]
     if hosted_admission_test_fault() == Some(HostedAdmissionTestFault::ExitProof) {
         return Err(LaunchError::Admission(
-            "test hook forced exact exit-proof failure".to_owned(),
+            "test hook forced exact exit-proof failure".into(),
         ));
     }
     authority.poll().map_err(LaunchError::Terminate)
@@ -2200,7 +2200,7 @@ mod tests {
         )
         .expect_err("sealed generation rejects before invoking spawn");
         assert!(
-            matches!(error, LaunchError::Admission(message) if message.contains("rejected after seal"))
+            matches!(error, LaunchError::Admission(message) if message.to_string().contains("rejected after seal"))
         );
         assert!(
             !ledger

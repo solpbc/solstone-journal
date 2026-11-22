@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error confidential the confidential admission probe failed.",
+  "context": "Journal command-line text for error confidential the confidential admission probe failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "433724d911433cfa94e7606e4ccc16daa248afbc9007e0c6129bca5d06271b00",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

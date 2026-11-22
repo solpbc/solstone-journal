@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for sound window ok.",
+  "context": "Journal command-line text for sound window ok.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9c5079b3661378b2684824c96deb0d0b53241ab983281dc641498a1eac0a552d",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "field",
+      "kind": "accepted-input",
+      "value": "ok"
+    }
+  ]
+}

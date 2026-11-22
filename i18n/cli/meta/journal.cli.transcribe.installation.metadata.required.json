@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for installation metadata required.",
+  "context": "Journal command-line text for installation metadata required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b7f44c5d0c3cb458c3f31d41d40c19c2e95bf704201acf45fa7110ea9bec3236",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error transcript payload path.",
+  "context": "Journal command-line text for error transcript payload path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "796e12b714430b0ad64c6563f6b2504eba6a8035f7a093323d9bf52a1d36abdb",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

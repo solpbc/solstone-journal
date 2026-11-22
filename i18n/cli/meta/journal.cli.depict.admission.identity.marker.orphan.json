@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission identity marker orphan.",
+  "context": "Journal command-line text for admission identity marker orphan.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "48d65a3ebc2e85bca10002c861b2c96432768ea8eccd2f7a310669ea0d7a1ad5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

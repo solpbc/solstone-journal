@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error audio corrupt.",
+  "context": "Journal command-line text for error audio corrupt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1158df750f029ac21aa92403be1bf45d2c50a9ba6cbfa5df2ca89524b47a5631",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

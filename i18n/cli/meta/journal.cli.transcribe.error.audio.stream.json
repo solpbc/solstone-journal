@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error audio stream.",
+  "context": "Journal command-line text for error audio stream.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6fc84e89b92f5d5cdb24542afeb1df7671994bf97784ccb89bf4d7c5a5c56b51",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

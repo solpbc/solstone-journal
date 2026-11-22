@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer segment meta must be an object.",
+  "context": "Journal command-line text for error writer segment meta must be an object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1ffa7c30cc6fbfd6233ad30415764266601dd52a62f5ffc5ba049e7f8b4babc2",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_segment_meta",
+      "kind": "accepted-input",
+      "value": "segment_meta"
+    }
+  ]
+}

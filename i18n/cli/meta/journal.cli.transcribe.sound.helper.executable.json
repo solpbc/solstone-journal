@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sound helper executable.",
+  "context": "Journal command-line text for sound helper executable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "883d85ec35423b0372a1c3aef34492263024a89eb7b340e55b71f804bbe01382",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

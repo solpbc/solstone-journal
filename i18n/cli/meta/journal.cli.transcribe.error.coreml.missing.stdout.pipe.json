@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error coreml missing stdout pipe.",
+  "context": "Journal command-line text for error coreml missing stdout pipe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "12701fc4912eef9296edec93fce1ba7d3aa60183badefba60eb60ee3d61e166c",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_stdout",
+      "kind": "accepted-input",
+      "value": "stdout"
+    }
+  ]
+}

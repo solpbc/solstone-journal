@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for owner stopped.",
+  "context": "Journal command-line text for owner stopped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d5e216d7f87d448189cc2250b12f54251c6dbcce7897b08fd0906d35b1e7656",
+  "max_length": 161,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "import",
+      "kind": "command",
+      "value": "solstone import <file>"
+    },
+    {
+      "name": "up",
+      "kind": "command",
+      "value": "solstone journal up"
+    }
+  ]
+}

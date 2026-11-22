@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error windows cleanup.",
+  "context": "Journal command-line text for error windows cleanup.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "cleanup",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eebc91c96c70cfea4dc9e6eac784ae97053e62f263d1d3d9415985c343fbbb68",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

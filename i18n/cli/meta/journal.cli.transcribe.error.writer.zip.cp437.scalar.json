@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer zip cp437 scalar.",
+  "context": "Journal command-line text for error writer zip cp437 scalar.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "511f962b87e233885913e6d4efe35c7143880644124fd1c3524a1991c49d2dec",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_cp437",
+      "kind": "accepted-input",
+      "value": "cp437"
+    }
+  ]
+}

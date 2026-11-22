@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer statement id is not a transcript statement id.",
+  "context": "Journal command-line text for error writer statement id is not a transcript statement id.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9746d8199d019e5f2e8a252ea1259fabd6a4a053093651d9ea37aa62d13899fe",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

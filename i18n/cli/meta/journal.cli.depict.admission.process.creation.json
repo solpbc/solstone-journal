@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for admission process creation.",
+  "context": "Journal command-line text for admission process creation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "61333c37adee93cbb03d86cdbd30cd0e827ce213a25e2328591f95fa1e497bf4",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "filetime",
+      "kind": "accepted-input",
+      "value": "FILETIME"
+    },
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    }
+  ]
+}

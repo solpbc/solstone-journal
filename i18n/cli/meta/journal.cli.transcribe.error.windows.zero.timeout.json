@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows zero timeout.",
+  "context": "Journal command-line text for error windows zero timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fa6df41055b5424f12889ae537a5df4f3e220fae84e0d497da972db5b3ca396d",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer zip zip member name collision name.",
+  "context": "Journal command-line text for error writer zip zip member name collision name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ceb354dbe5394dd2573c12377083b00365cd9a267a6686bb956f9a94c8371037",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

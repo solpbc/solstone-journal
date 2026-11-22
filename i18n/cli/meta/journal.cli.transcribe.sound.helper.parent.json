@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sound helper parent.",
+  "context": "Journal command-line text for sound helper parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "310232d1b88e5ae01801baff6ec7b6bb03d6fb48e43638c6367c2b3f8d5a1211",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

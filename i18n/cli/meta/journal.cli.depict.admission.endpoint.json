@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission endpoint.",
+  "context": "Journal command-line text for admission endpoint.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e77a50e667518417926b32f5f1e01acb6bc863e9668c79d7a6228107f87e1df5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

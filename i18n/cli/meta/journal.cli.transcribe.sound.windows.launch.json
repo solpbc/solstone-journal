@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sound windows launch.",
+  "context": "Journal command-line text for sound windows launch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9cd1519ba15d3cc0ac85dea41d163c8d511e8b37e17bc1925a29d9979af4395c",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for error vad contract signal stderr.",
+  "context": "Journal command-line text for error vad contract signal stderr.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "stderr",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "70a3292f2a461bc3aa102210a801613d8c6ee0e9b4d7aa7a607f3f9662d5ead6",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

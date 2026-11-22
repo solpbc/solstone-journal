@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for claim lock invalid.",
+  "context": "Journal command-line text for claim lock invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "182ebf755945bb5c268036b7ad0e050f5516c04edefa55178a6bec9dd19eccc8",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

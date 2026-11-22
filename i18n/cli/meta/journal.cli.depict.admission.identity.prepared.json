@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission identity prepared.",
+  "context": "Journal command-line text for admission identity prepared.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "76e058d2e59db8a1adb49f8eff70e7577e1395e294f71308186baeb0c028a6ed",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

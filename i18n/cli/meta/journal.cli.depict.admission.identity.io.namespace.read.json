@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for admission identity io namespace read.",
+  "context": "Journal command-line text for admission identity io namespace read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "38004800b8158c3453bb98ca51fa7910e7701107f435743bdf5bd88b0bf6e6a6",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

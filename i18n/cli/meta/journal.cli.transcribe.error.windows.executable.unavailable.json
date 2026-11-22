@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error windows executable unavailable.",
+  "context": "Journal command-line text for error windows executable unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5490658e571949e446df33ca93ba90a22fc4b83f9a0bf184dca90f9bb3f5f756",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

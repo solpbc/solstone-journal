@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for admission guard duplicate.",
+  "context": "Journal command-line text for admission guard duplicate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4cc463a8dc526542de0ad84f09e7d1e0d238d965cddf991e539f453c6e9c60ea",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

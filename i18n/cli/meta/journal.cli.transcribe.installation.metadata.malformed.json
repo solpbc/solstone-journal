@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for installation metadata malformed.",
+  "context": "Journal command-line text for installation metadata malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a53f48ab7577d27920d9e12e4aff3ff981d2772763981d210b3255f6c1b142c7",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -54,11 +54,39 @@ pub const TOP_K: i32 = 0;
 ///
 /// Returns `(tags, status)`. Degraded yields `(None, Some(status))`.
 pub fn tag_audio(audio: &[f32], journal_path: &Path) -> (Option<Value>, Option<CapabilityStatus>) {
-    tag_audio_with_program(audio, journal_path, &CedAnalyzeProgram::SiblingHelper)
+    tag_audio_in(solstone_core_cli_copy::ENGLISH, audio, journal_path)
+}
+
+/// Emit progress for the invoking client while keeping transcript fields in source English.
+pub fn tag_audio_in(
+    locale: &str,
+    audio: &[f32],
+    journal_path: &Path,
+) -> (Option<Value>, Option<CapabilityStatus>) {
+    tag_audio_with_program_in(
+        locale,
+        audio,
+        journal_path,
+        &CedAnalyzeProgram::SiblingHelper,
+    )
 }
 
 /// [`tag_audio`] with caller-specified helper program.
 pub fn tag_audio_with_program(
+    audio: &[f32],
+    journal_path: &Path,
+    program: &CedAnalyzeProgram,
+) -> (Option<Value>, Option<CapabilityStatus>) {
+    tag_audio_with_program_in(
+        solstone_core_cli_copy::ENGLISH,
+        audio,
+        journal_path,
+        program,
+    )
+}
+
+fn tag_audio_with_program_in(
+    locale: &str,
     audio: &[f32],
     journal_path: &Path,
     program: &CedAnalyzeProgram,
@@ -69,18 +97,25 @@ pub fn tag_audio_with_program(
     }
     let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
     #[cfg(windows)]
-    let readiness = solstone_core_check::evaluate_host_ced(journal_path, os, arch);
+    let readiness = solstone_core_check::evaluate_host_ced_in(locale, journal_path, os, arch);
     #[cfg(not(windows))]
     let readiness = evaluate_ced_readiness(journal_path, os, arch);
 
     let library = match readiness {
         CedVerdict::Ready { library, .. } => library,
         CedVerdict::Unsupported { os, arch } => {
-            log::warn!("sound tagger disabled: ced assets unsupported on {os}/{arch}");
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.transcribe.sound.unsupported",
+                    [("os", &(os)), ("arch", &(arch))]
+                )
+            );
             return (None, None);
         }
         CedVerdict::Degraded(status) => {
-            if let Some(detail) = status.detail() {
+            if let Some(detail) = status.display_detail(locale) {
                 log::warn!("{detail}");
             }
             return (None, Some(status));
@@ -90,14 +125,14 @@ pub fn tag_audio_with_program(
     let model = match fresh_model_check(os, arch) {
         Ok(model) => model,
         Err(status) => {
-            if let Some(detail) = status.detail() {
+            if let Some(detail) = status.display_detail(locale) {
                 log::warn!("{detail}");
             }
             return (None, Some(status));
         }
     };
 
-    let tags = classify_windows(audio, &spans, &library, &model, program);
+    let tags = classify_windows(locale, audio, &spans, &library, &model, program);
     (tags, None)
 }
 
@@ -107,6 +142,7 @@ pub fn tag_audio_in_package(
     package_root_or_exe: &Path,
     program: &CedAnalyzeProgram,
 ) -> (Option<Value>, Option<CapabilityStatus>) {
+    let locale = solstone_core_cli_copy::ENGLISH;
     let spans = window_spans(audio.len());
     if spans.is_empty() {
         return (None, None);
@@ -122,11 +158,18 @@ pub fn tag_audio_in_package(
     let library = match readiness {
         CedVerdict::Ready { library, .. } => library,
         CedVerdict::Unsupported { os, arch } => {
-            log::warn!("sound tagger disabled: ced assets unsupported on {os}/{arch}");
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.transcribe.sound.unsupported",
+                    [("os", &(os)), ("arch", &(arch))]
+                )
+            );
             return (None, None);
         }
         CedVerdict::Degraded(status) => {
-            if let Some(detail) = status.detail() {
+            if let Some(detail) = status.display_detail(locale) {
                 log::warn!("{detail}");
             }
             return (None, Some(status));
@@ -136,14 +179,14 @@ pub fn tag_audio_in_package(
     let model = match fresh_model_check_in_package(package_root_or_exe, os, arch) {
         Ok(model) => model,
         Err(status) => {
-            if let Some(detail) = status.detail() {
+            if let Some(detail) = status.display_detail(locale) {
                 log::warn!("{detail}");
             }
             return (None, Some(status));
         }
     };
 
-    let tags = classify_windows(audio, &spans, &library, &model, program);
+    let tags = classify_windows(locale, audio, &spans, &library, &model, program);
     (tags, None)
 }
 
@@ -161,6 +204,7 @@ pub fn tag_audio_with_readiness_and_program(
     readiness: CedVerdict,
     program: &CedAnalyzeProgram,
 ) -> (Option<Value>, Option<CapabilityStatus>) {
+    let locale = solstone_core_cli_copy::ENGLISH;
     let spans = window_spans(audio.len());
     if spans.is_empty() {
         return (None, None);
@@ -169,21 +213,29 @@ pub fn tag_audio_with_readiness_and_program(
     let (library, model) = match readiness {
         CedVerdict::Ready { library, model } => (library, model),
         CedVerdict::Unsupported { os, arch } => {
-            log::warn!("sound tagger disabled: ced assets unsupported on {os}/{arch}");
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.transcribe.sound.unsupported",
+                    [("os", &(os)), ("arch", &(arch))]
+                )
+            );
             return (None, None);
         }
         CedVerdict::Degraded(status) => {
-            if let Some(detail) = status.detail() {
+            if let Some(detail) = status.display_detail(locale) {
                 log::warn!("{detail}");
             }
             return (None, Some(status));
         }
     };
-    let tags = classify_windows(audio, &spans, &library, &model, program);
+    let tags = classify_windows(locale, audio, &spans, &library, &model, program);
     (tags, None)
 }
 
 fn classify_windows(
+    locale: &str,
     audio: &[f32],
     spans: &[(usize, usize)],
     library: &Path,
@@ -196,13 +248,27 @@ fn classify_windows(
     {
         Ok(directory) => directory,
         Err(error) => {
-            log::warn!("sound tagging could not prepare audio: {error}");
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.transcribe.sound.prepare",
+                    [("error", &(error))]
+                )
+            );
             return None;
         }
     };
     let audio_path = temporary.path().join("audio.f32le");
     if let Err(error) = write_audio_sidecar(&audio_path, audio) {
-        log::warn!("sound tagging could not prepare audio: {error}");
+        log::warn!(
+            "{}",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.sound.prepare",
+                [("error", &(error))]
+            )
+        );
         return None;
     }
 
@@ -227,7 +293,8 @@ fn classify_windows(
     #[cfg(windows)]
     resources.retain(temporary.clone());
     #[cfg(windows)]
-    let result = solstone_core_check::ced_windows::invoke(
+    let result = solstone_core_check::ced_windows::invoke_in(
+        locale,
         program,
         &[],
         &request,
@@ -239,11 +306,18 @@ fn classify_windows(
     let response = match result {
         Ok(response) => response,
         Err(error) => {
-            log::warn!("sound tagging failed: {error}");
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.transcribe.sound.failed",
+                    [("error", &(error.detail().render(locale)))]
+                )
+            );
             return None;
         }
     };
-    windows_from_response(&response, spans.len())
+    windows_from_response(locale, &response, spans.len())
 }
 
 fn write_audio_sidecar(path: &Path, audio: &[f32]) -> std::io::Result<()> {
@@ -271,14 +345,32 @@ pub enum SoundTagWindows {
 /// with `ok: false` is skipped. When every window failed, this logs once and
 /// returns an empty accepted list.
 pub fn read_sound_tag_windows(response: &Value, expected_len: usize) -> SoundTagWindows {
+    read_sound_tag_windows_in(solstone_core_cli_copy::ENGLISH, response, expected_len)
+}
+
+fn read_sound_tag_windows_in(
+    locale: &str,
+    response: &Value,
+    expected_len: usize,
+) -> SoundTagWindows {
     if response.get("schema").and_then(Value::as_str) != Some(RESPONSE_SCHEMA) {
-        log::warn!("sound tagging returned an unexpected response schema");
+        log::warn!(
+            "{}",
+            solstone_core_cli_copy::render_for(locale, "journal.cli.transcribe.sound.schema", &[])
+        );
         return SoundTagWindows::Rejected;
     }
     let windows = match response.get("windows").and_then(Value::as_array) {
         Some(windows) if windows.len() == expected_len => windows,
         _ => {
-            log::warn!("sound tagging returned an unexpected window count");
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.transcribe.sound.window.count",
+                    &[]
+                )
+            );
             return SoundTagWindows::Rejected;
         }
     };
@@ -297,7 +389,14 @@ pub fn read_sound_tag_windows(response: &Value, expected_len: usize) -> SoundTag
                 }
             }
             None => {
-                log::warn!("sound tagging returned a window missing an ok field");
+                log::warn!(
+                    "{}",
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.transcribe.sound.window.ok",
+                        &[]
+                    )
+                );
                 return SoundTagWindows::Rejected;
             }
         }
@@ -306,7 +405,14 @@ pub fn read_sound_tag_windows(response: &Value, expected_len: usize) -> SoundTag
     if per_window.is_empty()
         && let Some(detail) = first_failure
     {
-        log::warn!("sound tagging failed for all windows: {detail}");
+        log::warn!(
+            "{}",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.transcribe.sound.all.windows.failed",
+                [("detail", &(detail))]
+            )
+        );
     }
     SoundTagWindows::Accepted(per_window)
 }
@@ -359,8 +465,8 @@ pub fn fold_sound_tag_windows(windows: &[Value]) -> Value {
     fold_sound_tag_scores(&aggregated, windows.len())
 }
 
-fn windows_from_response(response: &Value, expected_len: usize) -> Option<Value> {
-    match read_sound_tag_windows(response, expected_len) {
+fn windows_from_response(locale: &str, response: &Value, expected_len: usize) -> Option<Value> {
+    match read_sound_tag_windows_in(locale, response, expected_len) {
         SoundTagWindows::Rejected => None,
         SoundTagWindows::Accepted(windows) if windows.is_empty() => None,
         SoundTagWindows::Accepted(windows) => Some(fold_sound_tag_windows(&windows)),
@@ -400,7 +506,8 @@ mod tests {
                 {"ok": true, "tags": {"Speech": 0.2, "Dog": 0.8}}
             ]
         });
-        let from_response = windows_from_response(&response, 4).expect("accepted windows");
+        let from_response = windows_from_response(solstone_core_cli_copy::ENGLISH, &response, 4)
+            .expect("accepted windows");
         let SoundTagWindows::Accepted(accepted) = read_sound_tag_windows(&response, 4) else {
             panic!("response rejected");
         };

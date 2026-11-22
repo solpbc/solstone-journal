@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for installation fd platform.",
+  "context": "Journal command-line text for installation fd platform.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6fad8d703cbab0d3691f325388f444469e953d926c1fffae33741630fd5eae1",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "fd",
+      "kind": "accepted-input",
+      "value": "generation-fd"
+    }
+  ]
+}

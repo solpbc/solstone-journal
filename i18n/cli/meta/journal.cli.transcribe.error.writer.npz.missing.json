@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error writer npz missing.",
+  "context": "Journal command-line text for error writer npz missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ba3782d31a653c712c6dccf15ef604fdec9a86e8c9af7f2b134b103ac24ab11c",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_npz",
+      "kind": "accepted-input",
+      "value": "NPZ"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error writer zip unproved.",
+  "context": "Journal command-line text for error writer zip unproved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4fd7e8fe431aabcb299d84845a3afedb47577b2d943503de5968c5f6cfd02c59",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

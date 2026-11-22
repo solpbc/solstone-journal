@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error writer durations s must be finite f32 values.",
+  "context": "Journal command-line text for error writer durations s must be finite f32 values.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c12fd707ad2a85e355344b2d3870ef974a77a946300f482b5df2d11431614ea4",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_durations_s",
+      "kind": "accepted-input",
+      "value": "durations_s"
+    },
+    {
+      "name": "code_f32",
+      "kind": "accepted-input",
+      "value": "f32"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error process explicit.",
+  "context": "Journal command-line text for error process explicit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "87ffbe98c3b5a9fa1a06a2b0557d90c128a2698939c122918d669a4539a828d5",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

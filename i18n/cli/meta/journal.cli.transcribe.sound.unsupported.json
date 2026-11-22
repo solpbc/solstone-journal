@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sound unsupported.",
+  "context": "Journal command-line text for sound unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "os",
+      "type": "string"
+    },
+    {
+      "name": "arch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e6f08bd85743bc6680caf103dea6a01d4deb01d0b59ff485a64958f71b79c850",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

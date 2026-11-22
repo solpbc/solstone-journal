@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission frame size.",
+  "context": "Journal command-line text for admission frame size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9643e3e61d63e5c946898e29d821b28250c5d93eeb296f579058fc18e7400191",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

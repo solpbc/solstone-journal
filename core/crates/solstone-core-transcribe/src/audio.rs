@@ -46,21 +46,26 @@ pub(crate) fn run_vad(
     );
     #[cfg(windows)]
     let (model_path, binary) = {
-        let package = solstone_core_local::install::onnx_readiness::verified_windows_onnx_package()
-            .map_err(|detail| TranscribeError::VadBinary { detail })?;
+        let package =
+            solstone_core_local::install::onnx_readiness::verified_windows_onnx_package_detail()
+                .map_err(|detail| TranscribeError::VadBinary { detail })?;
         (package.firered_vad_model, package.vad_worker)
     };
     let temporary = tempfile::Builder::new()
         .prefix(VAD_TEMP_PREFIX)
         .tempdir()
         .map_err(|error| TranscribeError::VadTemporary {
-            detail: format!("could not create VAD input directory: {error}"),
+            detail: crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.could.not.create.vad.input.directory.error",
+                [("error", &(error))],
+            ),
         })?;
     let audio_path = temporary.path().join("audio.f32le");
 
     let write_result =
         write_f32le_exclusive(&audio_path, audio).map_err(|error| TranscribeError::VadTemporary {
-            detail: format!("could not write VAD input: {error}"),
+            detail: crate::TranscribeDetail::from(&error)
+                .context("journal.cli.transcribe.error.vad.write"),
         });
     if let Err(error) = write_result {
         let _ = temporary.close();
@@ -86,12 +91,15 @@ pub(crate) fn run_vad(
     #[cfg(windows)]
     let temporary =
         std::sync::Arc::try_unwrap(temporary).map_err(|_| TranscribeError::VadTemporary {
-            detail: "could not remove VAD input directory: input remains in use".to_owned(),
+            detail: crate::TranscribeDetail::message("journal.cli.transcribe.error.vad.could.not.remove.vad.input.directory.input.remains.in", []),
         })?;
     let cleanup_result = temporary
         .close()
         .map_err(|error| TranscribeError::VadTemporary {
-            detail: format!("could not remove VAD input directory: {error}"),
+            detail: crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.could.not.remove.vad.input.directory.error",
+                [("error", &(error))],
+            ),
         });
 
     match result {
@@ -117,19 +125,19 @@ pub(crate) fn run_vad_embedded(
         .prefix(VAD_TEMP_PREFIX)
         .tempdir_in(scratch)
         .map_err(|error| TranscribeError::VadTemporary {
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     let input = temporary.path().join("audio.f32le");
     write_f32le_exclusive(&input, audio).map_err(|error| TranscribeError::VadTemporary {
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })?;
     let request = vad_request(&input, &model, min_speech_seconds)?;
     let request = String::from_utf8(request).map_err(|error| TranscribeError::VadTemporary {
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })?;
     let response = solstone_core_vad_analyze::run_request(&request).map_err(|error| {
         TranscribeError::VadTemporary {
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         }
     })?;
     let result = parse_vad_response(&response.to_string())
@@ -137,7 +145,7 @@ pub(crate) fn run_vad_embedded(
     temporary
         .close()
         .map_err(|error| TranscribeError::VadTemporary {
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     result
 }
@@ -146,11 +154,12 @@ pub(crate) fn run_vad_embedded(
 pub(crate) fn tag_audio(
     audio: &[f32],
     journal_path: &Path,
+    locale: &str,
 ) -> (
     Option<Value>,
     Option<solstone_core_local::install::capability_status::CapabilityStatus>,
 ) {
-    solstone_core_sound_tags::tag_audio(audio, journal_path)
+    solstone_core_sound_tags::tag_audio_in(locale, audio, journal_path)
 }
 
 /// Resolve the VAD helper using `SOLSTONE_VAD_BINARY` or the current executable's sibling.
@@ -161,7 +170,10 @@ pub fn resolve_vad_binary() -> Result<PathBuf, TranscribeError> {
         Ok(candidate)
     } else {
         Err(TranscribeError::VadBinary {
-            detail: format!("VAD helper binary is missing: {}", candidate.display()),
+            detail: crate::TranscribeDetail::message(
+                "journal.cli.doctor.vad.missing",
+                [("path", &(candidate.display()))],
+            ),
         })
     }
 }
@@ -190,26 +202,21 @@ where
 pub(crate) fn vad_binary_candidate_from_in<F>(
     current_executable: Result<PathBuf, io::Error>,
     lookup_env: F,
-    locale: &str,
+    _locale: &str,
 ) -> Result<PathBuf, TranscribeError>
 where
     F: Fn(&str) -> Option<String>,
 {
     let executable = current_executable.map_err(|error| TranscribeError::VadBinary {
-        detail: solstone_core_cli_copy::display_for(
-            locale,
+        detail: crate::TranscribeDetail::message(
             "journal.cli.doctor.vad.executable",
-            [("error", &(error))],
+            [("error", &error)],
         ),
     })?;
     let directory = executable
         .parent()
         .ok_or_else(|| TranscribeError::VadBinary {
-            detail: solstone_core_cli_copy::render_for(
-                locale,
-                "journal.cli.doctor.vad.parent",
-                &[],
-            ),
+            detail: crate::TranscribeDetail::message("journal.cli.doctor.vad.parent", []),
         })?;
     Ok(vad_binary_candidate(directory, lookup_env))
 }
@@ -240,7 +247,10 @@ fn vad_request(
         vad_contract_error(
             None,
             b"",
-            format!("could not serialize VAD request: {error}"),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.could.not.serialize.vad.request.error",
+                [("error", &(error))],
+            ),
         )
     })
 }
@@ -259,25 +269,35 @@ fn invoke_vad_helper(binary: &Path, request: &[u8]) -> Result<VadResult, Transcr
         Box::new(|child, _timeout| child.kill().map_err(LaunchError::Terminate)),
     )
     .map_err(|error| TranscribeError::VadTemporary {
-        detail: format!("could not launch VAD helper {}: {error}", binary.display()),
+        detail: crate::TranscribeDetail::from(error).context_with(
+            "journal.cli.transcribe.error.vad.launch.failed",
+            [("path", &binary.display())],
+        ),
     })?;
     authority
         .take_stdin()
         .ok_or_else(|| TranscribeError::VadTemporary {
-            detail: "VAD helper stdin was unavailable".to_owned(),
+            detail: crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.vad.helper.stdin.was.unavailable",
+                [],
+            ),
         })?
         .write_all(request)
         .map_err(|error| TranscribeError::VadTemporary {
-            detail: format!("could not send VAD request: {error}"),
+            detail: crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.could.not.send.vad.request.error",
+                [("error", &(error))],
+            ),
         })?;
     let output = authority
         .wait_with_output()
         .map_err(|error| TranscribeError::VadTemporary {
-            detail: format!("could not wait for VAD helper: {error}"),
+            detail: crate::TranscribeDetail::from(error)
+                .context("journal.cli.transcribe.error.vad.wait.failed"),
         })?;
 
     if output.status.success() {
-        match json_line(&output.stdout, "VAD response") {
+        match json_line(&output.stdout, VadWireLine::Response) {
             Ok(line) => parse_vad_response(line)
                 .map_err(|detail| vad_contract_error(Some(0), &output.stdout, detail)),
             Err(detail) => Err(vad_contract_error(Some(0), &output.stdout, detail)),
@@ -288,26 +308,63 @@ fn invoke_vad_helper(binary: &Path, request: &[u8]) -> Result<VadResult, Transcr
         Err(vad_contract_error(
             None,
             &output.stderr,
-            "VAD helper terminated without an exit code".to_owned(),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.vad.helper.terminated.without.an.exit.code",
+                [],
+            ),
         ))
     }
 }
 
-fn json_line<'a>(bytes: &'a [u8], context: &str) -> Result<&'a str, String> {
-    let text =
-        std::str::from_utf8(bytes).map_err(|error| format!("{context} was not UTF-8: {error}"))?;
+#[derive(Clone, Copy)]
+enum VadWireLine {
+    Response,
+    Error,
+}
+
+fn json_line(bytes: &[u8], context: VadWireLine) -> Result<&str, crate::TranscribeDetail> {
+    let text = std::str::from_utf8(bytes).map_err(|error| match context {
+        VadWireLine::Response => crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.vad.response.utf8",
+            [("error", &(error))],
+        ),
+        VadWireLine::Error => crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.vad.error.utf8",
+            [("error", &(error))],
+        ),
+    })?;
     let mut lines = text.lines();
     let line = lines
         .next()
         .filter(|line| !line.is_empty())
-        .ok_or_else(|| format!("{context} was empty"))?;
+        .ok_or_else(|| match context {
+            VadWireLine::Response => crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.response.empty",
+                [],
+            ),
+            VadWireLine::Error => {
+                crate::TranscribeDetail::message("journal.cli.transcribe.error.vad.error.empty", [])
+            }
+        })?;
     if lines.next().is_some() {
-        return Err(format!("{context} contained more than one line"));
+        return Err(match context {
+            VadWireLine::Response => crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.response.many",
+                [],
+            ),
+            VadWireLine::Error => {
+                crate::TranscribeDetail::message("journal.cli.transcribe.error.vad.error.many", [])
+            }
+        });
     }
     Ok(line)
 }
 
-fn vad_contract_error(exit: Option<i32>, raw: &[u8], detail: String) -> TranscribeError {
+fn vad_contract_error(
+    exit: Option<i32>,
+    raw: &[u8],
+    detail: crate::TranscribeDetail,
+) -> TranscribeError {
     TranscribeError::VadResponse {
         helper_exit_code: exit,
         stderr: sanitize_os_bytes_for_terminal_bounded(raw),
@@ -315,25 +372,45 @@ fn vad_contract_error(exit: Option<i32>, raw: &[u8], detail: String) -> Transcri
     }
 }
 
-fn parse_vad_response(line: &str) -> Result<VadResult, String> {
-    let value: Value = serde_json::from_str(line)
-        .map_err(|error| format!("VAD response was not JSON: {error}"))?;
-    let object = value
-        .as_object()
-        .ok_or_else(|| "VAD response must be an object".to_owned())?;
+fn parse_vad_response(line: &str) -> Result<VadResult, crate::TranscribeDetail> {
+    let value: Value = serde_json::from_str(line).map_err(|error| {
+        crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.vad.vad.response.was.not.json.error",
+            [("error", &(error))],
+        )
+    })?;
+    let object = value.as_object().ok_or_else(|| {
+        crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.vad.vad.response.must.be.an.object",
+            [],
+        )
+    })?;
     if required_string(object, "schema")? != RESPONSE_SCHEMA {
-        return Err("VAD response has an unknown schema".to_owned());
+        return Err(crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.vad.vad.response.has.an.unknown.schema",
+            [],
+        ));
     }
     let duration_s = required_f64(object, "duration")?;
     let speech_duration_s = required_f64(object, "speech_duration")?;
     let has_speech = object
         .get("has_speech")
         .and_then(Value::as_bool)
-        .ok_or_else(|| "VAD response has no boolean has_speech".to_owned())?;
+        .ok_or_else(|| {
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.vad.response.has.no.boolean.has.speech",
+                [],
+            )
+        })?;
     let speech = object
         .get("speech")
         .and_then(Value::as_array)
-        .ok_or_else(|| "VAD response has no speech array".to_owned())?;
+        .ok_or_else(|| {
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.vad.response.has.no.speech.array",
+                [],
+            )
+        })?;
     let speech_segments = speech
         .iter()
         .map(parse_speech_segment)
@@ -351,14 +428,20 @@ fn parse_vad_response(line: &str) -> Result<VadResult, String> {
     })
 }
 
-fn parse_speech_segment(value: &Value) -> Result<(f64, f64), String> {
-    let object = value
-        .as_object()
-        .ok_or_else(|| "VAD speech entry must be an object".to_owned())?;
+fn parse_speech_segment(value: &Value) -> Result<(f64, f64), crate::TranscribeDetail> {
+    let object = value.as_object().ok_or_else(|| {
+        crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.vad.vad.speech.entry.must.be.an.object",
+            [],
+        )
+    })?;
     let start = required_sample_index(object, "start")?;
     let end = required_sample_index(object, "end")?;
     if end < start {
-        return Err("VAD speech entry ends before it starts".to_owned());
+        return Err(crate::TranscribeDetail::message(
+            "journal.cli.transcribe.error.vad.vad.speech.entry.ends.before.it.starts",
+            [],
+        ));
     }
     Ok((start as f64 / SAMPLE_RATE_HZ, end as f64 / SAMPLE_RATE_HZ))
 }
@@ -366,31 +449,49 @@ fn parse_speech_segment(value: &Value) -> Result<(f64, f64), String> {
 fn required_string<'a>(
     object: &'a serde_json::Map<String, Value>,
     field: &str,
-) -> Result<&'a str, String> {
+) -> Result<&'a str, crate::TranscribeDetail> {
     object
         .get(field)
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| format!("VAD response has no non-empty {field}"))
+        .ok_or_else(|| {
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.vad.response.has.no.non.empty.field",
+                [("field", &(field))],
+            )
+        })
 }
 
-fn required_f64(object: &serde_json::Map<String, Value>, field: &str) -> Result<f64, String> {
+fn required_f64(
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+) -> Result<f64, crate::TranscribeDetail> {
     object
         .get(field)
         .and_then(Value::as_f64)
         .filter(|value| value.is_finite() && *value >= 0.0)
-        .ok_or_else(|| format!("VAD response has no non-negative finite {field}"))
+        .ok_or_else(|| {
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.vad.response.has.no.non.negative.finite.field",
+                [("field", &(field))],
+            )
+        })
 }
 
 fn required_sample_index(
     object: &serde_json::Map<String, Value>,
     field: &str,
-) -> Result<usize, String> {
+) -> Result<usize, crate::TranscribeDetail> {
     object
         .get(field)
         .and_then(Value::as_u64)
         .and_then(|value| usize::try_from(value).ok())
-        .ok_or_else(|| format!("VAD speech entry has no valid {field} sample index"))
+        .ok_or_else(|| {
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.vad.speech.entry.has.no.valid.field.sample.index",
+                [("field", &(field))],
+            )
+        })
 }
 
 fn parse_vad_error(exit: Option<i32>, stderr: &[u8]) -> TranscribeError {
@@ -398,10 +499,13 @@ fn parse_vad_error(exit: Option<i32>, stderr: &[u8]) -> TranscribeError {
         return vad_contract_error(
             None,
             stderr,
-            "VAD helper terminated without an exit code".to_owned(),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.vad.helper.terminated.without.an.exit.code",
+                [],
+            ),
         );
     };
-    let line = match json_line(stderr, "VAD error response") {
+    let line = match json_line(stderr, VadWireLine::Error) {
         Ok(line) => line,
         Err(detail) => return vad_contract_error(Some(exit_code), stderr, detail),
     };
@@ -411,7 +515,10 @@ fn parse_vad_error(exit: Option<i32>, stderr: &[u8]) -> TranscribeError {
             return vad_contract_error(
                 Some(exit_code),
                 stderr,
-                format!("VAD error response was not JSON: {error}"),
+                crate::TranscribeDetail::message(
+                    "journal.cli.transcribe.error.vad.vad.error.response.was.not.json.error",
+                    [("error", &(error))],
+                ),
             );
         }
     };
@@ -419,7 +526,10 @@ fn parse_vad_error(exit: Option<i32>, stderr: &[u8]) -> TranscribeError {
         return vad_contract_error(
             Some(exit_code),
             stderr,
-            "VAD error response must be an object".to_owned(),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.vad.error.response.must.be.an.object",
+                [],
+            ),
         );
     };
     let (Some(schema), Some(reason), Some(detail)) = (
@@ -430,20 +540,26 @@ fn parse_vad_error(exit: Option<i32>, stderr: &[u8]) -> TranscribeError {
         return vad_contract_error(
             Some(exit_code),
             stderr,
-            "VAD error response lacks schema, reason, or detail".to_owned(),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.vad.error.response.lacks.schema.reason.or.detail",
+                [],
+            ),
         );
     };
     if schema != ERROR_SCHEMA || reason.is_empty() || detail.is_empty() {
         return vad_contract_error(
             Some(exit_code),
             stderr,
-            "VAD error response violates its schema".to_owned(),
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.vad.vad.error.response.violates.its.schema",
+                [],
+            ),
         );
     }
     TranscribeError::VadHelper {
         helper_exit_code: exit_code,
         reason: reason.to_owned(),
-        detail: detail.to_owned(),
+        detail: detail.into(),
     }
 }
 
@@ -451,20 +567,19 @@ fn parse_vad_error(exit: Option<i32>, stderr: &[u8]) -> TranscribeError {
 pub(crate) fn vad_binary_candidate_from_in<F>(
     current_executable: Result<PathBuf, io::Error>,
     _lookup_env: F,
-    locale: &str,
+    _locale: &str,
 ) -> Result<PathBuf, TranscribeError>
 where
     F: Fn(&str) -> Option<String>,
 {
     let executable = current_executable.map_err(|error| TranscribeError::VadBinary {
-        detail: solstone_core_cli_copy::display_for(
-            locale,
+        detail: crate::TranscribeDetail::message(
             "journal.cli.doctor.vad.executable",
-            [("error", &(error))],
+            [("error", &error)],
         ),
     })?;
     let binary =
-        solstone_core_local::install::onnx_readiness::verified_windows_onnx_package_in(locale)
+        solstone_core_local::install::onnx_readiness::verified_windows_onnx_package_detail()
             .map_err(|detail| TranscribeError::VadBinary { detail })?
             .vad_worker;
     if !executable
@@ -477,11 +592,7 @@ where
         })
     {
         return Err(TranscribeError::VadBinary {
-            detail: solstone_core_cli_copy::render_for(
-                locale,
-                "journal.cli.doctor.vad.layout",
-                &[],
-            ),
+            detail: crate::TranscribeDetail::message("journal.cli.doctor.vad.layout", []),
         });
     }
     Ok(binary)
@@ -510,10 +621,10 @@ fn invoke_vad_helper(
         resources,
     )
     .map_err(|error| TranscribeError::VadTemporary {
-        detail: error.to_string(),
+        detail: error.into_detail(),
     })?;
     if output.exit_code == 0 {
-        json_line(&output.stdout, "VAD response")
+        json_line(&output.stdout, VadWireLine::Response)
             .and_then(parse_vad_response)
             .map_err(|detail| vad_contract_error(Some(0), &output.stdout, detail))
     } else {
@@ -714,7 +825,9 @@ mod tests {
                 assert_eq!(*helper_exit_code, None);
                 assert!(stderr.contains("killed"), "{stderr}");
                 assert!(
-                    detail.contains("terminated without an exit code"),
+                    detail
+                        .to_string()
+                        .contains("terminated without an exit code"),
                     "{detail}"
                 );
             }

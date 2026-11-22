@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission deadline invalid.",
+  "context": "Journal command-line text for admission deadline invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "899c35cc1bee968512fb4b837bb67862d703cee0273d10254491d580bb0e842f",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    }
+  ]
+}

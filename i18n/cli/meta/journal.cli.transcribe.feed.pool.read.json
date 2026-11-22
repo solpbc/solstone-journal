@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for feed pool read.",
+  "context": "Journal command-line text for feed pool read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "90e2f899dfd829368996f158b150a90598421cb7fcb7d23eb48ebcccd74b8b26",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

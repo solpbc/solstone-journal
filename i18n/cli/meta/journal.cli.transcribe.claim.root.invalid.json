@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for claim root invalid.",
+  "context": "Journal command-line text for claim root invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "358d8fd221b06af6a77c54ba39df753f3221f623d7a242ad41133e1da9971b07",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

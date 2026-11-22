@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error writer turn expected version expected got version.",
+  "context": "Journal command-line text for error writer turn expected version expected got version.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "expected",
+      "type": "string"
+    },
+    {
+      "name": "version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "691fe82b954ae8ce0c8496615899b504494af906027ccfcbe873ee1416a373d5",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

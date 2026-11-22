@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for error writer zip central extra at extra at error.",
+  "context": "Journal command-line text for error writer zip central extra at extra at error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "extra_at",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c632b7f22b5508700a31139117ff47d45877610c53be48cb09c9efcf7d71fc65",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

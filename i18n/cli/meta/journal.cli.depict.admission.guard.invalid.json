@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for admission guard invalid.",
+  "context": "Journal command-line text for admission guard invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "91130616aae7e2ab59942d806eb3f3681695dc26bb875e079330a7cffc2bdaa2",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

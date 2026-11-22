@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for admission descriptor encoding.",
+  "context": "Journal command-line text for admission descriptor encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fd29f4ed1e657d205ed6dbb4875cf1fe2c914bca3634fef67c6df390018dc5a3",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    },
+    {
+      "name": "unicode",
+      "kind": "accepted-input",
+      "value": "Unicode"
+    }
+  ]
+}

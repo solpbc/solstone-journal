@@ -148,6 +148,8 @@ impl Serialize for ProcessBirth {
     }
 }
 
+pub(super) const MALFORMED_LINUX_BOOT_ID: &str = "linux process birth has a malformed boot_id";
+
 impl<'de> Deserialize<'de> for ProcessBirth {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -165,9 +167,10 @@ impl<'de> Deserialize<'de> for ProcessBirth {
                 clk_tck,
                 boot: match boot_id {
                     None => None,
-                    Some(text) => Some(parse_linux_boot_id(&text).ok_or_else(|| {
-                        serde::de::Error::custom("linux process birth has a malformed boot_id")
-                    })?),
+                    Some(text) => Some(
+                        parse_linux_boot_id(&text)
+                            .ok_or_else(|| serde::de::Error::custom(MALFORMED_LINUX_BOOT_ID))?,
+                    ),
                 },
             },
             ProcessBirthWire::Macos { epoch_micros } => ProcessBirthInner::Macos { epoch_micros },
@@ -615,7 +618,62 @@ pub enum LaunchError {
     #[error("this authority is not explicitly unowned")]
     NotExplicitlyUnowned,
     #[error("hosted launch admission failed: {0}")]
-    Admission(String),
+    Admission(solstone_core_cli_copy::MessageDetail),
+}
+
+impl From<LaunchError> for solstone_core_cli_copy::MessageDetail {
+    fn from(error: LaunchError) -> Self {
+        match error {
+            LaunchError::CapabilityUnavailable { needed }
+            | LaunchError::SpawnManaged(SpawnError::CapabilityUnavailable { needed }) => {
+                Self::message(
+                    "journal.cli.transcribe.error.process.capability",
+                    [("needed", &(needed))],
+                )
+            }
+            LaunchError::EmptyUnownedReason => {
+                Self::message("journal.cli.transcribe.error.process.unowned.reason", [])
+            }
+            LaunchError::Spawn(source) | LaunchError::SpawnManaged(SpawnError::Spawn(source)) => {
+                Self::message(
+                    "journal.cli.transcribe.error.process.spawn",
+                    [("error", &(source))],
+                )
+            }
+            LaunchError::ConfirmationFailed { pid, source } => Self::message(
+                "journal.cli.transcribe.error.process.confirm",
+                [("pid", &(pid)), ("error", &(source))],
+            ),
+            LaunchError::Terminate(source) => Self::message(
+                "journal.cli.transcribe.error.process.terminate",
+                [("error", &(source))],
+            ),
+            LaunchError::OutputUnavailable => {
+                Self::message("journal.cli.transcribe.error.process.output", [])
+            }
+            LaunchError::NotExplicitlyUnowned => {
+                Self::message("journal.cli.transcribe.error.process.explicit", [])
+            }
+            LaunchError::Admission(reason) => reason.context_slot(
+                "journal.cli.transcribe.error.process.admission",
+                "reason",
+                [],
+            ),
+            LaunchError::SpawnManaged(SpawnError::EmptyCommand) => {
+                Self::message("journal.cli.transcribe.error.process.command", [])
+            }
+            LaunchError::SpawnManaged(SpawnError::Log(source)) => Self::message(
+                "journal.cli.transcribe.error.process.log",
+                [("error", &(source))],
+            ),
+            LaunchError::SpawnManaged(SpawnError::ExactInstanceUnavailable { pid }) => {
+                Self::message(
+                    "journal.cli.transcribe.error.process.identity",
+                    [("pid", &(pid))],
+                )
+            }
+        }
+    }
 }
 
 pub type BoxedTerminateFn = Box<dyn FnMut(&mut Child, Duration) -> Result<(), LaunchError> + Send>;

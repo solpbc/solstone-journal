@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error writer byte count does not match shape.",
+  "context": "Journal command-line text for error writer byte count does not match shape.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "254eddecaa9efe3de20cce25434708c996f945963e1438b285d439351a667c85",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_byte_count",
+      "kind": "accepted-input",
+      "value": "byte_count"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for feed read.",
+  "context": "Journal command-line text for feed read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cc321b3ada095537a1f61f4cabd24ec13e0476cd20d3d8ea6d4e2917437bde4f",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

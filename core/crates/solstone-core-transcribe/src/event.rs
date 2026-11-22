@@ -296,7 +296,7 @@ mod tests {
         let timings = Timings::default();
         let vad_result = vad();
         let failure = TranscribeError::TerminalWrite {
-            detail: "test-only".to_owned(),
+            detail: "test-only".into(),
         };
         for outcome in [
             TranscribedOutcome::Transcribed,
@@ -338,7 +338,7 @@ mod tests {
         let vad_result = vad();
         let error = TranscribeError::ParakeetCppFailure {
             reason: "invalid_json".to_owned(),
-            detail: "SENSITIVE TRANSCRIPT CONTENT".to_owned(),
+            detail: "SENSITIVE TRANSCRIPT CONTENT".into(),
         };
         let event = build_transcribed_event(input(
             TranscribedOutcome::Failed,

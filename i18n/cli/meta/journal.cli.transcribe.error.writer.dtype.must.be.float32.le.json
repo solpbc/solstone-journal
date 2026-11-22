@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error writer dtype must be float32 le.",
+  "context": "Journal command-line text for error writer dtype must be float32 le.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f038a43b9c77d312217bac0f257042629b63eb0236518a559c68a8019bfafae",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_dtype",
+      "kind": "accepted-input",
+      "value": "dtype"
+    },
+    {
+      "name": "code_float32_le",
+      "kind": "accepted-input",
+      "value": "float32-le"
+    }
+  ]
+}

@@ -201,7 +201,7 @@ fn prove_open_zip<R: Read + Seek>(
         let entry = archive
             .by_index(index)
             .map_err(|error| Zip2NameFailure::Unreadable {
-                detail: error.to_string(),
+                detail: error.to_string().into(),
             })?;
         coords.push((entry.header_start(), entry.central_header_start()));
     }
@@ -209,7 +209,7 @@ fn prove_open_zip<R: Read + Seek>(
     let mut reader = archive.into_inner();
     let names = prove_zip2_directory(&mut reader, central_start, &coords)?;
     let archive = ZipArchive::new(reader).map_err(|error| Zip2NameFailure::Unreadable {
-        detail: error.to_string(),
+        detail: error.to_string().into(),
     })?;
     Ok((archive, names))
 }
@@ -225,13 +225,13 @@ fn member(
     let mut member = archive
         .by_index(index)
         .map_err(|error| Zip2NameFailure::Unreadable {
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     let mut bytes = Vec::new();
     member
         .read_to_end(&mut bytes)
         .map_err(|error| Zip2NameFailure::Unreadable {
-            detail: error.to_string(),
+            detail: error.to_string().into(),
         })?;
     Ok(Some(bytes))
 }

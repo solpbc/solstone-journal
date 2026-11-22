@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error confidential confidential audio handling is disabled.",
+  "context": "Journal command-line text for error confidential confidential audio handling is disabled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ab65d2e0a29545bae852d8648b9905d8ccb1ae6a24f845da41b5bec38394f2f5",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

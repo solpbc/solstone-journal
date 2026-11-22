@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer shape byte count overflows.",
+  "context": "Journal command-line text for error writer shape byte count overflows.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "43f26b8ff5affee96c4c57cce248476b4c36764ec96ec5ffd7f3f17d4d29ae1b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

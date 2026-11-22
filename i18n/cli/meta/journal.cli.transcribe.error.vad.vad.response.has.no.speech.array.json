@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error vad vad response has no speech array.",
+  "context": "Journal command-line text for error vad vad response has no speech array.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "33913ec5a3cb0b5f2716253865cef214487434c54baaa31d70117c91da32e67f",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

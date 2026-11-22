@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for admission identity io root.",
+  "context": "Journal command-line text for admission identity io root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ef7b6a8af90695f2fbf008788c72dd462cd5259619dc98f9acc11a013ba1f8c",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

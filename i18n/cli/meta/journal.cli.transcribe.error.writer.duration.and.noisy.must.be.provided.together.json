@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer duration and noisy must be provided together.",
+  "context": "Journal command-line text for error writer duration and noisy must be provided together.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5f98bd7e85b93415b8c0c017a8364ea626f999fb4635cf8a963c945b0345c1a7",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

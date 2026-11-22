@@ -3,6 +3,7 @@
 
 //! NPY member construction and NPZ verification for transcript embeddings.
 
+use solstone_core_cli_copy::MessageDetail;
 use std::fs::File;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
@@ -64,33 +65,47 @@ impl NpzMembers {
             .map_err(|error| error.to_string())
     }
 
-    pub(crate) fn verify_at(&self, path: &Path) -> Result<(), String> {
+    pub(crate) fn verify_at(&self, path: &Path) -> Result<(), MessageDetail> {
         let file = File::open(path).map_err(|error| error.to_string())?;
         let archive = ZipArchive::new(file).map_err(|error| error.to_string())?;
         let (mut archive, names) =
-            crate::zip_names::prove_open_zip(archive).map_err(|error| error.to_string())?;
+            crate::zip_names::prove_open_zip(archive).map_err(|error| error.into_detail())?;
         if names.len() != MEMBER_NAMES.len() {
-            return Err("NPZ has an unexpected member count".to_owned());
+            return Err(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.npz.count",
+                [],
+            ));
         }
         let mut actual_names = names.clone();
         actual_names.sort_unstable();
         let mut expected_names = MEMBER_NAMES.map(str::to_owned).to_vec();
         expected_names.sort_unstable();
         if actual_names != expected_names {
-            return Err("NPZ members do not match the transcript sidecar contract".to_owned());
+            return Err(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.npz.members",
+                [],
+            ));
         }
         for (name, expected) in self.iter() {
             let index = names
                 .iter()
                 .position(|proved| proved == name)
-                .ok_or_else(|| format!("NPZ member {name} is missing"))?;
+                .ok_or_else(|| {
+                    MessageDetail::message(
+                        "journal.cli.transcribe.error.writer.npz.missing",
+                        [("name", &(name))],
+                    )
+                })?;
             let mut member = archive.by_index(index).map_err(|error| error.to_string())?;
             let mut actual = Vec::new();
             member
                 .read_to_end(&mut actual)
                 .map_err(|error| error.to_string())?;
             if actual != expected {
-                return Err(format!("NPZ member {name} did not round-trip"));
+                return Err(MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.npz.readback",
+                    [("name", &(name))],
+                ));
             }
         }
         Ok(())
@@ -109,6 +124,36 @@ impl NpzMembers {
 const COPY_CHUNK: usize = 64 * 1024;
 static NPY_SCRATCH_SEQ: AtomicU64 = AtomicU64::new(0);
 
+#[derive(Debug)]
+pub(crate) enum StagedNpzError {
+    Cancelled,
+    Detail(MessageDetail),
+}
+
+impl std::fmt::Display for StagedNpzError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cancelled => f.write_str(&solstone_core_cli_copy::render_for(
+                solstone_core_cli_copy::ENGLISH,
+                "journal.cli.transcribe.error.writer.npz.cancelled",
+                &[],
+            )),
+            Self::Detail(detail) => std::fmt::Display::fmt(detail, f),
+        }
+    }
+}
+
+impl From<MessageDetail> for StagedNpzError {
+    fn from(detail: MessageDetail) -> Self {
+        Self::Detail(detail)
+    }
+}
+impl From<String> for StagedNpzError {
+    fn from(value: String) -> Self {
+        Self::Detail(value.into())
+    }
+}
+
 /// Zip NPY members from files. Each payload file is the raw little-endian array body.
 ///
 /// `cancel` is polled before each 64 KiB chunk. A true callback returns
@@ -121,10 +166,10 @@ pub(crate) fn write_npz_from_files(
     durations_f32le: &Path,
     encoder: &str,
     cancel: &dyn Fn() -> bool,
-) -> Result<(), String> {
-    let directory = destination
-        .parent()
-        .ok_or("npz destination has no parent")?;
+) -> Result<(), StagedNpzError> {
+    let directory = destination.parent().ok_or_else(|| {
+        MessageDetail::message("journal.cli.transcribe.error.writer.npz.parent", [])
+    })?;
     let token = NPY_SCRATCH_SEQ.fetch_add(1, Ordering::Relaxed);
     let embeddings = scratch_member(directory, token, "embeddings.npy");
     let ids = scratch_member(directory, token, "statement_ids.npy");
@@ -153,7 +198,7 @@ pub(crate) fn write_npz_from_files(
             cancel,
         )?;
         if cancel() {
-            return Err("cancelled".to_owned());
+            return Err(StagedNpzError::Cancelled);
         }
         let width = usize::max(encoder.chars().count(), 1);
         std::fs::write(
@@ -189,7 +234,7 @@ fn write_npy_member(
     shape: &str,
     payload: &Path,
     cancel: &dyn Fn() -> bool,
-) -> Result<(), String> {
+) -> Result<(), StagedNpzError> {
     let mut output = File::create(destination).map_err(|error| error.to_string())?;
     output
         .write_all(&npy_header(descr, shape))
@@ -198,7 +243,7 @@ fn write_npy_member(
     let mut buffer = [0_u8; COPY_CHUNK];
     loop {
         if cancel() {
-            return Err("cancelled".to_owned());
+            return Err(StagedNpzError::Cancelled);
         }
         let read = input.read(&mut buffer).map_err(|error| error.to_string())?;
         if read == 0 {
@@ -208,21 +253,23 @@ fn write_npy_member(
             .write_all(&buffer[..read])
             .map_err(|error| error.to_string())?;
     }
-    output.sync_all().map_err(|error| error.to_string())
+    output
+        .sync_all()
+        .map_err(|error| StagedNpzError::from(error.to_string()))
 }
 
 fn write_zip(
     destination: &Path,
     members: &[(&str, &Path)],
     cancel: &dyn Fn() -> bool,
-) -> Result<(), String> {
+) -> Result<(), StagedNpzError> {
     let file = File::create(destination).map_err(|error| error.to_string())?;
     let mut writer = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
     let mut buffer = [0_u8; COPY_CHUNK];
     for (name, path) in members {
         if cancel() {
-            return Err("cancelled".to_owned());
+            return Err(StagedNpzError::Cancelled);
         }
         writer
             .start_file(*name, options)
@@ -230,7 +277,7 @@ fn write_zip(
         let mut input = File::open(path).map_err(|error| error.to_string())?;
         loop {
             if cancel() {
-                return Err("cancelled".to_owned());
+                return Err(StagedNpzError::Cancelled);
             }
             let read = input.read(&mut buffer).map_err(|error| error.to_string())?;
             if read == 0 {
@@ -244,7 +291,7 @@ fn write_zip(
     writer
         .finish()
         .map(|_| ())
-        .map_err(|error| error.to_string())
+        .map_err(|error| StagedNpzError::from(error.to_string()))
 }
 
 /// Compare an NPZ's members with files, in chunks. Name collisions fail closed.
@@ -252,13 +299,15 @@ pub(crate) fn verify_npz_against_files(
     path: &Path,
     members: &[(&str, &Path)],
     cancel: &dyn Fn() -> bool,
-) -> Result<(), String> {
+) -> Result<(), StagedNpzError> {
     let file = File::open(path).map_err(|error| error.to_string())?;
     let archive = ZipArchive::new(file).map_err(|error| error.to_string())?;
     let (mut archive, names) =
-        crate::zip_names::prove_open_zip(archive).map_err(|error| error.to_string())?;
+        crate::zip_names::prove_open_zip(archive).map_err(|error| error.into_detail())?;
     if names.len() != members.len() {
-        return Err("NPZ has an unexpected member count".to_owned());
+        return Err(
+            MessageDetail::message("journal.cli.transcribe.error.writer.npz.count", []).into(),
+        );
     }
     let mut actual_names = names.clone();
     actual_names.sort_unstable();
@@ -268,7 +317,9 @@ pub(crate) fn verify_npz_against_files(
         .collect::<Vec<_>>();
     expected_names.sort_unstable();
     if actual_names != expected_names {
-        return Err("NPZ members do not match the transcript sidecar contract".to_owned());
+        return Err(
+            MessageDetail::message("journal.cli.transcribe.error.writer.npz.members", []).into(),
+        );
     }
     let mut buffer_actual = [0_u8; COPY_CHUNK];
     let mut buffer_expected = [0_u8; COPY_CHUNK];
@@ -276,12 +327,17 @@ pub(crate) fn verify_npz_against_files(
         let index = names
             .iter()
             .position(|proved| proved == name)
-            .ok_or_else(|| format!("NPZ member {name} is missing"))?;
+            .ok_or_else(|| {
+                MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.npz.missing",
+                    [("name", &(name))],
+                )
+            })?;
         let mut member = archive.by_index(index).map_err(|error| error.to_string())?;
         let mut expected = File::open(expected_path).map_err(|error| error.to_string())?;
         loop {
             if cancel() {
-                return Err("cancelled".to_owned());
+                return Err(StagedNpzError::Cancelled);
             }
             let expected_read = expected
                 .read(&mut buffer_expected)
@@ -291,7 +347,11 @@ pub(crate) fn verify_npz_against_files(
                     .read(&mut buffer_actual[..1])
                     .map_err(|error| error.to_string())?;
                 if trailing != 0 {
-                    return Err(format!("NPZ member {name} did not round-trip"));
+                    return Err(MessageDetail::message(
+                        "journal.cli.transcribe.error.writer.npz.readback",
+                        [("name", &(name))],
+                    )
+                    .into());
                 }
                 break;
             }
@@ -301,13 +361,20 @@ pub(crate) fn verify_npz_against_files(
                 .read_exact(&mut buffer_actual[..expected_read])
                 .map_err(|error| {
                     if error.kind() == std::io::ErrorKind::UnexpectedEof {
-                        format!("NPZ member {name} did not round-trip")
+                        MessageDetail::message(
+                            "journal.cli.transcribe.error.writer.npz.readback",
+                            [("name", &(name))],
+                        )
                     } else {
-                        error.to_string()
+                        error.to_string().into()
                     }
                 })?;
             if buffer_actual[..expected_read] != buffer_expected[..expected_read] {
-                return Err(format!("NPZ member {name} did not round-trip"));
+                return Err(MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.npz.readback",
+                    [("name", &(name))],
+                )
+                .into());
             }
         }
     }
@@ -319,20 +386,26 @@ pub(crate) fn verify_npz_against_files(
 /// The byte-for-byte member check happens before the copy, against the staged
 /// NPY files. This pass rejects a destination whose member names are missing,
 /// duplicated, or not the transcript sidecar set.
-pub(crate) fn verify_npz_file(path: &Path) -> Result<(), String> {
+pub(crate) fn verify_npz_file(path: &Path) -> Result<(), MessageDetail> {
     let file = File::open(path).map_err(|error| error.to_string())?;
     let archive = ZipArchive::new(file).map_err(|error| error.to_string())?;
     let (_archive, names) =
-        crate::zip_names::prove_open_zip(archive).map_err(|error| error.to_string())?;
+        crate::zip_names::prove_open_zip(archive).map_err(|error| error.into_detail())?;
     if names.len() != MEMBER_NAMES.len() {
-        return Err("NPZ has an unexpected member count".to_owned());
+        return Err(MessageDetail::message(
+            "journal.cli.transcribe.error.writer.npz.count",
+            [],
+        ));
     }
     let mut actual_names = names;
     actual_names.sort_unstable();
     let mut expected_names = MEMBER_NAMES.map(str::to_owned).to_vec();
     expected_names.sort_unstable();
     if actual_names != expected_names {
-        return Err("NPZ members do not match the transcript sidecar contract".to_owned());
+        return Err(MessageDetail::message(
+            "journal.cli.transcribe.error.writer.npz.members",
+            [],
+        ));
     }
     Ok(())
 }
@@ -376,7 +449,7 @@ mod tests {
 
         let bad = dir.path().join("bad.npz");
         std::fs::write(&bad, colliding("embeddings.npy", &members.embeddings)).unwrap();
-        let error = members.verify_at(&bad).expect_err("collision");
+        let error = members.verify_at(&bad).expect_err("collision").to_string();
         assert!(error.contains("collision") || error.contains("unproved") || !error.is_empty());
 
         let unflagged = dir.path().join("unflagged.npz");
@@ -465,6 +538,6 @@ mod tests {
         std::fs::write(&embeddings_npy, changed).unwrap();
         let error = verify_npz_against_files(&destination, &members, &|| false)
             .expect_err("a byte past the first chunk must fail");
-        assert!(error.contains("did not round-trip"), "{error}");
+        assert!(error.to_string().contains("did not round-trip"), "{error}");
     }
 }

@@ -6,6 +6,7 @@
 //! Names come from the central header, then Info-ZIP Unicode Path extras
 //! `0x7075` in order. Local-header extras are not part of this identity.
 
+use solstone_core_cli_copy::MessageDetail;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
@@ -15,26 +16,34 @@ use std::io::{self, Read, Seek, SeekFrom};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Zip2NameFailure {
     /// The archive bytes cannot be read as a zip central/local header.
-    Unreadable { detail: String },
+    Unreadable { detail: MessageDetail },
     /// Header bytes were readable, but the zip-2 name is not proved.
-    Unproved { index: usize, detail: String },
+    Unproved { index: usize, detail: MessageDetail },
     /// Two members prove to the same identity.
     Collision { name: String },
 }
 
-impl fmt::Display for Zip2NameFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Zip2NameFailure {
+    pub fn into_detail(self) -> MessageDetail {
         match self {
             Self::Unreadable { detail } => {
-                write!(formatter, "zip archive unreadable: {detail}")
+                detail.context("journal.cli.transcribe.error.writer.zip.unreadable")
             }
-            Self::Unproved { index, detail } => {
-                write!(formatter, "zip member {index} name unproved: {detail}")
-            }
-            Self::Collision { name } => {
-                write!(formatter, "zip member name collision: {name}")
-            }
+            Self::Unproved { index, detail } => detail.context_with(
+                "journal.cli.transcribe.error.writer.zip.unproved",
+                [("index", &index)],
+            ),
+            Self::Collision { name } => MessageDetail::message(
+                "journal.cli.transcribe.error.writer.zip.zip.member.name.collision.name",
+                [("name", &(name))],
+            ),
         }
+    }
+}
+
+impl fmt::Display for Zip2NameFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.clone().into_detail().fmt(formatter)
     }
 }
 
@@ -88,43 +97,53 @@ pub fn prove_zip2_directory<R: Read + Seek>(
     central_start: u64,
     entries: &[(u64, u64)],
 ) -> Result<Vec<String>, Zip2NameFailure> {
-    let unreadable = |detail: String| Zip2NameFailure::Unreadable { detail };
+    let unreadable = |detail: MessageDetail| Zip2NameFailure::Unreadable { detail };
     let file_end = reader
         .seek(SeekFrom::End(0))
-        .map_err(|error| unreadable(error.to_string()))?;
+        .map_err(|error| unreadable(error.to_string().into()))?;
     let mut remaining: std::collections::BTreeSet<u64> =
         entries.iter().map(|entry| entry.1).collect();
     if remaining.len() != entries.len() {
-        return Err(unreadable("repeated exposed central coordinate".to_owned()));
+        return Err(unreadable(MessageDetail::message(
+            "journal.cli.transcribe.error.writer.zip.repeated.exposed.central.coordinate",
+            [],
+        )));
     }
     let mut cursor = central_start;
     let mut count = 0;
     loop {
         let signature =
-            read_at(reader, cursor, 4).map_err(|error| unreadable(error.to_string()))?;
+            read_at(reader, cursor, 4).map_err(|error| unreadable(error.to_string().into()))?;
         if signature != CENTRAL_SIGNATURE {
             break;
         }
         if !remaining.remove(&cursor) {
-            return Err(unreadable(
-                "raw central member was lost from the ZIP index".to_owned(),
-            ));
+            return Err(unreadable(MessageDetail::message(
+                "journal.cli.transcribe.error.writer.zip.raw.central.member.was.lost.from.the.zip",
+                [],
+            )));
         }
         let header = read_at(reader, cursor, CENTRAL_HEADER_LEN)
-            .map_err(|error| unreadable(error.to_string()))?;
+            .map_err(|error| unreadable(error.to_string().into()))?;
         let name_len = u16::from_le_bytes([header[28], header[29]]) as u64;
         let extra_len = u16::from_le_bytes([header[30], header[31]]) as u64;
         let comment_len = u16::from_le_bytes([header[32], header[33]]) as u64;
         cursor = cursor
             .checked_add(CENTRAL_HEADER_LEN as u64 + name_len + extra_len + comment_len)
             .filter(|next| *next <= file_end)
-            .ok_or_else(|| unreadable("central record extends beyond archive".to_owned()))?;
+            .ok_or_else(|| {
+                unreadable(MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.zip.central.record.extends.beyond.archive",
+                    [],
+                ))
+            })?;
         count += 1;
     }
     if count != entries.len() || !remaining.is_empty() {
-        return Err(unreadable(
-            "raw and exposed central populations disagree".to_owned(),
-        ));
+        return Err(unreadable(MessageDetail::message(
+            "journal.cli.transcribe.error.writer.zip.raw.and.exposed.central.populations.disagree",
+            [],
+        )));
     }
     prove_zip2_names(reader, entries)
 }
@@ -162,20 +181,29 @@ fn prove_one<R: Read + Seek>(
 ) -> Result<String, Zip2NameFailure> {
     let central = read_at(reader, central_header_start, CENTRAL_HEADER_LEN).map_err(|error| {
         Zip2NameFailure::Unreadable {
-            detail: format!("central header at {central_header_start}: {error}"),
+            detail: MessageDetail::message("journal.cli.transcribe.error.writer.zip.central.header.at.central.header.start.error", [("central_header_start", &(central_header_start)), ("error", &(error))]),
         }
     })?;
     if central[0..4] != CENTRAL_SIGNATURE {
         return Err(Zip2NameFailure::Unreadable {
-            detail: format!("central signature at {central_header_start}"),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.zip.central.signature.at.central.header.start",
+                [("central_header_start", &(central_header_start))],
+            ),
         });
     }
     let local = read_at(reader, header_start, 4).map_err(|error| Zip2NameFailure::Unreadable {
-        detail: format!("local header at {header_start}: {error}"),
+        detail: MessageDetail::message(
+            "journal.cli.transcribe.error.writer.zip.local.header.at.header.start.error",
+            [("header_start", &(header_start)), ("error", &(error))],
+        ),
     })?;
     if local != LOCAL_SIGNATURE {
         return Err(Zip2NameFailure::Unreadable {
-            detail: format!("local signature at {header_start}"),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.zip.local.signature.at.header.start",
+                [("header_start", &(header_start))],
+            ),
         });
     }
     let flags = u16::from_le_bytes([central[8], central[9]]);
@@ -184,12 +212,18 @@ fn prove_one<R: Read + Seek>(
     let name_at = central_header_start + CENTRAL_HEADER_LEN as u64;
     let mut raw =
         read_at(reader, name_at, name_len).map_err(|error| Zip2NameFailure::Unreadable {
-            detail: format!("central name at {name_at}: {error}"),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.zip.central.name.at.name.at.error",
+                [("name_at", &(name_at)), ("error", &(error))],
+            ),
         })?;
     let extra_at = name_at + name_len as u64;
     let extra =
         read_at(reader, extra_at, extra_len).map_err(|error| Zip2NameFailure::Unreadable {
-            detail: format!("central extra at {extra_at}: {error}"),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.zip.central.extra.at.extra.at.error",
+                [("extra_at", &(extra_at)), ("error", &(error))],
+            ),
         })?;
     let overridden = apply_unicode_path_extras(index, &mut raw, &extra)?;
     decode_identity(
@@ -221,21 +255,30 @@ fn apply_unicode_path_extras(
         if data.len() < 5 {
             return Err(Zip2NameFailure::Unproved {
                 index,
-                detail: "unicode path extra too small".to_owned(),
+                detail: MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.zip.unicode.path.extra.too.small",
+                    [],
+                ),
             });
         }
         let claimed = u32::from_le_bytes([data[1], data[2], data[3], data[4]]);
         if claimed != crc32_ieee(raw) {
             return Err(Zip2NameFailure::Unproved {
                 index,
-                detail: "unicode path extra crc mismatch".to_owned(),
+                detail: MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.zip.unicode.path.extra.crc.mismatch",
+                    [],
+                ),
             });
         }
         let payload = &data[5..];
         if std::str::from_utf8(payload).is_err() {
             return Err(Zip2NameFailure::Unproved {
                 index,
-                detail: "unicode path extra is not utf-8".to_owned(),
+                detail: MessageDetail::message(
+                    "journal.cli.transcribe.error.writer.zip.unicode.path.extra.is.not.utf8",
+                    [],
+                ),
             });
         }
         raw.clear();
@@ -249,7 +292,10 @@ fn decode_identity(index: usize, flags: u16, raw: &[u8]) -> Result<String, Zip2N
     if flags & UTF8_FLAG != 0 {
         return String::from_utf8(raw.to_vec()).map_err(|_| Zip2NameFailure::Unproved {
             index,
-            detail: "flagged name is not utf-8".to_owned(),
+            detail: MessageDetail::message(
+                "journal.cli.transcribe.error.writer.zip.flagged.name.is.not.utf8",
+                [],
+            ),
         });
     }
     let mut name = String::new();
@@ -261,7 +307,10 @@ fn decode_identity(index: usize, flags: u16, raw: &[u8]) -> Result<String, Zip2N
             let Some(character) = char::from_u32(scalar) else {
                 return Err(Zip2NameFailure::Unproved {
                     index,
-                    detail: "cp437 scalar".to_owned(),
+                    detail: MessageDetail::message(
+                        "journal.cli.transcribe.error.writer.zip.cp437.scalar",
+                        [],
+                    ),
                 });
             };
             name.push(character);

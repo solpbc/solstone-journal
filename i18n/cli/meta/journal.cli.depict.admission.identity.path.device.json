@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission identity path device.",
+  "context": "Journal command-line text for admission identity path device.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "276cbe2353e79d2a31d6867f7123f15dfb21222b2eb62aabc839d66299597348",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    }
+  ]
+}

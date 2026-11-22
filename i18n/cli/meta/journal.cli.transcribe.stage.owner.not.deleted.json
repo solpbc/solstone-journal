@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for stage owner not deleted.",
+  "context": "Journal command-line text for stage owner not deleted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "outcome",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ca1a08eda923ec475901fbf0c40759748934e3e9c56bace8eae50e3cb8889294",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

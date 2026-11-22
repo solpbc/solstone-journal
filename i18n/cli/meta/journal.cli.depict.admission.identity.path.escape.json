@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for admission identity path escape.",
+  "context": "Journal command-line text for admission identity path escape.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "645842eaa7342de48ef615f9d2fe033471d6bbfbd8a1839a40e2835616a8d3b7",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    }
+  ]
+}

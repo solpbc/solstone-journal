@@ -1,0 +1,36 @@
+{
+  "description": "Journal command-line text for error vad contract exit stderr.",
+  "context": "Journal command-line text for error vad contract exit stderr.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "stderr",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2742745e25b01fae49e5a6c7b9a322d1eeeb2dd5700d4b4d7c4f37a3e2e8392b",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

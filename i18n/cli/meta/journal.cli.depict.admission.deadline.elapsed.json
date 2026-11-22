@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission deadline elapsed.",
+  "context": "Journal command-line text for admission deadline elapsed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bbb5a5e06dba6b4884b5e37d2a7353a83e7072e1d6fc924e2865582b87056244",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

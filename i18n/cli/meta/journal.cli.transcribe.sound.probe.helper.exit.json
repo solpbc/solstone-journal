@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sound probe helper exit.",
+  "context": "Journal command-line text for sound probe helper exit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    },
+    {
+      "name": "stderr",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "23693b170b0683a9879869e80a437840a03252a426891c0ebd10ac1cf9377887",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

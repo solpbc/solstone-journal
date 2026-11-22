@@ -1243,6 +1243,7 @@ dependencies = [
  "solstone-core-journal",
  "solstone-core-journal-io",
  "solstone-core-time",
+ "solstone-core-window-catalog",
  "whoami",
 ]
 
@@ -1297,6 +1298,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-time",
  "solstone-core-tokens",
+ "solstone-core-window-catalog",
  "tar",
  "tempfile",
  "thiserror",

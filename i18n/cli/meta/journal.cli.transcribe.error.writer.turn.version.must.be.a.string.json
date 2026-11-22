@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error writer turn version must be a string.",
+  "context": "Journal command-line text for error writer turn version must be a string.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "930a241229a311944903811aa9a5c74afd08b30edc22d70b1500c92655f5b4d2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

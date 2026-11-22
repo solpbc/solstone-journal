@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error coreml token timing must be an object.",
+  "context": "Journal command-line text for error coreml token timing must be an object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2da9de0d93d8515fe37f1552c6d298f16f99a501fd792364b5228d8d4cd67041",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

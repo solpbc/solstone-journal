@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for claim lock entry unsafe.",
+  "context": "Journal command-line text for claim lock entry unsafe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "debee30e4f209029e0667f15e8439803273b7c365da4cddaf6cd1545d851189a",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

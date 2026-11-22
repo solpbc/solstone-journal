@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for claim input changed commit.",
+  "context": "Journal command-line text for claim input changed commit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4c399934af2674941542f29dd354db71feaf57e01c3c1d12ae08c628d460db1b",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

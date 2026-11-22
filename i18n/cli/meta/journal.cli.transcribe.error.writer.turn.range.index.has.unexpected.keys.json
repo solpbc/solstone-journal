@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error writer turn range index has unexpected keys.",
+  "context": "Journal command-line text for error writer turn range index has unexpected keys.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2fd7fbfa59a945aecc2acb7da77f1bc2c6ce9891aad8618e98cd2935acce6b49",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

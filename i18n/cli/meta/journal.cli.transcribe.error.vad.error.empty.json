@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error vad error empty.",
+  "context": "Journal command-line text for error vad error empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ec1dea7ab0906ecf7b12a3d26d2731ece16c81ec564ff957728f0b55b8909e2",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

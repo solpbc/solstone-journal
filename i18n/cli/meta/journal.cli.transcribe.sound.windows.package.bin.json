@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sound windows package bin.",
+  "context": "Journal command-line text for sound windows package bin.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "54c68e01ff7d2381e1ca1acd677353eb66edc0ff4560648a0c5be5a118960d87",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

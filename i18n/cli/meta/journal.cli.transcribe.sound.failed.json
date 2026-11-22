@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sound failed.",
+  "context": "Journal command-line text for sound failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "955ac6339d75bd8f3392e5f5feb2f0e9045e2f1424996a42fcb0102bd0ea7fc7",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

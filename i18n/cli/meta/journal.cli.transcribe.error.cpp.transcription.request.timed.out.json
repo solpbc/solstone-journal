@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error cpp transcription request timed out.",
+  "context": "Journal command-line text for error cpp transcription request timed out.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf4fa0a5091b0bb8c98c3603c5777e6b2a7cf72ac235fad8cddda2512c364e8e",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

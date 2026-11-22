@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for admission identity path server.",
+  "context": "Journal command-line text for admission identity path server.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42ab0af33bcd0794db8fcef02806ca7bf5fd65789b1610362a2409b84bbb9a1c",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    },
+    {
+      "name": "unc",
+      "kind": "accepted-input",
+      "value": "UNC"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for admission identity record size.",
+  "context": "Journal command-line text for admission identity record size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "65c51ea09a8401db3c1ec7dd7925d929f922c6e98b53c7f3a57713b7ff8bd868",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

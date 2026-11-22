@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for batch failed.",
+  "context": "Journal command-line text for batch failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "failed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "67f9412b9cdf72f8bc8b9e0a3bc5a4174d0b275b71e74276ebe2030b17215f9f",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

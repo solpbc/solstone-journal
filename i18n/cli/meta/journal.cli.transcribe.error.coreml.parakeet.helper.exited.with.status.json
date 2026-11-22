@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for error coreml parakeet helper exited with status.",
+  "context": "Journal command-line text for error coreml parakeet helper exited with status.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0025febef666c5ff9c49ebc5f4e6d112ce367ca44ee72951927118b01d5b34e5",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_parakeet",
+      "kind": "accepted-input",
+      "value": "Parakeet"
+    }
+  ]
+}
