@@ -8,10 +8,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- messages is off for every agent, including agents you've already connected. if an agent has transcripts, it can still read the words spoken in a meeting. turn on messages for that agent to share written chats it has access to, including the meeting chat. an agent needs both transcripts and messages to read a conversation when your journal can't tell if it was spoken or written.
-- for troubleshooting, setting `debug.log_talent_requests` to `true` in `config/journal.json` keeps the exact request each thinking run made in that run's log, so the run can be sent again exactly as it ran. it's off by default. while it's on, run logs hold another copy of what each run read, and a busy journal can grow by tens of megabytes a day. those copies are removed with the rest of the run log, after 30 days by default. deleting or erasing the segment they came from doesn't remove them sooner, and backups keep them as long as they keep the rest of your journal.
-- on a day with written chats, the transcripts page has a switch at the top: everything, transcripts or messages. what it leaves out stays on the day, drawn faintly. a chat or AI chat you imported reads as messages: who sent each one, who it went to and when it was sent, when the chat says. a search match in a long message opens at the matching passage.
-- when you import from the solstone app for linux, you can close the window while your files are on their way to your journal.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -19,25 +15,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- in an up-to-date solstone app on a mac, windows or linux computer, signing in to ChatGPT for thinking now finishes on its own once you've signed in to ChatGPT in your browser, even when your journal runs on a different computer. there's no address to copy and paste. on a phone, you still paste the address your browser ends on.
-- an agent you've let see your photos or imported screenshots can now ask for thumbnails instead of the standard smaller copy, including in batches.
-- for an agent you've let see your photos, day summaries now include up to 50 photos per day, load faster across a date range, and list each day's photos from earliest to latest. when the agent browses photos without keywords, each day's photos appear in the same order unless that day sits at the edge of a page of results. day summaries, search results, and photo entries the agent reads include each photo's time, leaving it out when the photo is noted as placed at import time.
-- facets now have one picker for icons, emoji, or a color dot only, replacing the separate emoji and icon settings in facet appearance. the emoji tab includes a paste box that keeps joined emoji such as 🧑‍💻 whole and rejects digits or mixed text. adding a facet and adding a custom activity use the same picker. thanks @dvanduzer for the report and feedback (#427).
-- a facet's chosen icon or emoji now shows across settings, activities, entities, agents, and home. on home, facet titles and icons show on the time-in-each-facet chips, and on today's activity rows when you have more than one active facet.
-- adding a facet now includes an optional description field explaining how your journal uses it to tell facets apart. when you have more than one active facet, settings shows a note on any active facet missing a description.
-- on the transcripts page, each column under "detail" is headed by the device that added it. audio, screen, imports, pages and photos each keep one color under "day" and under "detail", and a key above them lists the kinds that day has. when you're viewing today, a line by the date says which device last added something to your journal and when, and anything new appears while the page is open. long messages and transcript lines now wrap at a comfortable reading width.
-- the sources page now links to the import page, for files and exports from other apps. the import page links to the sources page. the close button in dialogs is easier to hit, and on a phone so is a notification's. small text in notifications and the navigation labels is a little larger.
-- recordings from your Plaud sync, and earlier files from a phone journal's audio folder, no longer appear in import history or in the import list an agent can read, so history shows what you chose to import. you can still delete them from transcripts. Oura's syncs still appear in import history for now.
 - on the android and iphone development journals, the import page's Plaud row and its "sync now" button are gone; Plaud syncs every hour once you turn it on in settings.
-- an entity's all-facets page now shows its moments from every facet it's in that you haven't muted, newest first, each with the facet it came from. a moment's day and a connection's day now open that day in transcripts instead of the thinking page, and so does the day a face came from. either opens at its recording where there is one. you can sort the entities list by name, and the sort stays when you go back or reload. the detected entities table no longer has a type column, and the small buttons on entities pages are easier to press.
 
 ### Fixed
 
-- photo descriptions a connected agent reads in search and day summaries no longer carry stray spaces around punctuation.
-- if the last status update has no reliable time, health now explains why it can't tell whether your journal is caught up.
-- an entity's notes count, on its all-facets page and in the entities list, no longer includes notes in facets you've muted, and its all-facets page no longer lists those facets. a moment now shows only the day it came up, not the time your journal wrote it down. each of a person's saved voice samples now names where it came from, such as the device, instead of the recording's internal name, which shows when you hover over the device.
-- work an agent does on its own in a tmux session you've listed in `output_sessions` is now usually described as the agent's, such as "the agent in qa ran the tests", so your journal is less likely to credit it to you. thanks @dvanduzer for the report (#424).
-- search results from imported captions show the speaker's name instead of caption markup.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
@@ -74,6 +55,38 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 
 - the journal's built-in audio folder sync is gone, including its controls and scheduled sync on the android and iphone development journals. leftover audio-folder schedules are removed on startup. recordings already in your journal stay, and you can still import an audio file or an audio archive.
+
+## [2.0.88] - 2026-11-22
+
+### Added
+
+- agents have a new messages permission, and it's off for every agent, including agents you've already connected. if an agent has transcripts, it can still read the words spoken in a meeting. turn on messages for that agent to share written chats it has access to, including the meeting chat. a summary your journal made from a chat still reaches an agent you've let see summaries. an agent needs both transcripts and messages to read a conversation when your journal can't tell if it was spoken or written.
+- for troubleshooting, setting `debug.log_talent_requests` to `true` in `config/journal.json` keeps the exact request each thinking run made in that run's log, so the run can be sent again exactly as it ran. it's off by default. while it's on, run logs hold another copy of what each run read, and a busy journal can grow by tens of megabytes a day. those copies are removed with the rest of the run log, after 30 days by default. deleting or erasing the segment they came from doesn't remove them sooner, and backups keep them as long as they keep the rest of your journal. thanks @dvanduzer for the report (#425).
+- on a day with written chats, the transcripts page has a switch at the top: everything, transcripts or messages. what it leaves out stays on the day, drawn faintly. a chat or AI chat you imported reads as messages: who sent each one, who it went to and when it was sent, where the chat says so. a search match in a long message opens at the matching passage.
+- when you import from the solstone app for linux, you can close the window while your files are on their way to your journal.
+
+### Changed
+
+- in the solstone app for mac, windows or linux, once that app has the update that adds it, signing in to ChatGPT for thinking finishes on its own after you've signed in to ChatGPT in your browser, even when your journal runs on a different computer. there's no address to copy and paste. on a phone, you still paste the address your browser ends on.
+- an agent you've let see your photos or imported screenshots can now ask for thumbnails instead of the standard smaller copy, including in batches.
+- for an agent you've let see your photos, day summaries now include up to 50 photos per day, load faster across a date range, and list each day's photos from earliest to latest. day summaries, search results, and photo entries the agent reads include each photo's time, leaving it out when a photo had no time of its own and was dated by its import.
+- facets now have one picker for icons, emoji, or a color dot only, replacing the separate emoji and icon settings in facet appearance. the emoji tab includes a paste box that keeps joined emoji such as 🧑‍💻 whole and rejects digits or mixed text. adding a facet and adding a custom activity use the same picker. thanks @dvanduzer for the report and feedback (#427).
+- a facet's chosen icon or emoji now shows across settings, activities, entities, agents, and home. on home, facet titles and icons show on the time-in-each-facet chips, and on today's activity rows when you have more than one active facet.
+- adding a facet now includes an optional description field explaining how your journal uses it to tell facets apart. when you have more than one active facet, settings shows a note on any active facet missing a description.
+- on the transcripts page, each column under "detail" is headed by the device that added it. audio, screen, imports, pages and photos each keep one color under "day" and under "detail", and a key above them lists the kinds that day has. when you're viewing today, a line by the date names the device with the latest recording and its time, and anything new appears while the page is open. long messages and transcript lines now wrap at a comfortable reading width.
+- the sources page now links to the import page, for files and exports from other apps. the import page links to the sources page. the close button in dialogs is easier to hit, and on a phone so is a notification's. small text in notifications and the navigation labels is a little larger.
+- recordings from your Plaud sync, and recordings the old audio folder sync brought in, no longer appear in import history or in the import list an agent can read, so history shows what you chose to import. you can still delete them from transcripts. Oura's syncs still appear in import history for now.
+- an entity's all-facets page now shows its moments from every facet it's in that you haven't muted, newest first, each with the facet it came from. a moment's day, a connection's day and the day a face came from now open that day in transcripts instead of the thinking page; a connection's day and a face's day open at the recording where there is one. you can sort the entities list by name, and the sort stays when you go back or reload. the detected entities table no longer has a type column, and the small buttons on entities pages are easier to press.
+- `solstone journal talent list` now shows what runs on a cadence, such as pulse, in its own group instead of under unscheduled. thanks @dvanduzer for the report (#426).
+
+### Fixed
+
+- photo descriptions a connected agent reads in search and day summaries no longer carry stray spaces around punctuation.
+- if the last status update has no reliable time, health now explains why it can't tell whether your journal is caught up.
+- an entity's notes count, on its all-facets page and in the entities list, no longer includes notes in facets you've muted, and its all-facets page no longer lists those facets. a moment now shows only the day it came up, not the time your journal wrote it down. each of a person's saved voice samples now names where it came from, such as the device, instead of the recording's internal name, which shows when you hover over the device.
+- work an agent does on its own in a tmux session you've listed in `output_sessions` is now usually described as the agent's, such as "the agent in qa ran the tests", so your journal is less likely to credit it to you. thanks @dvanduzer for the report (#424).
+- search results from imported captions show the speaker's name instead of caption markup.
+- a count of one now reads in the singular across home, health, entities, import, backup and the map, and a few lines that read wrong now read right, such as a device that "last added to your journal just now."
 
 ## [2.0.87] - 2026-11-21
 
