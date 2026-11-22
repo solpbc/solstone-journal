@@ -1,0 +1,33 @@
+{
+  "description": "Heading with the calendar day of these records.",
+  "context": "Searchable body day Markdown. Heading with the calendar day of these records.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "weekday",
+      "type": "string"
+    },
+    {
+      "name": "month",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "year",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3183d2f758d881ad3a3a2d3a3abb070534393e73035a4a2b33e2af2c4b4cdf5a",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

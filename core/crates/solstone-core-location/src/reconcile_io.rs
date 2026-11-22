@@ -174,6 +174,20 @@ pub(crate) fn is_owned() -> bool {
     owner().is_some()
 }
 
+/// Preserve an installed reconciliation authority. Ordinary desktop rebuilds
+/// also bind their optional display metadata to the journal directory.
+pub(crate) fn bound_metadata<T>(
+    root: Arc<JournalRoot>,
+    work: impl FnOnce() -> io::Result<T>,
+) -> io::Result<T> {
+    let _scope = if owner().is_none() {
+        Some(Scope::install(root)?)
+    } else {
+        None
+    };
+    transaction(work)
+}
+
 pub(crate) fn checkpoint() -> io::Result<()> {
     owner().map_or(Ok(()), |owner| owner.check())
 }
@@ -223,11 +237,21 @@ pub(crate) fn read(path: &Path) -> io::Result<Vec<u8>> {
 }
 
 pub(crate) fn replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    replace_with_mode(path, bytes, None)
+}
+
+/// An unreadable receipt can still be replaced in its retained directory.
+/// Clearing it needs no access to the old contents.
+pub(crate) fn clear_receipt(path: &Path) -> io::Result<()> {
+    replace_with_mode(path, &[], Some(0o600))
+}
+
+fn replace_with_mode(path: &Path, bytes: &[u8], mode: Option<u32>) -> io::Result<()> {
     let Some(owner) = owner() else {
         return solstone_core_journal_io::atomic_replace(
             path,
             bytes,
-            solstone_core_journal_io::AtomicWriteOptions::default(),
+            solstone_core_journal_io::AtomicWriteOptions { mode },
         )
         .map_err(io::Error::other);
     };
@@ -240,11 +264,14 @@ pub(crate) fn replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
     #[cfg(unix)]
     let mode = {
         use std::os::unix::fs::PermissionsExt;
-        parent
-            .open(path)?
-            .map(|file| file.metadata().map(|m| m.permissions().mode() & 0o777))
-            .transpose()?
-            .unwrap_or(0o600)
+        match mode {
+            Some(mode) => mode,
+            None => parent
+                .open(path)?
+                .map(|file| file.metadata().map(|m| m.permissions().mode() & 0o777))
+                .transpose()?
+                .unwrap_or(0o600),
+        }
     };
     #[cfg(windows)]
     let mode = 0o600;

@@ -1,0 +1,38 @@
+{
+  "description": "Tally of sleep stages. Report the observed count, with source times and attribution where available.",
+  "context": "Searchable body day Markdown. Tally of sleep stages. Report the observed count, with source times and attribution where available.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "recorder",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5bf4b01f9e3a780923f6b53cc9c302929bb85906f426095905bb195b0c29d0a4",
+  "max_length": 471,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "quantity"
+  }
+}

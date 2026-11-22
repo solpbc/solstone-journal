@@ -1,0 +1,25 @@
+{
+  "description": "Place named by the owner, followed by geographic context.",
+  "context": "Saved daily location Markdown. Place named by the owner, followed by geographic context.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "owner_name",
+      "type": "string"
+    },
+    {
+      "name": "location",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0df41ddcdbbaff64de21d6c379a1cc78beb570083b8295634adbe05d4f0c5838",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

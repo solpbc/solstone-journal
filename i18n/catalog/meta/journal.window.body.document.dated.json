@@ -1,0 +1,25 @@
+{
+  "description": "A dated label and value as written in the source.",
+  "context": "Searchable body day Markdown. A dated label and value as written in the source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4d3630c9b3ca8101eb0dc8c82470aedb5114efc594edcd276640d1d289993fed",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "A more specific location and its wider context, in order.",
+  "context": "Saved daily location Markdown. A more specific location and its wider context, in order.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "specific",
+      "type": "string"
+    },
+    {
+      "name": "broader",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "387fc9939add074e85a4b5e0d28748fd6063dc91be8e64c853f171f0561e06c1",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -22,6 +22,11 @@ use std::path::{Path, PathBuf};
 
 use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use solstone_core_format::stored_markdown::{
+    Document, Message,
+    location_day::{Area, Copy as DayCopy, Landmarks, Location, Moment, OwnerName},
+};
 use solstone_core_journal_io::{
     HealthMarkerKind, HealthMarkerState, PathOrDay, day_dirs, iter_segments, read_health_marker,
 };
@@ -30,7 +35,7 @@ use crate::accuracy::{Packs, StopWords};
 use crate::area::{AreaName, AreaTier};
 use crate::asset::AREA_TIER_SHA256;
 use crate::day::{DayLocation, DeviceDirectory, Entry, LOCATION_FILE, LocalTime, Point, read_day};
-use crate::places::{PlaceStore, StayRecord};
+use crate::places::{Place, PlaceStore, StayRecord};
 
 /// The day's search document, under `chronicle/<day>/`.
 pub const DAY_DOCUMENT: &str = "location.md";
@@ -214,7 +219,7 @@ pub fn read_build_record(journal: &Path, day: &str) -> Option<BuildRecord> {
         .filter(|record| record.version == RECORD_VERSION)
 }
 
-fn long_name(area: &AreaName) -> Option<String> {
+fn long_name(area: &AreaName) -> Option<Area<String>> {
     let label = area.label()?;
     let mut parts: Vec<String> = Vec::new();
     let mut push = |value: &str| {
@@ -222,7 +227,7 @@ fn long_name(area: &AreaName) -> Option<String> {
             parts.push(value.to_owned());
         }
     };
-    let preposition = match &area.within {
+    let inside = match &area.within {
         Some(within) if !within.is_empty() => {
             for name in [&within.neighbourhood, &within.locality]
                 .into_iter()
@@ -230,20 +235,20 @@ fn long_name(area: &AreaName) -> Option<String> {
             {
                 push(name);
             }
-            "in"
+            true
         }
-        _ => "near",
+        _ => false,
     };
     let Some(town) = &area.town else {
-        if preposition == "in" {
+        if inside {
             for name in [&area.region, &area.country].into_iter().flatten() {
                 push(name);
             }
-            return Some(format!("in {}", parts.join(", ")));
+            return Some(Area::Inside(parts.join(", ")));
         }
-        return Some(format!("with no named town nearby ({label})"));
+        return Some(Area::NoTown(label));
     };
-    if preposition == "near" {
+    if !inside {
         let mut name = town.name.clone();
         if let Some(ascii) = &town.ascii_name {
             name.push_str(&format!(" ({ascii})"));
@@ -254,7 +259,11 @@ fn long_name(area: &AreaName) -> Option<String> {
         push(region);
     }
     push(&town.country);
-    Some(format!("{preposition} {}", parts.join(", ")))
+    Some(if inside {
+        Area::Inside(parts.join(", "))
+    } else {
+        Area::Near(parts.join(", "))
+    })
 }
 
 /// A category as words: `coffee_shop` reads "coffee shop".
@@ -262,69 +271,77 @@ pub fn category_words(category: &str) -> String {
     category.replace('_', " ")
 }
 
-fn listed(names: &[String]) -> String {
-    match names {
-        [] => String::new(),
-        [one] => one.clone(),
-        [first, second] => format!("{first} and {second}"),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
-    }
-}
-
-fn place_words(place: &StopWords) -> String {
-    let mut words = String::new();
-    if let Some(at) = &place.at {
-        words.push_str(&format!("at {}", at.name));
-        if let Some(inside) = &at.inside {
-            words.push_str(&format!(" in {inside}"));
-        }
-    }
-    if !place.near.is_empty() {
-        if !words.is_empty() {
-            words.push_str("; ");
-        }
-        let names: Vec<String> = place
+fn landmarks(place: &StopWords) -> Landmarks<String> {
+    Landmarks {
+        at: place
+            .at
+            .as_ref()
+            .map(|at| (at.name.clone(), at.inside.clone())),
+        near: place
             .near
             .iter()
-            .map(|near| match near.category.as_str() {
-                "" => near.name.clone(),
-                category => format!("{} ({})", near.name, category_words(category)),
+            .map(|near| {
+                if near.category.is_empty() {
+                    near.name.clone()
+                } else {
+                    format!("{} ({})", near.name, category_words(&near.category))
+                }
             })
-            .collect();
-        words.push_str(&format!("near {}", listed(&names)));
+            .collect(),
     }
-    words
 }
 
-fn moment(time: &LocalTime, day: &str) -> String {
+fn moment(time: &LocalTime, day: &str) -> Moment<String> {
     let local_day = time.day();
-    if local_day == day {
-        return time.clock();
-    }
-    match solstone_core_time::parse_day(&local_day) {
-        Some(date) => format!("{} at {}", date.strftime("%B %-d"), time.clock()),
-        None => time.clock(),
+    let month_day = (local_day != day)
+        .then(|| solstone_core_time::parse_day(&local_day))
+        .flatten()
+        .map(|date| (date.month(), date.day()));
+    Moment {
+        month_day,
+        clock: time.clock(),
     }
 }
 
-/// What the owner calls the place a stay or visit belongs to, if anything.
-fn owner_words(store: &PlaceStore, point: &Point) -> Option<String> {
-    let margin = crate::accuracy::margin_m(point.accuracy_m)?;
-    let place = store.place_for(point.latitude, point.longitude, margin)?;
-    place
-        .owner_name()
-        .map(|name| format!("at {name} (a place you named)"))
+/// Only these names can change provenance without changing their English
+/// bytes. Hidden places have no display dependency.
+fn ambiguous_place_key(place: &Place) -> Option<String> {
+    if place.hidden || place.dormant {
+        return None;
+    }
+    match (place.name.as_deref(), place.alias) {
+        (Some("home" | "work"), _) | (None, Some(_)) => {
+            Some(format!("{:x}", Sha256::digest(place.id.as_bytes())))
+        }
+        _ => None,
+    }
 }
 
-fn naming(area: &AreaName, place: Option<&StopWords>, owner: Option<String>) -> Option<String> {
-    let mut name = long_name(area)?;
-    if let Some(place) = place {
-        name = format!("{}; {name}", place_words(place));
-    }
-    if let Some(owner) = owner {
-        name = format!("{owner}; {name}");
-    }
-    Some(name)
+/// Only called after the hidden-place check. Coordinates stay inside the
+/// lookup; the Markdown and its display receipt retain only the visible name.
+fn naming(
+    area: &AreaName,
+    place: Option<&StopWords>,
+    store: &PlaceStore,
+    point: &Point,
+) -> Option<Location<String>> {
+    let area = long_name(area)?;
+    let owner_place = crate::accuracy::margin_m(point.accuracy_m)
+        .and_then(|margin| store.place_for(point.latitude, point.longitude, margin));
+    let owner_name = owner_place.and_then(|place| {
+        place.name.clone().map(OwnerName::Literal).or_else(|| {
+            place.alias.map(|alias| match alias {
+                crate::places::Alias::Home => OwnerName::Home,
+                crate::places::Alias::Work => OwnerName::Work,
+            })
+        })
+    });
+    Some(Location {
+        area,
+        landmarks: place.map(landmarks),
+        owner_name,
+        place_key: owner_place.and_then(ambiguous_place_key),
+    })
 }
 
 /// How much of an entry lies within reach of a place the owner hid.
@@ -362,17 +379,28 @@ pub(crate) fn hidden_reach(store: &PlaceStore, entry: &Entry) -> Reach {
 /// is written: a stay or visit there is left out, a run of readings all there
 /// is left out, and a run partly there keeps its times without its area.
 pub fn render_day_document(day: &DayLocation, store: &PlaceStore) -> String {
-    let heading = solstone_core_time::parse_day(&day.day)
-        .map(|date| date.strftime("%A, %B %-d, %Y").to_string())
-        .unwrap_or_else(|| day.day.clone());
-    let mut text = format!("# location on {heading}\n\n");
-    let mut lines = 0;
+    render_day_display_document(day, store).to_string()
+}
+
+pub(crate) fn render_day_display_document(day: &DayLocation, store: &PlaceStore) -> Document {
+    let heading = match solstone_core_time::parse_day(&day.day) {
+        Some(date) => DayCopy::Heading { date },
+        None => DayCopy::HeadingLiteral {
+            day: day.day.clone(),
+        },
+    };
+    let mut document = Document::plain("# ".to_owned());
+    document.push_message(Message::LocationDay {
+        copy: Box::new(heading),
+    });
+    document.push_str("\n\n");
+    let mut has_lines = false;
     for entry in &day.entries {
         let reach = hidden_reach(store, entry);
         if reach == Reach::Whole {
             continue;
         }
-        match entry {
+        let line = match entry {
             Entry::Readings {
                 device,
                 area,
@@ -382,34 +410,20 @@ pub fn render_day_document(day: &DayLocation, store: &PlaceStore) -> String {
                 points,
                 ..
             } => {
-                let Some(name) = long_name(area) else {
+                let Some(area) = long_name(area) else {
                     continue;
                 };
-                let name = if reach == Reach::Part {
-                    String::new()
-                } else {
-                    format!(" {name}")
-                };
-                let when = if first.utc == last.utc {
-                    format!("at {}", moment(first, &day.day))
-                } else {
-                    format!("{} to {}", moment(first, &day.day), moment(last, &day.day))
-                };
-                let approximate = matches!(
-                    precision,
-                    crate::record::Precision::Approximate | crate::record::Precision::Reduced
-                );
-                let count = match (points.len(), approximate) {
-                    (1, false) => "1 reading".to_owned(),
-                    (1, true) => "1 approximate reading".to_owned(),
-                    (count, false) => format!("{count} readings"),
-                    (count, true) => format!("{count} approximate readings"),
-                };
-                text.push_str(&format!(
-                    "- readings{name}, {when}: {count} from {}.\n",
-                    day.device_phrase(*device)
-                ));
-                lines += 1;
+                DayCopy::Readings {
+                    area: (reach == Reach::Clear).then_some(area),
+                    first: moment(first, &day.day),
+                    last: (first.utc != last.utc).then(|| moment(last, &day.day)),
+                    approximate: matches!(
+                        precision,
+                        crate::record::Precision::Approximate | crate::record::Precision::Reduced
+                    ),
+                    count: points.len(),
+                    device: day.display_device(*device),
+                }
             }
             Entry::Visit {
                 device,
@@ -420,22 +434,15 @@ pub fn render_day_document(day: &DayLocation, store: &PlaceStore) -> String {
                 point,
                 ..
             } => {
-                let Some(name) = naming(area, place.as_ref(), owner_words(store, point)) else {
+                let Some(location) = naming(area, place.as_ref(), store, point) else {
                     continue;
                 };
-                let arrived = arrival.as_ref().map_or_else(
-                    || "arrival not known".to_owned(),
-                    |time| format!("arrived {}", moment(time, &day.day)),
-                );
-                let left = departure.as_ref().map_or_else(
-                    || "no departure reported".to_owned(),
-                    |time| format!("left {}", moment(time, &day.day)),
-                );
-                text.push_str(&format!(
-                    "- a visit {} reported {name}: {arrived}, {left}.\n",
-                    day.device_phrase(*device)
-                ));
-                lines += 1;
+                DayCopy::Visit {
+                    location,
+                    device: day.display_device(*device),
+                    arrival: arrival.as_ref().map(|t| moment(t, &day.day)),
+                    departure: departure.as_ref().map(|t| moment(t, &day.day)),
+                }
             }
             Entry::Stay {
                 device,
@@ -447,24 +454,34 @@ pub fn render_day_document(day: &DayLocation, store: &PlaceStore) -> String {
                 point,
                 ..
             } => {
-                let Some(name) = naming(area, place.as_ref(), owner_words(store, point)) else {
+                let Some(location) = naming(area, place.as_ref(), store, point) else {
                     continue;
                 };
-                text.push_str(&format!(
-                    "- a stay your journal worked out from {count} readings from {} {name}: first reading {}, last {}.\n",
-                    day.device_phrase(*device),
-                    moment(first, &day.day),
-                    moment(last, &day.day)
-                ));
-                lines += 1;
+                DayCopy::Stay {
+                    location,
+                    device: day.display_device(*device),
+                    first: moment(first, &day.day),
+                    last: moment(last, &day.day),
+                    count: *count,
+                }
             }
-            Entry::Unreadable { .. } => {}
-        }
+            Entry::Unreadable { .. } => continue,
+        };
+        document.push_str("- ");
+        document.push_message(Message::LocationDay {
+            copy: Box::new(line),
+        });
+        document.push_str("\n");
+        has_lines = true;
     }
-    if lines == 0 {
-        text.push_str("- location was kept, but no reading could be named.\n");
+    if !has_lines {
+        document.push_str("- ");
+        document.push_message(Message::LocationDay {
+            copy: Box::new(DayCopy::Empty),
+        });
+        document.push_str("\n");
     }
-    text
+    document
 }
 
 fn write_file(path: &Path, bytes: &[u8]) -> Result<(), ProjectionError> {
@@ -527,7 +544,11 @@ fn rebuild_day_inner(
     let document = document_path(journal, day);
     let record = record_path(journal, day);
     if view.is_empty() {
-        let had_document = remove(&document)?;
+        let had_document = crate::day_display::publish(journal, &document, None, || Ok(()))
+            .map_err(|error| ProjectionError::Write {
+                path: document.clone(),
+                detail: error.to_string(),
+            })?;
         let had_record = remove(&record)?;
         if had_document {
             forget_document(journal, day)?;
@@ -538,7 +559,7 @@ fn rebuild_day_inner(
             Rebuilt::Nothing
         });
     }
-    let text = render_day_document(&view, store);
+    let text = render_day_display_document(&view, store);
     let built = BuildRecord {
         version: RECORD_VERSION,
         source,
@@ -553,15 +574,18 @@ fn rebuild_day_inner(
         stays: stay_records(&view),
         names: store.names_fingerprint(),
     };
-    let unchanged = fs::read(&document).is_ok_and(|existing| existing == text.as_bytes());
-    if !unchanged {
+    let changed = crate::day_display::publish(journal, &document, Some(&text), || {
         // A restored current record must not hide an owed hint if rebuilding
         // its missing/corrupt document succeeds but hint publication refuses.
         if read_build_record(journal, day).as_ref() == Some(&built) {
-            remove(&record)?;
+            crate::reconcile_io::remove(&record)?;
         }
-        write_file(&document, text.as_bytes())?;
-    }
+        Ok(())
+    })
+    .map_err(|error| ProjectionError::Write {
+        path: document.clone(),
+        detail: error.to_string(),
+    })?;
     // A current record certifies both the document and its index hint. If hint
     // publication refuses, leave the old record so reconciliation retries.
     index_document(journal, &document)?;
@@ -570,7 +594,7 @@ fn rebuild_day_inner(
         bytes.push(b'\n');
         write_file(&record, &bytes)?;
     }
-    if unchanged {
+    if !changed {
         return Ok(Rebuilt::Unchanged);
     }
     Ok(Rebuilt::Written)
@@ -600,6 +624,8 @@ pub struct Reconciler {
     packs: String,
     /// The owner's place names the seen days were checked against.
     names: String,
+    /// Whether each potentially ambiguous name came from the literal name field.
+    literal_names: HashMap<String, bool>,
     /// Whether places have been worked out since this process started.
     places_current: bool,
     /// What the trash held when places were last worked out.
@@ -636,12 +662,18 @@ impl Reconciler {
             }
         };
         let names = store.names_fingerprint();
-        if identity != self.packs || names != self.names {
+        let literal_names = store
+            .places
+            .iter()
+            .filter_map(|place| Some((ambiguous_place_key(place)?, place.name.is_some())))
+            .collect();
+        if identity != self.packs || names != self.names || self.literal_names != literal_names {
             // Downloading or removing the packs, or renaming a place,
             // rewrites each day once.
             self.seen.clear();
             self.packs.clone_from(&identity);
             self.names.clone_from(&names);
+            self.literal_names = literal_names;
         }
         let mut days: Vec<String> = day_dirs(journal)
             .map(|days| days.into_keys().collect())
@@ -661,7 +693,15 @@ impl Reconciler {
                     && record.names == names
                     && record.document == DOCUMENT_VERSION
             });
-            if current && document_path(journal, &day).is_file() {
+            let path = document_path(journal, &day);
+            if current
+                && path.is_file()
+                && solstone_core_format::stored_markdown::location_day::name_origins_current(
+                    journal,
+                    &path,
+                    &self.literal_names,
+                )
+            {
                 self.seen.insert(day, token);
                 continue;
             }
@@ -1047,6 +1087,35 @@ mod tests {
             "{text}"
         );
         assert_eq!(pass().written, 0);
+        // An owner can type the alias verbatim. It is then literal in every
+        // locale even though the indexed Markdown and build token stay equal.
+        PlaceStore::update(root.path(), |store| {
+            store.places[0].name = None;
+            store.places[0].alias = Some(crate::places::Alias::Home);
+        })
+        .unwrap();
+        assert_eq!(pass().written, 2);
+        let path = document_path(root.path(), "20261002");
+        let receipt =
+            solstone_core_format::stored_markdown::day_projection_receipt(root.path(), &path)
+                .unwrap();
+        let before = fs::read(&receipt).unwrap();
+        let markdown = fs::read(&path).unwrap();
+        let build = fs::read(record_path(root.path(), "20261002")).unwrap();
+        PlaceStore::update(root.path(), |store| {
+            store.places[0].name = Some("home".into());
+        })
+        .unwrap();
+        assert_eq!(pass().written, 0);
+        let after = fs::read(&receipt).unwrap();
+        assert_ne!(before, after);
+        assert_eq!(fs::read(path).unwrap(), markdown);
+        assert_eq!(
+            fs::read(record_path(root.path(), "20261002")).unwrap(),
+            build
+        );
+        assert_eq!(pass().written, 0);
+        assert_eq!(fs::read(receipt).unwrap(), after);
         // Deleting both days' segments takes the place, and its name, away.
         for day in ["20261001", "20261002"] {
             fs::remove_dir_all(

@@ -1,0 +1,21 @@
+{
+  "description": "A single instant in a run of readings.",
+  "context": "Saved daily location Markdown. A single instant in a run of readings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6b44d73f4a637937f42eab5d712570ad16f61a6341e560bbf4a9b742e891bd74",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "description": "A stay derived from at least three readings.",
+  "context": "Saved daily location Markdown. A stay derived from at least three readings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "location",
+      "type": "string"
+    },
+    {
+      "name": "first",
+      "type": "string"
+    },
+    {
+      "name": "last",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fb7dcc616436f62be20cf1fafd93804bd5a298bb698c9088baaddf7e69f77c50",
+  "max_length": 387,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

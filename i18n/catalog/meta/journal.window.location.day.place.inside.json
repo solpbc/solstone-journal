@@ -1,0 +1,25 @@
+{
+  "description": "Named place within another named place.",
+  "context": "Saved daily location Markdown. Named place within another named place.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "place",
+      "type": "string"
+    },
+    {
+      "name": "inside",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "94f70563c045b249ce3f30a90b85a6735ec18215e8efe1f86ec976b976a239ed",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

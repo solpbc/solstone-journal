@@ -1,0 +1,42 @@
+{
+  "description": "Tally of logged entries. Report the observed count, with source times and attribution where available.",
+  "context": "Searchable body day Markdown. Tally of logged entries. Report the observed count, with source times and attribution where available.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "start",
+      "type": "string"
+    },
+    {
+      "name": "end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a4256b1943f68af80c9c919fe8e9f5b35652fb065c00f3ff723e2948acfe29cf",
+  "max_length": 432,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "quantity"
+  }
+}

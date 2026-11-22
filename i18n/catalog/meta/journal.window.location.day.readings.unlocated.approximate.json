@@ -1,0 +1,38 @@
+{
+  "description": "Recorded readings, time, count and reporting device.",
+  "context": "Saved daily location Markdown. Recorded readings, time, count and reporting device.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "when",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "95a1d56fa1afbb7a16362e5d121ab1d16b2c89f691791df6b9aad0e8b220c06d",
+  "max_length": 537,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "quantity"
+  }
+}

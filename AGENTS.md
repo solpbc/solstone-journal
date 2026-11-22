@@ -492,6 +492,8 @@ Use the window catalog for device ingest notices and for journal-written labels 
 
 Use the window catalog for labels the journal adds to a briefing, Pulse, a Story or a weekly reflection. Keep model text and quotations as received. For a clipped Markdown result, mark only the notice the writer appended. In Thinking, show localized Markdown in the document view and the saved content under “stored text.”
 
+Keep the saved text of location.md and body.md available to prompts and exports. When showing a day document to its owner, render the journal’s headings, counts and attributions from the window catalog if the display metadata matches the saved text. Preserve the words the owner, device or imported source supplied.
+
 ### Journal command-line strings
 
 Put command-line help, progress and human-readable errors in

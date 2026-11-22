@@ -1,0 +1,38 @@
+{
+  "description": "Tally of count intervals. Report the observed count, with source times and attribution where available.",
+  "context": "Searchable body day Markdown. Tally of count intervals. Report the observed count, with source times and attribution where available.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "start",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dee984f2be498fac8d3bcfc5e68902743b0c40b5b13eda2b005f7f9c56f0aef7",
+  "max_length": 375,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "quantity"
+  }
+}

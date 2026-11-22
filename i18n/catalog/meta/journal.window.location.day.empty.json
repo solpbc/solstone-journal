@@ -1,0 +1,16 @@
+{
+  "description": "Empty day with retained location data.",
+  "context": "Saved daily location Markdown. Empty day with retained location data.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2b61c673dea2a0c7b887f52988afd5c342dc58a05392532eee628116a9febbf",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

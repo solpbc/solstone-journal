@@ -1,0 +1,37 @@
+{
+  "description": "An experience that began on this day. Its label, source times, recorder and any words come from the record.",
+  "context": "Searchable body day Markdown. An experience that began on this day. Its label, source times, recorder and any words come from the record.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "start",
+      "type": "string"
+    },
+    {
+      "name": "end",
+      "type": "string"
+    },
+    {
+      "name": "recorder",
+      "type": "string"
+    },
+    {
+      "name": "words",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "307b388e883cfaa4326c618c64fb0e2105a89fe02842ed94317732935fa6f851",
+  "max_length": 219,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -20,7 +20,11 @@ use serde::{Deserialize, Serialize};
 use solstone_core_format::content::body_hidden_days::{HiddenDays, RowDays, read_hidden_days};
 use solstone_core_format::content::body_records::{
     BODY_RECORD_STREAMS, BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, one_copy_per_row,
-    parse_source_time, source_label, user_entered,
+    parse_source_time, source_words, user_entered,
+};
+use solstone_core_format::stored_markdown::{
+    Document, Message,
+    body_day::{Copy, TallyKind},
 };
 use solstone_core_journal_io::{HealthMarkerKind, day_dirs};
 
@@ -179,7 +183,7 @@ fn time_of(text: Option<&str>) -> Option<ZonedDateTime> {
     parse_source_time(text?)
 }
 
-fn span_words(row: &BodyRow, day: &str, zone: Option<&TimeZone>) -> String {
+fn span_times(row: &BodyRow, day: &str, zone: Option<&TimeZone>) -> (String, String) {
     let word = |text: Option<&str>| match time_of(text).map(|time| on_clock(&time, zone)) {
         Some(time) if solstone_core_time::day_key(time.date()) == day => {
             time.strftime("%H:%M").to_string()
@@ -187,11 +191,7 @@ fn span_words(row: &BodyRow, day: &str, zone: Option<&TimeZone>) -> String {
         Some(time) => time.strftime("%Y-%m-%d %H:%M").to_string(),
         None => String::new(),
     };
-    format!(
-        "{} to {}",
-        word(row.start.as_deref()),
-        word(row.end.as_deref())
-    )
+    (word(row.start.as_deref()), word(row.end.as_deref()))
 }
 
 #[derive(Default)]
@@ -214,108 +214,107 @@ impl Tally {
         }
     }
 
-    fn words(&self, zone: Option<&TimeZone>) -> String {
-        match (&self.first, &self.last) {
-            (Some(first), Some(last)) if first != last => {
-                format!(
-                    "{}, {} to {}",
-                    self.count,
-                    clock(first, zone),
-                    clock(last, zone)
-                )
-            }
-            (Some(first), _) => format!("{}, {}", self.count, clock(first, zone)),
-            _ => self.count.to_string(),
-        }
+    fn times(&self, zone: Option<&TimeZone>) -> (Option<String>, Option<String>) {
+        let start = self.first.as_ref().map(|time| clock(time, zone));
+        let end = self
+            .last
+            .as_ref()
+            .filter(|time| Some(*time) != self.first.as_ref())
+            .map(|time| clock(time, zone));
+        (start, end)
     }
 }
 
-/// Names as a person lists them, "a, b and c", in an order that doesn't
-/// depend on case.
-fn plain_list(names: BTreeSet<String>) -> String {
-    let mut names: Vec<String> = names.into_iter().collect();
-    names.sort_by_cached_key(|name| (name.to_lowercase(), name.clone()));
-    match names.split_last() {
-        Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
-        _ => names.concat(),
-    }
-}
-
-fn by_words(row: &BodyRow) -> String {
-    row.by
-        .as_deref()
-        .map(|by| format!(" ({by})"))
-        .unwrap_or_default()
+fn line(document: &mut Document, prefix: &str, copy: Copy) {
+    document.push_str(prefix);
+    document.push_message(Message::BodyDay { copy });
+    document.push_str("\n");
 }
 
 /// A source's rows for one day. The same rows make the same bytes, in any order.
 fn render_source(
-    lines: &mut Vec<String>,
+    document: &mut Document,
     source: &str,
     rows: &[BodyRow],
     day: &str,
     zone: Option<&TimeZone>,
 ) {
-    lines.push(format!("## {}", source_label(source)));
-    lines.push(String::new());
+    line(
+        document,
+        "## ",
+        Copy::Source {
+            source: source_words(source).to_owned(),
+        },
+    );
+    document.push_str("\n");
     let starts_today: BTreeSet<&str> = rows
         .iter()
         .filter(|row| row.kind == RowKind::Experience)
         .map(|row| row.id.as_str())
         .collect();
     let mut experiences = Vec::new();
-    let mut continuing = BTreeSet::new();
+    let mut continuing = BTreeMap::new();
     // Logged entries sort under who recorded them, and say the owner entered one
     // only where the source says so.
     let mut tallies: BTreeMap<(u8, String, String, bool), Tally> = BTreeMap::new();
     let mut dated = Vec::new();
     let mut documents = BTreeSet::new();
+    let mut document_count = 0;
     let mut words = BTreeSet::new();
     let mut owners = BTreeSet::new();
     for row in rows {
         match row.kind {
-            RowKind::Experience => {
-                let kind = row.experience.as_deref().unwrap_or("experience");
-                let mut line = format!(
-                    "- {kind}: {}, {}{}",
-                    row.label,
-                    span_words(row, day, zone),
-                    by_words(row)
-                );
-                if !row.words.is_empty() {
-                    line.push_str(&format!(": {}", row.words.join(", ")));
-                }
-                let begins = time_of(row.begins()).map(|time| time.timestamp().as_millisecond());
-                experiences.push((begins, row.id.clone(), line));
-            }
-            RowKind::ExperienceTile => {
+            RowKind::Experience | RowKind::ExperienceTile => {
+                let tile = row.kind == RowKind::ExperienceTile;
                 let of = row.of.as_deref().unwrap_or_default();
-                if !starts_today.contains(of) {
-                    let kind = row.experience.as_deref().unwrap_or("experience");
-                    continuing.insert((
-                        of.to_owned(),
-                        format!(
-                            "- {kind} continuing: {}, {}{}",
-                            row.label,
-                            span_words(row, day, zone),
-                            by_words(row)
-                        ),
-                    ));
+                if tile && starts_today.contains(of) {
+                    continue;
+                }
+                let (start, end) = span_times(row, day, zone);
+                let copy = Copy::Experience {
+                    continuing: tile,
+                    experience: row.experience.clone(),
+                    name: row.label.clone(),
+                    start,
+                    end,
+                    recorder: row.by.clone(),
+                    words: (!tile && !row.words.is_empty()).then(|| row.words.join(", ")),
+                };
+                let english = copy.render("en-US");
+                if tile {
+                    // A repeated tile may supply the same words as a fallback.
+                    // Only mark their one displayed line when the sources agree.
+                    continuing
+                        .entry((of.to_owned(), english))
+                        .and_modify(|previous: &mut Option<Copy>| {
+                            if previous.as_ref() != Some(&copy) {
+                                *previous = None;
+                            }
+                        })
+                        .or_insert(Some(copy));
+                } else {
+                    let begins =
+                        time_of(row.begins()).map(|time| time.timestamp().as_millisecond());
+                    experiences.push(((begins, row.id.clone(), english), copy));
                 }
             }
             // A dated row with a value says it. One without, such as Oura's daily
             // documents, is named only: what it holds stays for an agent to read.
             RowKind::Dated => match row.value.as_deref() {
-                Some(value) => dated.push(format!("- for this date: {} {value}", row.label)),
+                Some(value) => dated.push(Copy::Dated {
+                    name: row.label.clone(),
+                    value: value.to_owned(),
+                }),
                 None => {
                     documents.insert(row.label.clone());
+                    document_count += 1;
                 }
             },
             RowKind::Event | RowKind::Moved => {}
             RowKind::Stage | RowKind::Reading | RowKind::Count | RowKind::Logged => {
                 let by = row.by.clone().unwrap_or_default();
                 let key = match row.kind {
-                    RowKind::Stage => (0, format!("sleep stage {}", row.label), by, false),
+                    RowKind::Stage => (0, row.label.clone(), by, false),
                     RowKind::Reading => (1, row.label.clone(), by, false),
                     RowKind::Count => (2, row.label.clone(), by, false),
                     _ => (3, by, row.label.clone(), user_entered(row)),
@@ -335,65 +334,91 @@ fn render_source(
             }
         }
     }
-    experiences.sort();
-    lines.extend(experiences.into_iter().map(|(_, _, line)| line));
-    lines.extend(continuing.into_iter().map(|(_, line)| line));
-    if !documents.is_empty() {
-        dated.push(format!(
-            "- {}'s daily documents for this date: {}",
-            solstone_core_format::content::body_records::source_words(source),
-            plain_list(documents)
-        ));
+    experiences.sort_by(|(left, _), (right, _)| left.cmp(right));
+    for (_, copy) in experiences {
+        line(document, "- ", copy);
     }
-    dated.sort();
-    lines.extend(dated);
-    for ((order, first, second, entered), tally) in &tallies {
-        if *order == 3 {
-            let (by, name) = (first, second);
-            let who = match (*entered, by.is_empty()) {
-                (true, true) => " (entered by the owner)".to_owned(),
-                (true, false) => format!(" (entered by the owner in {by})"),
-                (false, true) => String::new(),
-                (false, false) => format!(" (recorded by {by})"),
-            };
-            lines.push(format!("- {name}: entries {}{who}", tally.words(zone)));
-            continue;
-        }
-        let (name, by) = (first, second);
-        let noun = if *order == 1 { "readings" } else { "intervals" };
-        let by = if by.is_empty() {
-            String::new()
+    for ((_, english), agreed) in continuing {
+        if let Some(copy) = agreed {
+            line(document, "- ", copy);
         } else {
-            format!(" ({by})")
+            document.push_str("- ");
+            document.push_str(&english);
+            document.push_str("\n");
+        }
+    }
+    let mut names: Vec<_> = documents.into_iter().collect();
+    names.sort_by_cached_key(|name| (name.to_lowercase(), name.clone()));
+    if let Some(last) = names.pop() {
+        dated.push(Copy::Documents {
+            count: document_count,
+            source: source_words(source).to_owned(),
+            leading: (!names.is_empty()).then(|| names.join(", ")),
+            last,
+        });
+    }
+    dated.sort_by_cached_key(|copy| copy.render("en-US"));
+    for copy in dated {
+        line(document, "- ", copy);
+    }
+    for ((order, first, second, entered), tally) in &tallies {
+        let (section, name, by) = match order {
+            0 => (TallyKind::Stage, first, second),
+            1 => (TallyKind::Reading, first, second),
+            2 => (TallyKind::Count, first, second),
+            _ => (TallyKind::Logged, second, first),
         };
-        lines.push(format!("- {name}: {noun} {}{by}", tally.words(zone)));
+        let (start, end) = tally.times(zone);
+        line(
+            document,
+            "- ",
+            Copy::Tally {
+                section,
+                count: tally.count,
+                name: name.clone(),
+                start,
+                end,
+                recorder: (!by.is_empty()).then(|| by.clone()),
+                entered: *entered,
+            },
+        );
     }
-    if !words.is_empty() {
-        let words = words.into_iter().collect::<Vec<_>>().join(", ");
-        lines.push(format!("- in the source's words: {words}"));
+    for (owner, terms) in [(false, words), (true, owners)] {
+        if !terms.is_empty() {
+            line(
+                document,
+                "- ",
+                Copy::Words {
+                    owner,
+                    words: terms.into_iter().collect::<Vec<_>>().join(", "),
+                },
+            );
+        }
     }
-    if !owners.is_empty() {
-        let words = owners.into_iter().collect::<Vec<_>>().join(", ");
-        lines.push(format!("- in the owner's words: {words}"));
-    }
-    lines.push(String::new());
 }
 
-fn render_document(journal: &Path, day: &str, rows: &BTreeMap<String, Vec<BodyRow>>) -> String {
+pub(crate) fn render_display_document(
+    journal: &Path,
+    day: &str,
+    rows: &BTreeMap<String, Vec<BodyRow>>,
+) -> Document {
+    let mut document = Document::default();
     let heading = solstone_core_time::parse_day(day).map_or_else(
-        || day.to_owned(),
-        |date| date.strftime("%A, %B %-d, %Y").to_string(),
+        || Copy::RawDay {
+            day: day.to_owned(),
+        },
+        |date| Copy::Heading { date },
     );
-    let mut lines = vec![format!("# body on {heading}"), String::new()];
+    line(&mut document, "# ", heading);
     for (source, rows) in rows {
+        document.push_str("\n");
         let zone = solstone_core_journal_config::placed_zone(journal, source);
-        render_source(&mut lines, source, rows, day, zone.as_ref());
+        render_source(&mut document, source, rows, day, zone.as_ref());
     }
-    let mut text = lines.join("\n");
-    while text.ends_with("\n\n") {
-        text.pop();
+    while document.ends_with("\n\n") {
+        document.truncate(document.len() - 1);
     }
-    text
+    document
 }
 
 fn rebuild_day(
@@ -412,7 +437,8 @@ fn rebuild_day(
         detail: error.to_string(),
     };
     if rows.is_empty() {
-        let had = crate::reconcile_io::remove(&document).map_err(|e| write_error(&document, e))?;
+        let had = crate::day_display::publish(journal, &document, None, || Ok(()))
+            .map_err(|e| write_error(&document, e))?;
         if hidden.contains(day) {
             // A hidden day is current with no document: its record says so.
             write_record(&record, source).map_err(|e| write_error(&record, e))?;
@@ -430,12 +456,9 @@ fn rebuild_day(
         }
         return Ok(());
     }
-    let text = render_document(journal, day, &rows);
-    let unchanged = fs::read(&document).is_ok_and(|existing| existing == text.as_bytes());
-    if !unchanged {
-        crate::reconcile_io::replace(&document, text.as_bytes())
-            .map_err(|e| write_error(&document, e))?;
-    }
+    let text = render_display_document(journal, day, &rows);
+    crate::day_display::publish(journal, &document, Some(&text), || Ok(()))
+        .map_err(|e| write_error(&document, e))?;
     // A current record certifies the document and its index hint alike.
     crate::reconcile_io::enqueue(journal, &document).map_err(|error| ProjectionError::Index {
         path: document.clone(),
@@ -696,11 +719,11 @@ mod tests {
         days.reconcile(root);
         let text = document(root, "20261010").unwrap();
         assert!(
-            text.contains("- handwashing event: entries 1, 08:00 (recorded by Synthetic Watch)"),
+            text.contains("- handwashing event: 1 entry, 08:00 (recorded by Synthetic Watch)"),
             "{text}"
         );
         assert!(
-            text.contains("- dietary water: entries 1, 09:00 (entered by the owner in Health)"),
+            text.contains("- dietary water: 1 entry, 09:00 (entered by the owner in Health)"),
             "{text}"
         );
         assert_eq!(text.matches("the owner").count(), 1, "{text}");
@@ -742,7 +765,7 @@ mod tests {
         assert!(
             document(root, "20261010")
                 .unwrap()
-                .contains("readings 1, 12:01")
+                .contains("1 reading, 12:01")
         );
 
         fs::remove_dir_all(&second).unwrap();

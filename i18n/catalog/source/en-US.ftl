@@ -20860,3 +20860,239 @@ journal.window.settings.plaud.response.attempt.expired = that sign-in attempt ti
 journal.window.settings.plaud.response.signin.unavailable = couldn't start { $provider } sign-in right now. check your internet connection and try again.
 
 journal.window.settings.plaud.response.signin.denied = { $provider } didn't approve sign-in. try again.
+
+journal.window.body.document.dated = for this date: { $name } { $value }
+
+journal.window.body.document.dated.list = { $quantity ->
+    [one] { $source }'s daily document for this date: { $leading } and { $last }
+   *[other] { $source }'s daily documents for this date: { $leading } and { $last }
+}
+
+journal.window.body.document.dated.one = { $quantity ->
+    [one] { $source }'s daily document for this date: { $last }
+   *[other] { $source }'s daily documents for this date: { $last }
+}
+
+journal.window.body.document.experience.continuing.generic = experience continuing: { $name }, { $start } to { $end }
+
+journal.window.body.document.experience.continuing.generic.recorder = experience continuing: { $name }, { $start } to { $end } ({ $recorder })
+
+journal.window.body.document.experience.continuing.named = { $kind } continuing: { $name }, { $start } to { $end }
+
+journal.window.body.document.experience.continuing.named.recorder = { $kind } continuing: { $name }, { $start } to { $end } ({ $recorder })
+
+journal.window.body.document.experience.generic = experience: { $name }, { $start } to { $end }
+
+journal.window.body.document.experience.generic.recorder = experience: { $name }, { $start } to { $end } ({ $recorder })
+
+journal.window.body.document.experience.generic.recorder.words = experience: { $name }, { $start } to { $end } ({ $recorder }): { $words }
+
+journal.window.body.document.experience.generic.words = experience: { $name }, { $start } to { $end }: { $words }
+
+journal.window.body.document.experience.named = { $kind }: { $name }, { $start } to { $end }
+
+journal.window.body.document.experience.named.recorder = { $kind }: { $name }, { $start } to { $end } ({ $recorder })
+
+journal.window.body.document.experience.named.recorder.words = { $kind }: { $name }, { $start } to { $end } ({ $recorder }): { $words }
+
+journal.window.body.document.experience.named.words = { $kind }: { $name }, { $start } to { $end }: { $words }
+
+journal.window.body.document.heading = body on { $weekday }, { $month } { $day }, { $year }
+
+journal.window.body.document.heading.raw = body on { $day }
+
+journal.window.body.document.tally.count.plain.at = { $quantity ->
+    [one] { $name }: { $count } interval, { $start }
+   *[other] { $name }: intervals { $count }, { $start }
+}
+
+journal.window.body.document.tally.count.plain.count = { $quantity ->
+    [one] { $name }: { $count } interval
+   *[other] { $name }: intervals { $count }
+}
+
+journal.window.body.document.tally.count.plain.range = { $quantity ->
+    [one] { $name }: { $count } interval, { $start } to { $end }
+   *[other] { $name }: intervals { $count }, { $start } to { $end }
+}
+
+journal.window.body.document.tally.count.recorder.at = { $quantity ->
+    [one] { $name }: { $count } interval, { $start } ({ $recorder })
+   *[other] { $name }: intervals { $count }, { $start } ({ $recorder })
+}
+
+journal.window.body.document.tally.count.recorder.count = { $quantity ->
+    [one] { $name }: { $count } interval ({ $recorder })
+   *[other] { $name }: intervals { $count } ({ $recorder })
+}
+
+journal.window.body.document.tally.count.recorder.range = { $quantity ->
+    [one] { $name }: { $count } interval, { $start } to { $end } ({ $recorder })
+   *[other] { $name }: intervals { $count }, { $start } to { $end } ({ $recorder })
+}
+
+journal.window.body.document.tally.logged.owner.at = { $quantity ->
+    [one] { $name }: { $count } entry, { $start } (entered by the owner)
+   *[other] { $name }: entries { $count }, { $start } (entered by the owner)
+}
+
+journal.window.body.document.tally.logged.owner.count = { $quantity ->
+    [one] { $name }: { $count } entry (entered by the owner)
+   *[other] { $name }: entries { $count } (entered by the owner)
+}
+
+journal.window.body.document.tally.logged.owner.range = { $quantity ->
+    [one] { $name }: { $count } entry, { $start } to { $end } (entered by the owner)
+   *[other] { $name }: entries { $count }, { $start } to { $end } (entered by the owner)
+}
+
+journal.window.body.document.tally.logged.owner.recorder.at = { $quantity ->
+    [one] { $name }: { $count } entry, { $start } (entered by the owner in { $recorder })
+   *[other] { $name }: entries { $count }, { $start } (entered by the owner in { $recorder })
+}
+
+journal.window.body.document.tally.logged.owner.recorder.count = { $quantity ->
+    [one] { $name }: { $count } entry (entered by the owner in { $recorder })
+   *[other] { $name }: entries { $count } (entered by the owner in { $recorder })
+}
+
+journal.window.body.document.tally.logged.owner.recorder.range = { $quantity ->
+    [one] { $name }: { $count } entry, { $start } to { $end } (entered by the owner in { $recorder })
+   *[other] { $name }: entries { $count }, { $start } to { $end } (entered by the owner in { $recorder })
+}
+
+journal.window.body.document.tally.logged.plain.at = { $quantity ->
+    [one] { $name }: { $count } entry, { $start }
+   *[other] { $name }: entries { $count }, { $start }
+}
+
+journal.window.body.document.tally.logged.plain.count = { $quantity ->
+    [one] { $name }: { $count } entry
+   *[other] { $name }: entries { $count }
+}
+
+journal.window.body.document.tally.logged.plain.range = { $quantity ->
+    [one] { $name }: { $count } entry, { $start } to { $end }
+   *[other] { $name }: entries { $count }, { $start } to { $end }
+}
+
+journal.window.body.document.tally.logged.recorder.at = { $quantity ->
+    [one] { $name }: { $count } entry, { $start } (recorded by { $recorder })
+   *[other] { $name }: entries { $count }, { $start } (recorded by { $recorder })
+}
+
+journal.window.body.document.tally.logged.recorder.count = { $quantity ->
+    [one] { $name }: { $count } entry (recorded by { $recorder })
+   *[other] { $name }: entries { $count } (recorded by { $recorder })
+}
+
+journal.window.body.document.tally.logged.recorder.range = { $quantity ->
+    [one] { $name }: { $count } entry, { $start } to { $end } (recorded by { $recorder })
+   *[other] { $name }: entries { $count }, { $start } to { $end } (recorded by { $recorder })
+}
+
+journal.window.body.document.tally.reading.plain.at = { $quantity ->
+    [one] { $name }: { $count } reading, { $start }
+   *[other] { $name }: readings { $count }, { $start }
+}
+
+journal.window.body.document.tally.reading.plain.count = { $quantity ->
+    [one] { $name }: { $count } reading
+   *[other] { $name }: readings { $count }
+}
+
+journal.window.body.document.tally.reading.plain.range = { $quantity ->
+    [one] { $name }: { $count } reading, { $start } to { $end }
+   *[other] { $name }: readings { $count }, { $start } to { $end }
+}
+
+journal.window.body.document.tally.reading.recorder.at = { $quantity ->
+    [one] { $name }: { $count } reading, { $start } ({ $recorder })
+   *[other] { $name }: readings { $count }, { $start } ({ $recorder })
+}
+
+journal.window.body.document.tally.reading.recorder.count = { $quantity ->
+    [one] { $name }: { $count } reading ({ $recorder })
+   *[other] { $name }: readings { $count } ({ $recorder })
+}
+
+journal.window.body.document.tally.reading.recorder.range = { $quantity ->
+    [one] { $name }: { $count } reading, { $start } to { $end } ({ $recorder })
+   *[other] { $name }: readings { $count }, { $start } to { $end } ({ $recorder })
+}
+
+journal.window.body.document.tally.stage.plain.at = { $quantity ->
+    [one] sleep stage { $name }: { $count } interval, { $start }
+   *[other] sleep stage { $name }: intervals { $count }, { $start }
+}
+
+journal.window.body.document.tally.stage.plain.count = { $quantity ->
+    [one] sleep stage { $name }: { $count } interval
+   *[other] sleep stage { $name }: intervals { $count }
+}
+
+journal.window.body.document.tally.stage.plain.range = { $quantity ->
+    [one] sleep stage { $name }: { $count } interval, { $start } to { $end }
+   *[other] sleep stage { $name }: intervals { $count }, { $start } to { $end }
+}
+
+journal.window.body.document.tally.stage.recorder.at = { $quantity ->
+    [one] sleep stage { $name }: { $count } interval, { $start } ({ $recorder })
+   *[other] sleep stage { $name }: intervals { $count }, { $start } ({ $recorder })
+}
+
+journal.window.body.document.tally.stage.recorder.count = { $quantity ->
+    [one] sleep stage { $name }: { $count } interval ({ $recorder })
+   *[other] sleep stage { $name }: intervals { $count } ({ $recorder })
+}
+
+journal.window.body.document.tally.stage.recorder.range = { $quantity ->
+    [one] sleep stage { $name }: { $count } interval, { $start } to { $end } ({ $recorder })
+   *[other] sleep stage { $name }: intervals { $count }, { $start } to { $end } ({ $recorder })
+}
+
+journal.window.body.document.words.owner = in the owner's words: { $words }
+
+journal.window.body.document.words.source = in the source's words: { $words }
+
+journal.window.location.day.area.unnamed = with no named town nearby ({ $area })
+
+journal.window.location.day.empty = location was kept, but no reading could be named.
+
+journal.window.location.day.heading = location on { $date }
+
+journal.window.location.day.instant = at { $time }
+
+journal.window.location.day.moment = { $date } at { $clock }
+
+journal.window.location.day.nearby.list = near { $leading } and { $last }
+
+journal.window.location.day.place.context = { $specific }; { $broader }
+
+journal.window.location.day.place.inside = at { $place } in { $inside }
+
+journal.window.location.day.place.named = at { $owner_name } (a place you named); { $location }
+
+journal.window.location.day.readings.area = { $quantity ->
+    [one] readings { $area }, { $when }: { $count } reading from { $device }.
+   *[other] readings { $area }, { $when }: { $count } readings from { $device }.
+}
+
+journal.window.location.day.readings.area.approximate = { $quantity ->
+    [one] readings { $area }, { $when }: { $count } approximate reading from { $device }.
+   *[other] readings { $area }, { $when }: { $count } approximate readings from { $device }.
+}
+
+journal.window.location.day.readings.unlocated = { $quantity ->
+    [one] readings, { $when }: { $count } reading from { $device }.
+   *[other] readings, { $when }: { $count } readings from { $device }.
+}
+
+journal.window.location.day.readings.unlocated.approximate = { $quantity ->
+    [one] readings, { $when }: { $count } approximate reading from { $device }.
+   *[other] readings, { $when }: { $count } approximate readings from { $device }.
+}
+
+journal.window.location.day.stay = a stay your journal worked out from { $count } readings from { $device } { $location }: first reading { $first }, last { $last }.
+
+journal.window.location.day.visit = a visit { $device } reported { $location }: { $arrival }, { $departure }.

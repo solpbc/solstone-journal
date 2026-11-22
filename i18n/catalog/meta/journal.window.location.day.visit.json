@@ -1,0 +1,33 @@
+{
+  "description": "A reported visit with place and arrival/departure information.",
+  "context": "Saved daily location Markdown. A reported visit with place and arrival/departure information.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "location",
+      "type": "string"
+    },
+    {
+      "name": "arrival",
+      "type": "string"
+    },
+    {
+      "name": "departure",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "01dc095814da86e171a08ef9edb932bb23613619ad2383cbef8850311f6f61c2",
+  "max_length": 219,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Heading with a day identifier when its calendar date is unavailable.",
+  "context": "Searchable body day Markdown. Heading with a day identifier when its calendar date is unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3f7a26f84505f970117feec035c89bd27151dd7049eb092c9777acff91c47580",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

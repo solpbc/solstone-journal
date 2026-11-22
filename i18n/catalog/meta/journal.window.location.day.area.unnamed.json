@@ -1,0 +1,21 @@
+{
+  "description": "Region or country without a town nearby.",
+  "context": "Saved daily location Markdown. Region or country without a town nearby.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "area",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bbe9d79f17c309970e55348961d2367924dd4cb75fe92abf2482023f421b710c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

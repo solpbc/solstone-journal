@@ -1,0 +1,21 @@
+{
+  "description": "Heading above a day of recorded locations.",
+  "context": "Saved daily location Markdown. Heading above a day of recorded locations.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4af327b51538272d1229579a60a76c9f054f2538982fc8b34af06577b51e15f1",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

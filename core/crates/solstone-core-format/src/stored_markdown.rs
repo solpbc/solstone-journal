@@ -3,6 +3,8 @@
 
 //! Source-English Markdown with presentation identities for the words supplied by its writer.
 
+pub mod body_day;
+pub mod location_day;
 pub mod week;
 
 use std::path::Path;
@@ -81,8 +83,14 @@ pub fn project_screen_extractions(
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "message", rename_all = "snake_case")]
 pub enum Message<T = String> {
+    LocationDay {
+        copy: Box<location_day::Copy<T>>,
+    },
     Talent {
         copy: crate::talent_display::Copy<T>,
+    },
+    BodyDay {
+        copy: body_day::Copy<T>,
     },
     WeekMemories {
         count: usize,
@@ -143,7 +151,13 @@ pub enum Message<T = String> {
 impl<T> Message<T> {
     fn map_text<U>(&self, mut f: impl FnMut(&T) -> Option<U>) -> Option<Message<U>> {
         Some(match self {
+            Self::LocationDay { copy } => Message::LocationDay {
+                copy: Box::new(copy.map_text(f)?),
+            },
             Self::Talent { copy } => Message::Talent {
+                copy: copy.map_text(f)?,
+            },
+            Self::BodyDay { copy } => Message::BodyDay {
                 copy: copy.map_text(f)?,
             },
             Self::WeekMemories { count } => Message::WeekMemories { count: *count },
@@ -276,6 +290,8 @@ impl Message {
 
     fn render_at(&self, locale: &str, segment: Option<&str>) -> String {
         match self {
+            Self::LocationDay { copy } => copy.render(locale),
+            Self::BodyDay { copy } => copy.render(locale),
             Self::WeekMemories { count } => solstone_core_window_catalog::render(
                 locale,
                 "journal.window.home.week.intro.memories",
@@ -961,9 +977,27 @@ pub fn display_receipt_path(source: &Path) -> std::path::PathBuf {
     }
 }
 
+/// A managed day document keeps its display metadata with the day's build records.
+pub fn day_projection_receipt(root: &Path, path: &Path) -> Option<std::path::PathBuf> {
+    let relative = path.strip_prefix(root.join("chronicle")).ok()?;
+    let parent = relative.parent()?;
+    if parent.parent()? != Path::new("") || !crate::segment::is_date_key(parent.to_str()?) {
+        return None;
+    }
+    let name = match relative.file_name()?.to_str()? {
+        "location.md" => "location.md.display",
+        "body.md" => "body.md.display",
+        _ => return None,
+    };
+    Some(path.parent()?.join("health").join(name))
+}
+
 /// Locate the writer's receipt without accepting a companion supplied in a device upload.
 pub fn talent_receipt_path(root: &Path, path: &Path) -> Option<std::path::PathBuf> {
     let relative = path.strip_prefix(root).ok()?;
+    if let Some(receipt) = day_projection_receipt(root, path) {
+        return Some(receipt);
+    }
     let mut hash = Sha256::new();
     for part in relative.components() {
         let std::path::Component::Normal(name) = part else {
@@ -1012,6 +1046,16 @@ fn read_document(
     let companion = directory(root, &receipt_path)?;
     let (receipt, stamp) = read_receipt(&companion, &receipt_path)?;
     if expected_stamp.is_some_and(|expected| expected != stamp) {
+        return None;
+    }
+    let day_receipt = day_projection_receipt(root, path);
+    let name = path.file_name()?.to_str()?;
+    if !receipt.spans.iter().all(|span| match &span.copy {
+        Message::LocationDay { .. } => day_receipt.is_some() && name == "location.md",
+        Message::BodyDay { .. } => day_receipt.is_some() && name == "body.md",
+        Message::PartialInput => true,
+        _ => day_receipt.is_none(),
+    }) {
         return None;
     }
     let bytes = retained
@@ -1247,16 +1291,23 @@ impl IndexedDisplay {
                     if matches!(
                         copy,
                         Message::Entity { .. }
+                            | Message::LocationDay { .. }
+                            | Message::BodyDay { .. }
                             | Message::NoteSource { .. }
                             | Message::NoteRenamed { .. }
                     ) && !restored
                         .get(start..next)
                         .is_some_and(|part| part.starts_with(field))
                     {
-                        // Indexing interprets Markdown in an entity row or note path.
+                        // Indexing interprets Markdown in the original source slots.
                         // Apply the same parsing to this writer-identified field.
                         let normalize = |text: &str| {
-                            let line = if matches!(copy, Message::Entity { .. }) {
+                            let line = if matches!(
+                                copy,
+                                Message::Entity { .. }
+                                    | Message::BodyDay { .. }
+                                    | Message::LocationDay { .. }
+                            ) {
                                 format!("- {text}")
                             } else {
                                 text.to_owned()

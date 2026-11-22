@@ -1,0 +1,25 @@
+{
+  "description": "Local date and time outside the day being displayed.",
+  "context": "Saved daily location Markdown. Local date and time outside the day being displayed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "clock",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "50abf11a96ac68abbb9ab73b110e161d699fc93ec95e7a99116fa83548b6c626",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

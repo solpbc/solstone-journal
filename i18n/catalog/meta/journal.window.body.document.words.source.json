@@ -1,0 +1,21 @@
+{
+  "description": "Verbatim words attributed by the source to the source.",
+  "context": "Searchable body day Markdown. Verbatim words attributed by the source to the source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "words",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fcd9f6b12f27be737445a21e6245e1e68190a05746312c8c44b203e367a02732",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

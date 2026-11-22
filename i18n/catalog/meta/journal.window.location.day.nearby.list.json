@@ -1,0 +1,25 @@
+{
+  "description": "Places near a visit or stay.",
+  "context": "Saved daily location Markdown. Places near a visit or stay.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "leading",
+      "type": "string"
+    },
+    {
+      "name": "last",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c502f2dbbfdd38f5403c1c8dbaec2a88c9947ba26f865e2186b1798d5bef2543",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

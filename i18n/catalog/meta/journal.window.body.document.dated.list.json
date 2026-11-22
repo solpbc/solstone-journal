@@ -1,0 +1,38 @@
+{
+  "description": "Names of the daily documents recorded for this date; count records before deduplicating their labels.",
+  "context": "Searchable body day Markdown. Names of the daily documents recorded for this date; count records before deduplicating their labels.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "leading",
+      "type": "string"
+    },
+    {
+      "name": "last",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d5f6863a56bd7229d0179fa14a9b0de63965491bd25d28b2b2f41616e8ab79d8",
+  "max_length": 543,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "quantity"
+  }
+}

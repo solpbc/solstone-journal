@@ -22,6 +22,7 @@ pub mod body_hidden;
 pub mod body_records;
 mod cache;
 pub mod day;
+mod day_display;
 pub mod fingerprint;
 pub mod install;
 pub mod old_imports;

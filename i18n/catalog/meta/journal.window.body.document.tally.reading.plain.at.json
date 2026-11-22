@@ -1,0 +1,38 @@
+{
+  "description": "Tally of readings. Report the observed count, with source times and attribution where available.",
+  "context": "Searchable body day Markdown. Tally of readings. Report the observed count, with source times and attribution where available.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "start",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ca2c41c484ae6c7fd24c81f30d93a8fba9af47e07ce9831d52913d5fed30287c",
+  "max_length": 369,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "quantity"
+  }
+}

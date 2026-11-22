@@ -1152,30 +1152,31 @@ fn describe_attendees(
     })
 }
 
+pub(crate) const WEEKDAYS: [&str; 7] = [
+    "journal.window.date.weekdays.monday",
+    "journal.window.date.weekdays.tuesday",
+    "journal.window.date.weekdays.wednesday",
+    "journal.window.date.weekdays.thursday",
+    "journal.window.date.weekdays.friday",
+    "journal.window.date.weekdays.saturday",
+    "journal.window.date.weekdays.sunday",
+];
+pub(crate) const MONTHS: [&str; 12] = [
+    "journal.window.shared.date.nav.months.label.january",
+    "journal.window.shared.date.nav.months.label.february",
+    "journal.window.shared.date.nav.months.label.march",
+    "journal.window.shared.date.nav.months.label.april",
+    "journal.window.shared.date.nav.months.label.may",
+    "journal.window.shared.date.nav.months.label.june",
+    "journal.window.shared.date.nav.months.label.july",
+    "journal.window.shared.date.nav.months.label.august",
+    "journal.window.shared.date.nav.months.label.september",
+    "journal.window.shared.date.nav.months.label.october",
+    "journal.window.shared.date.nav.months.label.november",
+    "journal.window.shared.date.nav.months.label.december",
+];
+
 fn describe_date(date: Date, locale: &str) -> String {
-    const WEEKDAYS: [&str; 7] = [
-        "journal.window.date.weekdays.monday",
-        "journal.window.date.weekdays.tuesday",
-        "journal.window.date.weekdays.wednesday",
-        "journal.window.date.weekdays.thursday",
-        "journal.window.date.weekdays.friday",
-        "journal.window.date.weekdays.saturday",
-        "journal.window.date.weekdays.sunday",
-    ];
-    const MONTHS: [&str; 12] = [
-        "journal.window.shared.date.nav.months.label.january",
-        "journal.window.shared.date.nav.months.label.february",
-        "journal.window.shared.date.nav.months.label.march",
-        "journal.window.shared.date.nav.months.label.april",
-        "journal.window.shared.date.nav.months.label.may",
-        "journal.window.shared.date.nav.months.label.june",
-        "journal.window.shared.date.nav.months.label.july",
-        "journal.window.shared.date.nav.months.label.august",
-        "journal.window.shared.date.nav.months.label.september",
-        "journal.window.shared.date.nav.months.label.october",
-        "journal.window.shared.date.nav.months.label.november",
-        "journal.window.shared.date.nav.months.label.december",
-    ];
     strings(
         locale,
         "journal.window.calendar.note.date",

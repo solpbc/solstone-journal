@@ -16,7 +16,8 @@
 //!   of leaving, so a day also looks at the next day for it.
 //! - **notes** say what could not be read.
 
-use solstone_core_window_catalog::{ENGLISH, strings, text};
+use solstone_core_format::stored_markdown::location_day::{Device as DisplayDevice, DeviceWord};
+use solstone_core_window_catalog::ENGLISH;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -121,15 +122,7 @@ pub struct Device {
 
 impl Device {
     pub fn word_in(&self, locale: &str) -> String {
-        let id = match self.word {
-            "watch" => "journal.window.sources.source.or.date.unit.label.watch",
-            "android tablet" => "journal.window.map.device.android.tablet",
-            "android phone" => "journal.window.map.device.android.phone",
-            "tablet" => "journal.window.map.device.tablet",
-            "phone" => "journal.window.map.device.phone",
-            word => return word.to_owned(),
-        };
-        text(locale, id)
+        DeviceWord::from_source(self.word).render(locale)
     }
 }
 
@@ -260,19 +253,13 @@ impl DayLocation {
     }
 
     pub fn device_phrase_in(&self, index: usize, locale: &str) -> String {
-        let device = &self.devices[index];
-        let word = device.word_in(locale);
-        match self.distinguishing_device_name(index) {
-            Some(name) => strings(
-                locale,
-                "journal.window.map.device.possessive.named",
-                [("device", &word), ("name", name)],
-            ),
-            None => strings(
-                locale,
-                "journal.window.map.device.possessive",
-                [("device", &word)],
-            ),
+        self.display_device(index).render(locale)
+    }
+
+    pub(crate) fn display_device(&self, index: usize) -> DisplayDevice<String> {
+        DisplayDevice {
+            word: DeviceWord::from_source(self.devices[index].word),
+            name: self.distinguishing_device_name(index).map(str::to_owned),
         }
     }
 
