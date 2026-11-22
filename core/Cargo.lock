@@ -4475,7 +4475,6 @@ dependencies = [
  "solstone-core-cli-copy",
  "solstone-core-installed-payload",
  "solstone-core-journal-config-write",
- "solstone-core-journal-io",
  "solstone-core-offload",
  "solstone-core-removals",
  "solstone-core-retention",

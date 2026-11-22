@@ -16,7 +16,6 @@ unsafe_code = "deny"
 
 [dependencies]
 solstone-core-journal-config-write.workspace = true
-solstone-core-journal-io.workspace = true
 solstone-core-cli-copy.workspace = true
 solstone-core-window-catalog.workspace = true
 solstone-core-removals.workspace = true

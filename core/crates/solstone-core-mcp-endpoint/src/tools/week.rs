@@ -2995,7 +2995,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::symlink;
-            let outside = tempfile::tempdir().unwrap();
+            let outside = journal("week-live-speech-outside-");
             let linked = root.join(&labels);
             let target = outside.path().join("labels.json");
             fs::rename(&linked, &target).unwrap();

@@ -135,16 +135,34 @@ fn generic_caption_and_log_extensions_use_the_import_entry_point() {
     let temp = TempDir::new().unwrap();
     let journal = temp.path().join("journal");
     fs::create_dir_all(&journal).unwrap();
-    for (index, (name, text)) in [
+    // WebVTT cues carry their own times and keep only the cue text; SubRip
+    // captions and a plain log are kept whole and marked untimed.
+    for (index, (name, text, untimed, kept)) in [
         (
             "captions.vtt",
             "WEBVTT\n\n00:01.000 --> 00:02.000\nA bell rings.\n",
+            false,
+            &["A bell rings."][..],
         ),
         (
             "captions.srt",
             "1\n00:00:01,000 --> 00:00:02,000\nRain.\n\n2\n00:00:02,000 --> 00:00:03,000\nWind.\n",
+            true,
+            &[
+                "1",
+                "00:00:01,000 --> 00:00:02,000",
+                "Rain.",
+                "2",
+                "00:00:02,000 --> 00:00:03,000",
+                "Wind.",
+            ][..],
         ),
-        ("exchange.log", "Me: Soon?\nThem: Yes.\nMe: Fine.\n"),
+        (
+            "exchange.log",
+            "Me: Soon?\nThem: Yes.\nMe: Fine.\n",
+            true,
+            &["Me: Soon?", "Them: Yes.", "Me: Fine."][..],
+        ),
     ]
     .into_iter()
     .enumerate()
@@ -166,16 +184,12 @@ fn generic_caption_and_log_extensions_use_the_import_entry_point() {
         let mut rows = saved
             .lines()
             .map(|line| serde_json::from_str::<Value>(line).unwrap());
-        assert_eq!(rows.next().unwrap()["untimed"], true);
+        let header = rows.next().unwrap();
+        assert_eq!(header.get("untimed").is_some(), untimed, "{name}: {header}");
         let saved_text = rows
             .map(|row| row["text"].as_str().unwrap().to_owned())
             .collect::<Vec<_>>();
-        assert_eq!(
-            saved_text,
-            text.lines()
-                .filter(|line| !line.is_empty())
-                .collect::<Vec<_>>()
-        );
+        assert_eq!(saved_text, kept, "{name}");
         assert!(segment.join("import_kind.json").is_file());
     }
 }

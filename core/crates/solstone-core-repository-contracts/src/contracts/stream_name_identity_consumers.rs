@@ -19,6 +19,7 @@ const TARGETS: &[&str] = &[
     "inspect_stream",
     "rebuild_streams",
     "relocate_segment",
+    "relocate_segment_for",
     "is_tail",
     "list_stream_records_tolerant",
     "list_stream_records",
@@ -315,6 +316,11 @@ fn expected_consumers() -> BTreeSet<(String, String)> {
         ("solstone-core-segment-cli/src/read.rs", "is_tail"),
         // relocates a segment and repairs the named stream tail
         ("solstone-core-segment/src/relocate.rs", "relocate_segment"),
+        // the same relocation, with refusals rendered in the caller's locale
+        (
+            "solstone-core-segment/src/relocate.rs",
+            "relocate_segment_for",
+        ),
         // unbound by design; no cid/source check
         (
             "solstone-core-segment/src/stream_record.rs",

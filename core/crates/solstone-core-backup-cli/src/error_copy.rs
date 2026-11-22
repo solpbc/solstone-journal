@@ -4,8 +4,7 @@
 use super::{copy, window};
 use solstone_core_backup::BackupError;
 use solstone_core_backup_runtime::ClosedToolError;
-use solstone_core_journal_config_write::{ConfigLoadError, ConfigMutationError};
-use solstone_core_journal_io::errors::LockError;
+use solstone_core_journal_config_write::{ConfigLoadError, ConfigMutationError, LockError};
 
 pub(super) fn backup_error(error: BackupError) -> String {
     match error {
