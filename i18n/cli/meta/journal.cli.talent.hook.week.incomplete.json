@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for hook week incomplete.",
+  "context": "Journal command-line text for hook week incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "end",
+      "type": "string"
+    },
+    {
+      "name": "today",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "968f9b5cb4c3e59e5c97b1b123f93882adf7fd6e76ebf1a004331c6b1f9a53dc",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

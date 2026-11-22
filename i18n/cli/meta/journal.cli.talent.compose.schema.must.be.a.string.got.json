@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for compose schema must be a string got.",
+  "context": "Journal command-line text for compose schema must be a string got.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    },
+    {
+      "name": "type_name",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4451e0b40cedc763e9824e2c0a524dd335d4e1b10a24cc44ccf4e2b810e3ded8",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

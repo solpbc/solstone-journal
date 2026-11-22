@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for floor invalid budget.",
+  "context": "Journal command-line text for floor invalid budget.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b7dabddabc239552c97796848ef5b720fc4f0ffa5d20ac82cc1dcd3f791dc71",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "budget",
+      "kind": "accepted-input",
+      "value": "max_output_tokens"
+    }
+  ]
+}

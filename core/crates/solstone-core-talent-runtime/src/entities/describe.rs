@@ -34,7 +34,11 @@ pub fn gate(
             .unwrap_or(""),
     );
     if fields.entity_name.is_empty() {
-        Ok(GateDecision::Skip("missing entity name".to_owned()))
+        Ok(GateDecision::Skip(solstone_core_cli_copy::render_for(
+            prepared.skip_locale(),
+            "journal.cli.talent.hook.entity.name",
+            &[],
+        )))
     } else {
         Ok(GateDecision::Proceed)
     }

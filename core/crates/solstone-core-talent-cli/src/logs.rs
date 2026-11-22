@@ -38,7 +38,14 @@ pub(crate) fn run_logs(
     if let Some(day) = &options.day
         && !valid_day(day)
     {
-        return failure(format!("Invalid --day format: {day}. Expected YYYYMMDD.\n"));
+        return failure(format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                solstone_core_cli_copy::cli_locale(),
+                "journal.cli.talent.logs.day.invalid",
+                [("day", &(day))]
+            )
+        ));
     }
 
     let count = resolved_count(options);
@@ -75,8 +82,12 @@ fn collect_records(
     let mut schedule_lookup: Option<HashMap<String, Option<String>>> = None;
 
     for day_file in day_files {
-        let text = fs::read_to_string(&day_file)
-            .map_err(|error| format!("failed to read {}: {error}", day_file.display()))?;
+        let text = fs::read_to_string(&day_file).map_err(|error| {
+            solstone_core_cli_copy::display(
+                "journal.cli.talent.config.read",
+                [("path", &day_file.display()), ("error", &error)],
+            )
+        })?;
         for line in text.lines() {
             if line.trim().is_empty() {
                 continue;
@@ -145,7 +156,12 @@ fn day_files(talents_dir: &Path, day: Option<&str>) -> Result<Vec<PathBuf>, Stri
         return Ok(path.is_file().then_some(path).into_iter().collect());
     }
     let mut files = fs::read_dir(talents_dir)
-        .map_err(|error| format!("failed to read {}: {error}", talents_dir.display()))?
+        .map_err(|error| {
+            solstone_core_cli_copy::display(
+                "journal.cli.talent.config.read",
+                [("path", &talents_dir.display()), ("error", &error)],
+            )
+        })?
         .flatten()
         .map(|entry| entry.path())
         .filter(|path| {
@@ -323,7 +339,28 @@ fn time_column(record: &Value, now: SystemTime, zone: &TimeZone) -> String {
     if today.as_deref() == Some(day.as_str()) {
         timestamp.strftime("%H:%M").to_string()
     } else {
-        timestamp.strftime("%b %d %H:%M").to_string()
+        let month_id = [
+            "journal.window.date.months.short.jan",
+            "journal.window.date.months.short.feb",
+            "journal.window.date.months.short.mar",
+            "journal.window.date.months.short.apr",
+            "journal.window.date.months.short.may",
+            "journal.window.date.months.short.jun",
+            "journal.window.date.months.short.jul",
+            "journal.window.date.months.short.aug",
+            "journal.window.date.months.short.sep",
+            "journal.window.date.months.short.oct",
+            "journal.window.date.months.short.nov",
+            "journal.window.date.months.short.dec",
+        ][(timestamp.month() - 1) as usize];
+        let month =
+            solstone_core_window_catalog::text(solstone_core_cli_copy::cli_locale(), month_id);
+        let day_time = timestamp.strftime("%d %H:%M").to_string();
+        solstone_core_cli_copy::display_for(
+            solstone_core_cli_copy::cli_locale(),
+            "journal.cli.talent.logs.date",
+            [("month", &(month)), ("day_time", &(day_time))],
+        )
     }
 }
 
@@ -357,7 +394,12 @@ fn render_table(
         let name = record
             .get("name")
             .and_then(Value::as_str)
-            .unwrap_or("unknown");
+            .map(std::borrow::Cow::Borrowed)
+            .unwrap_or_else(|| {
+                std::borrow::Cow::Owned(solstone_core_cli_copy::text(
+                    "journal.cli.doctor.brain.age.unknown",
+                ))
+            });
         let status = record
             .get("status")
             .and_then(Value::as_str)
@@ -452,6 +494,14 @@ fn render_summary(records: &[Value]) -> String {
         if failed > 0 {
             status.push_str(&format!(" {failed}✗"));
         }
+        let name = if runs
+            .iter()
+            .all(|r| r.get("name").and_then(Value::as_str).is_none())
+        {
+            solstone_core_cli_copy::text("journal.cli.doctor.brain.age.unknown")
+        } else {
+            name
+        };
         output.push_str(&format!("  {name:<20} {status:<10} {runtime}\n"));
     }
     output.push_str(&format!("  {}\n", "—".repeat(40)));
@@ -461,7 +511,11 @@ fn render_summary(records: &[Value]) -> String {
     }
     output.push_str(&format!(
         "  {:<20} {status:<10} {total_runtime:.1}s\n",
-        "total"
+        solstone_core_cli_copy::render_for(
+            solstone_core_cli_copy::cli_locale(),
+            "journal.cli.talent.logs.total",
+            &[]
+        )
     ));
     output
 }

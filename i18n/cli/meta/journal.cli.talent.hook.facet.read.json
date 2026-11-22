@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for hook facet read.",
+  "context": "Journal command-line text for hook facet read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3267ee76470da455a5e2b9626315bcb15c7716f135d94e82b0393617c5b5cfc8",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

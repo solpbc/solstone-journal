@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for preview recovery pass day yyyymmdd facet name and activity id.",
+  "context": "Journal command-line text for preview recovery pass day yyyymmdd facet name and activity id.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "961f930aa3b40081bed9342d31a818a3bca772dd6b6b38adefc0b724a4de75b4",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "yyyymmdd",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    },
+    {
+      "name": "name",
+      "kind": "accepted-input",
+      "value": "NAME"
+    },
+    {
+      "name": "day_flag",
+      "kind": "flag",
+      "value": "--day"
+    },
+    {
+      "name": "facet_flag",
+      "kind": "flag",
+      "value": "--facet"
+    },
+    {
+      "name": "activity_flag",
+      "kind": "flag",
+      "value": "--activity"
+    }
+  ]
+}

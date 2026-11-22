@@ -1663,6 +1663,7 @@ fn run_journal_stats(args: Vec<OsString>) -> ExitCode {
 }
 
 fn run_talent(args: Vec<OsString>) -> ExitCode {
+    let locale = solstone_core_talent_cli::output_locale(args.iter().any(|arg| arg == "--json"));
     let is_help = args
         .iter()
         .any(|argument| argument == OsStr::new("-h") || argument == OsStr::new("--help"));
@@ -1678,23 +1679,44 @@ fn run_talent(args: Vec<OsString>) -> ExitCode {
         let journal_root = match resolve_process_journal_path() {
             Ok(journal) => journal.path,
             Err(error) => {
-                eprint_journal_path_error(error);
+                eprint_journal_path_error_in(locale, error);
                 return ExitCode::from(EXIT_TEMPFAIL);
             }
         };
         let executable = match env::current_exe() {
             Ok(executable) => executable,
             Err(error) => {
-                eprintln!("talent failed: could not inspect current executable: {error}");
+                eprintln!(
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.talent.startup.executable",
+                        [("error", &(error))]
+                    )
+                );
                 return ExitCode::from(EXIT_TEMPFAIL);
             }
         };
         let Some(executable_dir) = executable.parent() else {
-            eprintln!("talent failed: could not locate installed solstone package");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.talent.startup.package",
+                    &[]
+                )
+            );
             return ExitCode::from(EXIT_TEMPFAIL);
         };
         let Some(root) = resolve_installation_root_from_executable_dir(executable_dir) else {
-            eprintln!("talent failed: could not locate installed solstone package");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.talent.startup.package",
+                    &[]
+                )
+            );
             return ExitCode::from(EXIT_TEMPFAIL);
         };
         talent_preview::run_talent_cli(
@@ -6619,16 +6641,27 @@ fn discover_package_roots() -> Option<(PathBuf, PathBuf)> {
 }
 
 fn eprint_journal_path_error(error: JournalPathError) {
+    eprint_journal_path_error_in(solstone_core_cli_copy::cli_locale(), error);
+}
+
+fn eprint_journal_path_error_in(locale: &str, error: JournalPathError) {
     match error {
         JournalPathError::Config(ConfigError::Decode) => {
-            eprintln!("{}", solstone_core_cli_copy::text("journal.cli.path.utf8"))
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::render_for(locale, "journal.cli.path.utf8", &[])
+            )
         }
         JournalPathError::Home(HomeError::Unavailable) => {
-            eprintln!("{}", solstone_core_cli_copy::text("journal.cli.path.home"))
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::render_for(locale, "journal.cli.path.home", &[])
+            )
         }
         JournalPathError::Create(error) => eprintln!(
             "{}",
-            solstone_core_cli_copy::display(
+            solstone_core_cli_copy::display_for(
+                locale,
                 "journal.cli.path.create",
                 [
                     ("source", &error.source),

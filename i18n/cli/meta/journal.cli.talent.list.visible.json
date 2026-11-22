@@ -1,0 +1,37 @@
+{
+  "description": "Journal command-line text for list visible.",
+  "context": "Journal command-line text for list visible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "hidden",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "44671fdd51c4821372b27359e0bf984344589640210f6d32a192534d520b92a4",
+  "max_length": 216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "count",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "disabled_flag",
+      "kind": "flag",
+      "value": "--disabled"
+    }
+  ]
+}

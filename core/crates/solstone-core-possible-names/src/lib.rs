@@ -432,10 +432,33 @@ pub struct CandidateEntity {
 /// non-detached facet relationship and a canonical name, and not merged
 /// away. Reads go through the entity and facet stores.
 pub fn load_candidate_entities(journal_root: &Path) -> Result<Vec<CandidateEntity>, String> {
+    read_candidate_entities(journal_root).map_err(|error| error.to_string())
+}
+
+#[derive(Debug)]
+pub enum CandidateReadError {
+    Identities(solstone_core_entity::EntityStoreError),
+    Facets(solstone_core_facets::FacetStoreError),
+    Facet(String, Box<solstone_core_facets::FacetEntityWriteError>),
+}
+
+impl fmt::Display for CandidateReadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Identities(error) => write!(f, "entity identities could not be read: {error}"),
+            Self::Facets(error) => write!(f, "facets could not be listed: {error}"),
+            Self::Facet(facet, error) => write!(f, "facet {facet} could not be read: {error}"),
+        }
+    }
+}
+
+pub fn read_candidate_entities(
+    journal_root: &Path,
+) -> Result<Vec<CandidateEntity>, CandidateReadError> {
     let map = solstone_core_entity::read_identity_map(journal_root)
-        .map_err(|error| format!("entity identities could not be read: {error}"))?;
+        .map_err(CandidateReadError::Identities)?;
     let facet_dirs = solstone_core_facets::list_facet_directories(journal_root)
-        .map_err(|error| format!("facets could not be listed: {error}"))?;
+        .map_err(CandidateReadError::Facets)?;
     let mut found = BTreeMap::<String, CandidateEntity>::new();
     for facet_dir in facet_dirs {
         let entities = solstone_core_facets::list_scoped_facet_entities_tolerant_with_resolved_ids(
@@ -445,7 +468,7 @@ pub fn load_candidate_entities(journal_root: &Path) -> Result<Vec<CandidateEntit
             false,
             &map.resolved,
         )
-        .map_err(|error| format!("facet {facet_dir} could not be read: {error}"))?;
+        .map_err(|error| CandidateReadError::Facet(facet_dir.clone(), Box::new(error)))?;
         for entity in entities {
             let Some(name) = entity.identity.get("name").and_then(Value::as_str) else {
                 continue;

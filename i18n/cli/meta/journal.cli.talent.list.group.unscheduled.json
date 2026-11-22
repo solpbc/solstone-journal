@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list group unscheduled.",
+  "context": "Journal command-line text for list group unscheduled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "863dc73f76e888bd28bc707e40b51964931937ef68f252f6dd9bf5e6adee5ca0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

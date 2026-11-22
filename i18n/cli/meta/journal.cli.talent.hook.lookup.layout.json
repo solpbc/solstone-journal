@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for hook lookup layout.",
+  "context": "Journal command-line text for hook lookup layout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bbefef175345e48a911a02d0b4c2c305a304f45c2c5ff85765e12404a40d3492",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "default_stream",
+      "kind": "accepted-input",
+      "value": "_default"
+    }
+  ]
+}

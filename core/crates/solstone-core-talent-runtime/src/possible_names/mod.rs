@@ -40,7 +40,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_format::content::produce_chunks;
 use solstone_core_possible_names::{
-    CandidateEntity, Sidecar, SidecarEntry, SidecarSource, load_candidate_entities,
+    CandidateEntity, Sidecar, SidecarEntry, SidecarSource, read_candidate_entities,
     speech_transcript,
 };
 use solstone_core_system_health::find_segment_dir;
@@ -175,7 +175,8 @@ fn read_derived_text(segment_dir: &Path) -> String {
 }
 
 /// The retrieval for one segment. `None` when it has no speech transcript.
-fn plan_segment(
+fn plan_segment_in(
+    locale: &str,
     journal: &Path,
     segment_dir: &Path,
     system_instruction: &str,
@@ -183,16 +184,60 @@ fn plan_segment(
     let Some(file) = speech_transcript(segment_dir) else {
         return Ok(None);
     };
-    let bytes = fs::read(segment_dir.join(&file))
-        .map_err(|error| format!("transcript {file} could not be read: {error}"))?;
-    let transcript = std::str::from_utf8(&bytes)
-        .map_err(|error| format!("transcript {file} is not UTF-8: {error}"))?;
+    let bytes = fs::read(segment_dir.join(&file)).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.hook.transcript.read",
+            [("file", &(file)), ("error", &(error))],
+        )
+    })?;
+    let transcript = std::str::from_utf8(&bytes).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.hook.transcript.utf8",
+            [("file", &(file)), ("error", &(error))],
+        )
+    })?;
     let source = SidecarSource {
         file,
         sha256: hex(&Sha256::digest(&bytes)),
     };
     let statements = read_statements(transcript);
-    let entities = load_candidate_entities(journal)?;
+    let entities = read_candidate_entities(journal).map_err(|failure| {
+        use solstone_core_possible_names::CandidateReadError;
+        use solstone_core_talent_cli::preview::facet_detail;
+        match failure {
+            CandidateReadError::Identities(error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.hook.identities.read",
+                [("error", &(crate::entity_read_detail(locale, &error)))],
+            ),
+            CandidateReadError::Facets(error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.hook.facets.list",
+                [("error", &(facet_detail(locale, &error)))],
+            ),
+            CandidateReadError::Facet(facet, error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.hook.facet.read",
+                [
+                    ("facet", &(facet)),
+                    (
+                        "error",
+                        &(match error.as_ref() {
+                            solstone_core_facets::FacetEntityWriteError::FacetStore(e) => {
+                                facet_detail(locale, e)
+                            }
+                            solstone_core_facets::FacetEntityWriteError::EntityStore(e) => {
+                                crate::entity_read_detail(locale, e)
+                            }
+                            _ => error.to_string(),
+                        }),
+                    ),
+                ],
+            ),
+        }
+    })?;
     let facets = read_facets(segment_dir);
     let registry_revision = registry_revision(&entities, &facets);
     let talent_version = talent_version(system_instruction);
@@ -283,7 +328,18 @@ fn system_instruction(prepared: &PreparedTalent) -> Result<String, StageError> {
         .map(str::trim)
         .filter(|prompt| !prompt.is_empty())
         .map(str::to_owned)
-        .ok_or_else(|| stage_error("build", HOOK, prepared, "the talent has no prompt"))
+        .ok_or_else(|| {
+            stage_error(
+                "build",
+                HOOK,
+                prepared,
+                solstone_core_cli_copy::render_for(
+                    prepared.stage_locale(),
+                    "journal.cli.talent.hook.possible.no.prompt",
+                    &[],
+                ),
+            )
+        })
 }
 
 fn is_set(prepared: &PreparedTalent, key: &str) -> bool {
@@ -307,7 +363,12 @@ pub fn build(
         return Err(skipped(prepared, "no_segment"));
     };
     let system_instruction = system_instruction(prepared).map_err(RuntimeOutcome::StageFailed)?;
-    let plan = match plan_segment(&context.journal, &segment_dir, &system_instruction) {
+    let plan = match plan_segment_in(
+        prepared.stage_locale(),
+        &context.journal,
+        &segment_dir,
+        &system_instruction,
+    ) {
         Ok(Some(plan)) => plan,
         Ok(None) => return Err(skipped(prepared, "no_transcript")),
         Err(detail) => {
@@ -484,7 +545,13 @@ pub fn inspect_packet(
     )
     .map_err(|error| error.to_string())?;
     let system_instruction = system_instruction(&prepared).map_err(|error| error.detail)?;
-    let Some(plan) = plan_segment(&journal, &segment_dir, &system_instruction)? else {
+    let Some(plan) = plan_segment_in(
+        solstone_core_cli_copy::ENGLISH,
+        &journal,
+        &segment_dir,
+        &system_instruction,
+    )?
+    else {
         return Ok(json!({"talent": TALENT, "decision": "no_transcript"}));
     };
     let decision = if plan.candidates.is_empty() {

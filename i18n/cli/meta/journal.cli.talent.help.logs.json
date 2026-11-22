@@ -1,0 +1,103 @@
+{
+  "description": "Journal command-line text for help logs.",
+  "context": "Journal command-line text for help logs.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e765b99b51eb5085048c28d4d03d5926ac4b984ea5d947c20471301fceeda3d",
+  "max_length": 798,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal talent logs [-h] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors]"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                           [--summary]"
+    },
+    {
+      "name": "syntax_continuation_2",
+      "kind": "accepted-input",
+      "value": "                           [agent]"
+    },
+    {
+      "name": "agent",
+      "kind": "accepted-input",
+      "value": "agent                 "
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "gap_12",
+      "kind": "whitespace",
+      "value": "            "
+    },
+    {
+      "name": "syntax_continuation_9",
+      "kind": "accepted-input",
+      "value": "  -c COUNT, --count COUNT"
+    },
+    {
+      "name": "day_option",
+      "kind": "accepted-input",
+      "value": "--day YYYYMMDD"
+    },
+    {
+      "name": "gap_8",
+      "kind": "whitespace",
+      "value": "        "
+    },
+    {
+      "name": "daily_option",
+      "kind": "accepted-input",
+      "value": "--daily"
+    },
+    {
+      "name": "gap_15",
+      "kind": "whitespace",
+      "value": "               "
+    },
+    {
+      "name": "errors_option",
+      "kind": "accepted-input",
+      "value": "--errors"
+    },
+    {
+      "name": "gap_14",
+      "kind": "whitespace",
+      "value": "              "
+    },
+    {
+      "name": "summary_option",
+      "kind": "accepted-input",
+      "value": "--summary"
+    },
+    {
+      "name": "gap_13",
+      "kind": "whitespace",
+      "value": "             "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -6966,6 +6966,7 @@ dependencies = [
  "jsonschema",
  "regex",
  "serde_json",
+ "solstone-core-cli-copy",
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-journal",
@@ -6973,6 +6974,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-talent-config",
  "solstone-core-time",
+ "solstone-core-window-catalog",
  "tempfile",
 ]
 
@@ -6981,6 +6983,7 @@ name = "solstone-core-talent-config"
 version = "2.0.87"
 dependencies = [
  "serde_json",
+ "solstone-core-cli-copy",
  "tempfile",
 ]
 
@@ -6998,6 +7001,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-cli-copy",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",

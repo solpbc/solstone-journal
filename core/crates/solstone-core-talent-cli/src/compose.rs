@@ -6,10 +6,10 @@ use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use crate::facets_context::resolve_facets;
-use crate::schema::load_talent_schema;
-use crate::templates::compose_prompt_body;
-use solstone_core_talent_config::{TalentConfig, validate_access_tier, validate_cwd};
+use crate::facets_context::resolve_facets_in;
+use crate::schema::load_talent_schema_in;
+use crate::templates::compose_prompt_body_in;
+use solstone_core_talent_config::{TalentConfig, validate_access_tier_in, validate_cwd_in};
 
 const DEFAULT_LOAD: [(&str, bool); 3] = [
     ("transcripts", false),
@@ -23,36 +23,66 @@ pub fn compose_talent(
     templates_dir: &Path,
     focused_facet: Option<&str>,
 ) -> Result<Map<String, Value>, String> {
+    compose_talent_in(
+        solstone_core_cli_copy::ENGLISH,
+        config,
+        journal_root,
+        templates_dir,
+        focused_facet,
+    )
+}
+
+pub fn compose_talent_in(
+    locale: &str,
+    config: &TalentConfig,
+    journal_root: &Path,
+    templates_dir: &Path,
+    focused_facet: Option<&str>,
+) -> Result<Map<String, Value>, String> {
     let normalized = config.clone();
-    validate_access_tier(&normalized)?;
-    validate_cwd(&normalized)?;
+    validate_access_tier_in(locale, &normalized)?;
+    validate_cwd_in(locale, &normalized)?;
 
     let mut composed = normalized.metadata;
     if let Some(schema) = composed.get("schema").cloned() {
         let schema_path = schema.as_str().ok_or_else(|| {
-            format!(
-                "talent {}: schema must be a string, got {}: {}",
-                config.key,
-                value_type(&schema),
-                python_repr(&schema)
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.compose.schema.must.be.a.string.got",
+                [
+                    ("talent", &(config.key)),
+                    ("type_name", &(value_type(&schema))),
+                    ("value", &(python_repr(&schema))),
+                ],
             )
         })?;
         let path = composed
             .get("path")
             .and_then(Value::as_str)
-            .ok_or_else(|| format!("talent {}: prompt path is missing", config.key))?;
-        let talent_dir = Path::new(path)
-            .parent()
-            .ok_or_else(|| format!("talent {}: prompt path has no parent", config.key))?;
-        let mut parsed = load_talent_schema(&config.key, talent_dir, schema_path)?;
-        crate::facets_context::substitute_runtime_facets(&mut parsed, journal_root)?;
+            .ok_or_else(|| {
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.compose.prompt.path.is.missing",
+                    [("talent", &(config.key))],
+                )
+            })?;
+        let talent_dir = Path::new(path).parent().ok_or_else(|| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.compose.prompt.path.has.no.parent",
+                [("talent", &(config.key))],
+            )
+        })?;
+        let mut parsed = load_talent_schema_in(locale, &config.key, talent_dir, schema_path)?;
+        crate::facets_context::substitute_runtime_facets(locale, &mut parsed, journal_root)?;
         composed.insert("json_schema".to_owned(), parsed);
         composed.remove("schema");
     }
     let sources = composed.remove("load").unwrap_or_else(default_load);
     composed.insert("sources".to_owned(), sources);
 
-    let instruction = compose_talent_instruction(
+    let instruction = compose_talent_instruction_in(
+        locale,
         config,
         journal_root,
         templates_dir,
@@ -76,10 +106,28 @@ pub fn compose_talent_instruction(
     focused_facet: Option<&str>,
     context: &BTreeMap<String, String>,
 ) -> Result<String, String> {
-    let facets = resolve_facets(journal_root, focused_facet)?;
+    compose_talent_instruction_in(
+        solstone_core_cli_copy::ENGLISH,
+        config,
+        journal_root,
+        templates_dir,
+        focused_facet,
+        context,
+    )
+}
+
+pub fn compose_talent_instruction_in(
+    locale: &str,
+    config: &TalentConfig,
+    journal_root: &Path,
+    templates_dir: &Path,
+    focused_facet: Option<&str>,
+    context: &BTreeMap<String, String>,
+) -> Result<String, String> {
+    let facets = resolve_facets_in(locale, journal_root, focused_facet)?;
     let mut context = context.clone();
     context.insert("facets".to_owned(), facets);
-    compose_prompt_body(&config.body, journal_root, templates_dir, &context)
+    compose_prompt_body_in(locale, &config.body, journal_root, templates_dir, &context)
 }
 
 fn default_load() -> Value {

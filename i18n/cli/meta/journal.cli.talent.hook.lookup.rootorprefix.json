@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for hook lookup rootorprefix.",
+  "context": "Journal command-line text for hook lookup rootorprefix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "candidate",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d419512614d0a1a22842baeff1735f111a3dd41a83cfb83b6fde5a0a9876cf66",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

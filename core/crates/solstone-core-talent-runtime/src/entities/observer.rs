@@ -271,12 +271,34 @@ pub fn gate(
         .config
         .get("day")
         .and_then(Value::as_str)
-        .ok_or_else(|| stage_error("gate", "entities:entity_observer", talent, "missing day"))?;
+        .ok_or_else(|| {
+            stage_error(
+                "gate",
+                "entities:entity_observer",
+                talent,
+                solstone_core_cli_copy::render_for(
+                    talent.stage_locale(),
+                    "journal.cli.talent.hook.day.missing",
+                    &[],
+                ),
+            )
+        })?;
     let facet = talent
         .config
         .get("facet")
         .and_then(Value::as_str)
-        .ok_or_else(|| stage_error("gate", "entities:entity_observer", talent, "missing facet"))?;
+        .ok_or_else(|| {
+            stage_error(
+                "gate",
+                "entities:entity_observer",
+                talent,
+                solstone_core_cli_copy::render_for(
+                    talent.stage_locale(),
+                    "journal.cli.talent.hook.facet.missing",
+                    &[],
+                ),
+            )
+        })?;
 
     let sugg_path = context
         .journal
@@ -325,7 +347,11 @@ pub fn build(
                 "build",
                 "entities:entity_observer",
                 talent,
-                "missing day",
+                solstone_core_cli_copy::render_for(
+                    talent.stage_locale(),
+                    "journal.cli.talent.hook.day.missing",
+                    &[],
+                ),
             ))
         })?;
     let facet = talent
@@ -337,7 +363,11 @@ pub fn build(
                 "build",
                 "entities:entity_observer",
                 talent,
-                "missing facet",
+                solstone_core_cli_copy::render_for(
+                    talent.stage_locale(),
+                    "journal.cli.talent.hook.facet.missing",
+                    &[],
+                ),
             ))
         })?;
 
@@ -349,7 +379,11 @@ pub fn build(
             "build",
             "entities:entity_observer",
             talent,
-            format!("missing suggestions artifact: {sugg_rel}"),
+            solstone_core_cli_copy::display_for(
+                talent.stage_locale(),
+                "journal.cli.talent.hook.suggestions.missing",
+                [("path", &(sugg_rel))],
+            ),
         )));
     }
 
@@ -358,7 +392,11 @@ pub fn build(
             "build",
             "entities:entity_observer",
             talent,
-            format!("failed to read {sugg_rel}: {e}"),
+            solstone_core_cli_copy::display_for(
+                talent.stage_locale(),
+                "journal.cli.talent.config.read",
+                [("path", &sugg_rel), ("error", &e)],
+            ),
         ))
     })?;
 
@@ -367,7 +405,11 @@ pub fn build(
             "build",
             "entities:entity_observer",
             talent,
-            format!("invalid suggestions JSON in {sugg_rel}: {e}"),
+            solstone_core_cli_copy::display_for(
+                talent.stage_locale(),
+                "journal.cli.talent.hook.suggestions.json",
+                [("path", &(sugg_rel)), ("error", &(e))],
+            ),
         ))
     })?;
 
@@ -379,7 +421,11 @@ pub fn build(
                 "build",
                 "entities:entity_observer",
                 talent,
-                "suggestions JSON missing entities array",
+                solstone_core_cli_copy::render_for(
+                    talent.stage_locale(),
+                    "journal.cli.talent.hook.suggestions.array",
+                    &[],
+                ),
             ))
         })?;
 
@@ -453,7 +499,8 @@ pub fn build(
             ))
         })?;
 
-        let (packet, shown_ids) = render_reconcile_packet(
+        let (packet, shown_ids) = render_reconcile_packet_in(
+            talent.stage_locale(),
             &context.journal,
             facet,
             scoped_entity,
@@ -492,8 +539,13 @@ pub fn build(
             "build",
             "entities:entity_observer",
             talent,
-            format!(
-                "entity facts context is {context_chars} characters; maximum is {MAX_OBSERVER_CONTEXT_CHARS}"
+            solstone_core_cli_copy::display_for(
+                talent.stage_locale(),
+                "journal.cli.talent.hook.facts.size",
+                [
+                    ("count", &(context_chars)),
+                    ("maximum", &(MAX_OBSERVER_CONTEXT_CHARS)),
+                ],
             ),
         )));
     }
@@ -507,7 +559,26 @@ pub fn build(
     }))
 }
 
+#[cfg(test)]
 fn render_reconcile_packet(
+    _journal: &Path,
+    _facet: &str,
+    entity: &solstone_core_facets::ScopedFacetEntity,
+    suggestions: &[Value],
+    before_raw: Option<&str>,
+) -> Result<(String, BTreeSet<u64>), String> {
+    render_reconcile_packet_in(
+        solstone_core_cli_copy::ENGLISH,
+        _journal,
+        _facet,
+        entity,
+        suggestions,
+        before_raw,
+    )
+}
+
+fn render_reconcile_packet_in(
+    locale: &str,
     _journal: &Path,
     _facet: &str,
     entity: &solstone_core_facets::ScopedFacetEntity,
@@ -657,9 +728,14 @@ fn render_reconcile_packet(
     let rendered = parts.join("\n");
     let count = rendered.chars().count();
     if count > MAX_ENTITY_CONTEXT_CHARS {
-        return Err(format!(
-            "entity packet for {} is {count} characters; maximum is {MAX_ENTITY_CONTEXT_CHARS}",
-            entity.entity_id
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.hook.entity.size",
+            [
+                ("entity", &(entity.entity_id)),
+                ("count", &(count)),
+                ("maximum", &(MAX_ENTITY_CONTEXT_CHARS)),
+            ],
         ));
     }
 

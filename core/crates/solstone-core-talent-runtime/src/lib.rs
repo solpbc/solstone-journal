@@ -85,6 +85,7 @@ pub(crate) struct FramedRequest {
 pub struct PreparedTalent {
     pub name: String,
     pub config: Map<String, Value>,
+    preview_language: Option<PreviewLanguage>,
     /// Bound to the exact loaded text, before sparse notes or request fitting.
     pub(crate) passage_layout: Option<([u8; 32], solstone_core_transcripts::TranscriptLayout)>,
     pub(crate) entry_sources: Vec<Option<solstone_core_transcripts::EntrySource>>,
@@ -107,11 +108,31 @@ pub struct PreparedTalent {
     pub(crate) log_generate_input: bool,
 }
 
+#[derive(Clone, Debug)]
+struct PreviewLanguage {
+    locale: String,
+    skip_is_code: bool,
+}
+
 impl PreparedTalent {
+    fn stage_locale(&self) -> &str {
+        self.preview_language
+            .as_ref()
+            .map_or(solstone_core_cli_copy::ENGLISH, |display| &display.locale)
+    }
+
+    fn skip_locale(&self) -> &str {
+        self.preview_language
+            .as_ref()
+            .filter(|display| !display.skip_is_code)
+            .map_or(solstone_core_cli_copy::ENGLISH, |display| &display.locale)
+    }
+
     pub fn new(name: String, config: Map<String, Value>) -> Self {
         Self {
             name,
             config,
+            preview_language: None,
             passage_layout: None,
             entry_sources: Vec::new(),
             terminal_reading: None,
@@ -124,6 +145,21 @@ impl PreparedTalent {
             framed_request: None,
             log_generate_input: false,
         }
+    }
+}
+
+fn entity_read_detail(locale: &str, error: &solstone_core_entity::EntityStoreError) -> String {
+    use solstone_core_entity::EntityStoreError;
+    use solstone_core_talent_cli::preview::{path_detail, read_detail};
+    match error {
+        EntityStoreError::Read(error) => read_detail(locale, error),
+        EntityStoreError::Path(error) => path_detail(locale, error),
+        EntityStoreError::IdentityNotObject { path } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.hook.identity.object",
+            [("path", &(path.display()))],
+        ),
+        _ => error.to_string(),
     }
 }
 
@@ -377,6 +413,19 @@ pub struct StageError {
 }
 
 impl StageError {
+    fn display_in(&self, locale: &str) -> String {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.hook.failure",
+            [
+                ("phase", &(self.phase)),
+                ("stage", &(self.stage)),
+                ("talent", &(self.talent)),
+                ("detail", &(self.detail)),
+            ],
+        )
+    }
+
     pub fn reason_code(&self) -> &'static str {
         if self.phase == "conflict" {
             "daily_owner_conflict"

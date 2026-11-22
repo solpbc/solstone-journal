@@ -7,7 +7,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_generate::GenerateExecutor;
 use solstone_core_talent_cli::preview::{PreviewRequest, PromptPreview, PromptPreviewRefusal};
 
-use super::{Extraction, SourceUnit, document, extract, readable, source_units};
+use super::{Extraction, SourceUnit, document, extract, source_units};
 use crate::ExecutionContext;
 use crate::assemble::prepare_preview;
 use crate::prepare::{RuntimePaths, SPARSE_INPUT_NOTE};
@@ -35,7 +35,11 @@ impl ActivityPassages {
     }
 
     pub fn readable(&self) -> String {
-        readable(&self.units, &self.extraction)
+        self.readable_in(solstone_core_cli_copy::ENGLISH)
+    }
+
+    pub fn readable_in(&self, locale: &str) -> String {
+        super::readable_in(locale, &self.units, &self.extraction)
     }
 }
 
@@ -57,6 +61,17 @@ pub fn activity_passages(
     context: &ExecutionContext,
     generate: &dyn GenerateExecutor,
 ) -> Result<ActivityPassages, PromptPreview> {
+    activity_passages_in(None, request, paths, context, generate)
+}
+
+pub fn activity_passages_in(
+    display_locale: Option<&str>,
+    request: &PreviewRequest,
+    paths: &RuntimePaths,
+    context: &ExecutionContext,
+    generate: &dyn GenerateExecutor,
+) -> Result<ActivityPassages, PromptPreview> {
+    let locale = display_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
     let (Some(activity), Some(day), Some(facet)) = (
         request.activity.as_deref(),
         request.day.as_deref(),
@@ -64,10 +79,14 @@ pub fn activity_passages(
     ) else {
         return Err(refused(
             "passages_require_activity",
-            "Pass --day YYYYMMDD, --facet NAME and --activity ID.",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.preview.recovery.pass.day.yyyymmdd.facet.name.and.activity.id",
+                &[],
+            ),
         ));
     };
-    let prepared = prepare_preview(request, paths, context)?;
+    let prepared = prepare_preview(display_locale, request, paths, context)?;
     if prepared
         .config
         .get("hook")
@@ -78,13 +97,21 @@ pub fn activity_passages(
         // from the source as loaded.
         return Err(refused(
             "activity_prestep_unsupported",
-            "Choose a talent that reads its activity source without a pre-step.",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.preview.recovery.choose.a.talent.that.reads.its.activity.source.without.a.pre",
+                &[],
+            ),
         ));
     }
     let Some(transcript) = prepared.config.get("transcript").and_then(Value::as_str) else {
         return Err(refused(
             "activity_sources_unavailable",
-            "Choose a talent that loads its activity's sources.",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.preview.recovery.choose.a.talent.that.loads.its.activity.s.sources",
+                &[],
+            ),
         ));
     };
     let transcript = transcript

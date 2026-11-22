@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for config budget retired.",
+  "context": "Journal command-line text for config budget retired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f37d3001f3e6adc04e1af53b2f64809cd9e71adabbf0a0667e7866bab01a75e2",
+  "max_length": 152,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "thinking_budget",
+      "kind": "accepted-input",
+      "value": "'thinking_budget'"
+    }
+  ]
+}

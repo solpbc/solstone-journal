@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for preview recovery correct the activity preview input then retry detail.",
+  "context": "Journal command-line text for preview recovery correct the activity preview input then retry detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2bfe3461e490b3b28c2436944c641b41428b160c662cea5d58a5a9aca51c2a1b",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

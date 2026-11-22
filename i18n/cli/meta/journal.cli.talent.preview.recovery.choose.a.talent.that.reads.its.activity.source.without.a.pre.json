@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for preview recovery choose a talent that reads its activity source without a pre.",
+  "context": "Journal command-line text for preview recovery choose a talent that reads its activity source without a pre.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9090399b4566a09a6917756941090408e43208cc70714f977badfe16fc3239ea",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

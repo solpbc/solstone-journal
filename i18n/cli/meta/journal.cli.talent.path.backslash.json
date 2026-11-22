@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for path backslash.",
+  "context": "Journal command-line text for path backslash.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "12370fef000f45516ba2a08d1956f5e7d2031c22337c189a1491156ee3bd872b",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

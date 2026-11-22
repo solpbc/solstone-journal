@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for config access retired.",
+  "context": "Journal command-line text for config access retired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3a1b3832e5caabe16e96d575116f68450b43d3f3642265c1b2143a708409dca3",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "access_tier",
+      "kind": "accepted-input",
+      "value": "'access_tier'"
+    }
+  ]
+}

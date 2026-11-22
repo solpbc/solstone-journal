@@ -1,0 +1,133 @@
+{
+  "description": "Journal command-line text for help show.",
+  "context": "Journal command-line text for help show.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9079273755e35c883b19f9de2b0cfcf5256b46cf574b7b57ab8e13115c408e4d",
+  "max_length": 1090,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                           [--segment HHMMSS_LEN] [--facet NAME]"
+    },
+    {
+      "name": "syntax_continuation_2",
+      "kind": "accepted-input",
+      "value": "                           [--activity ID] [--query TEXT] [--full]"
+    },
+    {
+      "name": "name",
+      "kind": "accepted-input",
+      "value": "name                  "
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "gap_12",
+      "kind": "whitespace",
+      "value": "            "
+    },
+    {
+      "name": "json_option",
+      "kind": "accepted-input",
+      "value": "--json"
+    },
+    {
+      "name": "gap_16",
+      "kind": "whitespace",
+      "value": "                "
+    },
+    {
+      "name": "jsonl",
+      "kind": "accepted-input",
+      "value": "JSONL"
+    },
+    {
+      "name": "prompt_option",
+      "kind": "accepted-input",
+      "value": "--prompt"
+    },
+    {
+      "name": "gap_14",
+      "kind": "whitespace",
+      "value": "              "
+    },
+    {
+      "name": "day_option",
+      "kind": "accepted-input",
+      "value": "--day YYYYMMDD"
+    },
+    {
+      "name": "gap_8",
+      "kind": "whitespace",
+      "value": "        "
+    },
+    {
+      "name": "segment_option",
+      "kind": "accepted-input",
+      "value": "--segment HHMMSS_LEN"
+    },
+    {
+      "name": "gap_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "facet_option",
+      "kind": "accepted-input",
+      "value": "--facet NAME"
+    },
+    {
+      "name": "gap_10",
+      "kind": "whitespace",
+      "value": "          "
+    },
+    {
+      "name": "activity_option",
+      "kind": "accepted-input",
+      "value": "--activity ID"
+    },
+    {
+      "name": "gap_9",
+      "kind": "whitespace",
+      "value": "         "
+    },
+    {
+      "name": "query_option",
+      "kind": "accepted-input",
+      "value": "--query TEXT"
+    },
+    {
+      "name": "full_option",
+      "kind": "accepted-input",
+      "value": "--full"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

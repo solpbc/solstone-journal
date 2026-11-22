@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for passages unit not attempted.",
+  "context": "Journal command-line text for passages unit not attempted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    },
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4ed69aa24aad0a5ea804f8b1075a25a769eeecb88a5c06ce53d8604afb7634bb",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

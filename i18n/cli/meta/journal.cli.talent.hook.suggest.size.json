@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for hook suggest size.",
+  "context": "Journal command-line text for hook suggest size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "maximum",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e25adbb7fa4473358911f594195f35f37e416eafae82e777bea204b7fcf6aee9",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

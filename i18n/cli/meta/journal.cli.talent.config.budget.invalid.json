@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for config budget invalid.",
+  "context": "Journal command-line text for config budget invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2bb9e8ff6c0f8f79f02f2743ffef19468914d20616a59ac20f3f6c3f7f1ab29f",
+  "max_length": 163,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "max_output_tokens",
+      "kind": "accepted-input",
+      "value": "'max_output_tokens'"
+    }
+  ]
+}

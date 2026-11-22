@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for preview recovery remove duplicate records with this id in the requested day a.",
+  "context": "Journal command-line text for preview recovery remove duplicate records with this id in the requested day a.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64fde3fa55edbd451da8a558e0656bd43f259e303e3e588f8beb03e2badfb8a1",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

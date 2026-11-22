@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for hook document stream.",
+  "context": "Journal command-line text for hook document stream.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9cb641234a461fbdf922b194e7dde17de8a5e344b3359d70b017e1cd04c2cac1",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list tag fail.",
+  "context": "Journal command-line text for list tag fail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1330fb046df996fed60c030b01a097c86c442111133cda593226f554b2a1e202",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

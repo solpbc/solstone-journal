@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for compose prompt path has no parent.",
+  "context": "Journal command-line text for compose prompt path has no parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "501275ad63dbd4d543650598aeb674879bae88966d0f61a418f56b860a7851e7",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

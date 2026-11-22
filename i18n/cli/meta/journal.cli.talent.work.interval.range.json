@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for work interval range.",
+  "context": "Journal command-line text for work interval range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bfa2fdd1e8350b6236357e79e3194dc4f897226fba78309ca56f6cf7fcb11a68",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

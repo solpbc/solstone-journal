@@ -21,7 +21,14 @@ pub(crate) fn render(
     let mut filtered = emit::filtered(configs, options);
     filtered.sort_by(|left, right| left.key.cmp(&right.key));
     if filtered.is_empty() {
-        return "No prompts found matching filters.\n".to_owned();
+        return format!(
+            "{}\n",
+            solstone_core_cli_copy::render_for(
+                solstone_core_cli_copy::cli_locale(),
+                "journal.cli.talent.list.empty",
+                &[]
+            )
+        );
     }
     let name_width = filtered
         .iter()
@@ -30,8 +37,27 @@ pub(crate) fn render(
         .unwrap_or(20)
         .max(10);
     let mut output = format!(
-        "  {:<name_width$}  {:<28}  {:<18}  TAGS\n\n",
-        "NAME", "TITLE", "LAST RUN"
+        "  {:<name_width$}  {:<28}  {:<18}  {}\n\n",
+        solstone_core_cli_copy::render_for(
+            solstone_core_cli_copy::cli_locale(),
+            "journal.cli.talent.list.header.name",
+            &[]
+        ),
+        solstone_core_cli_copy::render_for(
+            solstone_core_cli_copy::cli_locale(),
+            "journal.cli.talent.list.header.title",
+            &[]
+        ),
+        solstone_core_cli_copy::render_for(
+            solstone_core_cli_copy::cli_locale(),
+            "journal.cli.talent.list.header.last",
+            &[]
+        ),
+        solstone_core_cli_copy::render_for(
+            solstone_core_cli_copy::cli_locale(),
+            "journal.cli.talent.list.header.tags",
+            &[]
+        )
     );
     for group in [
         "segment",
@@ -50,7 +76,41 @@ pub(crate) fn render(
             continue;
         }
         if options.schedule.is_none() {
-            output.push_str(&format!("{group}:\n"));
+            let heading = match group {
+                "segment" => solstone_core_cli_copy::render_for(
+                    solstone_core_cli_copy::cli_locale(),
+                    "journal.cli.talent.list.group.segment",
+                    &[],
+                ),
+                "daily" => solstone_core_cli_copy::render_for(
+                    solstone_core_cli_copy::cli_locale(),
+                    "journal.cli.talent.list.group.daily",
+                    &[],
+                ),
+                "weekly" => solstone_core_cli_copy::render_for(
+                    solstone_core_cli_copy::cli_locale(),
+                    "journal.cli.talent.list.group.weekly",
+                    &[],
+                ),
+                "activity" => solstone_core_cli_copy::render_for(
+                    solstone_core_cli_copy::cli_locale(),
+                    "journal.cli.talent.list.group.activity",
+                    &[],
+                ),
+                "cadence" => solstone_core_cli_copy::render_for(
+                    solstone_core_cli_copy::cli_locale(),
+                    "journal.cli.talent.list.group.cadence",
+                    &[],
+                ),
+                "unscheduled" => solstone_core_cli_copy::render_for(
+                    solstone_core_cli_copy::cli_locale(),
+                    "journal.cli.talent.list.group.unscheduled",
+                    &[],
+                ),
+                _ => unreachable!(),
+            };
+            output.push_str(&heading);
+            output.push('\n');
         }
         for config in items {
             let title = truncate(
@@ -63,7 +123,13 @@ pub(crate) fn render(
             );
             let (last_run, failed) = match format_last_run(&config.key, journal_root, now) {
                 LastRunOutcome::NoRuns => ("-".to_owned(), false),
-                LastRunOutcome::Unavailable => ("unavailable".to_owned(), false),
+                LastRunOutcome::Unavailable => (
+                    solstone_core_window_catalog::text(
+                        solstone_core_cli_copy::cli_locale(),
+                        "journal.window.thinking.copy.unavailable",
+                    ),
+                    false,
+                ),
                 LastRunOutcome::Found { display, failed } => (display, failed),
             };
             let tags = tags(&config.metadata, failed);
@@ -106,11 +172,22 @@ pub(crate) fn render(
             .count();
         let disabled_count = before_disabled.saturating_sub(filtered.len());
         if disabled_count > 0 {
-            output.push_str(&format!(
-                "{} prompts ({} disabled hidden, use --disabled)\n",
-                filtered.len(),
-                disabled_count
+            let count = filtered.len();
+            output.push_str(&solstone_core_cli_copy::render_for(
+                solstone_core_cli_copy::cli_locale(),
+                "journal.cli.talent.list.visible",
+                &[
+                    (
+                        "count",
+                        solstone_core_cli_copy::Value::Cardinal(count as i64),
+                    ),
+                    (
+                        "hidden",
+                        solstone_core_cli_copy::Value::String(&disabled_count.to_string()),
+                    ),
+                ],
             ));
+            output.push('\n');
         }
     }
     output
@@ -137,29 +214,37 @@ fn matches_filters(config: &TalentConfig, options: &ListOptions) -> bool {
 }
 
 fn tags(info: &serde_json::Map<String, Value>, failed: bool) -> String {
-    let mut tags = Vec::new();
+    let mut tags: Vec<std::borrow::Cow<'_, str>> = Vec::new();
     match info.get("output").and_then(Value::as_str) {
-        Some("json") => tags.push("json"),
-        Some(_) => tags.push("md"),
+        Some("json") => tags.push("json".into()),
+        Some(_) => tags.push("md".into()),
         None => {}
     }
     if let Some(hook) = info.get("hook") {
         if let Some(hook) = hook.as_object() {
             if hook.get("pre").is_some_and(is_truthy) {
-                tags.push("pre");
+                tags.push("pre".into());
             }
             if hook.get("post").is_some_and(is_truthy) {
-                tags.push("post");
+                tags.push("post".into());
             }
         } else {
-            tags.push("hook");
+            tags.push("hook".into());
         }
     }
     if info.get("disabled").is_some_and(is_truthy) {
-        tags.push("disabled");
+        tags.push(std::borrow::Cow::Owned(solstone_core_cli_copy::render_for(
+            solstone_core_cli_copy::cli_locale(),
+            "journal.cli.talent.list.tag.disabled",
+            &[],
+        )));
     }
     if failed {
-        tags.push("FAIL");
+        tags.push(std::borrow::Cow::Owned(solstone_core_cli_copy::render_for(
+            solstone_core_cli_copy::cli_locale(),
+            "journal.cli.talent.list.tag.fail",
+            &[],
+        )));
     }
     tags.join(" ")
 }

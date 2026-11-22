@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for prepare talent name declares field in frontmatter.",
+  "context": "Journal command-line text for prepare talent name declares field in frontmatter.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b0cabc1cb67a96db2c5a0cb41c58045e37abc041e752bcb9831e2c26e7f6d477",
+  "max_length": 148,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

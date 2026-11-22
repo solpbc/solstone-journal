@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for hook suggestions array.",
+  "context": "Journal command-line text for hook suggestions array.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5be6b1ee7b474cee89e174d42a1791d4bac6980e481873418cb72a0384c3a1d7",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "entities",
+      "kind": "accepted-input",
+      "value": "entities"
+    }
+  ]
+}

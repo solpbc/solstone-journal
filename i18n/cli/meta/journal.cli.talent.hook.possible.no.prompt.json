@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for hook possible no prompt.",
+  "context": "Journal command-line text for hook possible no prompt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "311f4ca5b401f661639a7c6386e79e1ba48744c2c8adae502ca3c3b8948b0e97",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

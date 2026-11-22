@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for hook lookup separator.",
+  "context": "Journal command-line text for hook lookup separator.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "candidate",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ee1b1ca30c6cb68fa53a266f18794375bbbddb6664c9dbb7c5c29d07e2f283bd",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

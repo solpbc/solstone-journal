@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for prepare request overrides for field are not allowed budget.",
+  "context": "Journal command-line text for prepare request overrides for field are not allowed budget.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7fc8e914e8aa079f77328bd9bbbc80ea69d259258a77d49f52dfaf7b22c62ced",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

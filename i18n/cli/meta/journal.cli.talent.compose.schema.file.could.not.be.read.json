@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for compose schema file could not be read.",
+  "context": "Journal command-line text for compose schema file could not be read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "52809859cfd44a1190aee3a34bb5867ec31aa5507134b40e651cadd022995722",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for hook review changed.",
+  "context": "Journal command-line text for hook review changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d77bf579680f3a6a9211c42c690b9642a93453a8a052ca246d83e144a42d4dbf",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

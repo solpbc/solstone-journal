@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for preview recovery choose a talent whose required pre step is available in the.",
+  "context": "Journal command-line text for preview recovery choose a talent whose required pre step is available in the.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a0dc85db68fbcb29c775c07f5ff8b29f54253ee2978306d9a76fe6bd9dc94852",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

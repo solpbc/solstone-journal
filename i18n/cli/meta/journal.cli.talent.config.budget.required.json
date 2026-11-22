@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for config budget required.",
+  "context": "Journal command-line text for config budget required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "833af4423e77eb9f27d2a0ac1e465093a8207bdbba94cc74cf38173add05ab8a",
+  "max_length": 205,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "max_output_tokens",
+      "kind": "accepted-input",
+      "value": "'max_output_tokens'"
+    }
+  ]
+}

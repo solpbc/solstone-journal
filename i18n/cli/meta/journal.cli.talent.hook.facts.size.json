@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for hook facts size.",
+  "context": "Journal command-line text for hook facts size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "maximum",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "78b03c3c698eb05301bfc0988c66f5661401b42cbb9fbb45d766c151bd319f20",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

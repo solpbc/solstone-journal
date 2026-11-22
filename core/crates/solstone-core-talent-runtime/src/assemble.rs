@@ -10,7 +10,7 @@ use solstone_core_talent_cli::preview::{PreviewRequest, PromptPreview, PromptPre
 
 use crate::activity_contract::{self, SpanFailure};
 use crate::contract::{GateDecision, resolve_hook};
-use crate::prepare::{PrepareMode, RuntimePaths, prepare, resolve_validated_talent_config};
+use crate::prepare::{PrepareMode, RuntimePaths, prepare_in, resolve_validated_talent_config_in};
 use crate::transcript::sources_are_enabled;
 use crate::{DRY_RUN_KEY, ExecutionContext, PreparedTalent, RuntimeOutcome, generate_contents};
 
@@ -19,10 +19,25 @@ pub fn assemble_prompt_preview(
     paths: &RuntimePaths,
     context: &ExecutionContext,
 ) -> PromptPreview {
-    let mut prepared = match prepare_preview(request, paths, context) {
+    assemble_prompt_preview_in(None, request, paths, context)
+}
+
+pub fn assemble_prompt_preview_in(
+    display_locale: Option<&str>,
+    request: &PreviewRequest,
+    paths: &RuntimePaths,
+    context: &ExecutionContext,
+) -> PromptPreview {
+    let locale = display_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
+    let mut prepared = match prepare_preview(display_locale, request, paths, context) {
         Ok(prepared) => prepared,
         Err(preview) => return preview,
     };
+
+    prepared.preview_language = display_locale.map(|locale| crate::PreviewLanguage {
+        locale: locale.to_owned(),
+        skip_is_code: request.activity.is_some(),
+    });
 
     let hook = prepared
         .config
@@ -32,7 +47,7 @@ pub fn assemble_prompt_preview(
         .and_then(Value::as_str);
     if let Some(hook) = hook {
         let Some(stage) = resolve_hook(hook) else {
-            return unavailable_prestep(request);
+            return unavailable_prestep(locale, request);
         };
         prepared
             .config
@@ -41,10 +56,15 @@ pub fn assemble_prompt_preview(
             match gate(&prepared, context) {
                 Ok(GateDecision::Proceed) => {}
                 Ok(GateDecision::Skip(reason)) => {
-                    return would_not_run(request, &reason);
+                    return would_not_run(locale, request, &reason);
                 }
                 Err(error) => {
-                    return preview_failure(request, "activity_preview_failed", error.to_string());
+                    return preview_failure(
+                        locale,
+                        request,
+                        "activity_preview_failed",
+                        error.display_in(locale),
+                    );
                 }
             }
         }
@@ -56,10 +76,15 @@ pub fn assemble_prompt_preview(
             ) {
                 Ok(state) => state,
                 Err(RuntimeOutcome::Skipped { reason, .. }) => {
-                    return would_not_run(request, &reason);
+                    return would_not_run(locale, request, &reason);
                 }
                 Err(RuntimeOutcome::StageFailed(error)) => {
-                    return preview_failure(request, "activity_preview_failed", error.to_string());
+                    return preview_failure(
+                        locale,
+                        request,
+                        "activity_preview_failed",
+                        error.display_in(locale),
+                    );
                 }
                 Err(_) => unreachable!("a BuildFn can only return Skipped or StageFailed"),
             },
@@ -68,12 +93,17 @@ pub fn assemble_prompt_preview(
         if let Some(check) = stage.unavailable_before_generate
             && let Some(reason) = (check.select)(&state)
         {
-            return would_not_run(request, reason);
+            return would_not_run(locale, request, reason);
         }
         if let Some(override_prompt) = stage.prompt_override
             && let Err(error) = override_prompt(&mut prepared, &state)
         {
-            return preview_failure(request, "activity_preview_failed", error.to_string());
+            return preview_failure(
+                locale,
+                request,
+                "activity_preview_failed",
+                error.display_in(locale),
+            );
         }
     }
 
@@ -110,11 +140,13 @@ pub fn assemble_prompt_preview(
 /// before any pre-step. A request this would not run, or cannot prepare,
 /// returns the preview that says so.
 pub(crate) fn prepare_preview(
+    display_locale: Option<&str>,
     request: &PreviewRequest,
     paths: &RuntimePaths,
     context: &ExecutionContext,
 ) -> Result<PreparedTalent, PromptPreview> {
-    let activity = match resolve_activity(request, paths, context) {
+    let locale = display_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
+    let activity = match resolve_activity(locale, request, paths, context) {
         Ok(activity) => activity,
         Err(refusal) => return Err(PromptPreview::Refused(refusal)),
     };
@@ -144,10 +176,17 @@ pub(crate) fn prepare_preview(
         }
     }
 
-    let prepared = match prepare(payload, paths, context, PrepareMode::Preview) {
+    let prepared = match prepare_in(
+        display_locale,
+        payload,
+        paths,
+        context,
+        PrepareMode::Preview,
+    ) {
         Ok(prepared) => prepared,
         Err(error) => {
             return Err(preview_failure(
+                locale,
                 request,
                 "activity_talent_unavailable",
                 error.to_string(),
@@ -160,12 +199,13 @@ pub(crate) fn prepare_preview(
         .and_then(Value::as_str)
         .filter(|reason| !reason.is_empty())
     {
-        return Err(would_not_run(request, reason));
+        return Err(would_not_run(locale, request, reason));
     }
     Ok(prepared)
 }
 
 fn preview_failure(
+    locale: &str,
     request: &PreviewRequest,
     code: &str,
     error: impl Into<String>,
@@ -175,31 +215,43 @@ fn preview_failure(
         PromptPreview::Refused(refusal(
             code,
             None,
-            format!("Correct the activity preview input, then retry: {error}"),
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.preview.recovery.correct.the.activity.preview.input.then.retry.detail",
+                [("detail", &(error))],
+            ),
         ))
     } else {
         PromptPreview::Failed { error }
     }
 }
 
-fn unavailable_prestep(request: &PreviewRequest) -> PromptPreview {
+fn unavailable_prestep(locale: &str, request: &PreviewRequest) -> PromptPreview {
     if request.activity.is_some() {
         PromptPreview::Refused(refusal(
             "activity_prestep_unavailable",
             None,
-            "Choose a talent whose required pre-step is available in the native runtime.",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.preview.recovery.choose.a.talent.whose.required.pre.step.is.available.in.the",
+                &[],
+            ),
         ))
     } else {
         PromptPreview::UnavailablePreStep
     }
 }
 
-fn would_not_run(request: &PreviewRequest, reason: &str) -> PromptPreview {
+fn would_not_run(locale: &str, request: &PreviewRequest, reason: &str) -> PromptPreview {
     if request.activity.is_some() {
         PromptPreview::Refused(refusal(
             reason,
             None,
-            "Make the selected activity and talent eligible, then retry.",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.preview.recovery.make.the.selected.activity.and.talent.eligible.then.retry",
+                &[],
+            ),
         ))
     } else {
         PromptPreview::WouldNotRun {
@@ -215,6 +267,7 @@ struct ResolvedActivity {
 }
 
 fn resolve_activity(
+    locale: &str,
     request: &PreviewRequest,
     paths: &RuntimePaths,
     context: &ExecutionContext,
@@ -230,7 +283,11 @@ fn resolve_activity(
             refusal(
                 "activity_requires_day",
                 None,
-                "Pass --day YYYYMMDD with --activity.",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.talent.preview.recovery.pass.day.yyyymmdd.with.activity",
+                    &[],
+                ),
             )
         })?;
     let facet = request
@@ -241,23 +298,35 @@ fn resolve_activity(
             refusal(
                 "activity_requires_facet",
                 None,
-                "Pass --facet NAME with --activity.",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.talent.preview.recovery.pass.facet.name.with.activity",
+                    &[],
+                ),
             )
         })?;
     if request.segment.is_some() {
         return Err(refusal(
             "activity_segment_conflict",
             request.segment.clone(),
-            "Choose either --activity or --segment, not both.",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.preview.recovery.choose.either.activity.or.segment.not.both",
+                &[],
+            ),
         ));
     }
 
-    let config =
-        resolve_validated_talent_config(&request.name, paths, context).map_err(|error| {
+    let config = resolve_validated_talent_config_in(locale, &request.name, paths, context)
+        .map_err(|error| {
             refusal(
                 "activity_talent_unavailable",
                 None,
-                format!("Correct the talent configuration: {error}"),
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.preview.recovery.correct.the.talent.configuration.detail",
+                    [("detail", &(error))],
+                ),
             )
         })?;
     if config
@@ -274,23 +343,35 @@ fn resolve_activity(
         return Err(refusal(
             "disabled",
             None,
-            "Make the selected talent eligible, then retry.",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.preview.recovery.make.the.selected.talent.eligible.then.retry",
+                &[],
+            ),
         ));
     }
     if config.metadata.get("schedule").and_then(Value::as_str) != Some("activity") {
         return Err(refusal(
             "activity_schedule_unsupported",
             None,
-            "Choose a talent whose schedule is activity.",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.preview.recovery.choose.a.talent.whose.schedule.is.activity",
+                &[],
+            ),
         ));
     }
 
     let rows = solstone_core_facets::load_activity_records(&context.journal, facet, day, true)
         .map_err(|error| {
+            let detail = match &error {
+                solstone_core_facets::ActivityRecordStoreError::Path(path) => solstone_core_talent_cli::preview::path_detail(locale, path),
+                _ => error.to_string(),
+            };
             refusal(
                 "activity_record_unavailable",
                 None,
-                format!("Restore a readable activity record file, then retry: {error}"),
+                solstone_core_cli_copy::display_for(locale, "journal.cli.talent.preview.recovery.restore.a.readable.activity.record.file.then.retry.detail", [("detail", &detail)]),
             )
         })?;
     let matches = rows
@@ -302,7 +383,11 @@ fn resolve_activity(
             return Err(refusal(
                 "activity_not_found",
                 None,
-                "Choose an activity ID stored in the requested day and facet.",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.talent.preview.recovery.choose.an.activity.id.stored.in.the.requested.day.and.facet",
+                    &[],
+                ),
             ));
         }
         [record] => record.clone(),
@@ -310,7 +395,11 @@ fn resolve_activity(
             return Err(refusal(
                 "activity_ambiguous",
                 None,
-                "Remove duplicate records with this ID in the requested day and facet.",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.talent.preview.recovery.remove.duplicate.records.with.this.id.in.the.requested.day.a",
+                    &[],
+                ),
             ));
         }
     };
@@ -318,19 +407,23 @@ fn resolve_activity(
         return Err(refusal(
             "activity_synthetic",
             None,
-            "Choose a completed owner activity, not an anticipated or cogitate record.",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.preview.recovery.choose.a.completed.owner.activity.not.an.anticipated.or.cogi",
+                &[],
+            ),
         ));
     }
     let span = activity_contract::validated_span(&record).map_err(|failure| match failure {
         SpanFailure::Empty => refusal(
             "activity_span_empty",
             None,
-            "Choose an activity with at least one recorded segment.",
+            solstone_core_cli_copy::render_for(locale, "journal.cli.talent.preview.recovery.choose.an.activity.with.at.least.one.recorded.segment", &[]),
         ),
         SpanFailure::Invalid => refusal(
             "activity_span_invalid",
             None,
-            "Repair the activity span so every segment is a non-empty string.",
+            solstone_core_cli_copy::render_for(locale, "journal.cli.talent.preview.recovery.repair.the.activity.span.so.every.segment.is.a.non.empty.str", &[]),
         ),
     })?;
     let kind = record
@@ -341,17 +434,25 @@ fn resolve_activity(
         return Err(refusal(
             "activity_kind_unsupported",
             None,
-            "Choose a talent configured for this activity kind.",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.preview.recovery.choose.a.talent.configured.for.this.activity.kind",
+                &[],
+            ),
         ));
     }
     let prompt = (!activity_contract::is_explicit_generate(&config.metadata))
         .then(|| activity_contract::untyped_activity_prompt(activity_id, kind, facet, day));
 
     let available = iter_segments(&context.journal, PathOrDay::Day(day)).map_err(|error| {
+        let detail = match error {
+            solstone_core_journal_io::PathError::InvalidRelativePath { .. } => solstone_core_cli_copy::render_for(locale, "journal.cli.talent.path.day", &[]),
+            _ => solstone_core_talent_cli::preview::path_detail(locale, &error),
+        };
         refusal(
             "activity_segment_unavailable",
             span.first().cloned(),
-            format!("Restore readable segment directories, then retry: {error}"),
+            solstone_core_cli_copy::display_for(locale, "journal.cli.talent.preview.recovery.restore.readable.segment.directories.then.retry.detail", [("detail", &detail)]),
         )
     })?;
     for segment in &span {
@@ -359,14 +460,18 @@ fn resolve_activity(
             return Err(refusal(
                 "activity_segment_unavailable",
                 Some(segment.clone()),
-                "Restore the selected activity segment, then retry.",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.talent.preview.recovery.restore.the.selected.activity.segment.then.retry",
+                    &[],
+                ),
             ));
         };
         let entries = std::fs::read_dir(candidate.path()).map_err(|error| {
             refusal(
                 "activity_segment_unavailable",
                 Some(segment.clone()),
-                format!("Restore a readable segment directory, then retry: {error}"),
+                solstone_core_cli_copy::display_for(locale, "journal.cli.talent.preview.recovery.restore.a.readable.segment.directory.then.retry.detail", [("detail", &(error))]),
             )
         })?;
         for entry in entries {
@@ -374,7 +479,7 @@ fn resolve_activity(
                 refusal(
                     "activity_segment_unavailable",
                     Some(segment.clone()),
-                    format!("Restore a readable segment directory, then retry: {error}"),
+                    solstone_core_cli_copy::display_for(locale, "journal.cli.talent.preview.recovery.restore.a.readable.segment.directory.then.retry.detail", [("detail", &(error))]),
                 )
             })?;
         }

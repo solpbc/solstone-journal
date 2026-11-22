@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for hook day invalid.",
+  "context": "Journal command-line text for hook day invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5418e7ecbb2da9e7bc4b351f0e70c68d5ef0442f98f3c9eb1553fc12d9bad4e3",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

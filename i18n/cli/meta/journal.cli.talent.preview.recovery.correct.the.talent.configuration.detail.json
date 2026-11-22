@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for preview recovery correct the talent configuration detail.",
+  "context": "Journal command-line text for preview recovery correct the talent configuration detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1cbb7835bcb174b915e61d401226eccca4d7efb33017e738bdfeccc031d15532",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

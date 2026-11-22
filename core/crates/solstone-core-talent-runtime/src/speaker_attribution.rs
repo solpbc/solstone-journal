@@ -67,6 +67,26 @@ fn segment_dir(
     layout: SegmentLayout,
     create: bool,
 ) -> Result<PathBuf, String> {
+    segment_dir_in(
+        solstone_core_cli_copy::ENGLISH,
+        journal,
+        day,
+        stream,
+        segment,
+        layout,
+        create,
+    )
+}
+
+fn segment_dir_in(
+    locale: &str,
+    journal: &Path,
+    day: &str,
+    stream: &str,
+    segment: &str,
+    layout: SegmentLayout,
+    create: bool,
+) -> Result<PathBuf, String> {
     if create {
         let resolved = solstone_core_speaker_resolve::segment_catalog::resolve_exact(
             journal, day, stream, segment, layout,
@@ -75,21 +95,36 @@ fn segment_dir(
         match resolved {
             Some(path) => Ok(path),
             None => {
-                let day_dir = solstone_core_journal_io::day_path(journal, day, true)
-                    .map_err(|error| error.to_string())?;
+                let day_dir =
+                    solstone_core_journal_io::day_path(journal, day, true).map_err(|error| {
+                        match error {
+                            solstone_core_journal_io::PathError::InvalidRelativePath { .. } => {
+                                solstone_core_cli_copy::render_for(
+                                    locale,
+                                    "journal.cli.talent.path.day",
+                                    &[],
+                                )
+                            }
+                            _ => solstone_core_talent_cli::preview::path_detail(locale, &error),
+                        }
+                    })?;
                 let rel = match layout {
                     SegmentLayout::Direct => {
                         if stream != "_default" {
-                            return Err(format!(
-                                "direct layout requires stream \"_default\", got \"{stream}\""
+                            return Err(solstone_core_cli_copy::display_for(
+                                locale,
+                                "journal.cli.talent.hook.stream.layout",
+                                [("stream", &(stream))],
                             ));
                         }
                         segment.to_owned()
                     }
                     SegmentLayout::Named => format!("{stream}/{segment}"),
                 };
-                let contained = solstone_core_journal_io::contained_path(&day_dir, &rel)
-                    .map_err(|error| error.to_string())?;
+                let contained =
+                    solstone_core_journal_io::contained_path(&day_dir, &rel).map_err(|error| {
+                        solstone_core_talent_cli::preview::path_detail(locale, &error)
+                    })?;
                 std::fs::create_dir_all(&contained).map_err(|error| error.to_string())?;
                 Ok(contained)
             }
@@ -100,13 +135,26 @@ fn segment_dir(
         ) {
             return Ok(resolved);
         }
-        let day_dir = solstone_core_journal_io::day_path(journal, day, false)
-            .map_err(|error| error.to_string())?;
+        let day_dir =
+            solstone_core_journal_io::day_path(journal, day, false).map_err(
+                |error| match error {
+                    solstone_core_journal_io::PathError::InvalidRelativePath { .. } => {
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.talent.path.day",
+                            &[],
+                        )
+                    }
+                    _ => solstone_core_talent_cli::preview::path_detail(locale, &error),
+                },
+            )?;
         let rel = match layout {
             SegmentLayout::Direct => {
                 if stream != "_default" {
-                    return Err(format!(
-                        "direct layout requires stream \"_default\", got \"{stream}\""
+                    return Err(solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.talent.hook.stream.layout",
+                        [("stream", &(stream))],
                     ));
                 }
                 segment.to_owned()
@@ -114,8 +162,117 @@ fn segment_dir(
             SegmentLayout::Named => format!("{stream}/{segment}"),
         };
         let contained = solstone_core_journal_io::contained_path(&day_dir, &rel)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| solstone_core_talent_cli::preview::path_detail(locale, &error))?;
         Ok(contained)
+    }
+}
+
+fn lookup_detail(locale: &str, error: &solstone_core_journal_io::ExactLookupError) -> String {
+    use solstone_core_journal_io::ExactLookupError;
+    use solstone_core_journal_io::name_admission::{NameAdmissionReason, escape_name, escape_path};
+    match error {
+        ExactLookupError::InvalidComponent { candidate, reason } => {
+            let candidate = escape_name(candidate);
+            match reason {
+                NameAdmissionReason::Empty => solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.hook.lookup.empty",
+                    [("candidate", &(candidate))],
+                ),
+                NameAdmissionReason::DotComponent => solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.hook.lookup.dotcomponent",
+                    [("candidate", &(candidate))],
+                ),
+                NameAdmissionReason::RootOrPrefix => solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.hook.lookup.rootorprefix",
+                    [("candidate", &(candidate))],
+                ),
+                NameAdmissionReason::Separator => solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.hook.lookup.separator",
+                    [("candidate", &(candidate))],
+                ),
+                NameAdmissionReason::Control => solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.hook.lookup.control",
+                    [("candidate", &(candidate))],
+                ),
+                _ => error.to_string(),
+            }
+        }
+        ExactLookupError::WrongKind { path, kind } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.hook.lookup.kind",
+            [
+                ("path", &(escape_path(path))),
+                ("kind", &(format!("{kind:?}"))),
+            ],
+        ),
+        ExactLookupError::Containment(error) => solstone_core_talent_cli::preview::path_detail(
+            locale,
+            &solstone_core_journal_io::PathError::Escape(error.clone()),
+        ),
+        ExactLookupError::LayoutMismatch { stream } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.hook.lookup.layout",
+            [("stream", &(format!("{stream:?}")))],
+        ),
+        ExactLookupError::Io { .. } => error.to_string(),
+    }
+}
+
+fn resolve_detail(
+    locale: &str,
+    error: &solstone_core_speaker_resolve::resolve::ResolveError,
+) -> String {
+    use solstone_core_entity::{EntityLifecycleError, EntityResolutionError};
+    use solstone_core_speaker_resolve::{evidence::EvidenceError, resolve::ResolveError};
+    use solstone_core_talent_cli::preview::{path_detail, settings_detail};
+    match error {
+        ResolveError::Transcript(
+            solstone_core_speaker_id::transcript::TranscriptError::InvalidUtf8,
+        ) => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.talent.hook.transcript.bytes",
+            &[],
+        ),
+        ResolveError::EntityStore(error)
+        | ResolveError::EntityLifecycle(EntityLifecycleError::Store(error))
+        | ResolveError::Evidence(EvidenceError::Entity(error))
+        | ResolveError::Resolution(EntityResolutionError::Read(error)) => {
+            crate::entity_read_detail(locale, error)
+        }
+        ResolveError::Path(error) | ResolveError::Evidence(EvidenceError::Path(error)) => {
+            path_detail(locale, error)
+        }
+        ResolveError::ExactLookup(error)
+        | ResolveError::Evidence(EvidenceError::ExactLookup(error)) => lookup_detail(locale, error),
+        ResolveError::Evidence(EvidenceError::Config(error)) => settings_detail(locale, error),
+        ResolveError::Resolution(EntityResolutionError::ResolvedChoiceEntityAbsent {
+            ambiguity_id,
+            entity_id,
+        }) => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.hook.resolution.absent",
+            [
+                ("ambiguity", &(ambiguity_id)),
+                ("entity", &(format!("{entity_id:?}"))),
+            ],
+        ),
+        ResolveError::Resolution(EntityResolutionError::ResolvedChoiceEntityBlocked {
+            ambiguity_id,
+            entity_id,
+        }) => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.hook.resolution.hidden",
+            [
+                ("ambiguity", &(ambiguity_id)),
+                ("entity", &(format!("{entity_id:?}"))),
+            ],
+        ),
+        _ => error.to_string(),
     }
 }
 
@@ -349,8 +506,16 @@ pub(crate) fn build_cancellable(
     let dry_run = is_dry_run(prepared);
     // Preserve solstone/talent/speaker_attribution.py:40: this lookup creates a first-run segment
     // unless preview/dry-run asked for a read-only pass.
-    let segment_dir = segment_dir(&context.journal, day, stream, segment, layout, !dry_run)
-        .map_err(|error| skipped(prepared, error))?;
+    let segment_dir = segment_dir_in(
+        prepared.skip_locale(),
+        &context.journal,
+        day,
+        stream,
+        segment,
+        layout,
+        !dry_run,
+    )
+    .map_err(|error| skipped(prepared, error))?;
     let resolved = match solstone_core_speaker_resolve::resolve::resolve(
         &context.journal,
         day,
@@ -362,7 +527,7 @@ pub(crate) fn build_cancellable(
     ) {
         Ok(resolved) => resolved,
         Err(error) => {
-            let reason = error.to_string();
+            let reason = resolve_detail(prepared.skip_locale(), &error);
             if !dry_run && has_embeddings(&segment_dir) {
                 solstone_core_speaker_id::labels::write_stub_labels_checked(
                     &segment_dir,

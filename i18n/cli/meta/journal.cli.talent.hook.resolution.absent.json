@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for hook resolution absent.",
+  "context": "Journal command-line text for hook resolution absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "ambiguity",
+      "type": "string"
+    },
+    {
+      "name": "entity",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "802b1486e99d789faeddd54f1844022bd9758b061807a3363142a0f4885d5391",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

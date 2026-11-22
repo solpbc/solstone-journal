@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for config output required.",
+  "context": "Journal command-line text for config output required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f94b667d8053207403458f49fdbe2829d08f191897fcf6aa3032569e15955848",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "generate",
+      "kind": "accepted-input",
+      "value": "'generate'"
+    },
+    {
+      "name": "output",
+      "kind": "accepted-input",
+      "value": "'output'"
+    }
+  ]
+}

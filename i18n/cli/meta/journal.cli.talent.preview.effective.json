@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for preview effective.",
+  "context": "Journal command-line text for preview effective.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ad927520b81ad3a51b60e917c7ecc4061085b5b56d712176880926b518f95f32",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

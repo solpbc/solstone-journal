@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for compose schema file is not valid json.",
+  "context": "Journal command-line text for compose schema file is not valid json.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "01f482fa6286508ddd321af6aec0c65431348ed9563e4bf6cfc883a33f3c7598",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

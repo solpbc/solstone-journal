@@ -77,10 +77,20 @@ impl Report {
 /// protected context and reply allowance, and makes this packet the input when
 /// the complete raw request would not fit the floor (`over_floor`), on every
 /// backend. No model call or journal write occurs here.
+#[cfg(test)]
 pub(crate) fn prepare(
     journal: &Path,
     config: &Map<String, Value>,
 ) -> Result<Option<Candidate>, String> {
+    prepare_in(None, journal, config)
+}
+
+pub(crate) fn prepare_in(
+    display_locale: Option<&str>,
+    journal: &Path,
+    config: &Map<String, Value>,
+) -> Result<Option<Candidate>, String> {
+    let locale = display_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
     if !matches!(
         config.get("name").and_then(Value::as_str),
         Some("work" | "conversation")
@@ -118,8 +128,16 @@ pub(crate) fn prepare(
         .and_then(Value::as_str)
         .or_else(|| config.get("activity")?.get("stream")?.as_str())
         .filter(|stream| !stream.is_empty());
-    let all_segments = iter_segments(journal, PathOrDay::Day(day))
-        .map_err(|error| format!("cannot read Work segment results: {error}"))?;
+    let all_segments = iter_segments(journal, PathOrDay::Day(day)).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.work.read",
+            [(
+                "error",
+                &(solstone_core_talent_cli::preview::path_detail(locale, &error)),
+            )],
+        )
+    })?;
     let mut segments = Vec::with_capacity(span.len());
     for key in span {
         let Some(key) = key.as_str() else {
@@ -134,7 +152,11 @@ pub(crate) fn prepare(
                 }
         });
         let Some(segment) = matches.next() else {
-            return Err(format!("Work source segment is unavailable: {day}/{key}"));
+            return Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.work.unavailable",
+                [("day", &(day)), ("segment", &(key))],
+            ));
         };
         // Without a stream, do not guess which saved report belongs to a key
         // shared by multiple streams. The ordinary raw request remains valid.
@@ -165,9 +187,13 @@ pub(crate) fn prepare(
         {
             sources.insert("percepts".into(), Value::Bool(false));
         }
-        let native = transcript::load_transcript(journal, &native_config)?;
+        let native = transcript::load_transcript_in(display_locale, journal, &native_config)?;
         if native.memory_incomplete {
-            return Err("private memory context is incomplete".into());
+            return Err(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.prepare.memory.incomplete",
+                &[],
+            ));
         }
         provenance.push(json!({
             "segment": segment.key(),
@@ -180,7 +206,7 @@ pub(crate) fn prepare(
             "native_percept_entries": native.counts.percepts,
         }));
         parts.push(Part {
-            heading: segment_heading(day, segment.key())?,
+            heading: segment_heading(display_locale, day, segment.key())?,
             sense,
             screen,
             // Includes ordinary Voice naming, imported transcripts and trusted
@@ -516,22 +542,47 @@ fn speech_label(line: &str) -> Option<&str> {
         .then_some(label)
 }
 
-fn segment_heading(day: &str, key: &str) -> Result<String, String> {
-    let (clock, length) = key
-        .split_once('_')
-        .ok_or_else(|| format!("invalid Work source segment: {key}"))?;
+fn segment_heading(display_locale: Option<&str>, day: &str, key: &str) -> Result<String, String> {
+    let locale = display_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
+    let (clock, length) = key.split_once('_').ok_or_else(|| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.work.key",
+            [("segment", &(key))],
+        )
+    })?;
     let start = jiff::civil::DateTime::strptime("%Y%m%d %H%M%S", format!("{day} {clock}"))
-        .map_err(|error| format!("invalid Work source interval: {error}"))?;
-    let seconds = length
-        .parse::<i64>()
-        .map_err(|error| format!("invalid Work source duration: {error}"))?;
+        .map_err(|error| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.work.interval",
+                [("error", &(error))],
+            )
+        })?;
+    let seconds = length.parse::<i64>().map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.work.duration",
+            [("error", &(error))],
+        )
+    })?;
     // A duration holds whole milliseconds in an `i64`.
     if !(-(i64::MAX / 1000)..=i64::MAX / 1000).contains(&seconds) {
-        return Err("Work source duration is out of range".to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.talent.work.duration.range",
+            &[],
+        ));
     }
     let end = start
         .checked_add(jiff::SignedDuration::from_secs(seconds))
-        .map_err(|_| "Work source interval is out of range".to_owned())?;
+        .map_err(|_| {
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.talent.work.interval.range",
+                &[],
+            )
+        })?;
     // Use the same observation-entry coordinates the native fitter recognizes.
     Ok(format!(
         "## {} - {}",

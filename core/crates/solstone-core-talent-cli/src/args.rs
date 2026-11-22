@@ -3,6 +3,7 @@
 
 use std::ffi::OsString;
 
+#[cfg(test)]
 pub const HELP: &str = concat!(
     "usage: solstone journal talent [-h] [-v] [-d] {list,show,passages,logs,log} ...\n\n",
     "Inspect talent prompt configurations\n\n",
@@ -19,19 +20,7 @@ pub const HELP: &str = concat!(
     "  -d, --debug           Enable debug logging\n",
 );
 
-pub const LIST_HELP: &str = concat!(
-    "usage: solstone journal talent list [-h] [--schedule {daily,segment,activity}]\n",
-    "                           [--source {system,app}] [--disabled] [--json]\n\n",
-    "options:\n",
-    "  -h, --help            show this help message and exit\n",
-    "  --schedule {daily,segment,activity}\n",
-    "                        Filter by schedule type\n",
-    "  --source {system,app}\n",
-    "                        Filter by origin\n",
-    "  --disabled            Include disabled prompts\n",
-    "  --json                Output as JSONL\n",
-);
-
+#[cfg(test)]
 pub const LOG_HELP: &str = concat!(
     "usage: solstone journal talent log [-h] [--json] [--full] id\n\n",
     "positional arguments:\n",
@@ -42,6 +31,7 @@ pub const LOG_HELP: &str = concat!(
     "  --full      Expand event details\n",
 );
 
+#[cfg(test)]
 pub const LOGS_HELP: &str = concat!(
     "usage: solstone journal talent logs [-h] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors]\n",
     "                           [--summary]\n",
@@ -58,6 +48,7 @@ pub const LOGS_HELP: &str = concat!(
     "  --summary             Show grouped summary\n",
 );
 
+#[cfg(test)]
 pub const SHOW_HELP: &str = concat!(
     "usage: solstone journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]\n",
     "                           [--segment HHMMSS_LEN] [--facet NAME]\n",
@@ -75,24 +66,6 @@ pub const SHOW_HELP: &str = concat!(
     "  --activity ID         Activity ID for activity-scheduled prompts\n",
     "  --query TEXT          Sample query for tool agents\n",
     "  --full                Show full content without truncation\n",
-);
-
-pub const PASSAGES_HELP: &str = concat!(
-    "usage: solstone journal talent passages [-h] [--json] --day YYYYMMDD\n",
-    "                           --facet NAME --activity ID\n",
-    "                           name\n\n",
-    "Copy exact passages from the source an activity talent reads.\n",
-    "A short source unit is kept whole without a model call; a longer one\n",
-    "takes one completion to choose what to copy. No passages are written to\n",
-    "the journal; a completion's usage is logged like any other.\n\n",
-    "positional arguments:\n",
-    "  name                  Activity talent name, such as work or conversation\n\n",
-    "options:\n",
-    "  -h, --help            show this help message and exit\n",
-    "  --json                Output the passage document as JSON\n",
-    "  --day YYYYMMDD        Day of the activity\n",
-    "  --facet NAME          Facet of the activity\n",
-    "  --activity ID         Activity ID\n",
 );
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -154,13 +127,23 @@ pub(crate) enum Command {
 }
 
 pub(crate) fn parse(args: &[OsString]) -> Command {
+    let locale = crate::output_locale(args.iter().any(|arg| arg == "--json"));
     let args = match args
         .iter()
         .map(|arg| arg.to_str())
         .collect::<Option<Vec<_>>>()
     {
         Some(args) => args,
-        None => return error("solstone journal talent", "arguments are not valid UTF-8"),
+        None => {
+            return Command::Error(format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.talent.error.root.encoding",
+                    &[]
+                )
+            ));
+        }
     };
     let mut index = 0;
     while index < args.len() && matches!(args[index], "-v" | "--verbose" | "-d" | "--debug") {
@@ -172,39 +155,57 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
     match args[index] {
         "-h" | "--help" => {
             if index + 1 == args.len() {
-                Command::Help(HELP.to_owned())
+                Command::Help(format!(
+                    "{}\n",
+                    solstone_core_cli_copy::render_for(locale, "journal.cli.talent.help.root", &[])
+                ))
             } else {
-                error(
-                    "solstone journal talent",
-                    &format!("unrecognized arguments: {}", args[index + 1..].join(" ")),
-                )
+                Command::Error(format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.talent.error.root.unknown",
+                        [("arguments", &(args[index + 1..].join(" ")))]
+                    )
+                ))
             }
         }
-        "list" => parse_list(&args[index + 1..]),
-        "log" => parse_log(&args[index + 1..]),
-        "logs" => parse_logs(&args[index + 1..]),
-        "show" => parse_show(&args[index + 1..]),
-        "passages" => parse_passages(&args[index + 1..]),
-        value if value.starts_with('-') => error(
-            "solstone journal talent",
-            &format!("unrecognized arguments: {value}"),
-        ),
-        value => error(
-            "solstone journal talent",
-            &format!(
-                "argument subcommand: invalid choice: '{value}' (choose from 'list', 'show', 'passages', 'logs', 'log')"
-            ),
-        ),
+        "list" => parse_list(&args[index + 1..], locale),
+        "log" => parse_log(&args[index + 1..], locale),
+        "logs" => parse_logs(&args[index + 1..], locale),
+        "show" => parse_show(&args[index + 1..], locale),
+        "passages" => parse_passages(&args[index + 1..], locale),
+        value if value.starts_with('-') => Command::Error(format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.error.root.unknown",
+                [("arguments", &(value))]
+            )
+        )),
+        value => Command::Error(format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.error.root.choice",
+                [("value", &(value))]
+            )
+        )),
     }
 }
 
-fn parse_show(args: &[&str]) -> Command {
+fn parse_show(args: &[&str], locale: &str) -> Command {
     let mut options = ShowOptions::default();
     let mut unrecognized = Vec::new();
     let mut index = 0;
     while index < args.len() {
         match args[index] {
-            "-h" | "--help" => return Command::Help(SHOW_HELP.to_owned()),
+            "-h" | "--help" => {
+                return Command::Help(format!(
+                    "{}\n",
+                    solstone_core_cli_copy::render_for(locale, "journal.cli.talent.help.show", &[])
+                ));
+            }
             "--json" => options.json = true,
             "--prompt" => options.prompt = true,
             "--full" => options.full = true,
@@ -212,10 +213,14 @@ fn parse_show(args: &[&str]) -> Command {
                 let flag = args[index];
                 index += 1;
                 let Some(value) = args.get(index) else {
-                    return error(
-                        "solstone journal talent show",
-                        &format!("argument {flag}: expected one argument"),
-                    );
+                    return Command::Error(format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.talent.error.show.value",
+                            [("flag", &(flag))]
+                        )
+                    ));
                 };
                 match flag {
                     "--day" => options.day = Some((*value).to_owned()),
@@ -242,22 +247,29 @@ fn parse_show(args: &[&str]) -> Command {
         index += 1;
     }
     if !unrecognized.is_empty() {
-        return error(
-            "solstone journal talent show",
-            &format!("unrecognized arguments: {}", unrecognized.join(" ")),
-        );
+        return Command::Error(format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.error.show.unknown",
+                [("arguments", &(unrecognized.join(" ")))]
+            )
+        ));
     }
     if options.name.is_empty() {
-        return error(
-            "solstone journal talent show",
-            "the following arguments are required: name",
-        );
+        return Command::Error(format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.error.show.required",
+                [("arguments", &("name"))]
+            )
+        ));
     }
     Command::Show(options)
 }
 
-fn parse_passages(args: &[&str]) -> Command {
-    const PROGRAM: &str = "solstone journal talent passages";
+fn parse_passages(args: &[&str], locale: &str) -> Command {
     let mut options = PassagesOptions::default();
     let mut unrecognized = Vec::new();
     let mut index = 0;
@@ -267,7 +279,16 @@ fn parse_passages(args: &[&str]) -> Command {
             _ => (args[index], None),
         };
         match flag {
-            "-h" | "--help" => return Command::Help(PASSAGES_HELP.to_owned()),
+            "-h" | "--help" => {
+                return Command::Help(format!(
+                    "{}\n",
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.talent.help.passages",
+                        &[]
+                    )
+                ));
+            }
             "--json" if inline.is_none() => options.json = true,
             "--day" | "--facet" | "--activity" => {
                 let value = match inline {
@@ -275,10 +296,14 @@ fn parse_passages(args: &[&str]) -> Command {
                     None => {
                         index += 1;
                         let Some(value) = args.get(index) else {
-                            return error(
-                                PROGRAM,
-                                &format!("argument {flag}: expected one argument"),
-                            );
+                            return Command::Error(format!(
+                                "{}\n",
+                                solstone_core_cli_copy::display_for(
+                                    locale,
+                                    "journal.cli.talent.error.passages.value",
+                                    [("flag", &(flag))]
+                                )
+                            ));
                         };
                         value
                     }
@@ -297,10 +322,14 @@ fn parse_passages(args: &[&str]) -> Command {
         index += 1;
     }
     if !unrecognized.is_empty() {
-        return error(
-            PROGRAM,
-            &format!("unrecognized arguments: {}", unrecognized.join(" ")),
-        );
+        return Command::Error(format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.error.passages.unknown",
+                [("arguments", &(unrecognized.join(" ")))]
+            )
+        ));
     }
     let missing = [
         ("name", options.name.is_empty()),
@@ -312,39 +341,53 @@ fn parse_passages(args: &[&str]) -> Command {
     .filter_map(|(name, missing)| missing.then_some(name))
     .collect::<Vec<_>>();
     if !missing.is_empty() {
-        return error(
-            PROGRAM,
-            &format!(
-                "the following arguments are required: {}",
-                missing.join(", ")
-            ),
-        );
+        return Command::Error(format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.error.passages.required",
+                [("arguments", &(missing.join(", ")))]
+            )
+        ));
     }
     Command::Passages(options)
 }
 
-fn parse_logs(args: &[&str]) -> Command {
+fn parse_logs(args: &[&str], locale: &str) -> Command {
     let mut options = LogsOptions::default();
     let mut unrecognized = Vec::new();
     let mut index = 0;
     while index < args.len() {
         match args[index] {
-            "-h" | "--help" => return Command::Help(LOGS_HELP.to_owned()),
+            "-h" | "--help" => {
+                return Command::Help(format!(
+                    "{}\n",
+                    solstone_core_cli_copy::render_for(locale, "journal.cli.talent.help.logs", &[])
+                ));
+            }
             "-c" | "--count" => {
                 index += 1;
                 let Some(value) = args.get(index) else {
-                    return error(
-                        "solstone journal talent logs",
-                        "argument -c/--count: expected one argument",
-                    );
+                    return Command::Error(format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.talent.error.logs.value",
+                            [("flag", &("-c/--count"))]
+                        )
+                    ));
                 };
                 match value.parse::<i64>() {
                     Ok(value) => options.count = Some(value),
                     Err(_) => {
-                        return error(
-                            "solstone journal talent logs",
-                            &format!("argument -c/--count: invalid int value: '{value}'"),
-                        );
+                        return Command::Error(format!(
+                            "{}\n",
+                            solstone_core_cli_copy::display_for(
+                                locale,
+                                "journal.cli.talent.error.logs.count",
+                                [("value", &(value))]
+                            )
+                        ));
                     }
                 }
             }
@@ -353,20 +396,28 @@ fn parse_logs(args: &[&str]) -> Command {
                 match value.parse::<i64>() {
                     Ok(value) => options.count = Some(value),
                     Err(_) => {
-                        return error(
-                            "solstone journal talent logs",
-                            &format!("argument -c/--count: invalid int value: '{value}'"),
-                        );
+                        return Command::Error(format!(
+                            "{}\n",
+                            solstone_core_cli_copy::display_for(
+                                locale,
+                                "journal.cli.talent.error.logs.count",
+                                [("value", &(value))]
+                            )
+                        ));
                     }
                 }
             }
             "--day" => {
                 index += 1;
                 let Some(value) = args.get(index) else {
-                    return error(
-                        "solstone journal talent logs",
-                        "argument --day: expected one argument",
-                    );
+                    return Command::Error(format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.talent.error.logs.value",
+                            [("flag", &("--day"))]
+                        )
+                    ));
                 };
                 options.day = Some((*value).to_owned());
             }
@@ -381,30 +432,43 @@ fn parse_logs(args: &[&str]) -> Command {
         index += 1;
     }
     if !unrecognized.is_empty() {
-        return error(
-            "solstone journal talent",
-            &format!("unrecognized arguments: {}", unrecognized.join(" ")),
-        );
+        return Command::Error(format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.error.root.unknown",
+                [("arguments", &(unrecognized.join(" ")))]
+            )
+        ));
     }
     Command::Logs(options)
 }
 
-fn parse_list(args: &[&str]) -> Command {
+fn parse_list(args: &[&str], locale: &str) -> Command {
     let mut options = ListOptions::default();
     let mut index = 0;
     while index < args.len() {
         match args[index] {
-            "-h" | "--help" => return Command::Help(LIST_HELP.to_owned()),
+            "-h" | "--help" => {
+                return Command::Help(format!(
+                    "{}\n",
+                    solstone_core_cli_copy::render_for(locale, "journal.cli.talent.help.list", &[])
+                ));
+            }
             "--disabled" => options.disabled = true,
             "--json" => options.json = true,
             "--schedule" | "--source" => {
                 let flag = args[index];
                 index += 1;
                 let Some(value) = args.get(index) else {
-                    return error(
-                        "solstone journal talent list",
-                        &format!("argument {flag}: expected one argument"),
-                    );
+                    return Command::Error(format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.talent.error.list.value",
+                            [("flag", &(flag))]
+                        )
+                    ));
                 };
                 let choices: &[&str] = if flag == "--schedule" {
                     &["daily", "segment", "activity"]
@@ -412,17 +476,25 @@ fn parse_list(args: &[&str]) -> Command {
                     &["system", "app"]
                 };
                 if !choices.contains(value) {
-                    return error(
-                        "solstone journal talent list",
-                        &format!(
-                            "argument {flag}: invalid choice: '{value}' (choose from {})",
-                            choices
-                                .iter()
-                                .map(|item| format!("'{item}'"))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ),
-                    );
+                    return Command::Error(format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.talent.error.list.choice",
+                            [
+                                ("value", &(value)),
+                                ("flag", &(flag)),
+                                (
+                                    "choices",
+                                    &(choices
+                                        .iter()
+                                        .map(|item| format!("'{item}'"))
+                                        .collect::<Vec<_>>()
+                                        .join(", "))
+                                )
+                            ]
+                        )
+                    ));
                 }
                 if flag == "--schedule" {
                     options.schedule = Some((*value).to_owned());
@@ -431,10 +503,14 @@ fn parse_list(args: &[&str]) -> Command {
                 }
             }
             value => {
-                return error(
-                    "solstone journal talent list",
-                    &format!("unrecognized arguments: {value}"),
-                );
+                return Command::Error(format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.talent.error.list.unknown",
+                        [("arguments", &(value))]
+                    )
+                ));
             }
         }
         index += 1;
@@ -442,7 +518,7 @@ fn parse_list(args: &[&str]) -> Command {
     Command::List(options)
 }
 
-fn parse_log(args: &[&str]) -> Command {
+fn parse_log(args: &[&str], locale: &str) -> Command {
     let mut id = None;
     let mut json = false;
     let mut full = false;
@@ -450,7 +526,12 @@ fn parse_log(args: &[&str]) -> Command {
     let mut index = 0;
     while index < args.len() {
         match args[index] {
-            "-h" | "--help" => return Command::Help(LOG_HELP.to_owned()),
+            "-h" | "--help" => {
+                return Command::Help(format!(
+                    "{}\n",
+                    solstone_core_cli_copy::render_for(locale, "journal.cli.talent.help.log", &[])
+                ));
+            }
             "--json" => json = true,
             "--full" => full = true,
             value if value.starts_with('-') => unrecognized.push(value),
@@ -460,30 +541,26 @@ fn parse_log(args: &[&str]) -> Command {
         index += 1;
     }
     let Some(id) = id else {
-        return error(
-            "solstone journal talent log",
-            "the following arguments are required: id",
-        );
+        return Command::Error(format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.error.log.required",
+                [("arguments", &("id"))]
+            )
+        ));
     };
     if !unrecognized.is_empty() {
-        return error(
-            "solstone journal talent",
-            &format!("unrecognized arguments: {}", unrecognized.join(" ")),
-        );
+        return Command::Error(format!(
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.error.root.unknown",
+                [("arguments", &(unrecognized.join(" ")))]
+            )
+        ));
     }
     Command::Log(LogOptions { id, json, full })
-}
-
-fn error(program: &str, message: &str) -> Command {
-    let usage = match program {
-        "solstone journal talent list" => LIST_HELP.lines().next().unwrap_or_default(),
-        "solstone journal talent log" => LOG_HELP.lines().next().unwrap_or_default(),
-        "solstone journal talent logs" => LOGS_HELP.lines().next().unwrap_or_default(),
-        "solstone journal talent show" => SHOW_HELP.lines().next().unwrap_or_default(),
-        "solstone journal talent passages" => PASSAGES_HELP.lines().next().unwrap_or_default(),
-        _ => HELP.lines().next().unwrap_or_default(),
-    };
-    Command::Error(format!("{usage}\n{program}: error: {message}\n"))
 }
 
 #[cfg(test)]

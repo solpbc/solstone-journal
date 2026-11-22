@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for passages generate missing.",
+  "context": "Journal command-line text for passages generate missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9c5e0eaf1b8aa00b6ca6964e691012f96f04065f1152f8a3e09ba5d2fab864ec",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

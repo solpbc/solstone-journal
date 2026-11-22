@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for logs date.",
+  "context": "Journal command-line text for logs date.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "month",
+      "type": "string"
+    },
+    {
+      "name": "day_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "21c93d17425a50f4f0d3a4fb585e3831a034b17bdb896b97f8d3c9d5404268c7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

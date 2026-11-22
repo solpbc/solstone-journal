@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for path day.",
+  "context": "Journal command-line text for path day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "93ec84144609f3d9504e55060292f8982c369c42e0dc3091b3281d08ed7e44c8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "day_format",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    }
+  ]
+}

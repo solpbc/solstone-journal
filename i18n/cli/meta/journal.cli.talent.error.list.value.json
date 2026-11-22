@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for error list value.",
+  "context": "Journal command-line text for error list value.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "flag",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1e6e3958689952076cbccbb4fdb58cf9192834c8a37deb96af5ab189d5a162de",
+  "max_length": 127,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal talent list [-h] [--schedule {daily,segment,activity}]"
+    },
+    {
+      "name": "program",
+      "kind": "command",
+      "value": "solstone journal talent list"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

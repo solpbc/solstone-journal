@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for show body.",
+  "context": "Journal command-line text for show body.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d44db7b4995238638fd47a8ec0e5854cd621c2a1a10c5eef49f5292b37376667",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

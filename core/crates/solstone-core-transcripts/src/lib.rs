@@ -381,7 +381,7 @@ struct Segment {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PerceptProjection {
+pub enum PerceptProjection {
     Generic,
     ScreenTalent,
     /// Generic, with screen lines marked by how long they have been showing.
@@ -661,6 +661,7 @@ pub fn cluster_span_with_memory(
         stream,
         PerceptProjection::Generic,
     )
+    .map_err(|error| error.to_string())
 }
 
 /// [`cluster_span_with_memory`] for an activity's story: a screen line already
@@ -681,6 +682,7 @@ pub fn cluster_span_with_screen_age_with_memory(
         stream,
         PerceptProjection::StoryScreenAge,
     )
+    .map_err(|error| error.to_string())
 }
 
 pub fn cluster_span_for_screen_talent(
@@ -715,6 +717,7 @@ pub fn cluster_span_for_screen_talent_with_memory(
         stream,
         PerceptProjection::ScreenTalent,
     )
+    .map_err(|error| error.to_string())
 }
 
 fn cluster_span_with_projection(
@@ -725,19 +728,30 @@ fn cluster_span_with_projection(
     stream: Option<&str>,
     projection: PerceptProjection,
 ) -> Result<(ScreenTranscript, SourceCounts), String> {
-    cluster_span_with_projection_and_memory(root, day, span, sources, stream, projection).map(
-        |(transcript, counts, memory)| (disclose_memory_incomplete(transcript, &memory), counts),
-    )
+    cluster_span_with_projection_and_memory(root, day, span, sources, stream, projection)
+        .map_err(|error| error.to_string())
+        .map(|(transcript, counts, memory)| {
+            (disclose_memory_incomplete(transcript, &memory), counts)
+        })
 }
 
-fn cluster_span_with_projection_and_memory(
+#[derive(Debug)]
+pub struct MissingSegments(pub Vec<String>);
+
+impl fmt::Display for MissingSegments {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Segment directories not found: {}", self.0.join(", "))
+    }
+}
+
+pub fn cluster_span_with_projection_and_memory(
     root: &Path,
     day: &str,
     span: &[&str],
     sources: &Sources,
     stream: Option<&str>,
     projection: PerceptProjection,
-) -> Result<(ScreenTranscript, SourceCounts, MemoryContext), String> {
+) -> Result<(ScreenTranscript, SourceCounts, MemoryContext), MissingSegments> {
     let (entries, memory) = span_entries(root, day, span, sources, stream, projection)?;
     let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
@@ -778,7 +792,8 @@ pub fn speech_evidence_for_span(
         &sources,
         stream,
         PerceptProjection::SpeechEvidence,
-    )?;
+    )
+    .map_err(|error| error.to_string())?;
     entries
         .into_iter()
         .filter_map(|entry| entry.speech_evidence)
@@ -792,20 +807,17 @@ fn span_entries(
     sources: &Sources,
     stream: Option<&str>,
     projection: PerceptProjection,
-) -> Result<(Vec<Entry>, MemoryContext), String> {
+) -> Result<(Vec<Entry>, MemoryContext), MissingSegments> {
     let mut found = Vec::new();
     let mut missing = Vec::new();
     for key in span {
         match find_segment(root, day, key, stream) {
             Some(segment) => found.push(segment),
-            None => missing.push(*key),
+            None => missing.push((*key).to_owned()),
         }
     }
     if !missing.is_empty() {
-        return Err(format!(
-            "Segment directories not found: {}",
-            missing.join(", ")
-        ));
+        return Err(MissingSegments(missing));
     }
     let marked = (projection == PerceptProjection::StoryScreenAge && sources.percepts).then(|| {
         let prior = found.first().and_then(|first| {

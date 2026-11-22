@@ -66,7 +66,15 @@ fn event_detail(event: &Value, etype: &str) -> String {
                 .get("output_tokens")
                 .and_then(Value::as_i64)
                 .unwrap_or(0);
-            format!("{result} [{input}in/{output}out]")
+            solstone_core_cli_copy::display_for(
+                solstone_core_cli_copy::cli_locale(),
+                "journal.cli.talent.log.tokens",
+                [
+                    ("result", &(result)),
+                    ("input", &(input)),
+                    ("output", &(output)),
+                ],
+            )
         }
         "error" => string("error"),
         "info" => string("message"),
@@ -97,10 +105,22 @@ fn format_event_line(event: &Value, full: bool, zone: &TimeZone) -> String {
         );
     let etype = event.get("event").and_then(Value::as_str).unwrap_or("?");
     let label = match etype {
-        "thinking" => "think",
-        "tool_start" => "tool",
-        "talent_updated" => "updated",
-        _ => etype,
+        "thinking" => solstone_core_cli_copy::render_for(
+            solstone_core_cli_copy::cli_locale(),
+            "journal.cli.talent.log.event.thinking",
+            &[],
+        ),
+        "tool_start" => solstone_core_cli_copy::render_for(
+            solstone_core_cli_copy::cli_locale(),
+            "journal.cli.talent.log.event.tool",
+            &[],
+        ),
+        "talent_updated" => solstone_core_cli_copy::render_for(
+            solstone_core_cli_copy::cli_locale(),
+            "journal.cli.talent.log.event.updated",
+            &[],
+        ),
+        _ => etype.to_owned(),
     };
     let mut detail = event_detail(event, etype);
     if full {
@@ -118,7 +138,14 @@ pub(crate) fn run_log(talents_dir: &Path, options: &LogOptions, zone: &TimeZone)
     let Some(run_file) = runs::find_run_file(talents_dir, &options.id) else {
         return CliRun {
             stdout: String::new(),
-            stderr: format!("Talent run not found: {}\n", options.id),
+            stderr: format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    crate::output_locale(options.json),
+                    "journal.cli.talent.log.missing",
+                    [("run", &(options.id))]
+                )
+            ),
             exit_code: 1,
         };
     };
@@ -127,7 +154,14 @@ pub(crate) fn run_log(talents_dir: &Path, options: &LogOptions, zone: &TimeZone)
         Err(error) => {
             return CliRun {
                 stdout: String::new(),
-                stderr: format!("failed to read {}: {error}\n", run_file.display()),
+                stderr: format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        crate::output_locale(options.json),
+                        "journal.cli.talent.config.read",
+                        [("path", &run_file.display()), ("error", &error)]
+                    )
+                ),
                 exit_code: 1,
             };
         }

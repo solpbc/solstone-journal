@@ -12,8 +12,8 @@ use crate::emit;
 use crate::preview::{PreviewRequest, PromptPreview, PromptPreviewer};
 use solstone_core_talent_config::{TalentConfig, read_frontmatter};
 
+#[cfg(test)]
 const PREVIEW_BANNER: &str = "Preview of what this talent would send. Same assembly a real run uses; the model is not called.";
-const NO_DAY_LINE: &str = "No day given, so this preview has no day's recordings in it. Pass --day YYYYMMDD to include them.";
 
 const PRIORITY_KEYS: &[&str] = &[
     "title",
@@ -41,9 +41,17 @@ pub(crate) fn run(
     }
     let resolved = resolve(&options.name, talent_root, apps_root);
     if !resolved.path.is_file() {
-        return not_found(&options.name, &resolved.file, options.prompt);
+        return not_found(
+            crate::output_locale(options.json),
+            &options.name,
+            &resolved.file,
+            options.prompt,
+        );
     }
-    let parsed = match read_frontmatter(&resolved.path) {
+    let parsed = match solstone_core_talent_config::read_frontmatter_in(
+        crate::output_locale(options.json),
+        &resolved.path,
+    ) {
         Ok(parsed) => parsed,
         Err(error) => return failure(error),
     };
@@ -57,9 +65,10 @@ pub(crate) fn run(
     }
 
     match parsed.metadata.get("type").and_then(Value::as_str) {
-        None | Some("prompt") => failure(format!(
-            "Prompt '{}' is a hook prompt and cannot be run directly.",
-            options.name
+        None | Some("prompt") => failure(solstone_core_cli_copy::display_for(
+            crate::output_locale(options.json),
+            "journal.cli.talent.show.hook",
+            [("talent", &(options.name))],
         )),
         _ => render_runtime_preview(journal_root, options, previewer),
     }
@@ -70,7 +79,9 @@ fn render_runtime_preview(
     options: &ShowOptions,
     previewer: &dyn PromptPreviewer,
 ) -> CliRun {
-    let preview = previewer.preview(
+    let locale = crate::output_locale(options.json);
+    let preview = previewer.preview_in(
+        (!options.json).then_some(locale),
         journal_root,
         &PreviewRequest {
             name: options.name.clone(),
@@ -86,18 +97,43 @@ fn render_runtime_preview(
             parts,
         } => {
             let mut output = String::new();
-            let _ = writeln!(output, "{PREVIEW_BANNER}");
+            let _ = writeln!(
+                output,
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.talent.preview.banner",
+                    &[]
+                )
+            );
             if loads_sources && options.day.is_none() && options.segment.is_none() {
-                let _ = writeln!(output, "{NO_DAY_LINE}");
+                let _ = writeln!(
+                    output,
+                    "{}",
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.talent.preview.no.day",
+                        &[]
+                    )
+                );
             }
             let _ = writeln!(
                 output,
-                "\n  Effective prompt for: {}",
-                options.name
+                "\n  {}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.preview.effective",
+                    [("talent", &(options.name))]
+                )
             );
             format_section(
                 &mut output,
-                "INSTRUCTION",
+                &solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.talent.preview.instruction",
+                    &[],
+                ),
+                options.json,
                 &parts.join("\n\n"),
                 options.full,
             );
@@ -105,14 +141,27 @@ fn render_runtime_preview(
             success(output)
         }
         PromptPreview::WouldNotRun { reason } => CliRun {
-            stdout: format!("This talent would not run: {reason}\n"),
+            stdout: format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.talent.preview.skipped",
+                    [("reason", &(reason))]
+                )
+            ),
             stderr: String::new(),
             exit_code: 1,
         },
         PromptPreview::Refused(refusal) => render_preview_refusal(options, refusal),
         PromptPreview::UnavailablePreStep => CliRun {
-            stdout: "Prompt preview cannot assemble this talent: a required pre-step is not available.\n"
-                .to_owned(),
+            stdout: format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.talent.preview.prestep",
+                    &[]
+                )
+            ),
             stderr: String::new(),
             exit_code: 1,
         },
@@ -189,12 +238,21 @@ fn resolve(name: &str, talent_root: &Path, apps_root: &Path) -> ResolvedTalent {
     }
 }
 
-fn not_found(name: &str, file: &str, prompt: bool) -> CliRun {
-    let stderr = if prompt {
-        format!("Prompt not found: {name}\n")
+fn not_found(locale: &str, name: &str, file: &str, prompt: bool) -> CliRun {
+    let message = if prompt {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.show.missing",
+            [("talent", &(name))],
+        )
     } else {
-        format!("Prompt not found: {name}\n  looked at: {file}\n")
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.show.missing.path",
+            [("talent", &(name)), ("path", &(file))],
+        )
     };
+    let stderr = format!("{message}\n");
     CliRun {
         stdout: String::new(),
         stderr,
@@ -235,6 +293,7 @@ fn render_json(resolved: &ResolvedTalent, metadata: Map<String, Value>, body: St
 }
 
 fn render_default(resolved: &ResolvedTalent, metadata: Map<String, Value>) -> CliRun {
+    let locale = crate::output_locale(false);
     let mut output = format!("\n{}\n\n", resolved.file);
     let mut printed = Vec::new();
     for key in PRIORITY_KEYS {
@@ -258,7 +317,11 @@ fn render_default(resolved: &ResolvedTalent, metadata: Map<String, Value>) -> Cl
             let _ = writeln!(
                 output,
                 "  {:<LABEL_WIDTH$} {}",
-                "variables:",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.talent.show.variables",
+                    &[]
+                ),
                 variables
                     .iter()
                     .map(|variable| format!("${variable}"))
@@ -266,12 +329,17 @@ fn render_default(resolved: &ResolvedTalent, metadata: Map<String, Value>) -> Cl
                     .join(", "),
             );
         }
-        let _ = writeln!(
-            output,
-            "  {:<LABEL_WIDTH$} {} lines",
-            "body:",
-            parsed.body.lines().count(),
+        let count = parsed.body.lines().count();
+        let body = solstone_core_cli_copy::render_for(locale, "journal.cli.talent.show.body", &[]);
+        let value = solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.talent.show.body.lines",
+            &[(
+                "count",
+                solstone_core_cli_copy::Value::Cardinal(count as i64),
+            )],
         );
+        let _ = writeln!(output, "  {body:<LABEL_WIDTH$} {value}");
     }
     output.push('\n');
     success(output)
@@ -394,7 +462,8 @@ fn scan_variables(body: &str) -> Vec<String> {
     variables
 }
 
-fn format_section(output: &mut String, title: &str, content: &str, full: bool) {
+fn format_section(output: &mut String, title: &str, json: bool, content: &str, full: bool) {
+    let locale = crate::output_locale(json);
     let _ = writeln!(
         output,
         "\n{}\n  {title}\n{}\n",
@@ -402,25 +471,33 @@ fn format_section(output: &mut String, title: &str, content: &str, full: bool) {
         "=".repeat(SECTION_WIDTH)
     );
     if content.trim().is_empty() {
-        output.push_str("(empty)\n");
+        let _ = writeln!(
+            output,
+            "{}",
+            solstone_core_cli_copy::render_for(locale, "journal.cli.talent.preview.empty", &[])
+        );
         return;
     }
     if full {
         let _ = writeln!(output, "{content}");
         return;
     }
-    let (content, omitted) = truncate_content(content);
+    let (content, omitted) = truncate_content(content, json);
     let _ = writeln!(output, "{content}");
     if omitted > 0 {
         let _ = writeln!(
             output,
-            "\n(use --full to see all {} lines)",
-            omitted + SECTION_MAX_LINES
+            "\n{}",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.preview.all.lines",
+                [("count", &(omitted + SECTION_MAX_LINES))]
+            )
         );
     }
 }
 
-fn truncate_content(content: &str) -> (String, usize) {
+fn truncate_content(content: &str, json: bool) -> (String, usize) {
     let lines = content.lines().collect::<Vec<_>>();
     if lines.len() <= SECTION_MAX_LINES {
         return (content.to_owned(), 0);
@@ -428,9 +505,27 @@ fn truncate_content(content: &str) -> (String, usize) {
     let half = SECTION_MAX_LINES / 2;
     let omitted = lines.len() - SECTION_MAX_LINES;
     let mut truncated = lines[..half].join("\n");
+    let count = omitted;
+    let locale = crate::output_locale(json);
+    let notice = if json {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.preview.omitted.legacy",
+            [("count", &(count))],
+        )
+    } else {
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.talent.preview.omitted",
+            &[(
+                "count",
+                solstone_core_cli_copy::Value::Cardinal(count as i64),
+            )],
+        )
+    };
     let _ = write!(
         truncated,
-        "\n\n... ({omitted} lines omitted)\n{}",
+        "\n\n{notice}\n{}",
         lines[lines.len() - half..].join("\n")
     );
     (truncated, omitted)
@@ -527,7 +622,7 @@ mod tests {
         assert!(output.stdout.contains("  hook:          post: after\n"));
         assert!(output.stdout.contains("  zeta:          False\n"));
         assert!(output.stdout.contains("  variables:     $first, $second\n"));
-        assert!(output.stdout.contains("  body:          1 lines\n"));
+        assert!(output.stdout.contains("  body:          1 line\n"));
         assert!(
             output.stdout.find("title:").expect("title")
                 < output.stdout.find("tools:").expect("tools")

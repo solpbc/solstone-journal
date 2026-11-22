@@ -1,0 +1,26 @@
+{
+  "description": "Journal command-line text for show body lines.",
+  "context": "Journal command-line text for show body lines.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "38479170ea045f58d8003b8b23ab4bb17fe40fe128fbf4e1a547fe4c28234645",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "count",
+    "type": "cardinal"
+  }
+}

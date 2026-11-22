@@ -7,59 +7,107 @@ use std::path::{Component, Path};
 use jsonschema::{Draft, options};
 use serde_json::Value;
 
+#[cfg(test)]
 pub(crate) fn load_talent_schema(
+    talent_key: &str,
+    talent_dir: &Path,
+    schema_rel_path: &str,
+) -> Result<Value, String> {
+    load_talent_schema_in(
+        solstone_core_cli_copy::ENGLISH,
+        talent_key,
+        talent_dir,
+        schema_rel_path,
+    )
+}
+
+pub(crate) fn load_talent_schema_in(
+    locale: &str,
     talent_key: &str,
     talent_dir: &Path,
     schema_rel_path: &str,
 ) -> Result<Value, String> {
     let raw_path = Path::new(schema_rel_path);
     if raw_path.is_absolute() {
-        return Err(format!(
-            "talent {talent_key}: schema path must be relative: {schema_rel_path}"
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.compose.schema.path.must.be.relative",
+            [("talent", &(talent_key)), ("path", &(schema_rel_path))],
         ));
     }
     if raw_path
         .components()
         .any(|component| component == Component::ParentDir)
     {
-        return Err(format!(
-            "talent {talent_key}: schema path must not contain '..': {schema_rel_path}"
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.compose.schema.path.must.not.contain",
+            [("talent", &(talent_key)), ("path", &(schema_rel_path))],
         ));
     }
     let talent_dir = talent_dir.canonicalize().map_err(|error| {
-        format!("talent {talent_key}: schema directory is unavailable: {error}")
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.compose.schema.directory.is.unavailable",
+            [("talent", &(talent_key)), ("error", &(error))],
+        )
     })?;
     let schema_path = talent_dir.join(raw_path);
     if !schema_path.exists() {
-        return Err(format!(
-            "talent {talent_key}: schema file not found: {}",
-            schema_path.display()
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.compose.schema.file.not.found.path",
+            [
+                ("path", &(schema_path.display())),
+                ("talent", &(talent_key)),
+            ],
         ));
     }
-    let schema_path = schema_path
-        .canonicalize()
-        .map_err(|error| format!("talent {talent_key}: schema file not found: {error}"))?;
+    let schema_path = schema_path.canonicalize().map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.compose.schema.file.not.found.cause",
+            [("talent", &(talent_key)), ("error", &(error))],
+        )
+    })?;
     if !schema_path.starts_with(&talent_dir) {
-        return Err(format!(
-            "talent {talent_key}: schema path escapes talent directory: {}",
-            schema_path.display()
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.compose.schema.path.escapes.talent.directory",
+            [
+                ("path", &(schema_path.display())),
+                ("talent", &(talent_key)),
+            ],
         ));
     }
-    let text = fs::read_to_string(&schema_path)
-        .map_err(|error| format!("talent {talent_key}: schema file could not be read: {error}"))?;
+    let text = fs::read_to_string(&schema_path).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.compose.schema.file.could.not.be.read",
+            [("talent", &(talent_key)), ("error", &(error))],
+        )
+    })?;
     let schema = serde_json::from_str(&text).map_err(|_| {
-        format!(
-            "talent {talent_key}: schema file is not valid JSON: {}",
-            schema_path.display()
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.compose.schema.file.is.not.valid.json",
+            [
+                ("path", &(schema_path.display())),
+                ("talent", &(talent_key)),
+            ],
         )
     })?;
     options()
         .with_draft(Draft::Draft202012)
         .build(&schema)
         .map_err(|_| {
-            format!(
-                "talent {talent_key}: schema file is not a valid JSON Schema: {}",
-                schema_path.display()
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.compose.schema.file.is.not.a.valid.json.schema",
+                [
+                    ("path", &(schema_path.display())),
+                    ("talent", &(talent_key)),
+                ],
             )
         })?;
     Ok(schema)

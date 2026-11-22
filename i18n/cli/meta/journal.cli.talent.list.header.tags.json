@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list header tags.",
+  "context": "Journal command-line text for list header tags.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59c00cfc51aaa48845efcf8ae4ce876a27a232ef720c66aff4b0bb1ff5e3da78",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

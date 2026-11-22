@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for preview recovery choose an activity id stored in the requested day and facet.",
+  "context": "Journal command-line text for preview recovery choose an activity id stored in the requested day and facet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "45eeef815f6712fbbc3b750f0a912b13a744aa6e5fd4531cd0ec7bf7efd71e86",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

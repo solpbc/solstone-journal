@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for config activities.",
+  "context": "Journal command-line text for config activities.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cb9103566137ae3f94bd5a6212090296add16bea453ef5c35ccb6d9d1d474f12",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "activities",
+      "kind": "accepted-input",
+      "value": "'activities'"
+    },
+    {
+      "name": "all_types",
+      "kind": "accepted-input",
+      "value": "[\"*\"]"
+    }
+  ]
+}

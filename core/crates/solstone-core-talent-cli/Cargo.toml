@@ -13,6 +13,8 @@ publish = false
 workspace = true
 
 [dependencies]
+solstone-core-window-catalog.workspace = true
+solstone-core-cli-copy.workspace = true
 jiff.workspace = true
 jsonschema.workspace = true
 regex.workspace = true

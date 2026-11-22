@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for preview recovery make the selected activity and talent eligible then retry.",
+  "context": "Journal command-line text for preview recovery make the selected activity and talent eligible then retry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "084fa1fa9794a93dda0325b9e5708fb48bd07eb9c14e0d67a2d8900e6fdeca32",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

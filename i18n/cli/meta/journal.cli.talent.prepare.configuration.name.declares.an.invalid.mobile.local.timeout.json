@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for prepare configuration name declares an invalid mobile local timeout.",
+  "context": "Journal command-line text for prepare configuration name declares an invalid mobile local timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "80a63b6c4763fd987774a61f57ee275b5cb51d6053ff59a11ff778672b51ce5e",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "timeout",
+      "kind": "accepted-input",
+      "value": "mobile_local_timeout_s"
+    }
+  ]
+}

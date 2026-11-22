@@ -1,0 +1,78 @@
+{
+  "description": "Journal command-line text for help list.",
+  "context": "Journal command-line text for help list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "16073cf9d0708a7dafaa73dd943ee399885044d5c38cc1df0b8a4ccc3bb7577a",
+  "max_length": 572,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal talent list [-h] [--schedule {daily,segment,activity}]"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                           [--source {system,app}] [--disabled] [--json]"
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "gap_12",
+      "kind": "whitespace",
+      "value": "            "
+    },
+    {
+      "name": "syntax_continuation_5",
+      "kind": "accepted-input",
+      "value": "  --schedule {daily,segment,activity}"
+    },
+    {
+      "name": "syntax_continuation_7",
+      "kind": "accepted-input",
+      "value": "  --source {system,app}"
+    },
+    {
+      "name": "disabled_option",
+      "kind": "accepted-input",
+      "value": "--disabled"
+    },
+    {
+      "name": "json_option",
+      "kind": "accepted-input",
+      "value": "--json"
+    },
+    {
+      "name": "gap_16",
+      "kind": "whitespace",
+      "value": "                "
+    },
+    {
+      "name": "jsonl",
+      "kind": "accepted-input",
+      "value": "JSONL"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

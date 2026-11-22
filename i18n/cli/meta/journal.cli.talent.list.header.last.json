@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list header last.",
+  "context": "Journal command-line text for list header last.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f930770c898ae01611681a3c718ce6adfcf91c16a4a3c01e6547e2ac5d00bc34",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

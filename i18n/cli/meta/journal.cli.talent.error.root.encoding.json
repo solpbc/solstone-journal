@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for error root encoding.",
+  "context": "Journal command-line text for error root encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5498b2eaa61dcd3af12e440b0060317db825e2ac7b6bc89dbe19dabc1642b94d",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal talent [-h] [-v] [-d] {list,show,passages,logs,log} ..."
+    },
+    {
+      "name": "program",
+      "kind": "command",
+      "value": "solstone journal talent"
+    },
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

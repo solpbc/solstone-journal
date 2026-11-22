@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for error logs count.",
+  "context": "Journal command-line text for error logs count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fbb02e996119c90cd40b60716bd6ef4a719b0a8ae7d4438647df834c9ddfd5db",
+  "max_length": 146,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal talent logs [-h] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors]"
+    },
+    {
+      "name": "program",
+      "kind": "command",
+      "value": "solstone journal talent logs"
+    },
+    {
+      "name": "count_options",
+      "kind": "flag",
+      "value": "-c/--count"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

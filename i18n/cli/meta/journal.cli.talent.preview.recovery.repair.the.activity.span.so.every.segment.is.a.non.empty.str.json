@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for preview recovery repair the activity span so every segment is a non empty str.",
+  "context": "Journal command-line text for preview recovery repair the activity span so every segment is a non empty str.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cd734fdc03172f9de2b66adf7b677323eea24311012e3bfcf4fbad6bbe64c4b9",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1348,3 +1348,39 @@ fn heading_shaped_lines_inside_an_entry_stay_its_content() {
     };
     assert!(body.contains("### Transcript") && body.contains("SENSE_TAIL"));
 }
+
+#[test]
+fn preview_entry_count_and_source_count_are_independent() {
+    let journal = tempfile::tempdir().unwrap();
+    let text = "## group\n### first\n### second\n";
+    let first = text.find("### first").unwrap();
+    let second = text.find("### second").unwrap();
+    for (entries, sources, display, legacy) in [
+        (
+            vec![first],
+            vec![None, None],
+            "entry count mismatch: parsed 1 entry but have 2 entry sources",
+            "entry count mismatch: parsed 1 entries but have 2 entry sources",
+        ),
+        (
+            vec![first, second],
+            vec![None],
+            "entry count mismatch: parsed 2 entries but have 1 entry source",
+            "entry count mismatch: parsed 2 entries but have 1 entry sources",
+        ),
+    ] {
+        let layout = TranscriptLayout {
+            groups: vec![0],
+            entries,
+        };
+        for (locale, expected) in [
+            (Some(solstone_core_cli_copy::ENGLISH), display),
+            (None, legacy),
+        ] {
+            let error = parse_all_in(locale, text, &sources, &layout, journal.path(), "20260101")
+                .err()
+                .unwrap();
+            assert_eq!(error, expected);
+        }
+    }
+}

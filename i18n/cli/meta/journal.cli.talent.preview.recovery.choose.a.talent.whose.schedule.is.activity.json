@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for preview recovery choose a talent whose schedule is activity.",
+  "context": "Journal command-line text for preview recovery choose a talent whose schedule is activity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f344e51dbdd73fbff42d3d57fb477ad01c3d0e7488aa23a9a5236c5f3a1f407",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "schedule",
+      "kind": "accepted-input",
+      "value": "activity."
+    }
+  ]
+}

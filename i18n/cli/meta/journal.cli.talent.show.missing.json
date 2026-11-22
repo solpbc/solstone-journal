@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for show missing.",
+  "context": "Journal command-line text for show missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bb76d8a1fc5199ceabc6dad0c5b7c15924cf1b8f435d6968643bd78767a76c21",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

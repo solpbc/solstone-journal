@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for show variables.",
+  "context": "Journal command-line text for show variables.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ad428c0e1c95dd55da7a2ecbe0393fb8cde2bb7433582d04f3851808ef8f8e8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

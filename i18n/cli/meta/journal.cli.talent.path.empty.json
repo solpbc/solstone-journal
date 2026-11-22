@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for path empty.",
+  "context": "Journal command-line text for path empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aaa6ca1767762b9066b44c102c9d65915c2e8217a5e7038631780661b18c872b",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

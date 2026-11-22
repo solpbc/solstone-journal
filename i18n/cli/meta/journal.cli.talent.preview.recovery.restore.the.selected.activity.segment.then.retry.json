@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for preview recovery restore the selected activity segment then retry.",
+  "context": "Journal command-line text for preview recovery restore the selected activity segment then retry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d235f296e9c1664525dcaaf74e0e6b40383f5ce223a0d9e0112fdaa78d645aab",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

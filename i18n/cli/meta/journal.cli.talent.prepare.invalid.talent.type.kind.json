@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for prepare invalid talent type kind.",
+  "context": "Journal command-line text for prepare invalid talent type kind.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1209772bed05d87df6b092614daf59be84221a17bd87ac73e063f50451914a6d",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -10,9 +10,9 @@ use solstone_core_talent_cli::preview::{
 };
 use solstone_core_talent_cli::{CliRun, run_cli};
 use solstone_core_talent_runtime::ExecutionContext;
-use solstone_core_talent_runtime::assemble::assemble_prompt_preview;
+use solstone_core_talent_runtime::assemble::assemble_prompt_preview_in;
 use solstone_core_talent_runtime::prepare::RuntimePaths;
-use solstone_core_talent_runtime::source_passages::activity_passages;
+use solstone_core_talent_runtime::source_passages::activity_passages_in;
 
 pub(crate) struct CorePromptPreviewer {
     paths: RuntimePaths,
@@ -20,7 +20,17 @@ pub(crate) struct CorePromptPreviewer {
 
 impl PromptPreviewer for CorePromptPreviewer {
     fn preview(&self, journal_root: &Path, request: &PreviewRequest) -> PromptPreview {
-        assemble_prompt_preview(
+        self.preview_in(None, journal_root, request)
+    }
+
+    fn preview_in(
+        &self,
+        display_locale: Option<&str>,
+        journal_root: &Path,
+        request: &PreviewRequest,
+    ) -> PromptPreview {
+        assemble_prompt_preview_in(
+            display_locale,
             request,
             &self.paths,
             &ExecutionContext {
@@ -30,15 +40,42 @@ impl PromptPreviewer for CorePromptPreviewer {
     }
 
     fn passages(&self, journal_root: &Path, request: &PreviewRequest) -> PassageRun {
-        let generate = match solstone_core_generate::OneShotClient::sibling() {
+        self.passages_in(None, journal_root, request)
+    }
+
+    fn passages_in(
+        &self,
+        display_locale: Option<&str>,
+        journal_root: &Path,
+        request: &PreviewRequest,
+    ) -> PassageRun {
+        let locale = display_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
+        let generate = match solstone_core_generate::OneShotClient::resolve_sibling() {
             Ok(generate) => generate,
             Err(error) => {
-                return PassageRun::NotPrepared(PromptPreview::Failed {
-                    error: format!("source passages could not reach generate: {error}"),
-                });
+                use solstone_core_generate::SiblingError;
+                let error = match error {
+                    SiblingError::Current(error) => solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.talent.passages.generate",
+                        [("error", &error)],
+                    ),
+                    SiblingError::NoParent => solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.talent.passages.generate.parent",
+                        &[],
+                    ),
+                    SiblingError::Missing(path) => solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.talent.passages.generate.missing",
+                        [("path", &(path.display()))],
+                    ),
+                };
+                return PassageRun::NotPrepared(PromptPreview::Failed { error });
             }
         };
-        match activity_passages(
+        match activity_passages_in(
+            display_locale,
             request,
             &self.paths,
             &ExecutionContext {
@@ -48,7 +85,7 @@ impl PromptPreviewer for CorePromptPreviewer {
         ) {
             Ok(passages) => PassageRun::Extracted {
                 document: passages.document().to_string(),
-                readable: passages.readable(),
+                readable: passages.readable_in(locale),
                 complete: passages.extraction.complete(),
             },
             Err(preview) => PassageRun::NotPrepared(preview),

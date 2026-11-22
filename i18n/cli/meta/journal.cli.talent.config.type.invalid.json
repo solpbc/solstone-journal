@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for config type invalid.",
+  "context": "Journal command-line text for config type invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e9f2d576ca3343a4870918c27e802482a43be17197d1da963b391537612bf619",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "generate",
+      "kind": "accepted-input",
+      "value": "'generate'"
+    }
+  ]
+}

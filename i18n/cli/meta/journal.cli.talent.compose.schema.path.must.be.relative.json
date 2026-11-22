@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for compose schema path must be relative.",
+  "context": "Journal command-line text for compose schema path must be relative.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3e228647167fcfef6ec17600680606936699104fd6daba9449b43df823ad8ac8",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

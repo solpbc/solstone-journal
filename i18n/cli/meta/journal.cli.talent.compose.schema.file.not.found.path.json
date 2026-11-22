@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for compose schema file not found path.",
+  "context": "Journal command-line text for compose schema file not found path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "af0ca7b5838dfd680780ee387827122afdc49887c155ccdb659cb2896ddf9b14",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

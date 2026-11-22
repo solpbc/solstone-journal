@@ -36,9 +36,25 @@ pub fn load_talent_configs(
     talent_overrides: Option<&Map<String, Value>>,
     filter: TalentFilter<'_>,
 ) -> Result<Vec<TalentConfig>, String> {
-    let mut configs = discover(talent_root, apps_root)?;
+    load_talent_configs_in(
+        solstone_core_cli_copy::ENGLISH,
+        talent_root,
+        apps_root,
+        talent_overrides,
+        filter,
+    )
+}
+
+pub fn load_talent_configs_in(
+    locale: &str,
+    talent_root: &Path,
+    apps_root: &Path,
+    talent_overrides: Option<&Map<String, Value>>,
+    filter: TalentFilter<'_>,
+) -> Result<Vec<TalentConfig>, String> {
+    let mut configs = discover_in(locale, talent_root, apps_root)?;
     merge(&mut configs, talent_overrides);
-    validate(&mut configs)?;
+    validate_in(locale, &mut configs)?;
     Ok(configs
         .into_iter()
         .filter(|config| matches_filter(config, filter))
@@ -46,16 +62,29 @@ pub fn load_talent_configs(
 }
 
 pub fn discover(talent_root: &Path, apps_root: &Path) -> Result<Vec<TalentConfig>, String> {
+    discover_in(solstone_core_cli_copy::ENGLISH, talent_root, apps_root)
+}
+
+pub fn discover_in(
+    locale: &str,
+    talent_root: &Path,
+    apps_root: &Path,
+) -> Result<Vec<TalentConfig>, String> {
     let mut configs = Vec::new();
-    collect_system(talent_root, &mut configs)?;
-    collect_apps(apps_root, &mut configs)?;
+    collect_system(locale, talent_root, &mut configs)?;
+    collect_apps(locale, apps_root, &mut configs)?;
     Ok(configs)
 }
 
-fn collect_system(root: &Path, configs: &mut Vec<TalentConfig>) -> Result<(), String> {
-    for path in markdown_entries(root)? {
-        let name = stem(&path)?;
+fn collect_system(
+    locale: &str,
+    root: &Path,
+    configs: &mut Vec<TalentConfig>,
+) -> Result<(), String> {
+    for path in markdown_entries(locale, root)? {
+        let name = stem(locale, &path)?;
         configs.push(config(
+            locale,
             &path,
             name.clone(),
             format!("talent/{name}.md"),
@@ -66,14 +95,26 @@ fn collect_system(root: &Path, configs: &mut Vec<TalentConfig>) -> Result<(), St
     Ok(())
 }
 
-fn collect_apps(root: &Path, configs: &mut Vec<TalentConfig>) -> Result<(), String> {
+fn collect_apps(locale: &str, root: &Path, configs: &mut Vec<TalentConfig>) -> Result<(), String> {
     if !root.is_dir() {
         return Ok(());
     }
     let mut apps = fs::read_dir(root)
-        .map_err(|error| format!("failed to read {}: {error}", root.display()))?
+        .map_err(|error| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.config.read",
+                [("path", &(root.display())), ("error", &(error))],
+            )
+        })?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("failed to read {}: {error}", root.display()))?;
+        .map_err(|error| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.config.read",
+                [("path", &(root.display())), ("error", &(error))],
+            )
+        })?;
     apps.sort_by_key(|entry| entry.file_name());
     for app_entry in apps {
         let app_path = app_entry.path();
@@ -84,30 +125,49 @@ fn collect_apps(root: &Path, configs: &mut Vec<TalentConfig>) -> Result<(), Stri
         if app.starts_with('_') {
             continue;
         }
-        for path in markdown_entries(&app_path.join("talent"))? {
-            let name = stem(&path)?;
+        for path in markdown_entries(locale, &app_path.join("talent"))? {
+            let name = stem(locale, &path)?;
             let key = format!("{app}:{name}");
             let file = format!("apps/{app}/talent/{name}.md");
-            configs.push(config(&path, key, file, "app", Some(app.clone()))?);
+            configs.push(config(locale, &path, key, file, "app", Some(app.clone()))?);
         }
     }
     Ok(())
 }
 
 fn config(
+    locale: &str,
     path: &Path,
     key: String,
     file: String,
     source: &str,
     app: Option<String>,
 ) -> Result<TalentConfig, String> {
-    let parsed = read_frontmatter(path)?;
+    let parsed = read_frontmatter_in(locale, path)?;
     let modified = fs::metadata(path)
-        .map_err(|error| format!("failed to stat {}: {error}", path.display()))?
+        .map_err(|error| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.config.stat",
+                [("path", &(path.display())), ("error", &(error))],
+            )
+        })?
         .modified()
-        .map_err(|error| format!("failed to stat {}: {error}", path.display()))?
+        .map_err(|error| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.config.stat",
+                [("path", &(path.display())), ("error", &(error))],
+            )
+        })?
         .duration_since(UNIX_EPOCH)
-        .map_err(|error| format!("failed to stat {}: {error}", path.display()))?
+        .map_err(|error| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.config.stat",
+                [("path", &(path.display())), ("error", &(error))],
+            )
+        })?
         .as_secs();
     let mut metadata = Map::new();
     metadata.insert("path".to_owned(), Value::String(path.display().to_string()));
@@ -130,8 +190,17 @@ fn config(
 
 /// Deliberately parses only JSON frontmatter enclosed by a line containing { and a later line containing }; YAML (---) frontmatter is not supported.
 pub fn read_frontmatter(path: &Path) -> Result<ParsedFrontmatter, String> {
-    let raw = fs::read_to_string(path)
-        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    read_frontmatter_in(solstone_core_cli_copy::ENGLISH, path)
+}
+
+pub fn read_frontmatter_in(locale: &str, path: &Path) -> Result<ParsedFrontmatter, String> {
+    let raw = fs::read_to_string(path).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.config.read",
+            [("path", &(path.display())), ("error", &(error))],
+        )
+    })?;
     let text = raw.trim();
     if text.lines().next() != Some("{") {
         return Ok(ParsedFrontmatter {
@@ -159,13 +228,19 @@ pub fn read_frontmatter(path: &Path) -> Result<ParsedFrontmatter, String> {
             body: text.to_owned(),
         });
     };
-    let value: Value = serde_json::from_str(&text[..close_end])
-        .map_err(|_| format!("failed to parse frontmatter from {}", path.display()))?;
+    let value: Value = serde_json::from_str(&text[..close_end]).map_err(|_| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.config.frontmatter",
+            [("path", &(path.display()))],
+        )
+    })?;
     let metadata = value.as_object().cloned().unwrap_or_default();
     if !value.is_object() {
-        return Err(format!(
-            "failed to parse frontmatter from {}",
-            path.display()
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.config.frontmatter",
+            [("path", &(path.display()))],
         ));
     }
     Ok(ParsedFrontmatter {
@@ -175,8 +250,20 @@ pub fn read_frontmatter(path: &Path) -> Result<ParsedFrontmatter, String> {
 }
 
 pub fn read_talent_overrides(journal_root: &Path) -> Result<Option<Map<String, Value>>, String> {
-    read_talent_overrides_checked(journal_root)
-        .map_err(|path| format!("failed to read talent overrides from {}", path.display()))
+    read_talent_overrides_in(solstone_core_cli_copy::ENGLISH, journal_root)
+}
+
+pub fn read_talent_overrides_in(
+    locale: &str,
+    journal_root: &Path,
+) -> Result<Option<Map<String, Value>>, String> {
+    read_talent_overrides_checked(journal_root).map_err(|path| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.reprocess.talent.overrides",
+            [("path", &path.display())],
+        )
+    })
 }
 
 /// The path whose overrides could not be decoded, for callers that present the diagnostic.
@@ -221,13 +308,18 @@ pub fn context_key(key: &str) -> String {
 }
 
 pub fn validate(configs: &mut [TalentConfig]) -> Result<(), String> {
+    validate_in(solstone_core_cli_copy::ENGLISH, configs)
+}
+
+pub fn validate_in(locale: &str, configs: &mut [TalentConfig]) -> Result<(), String> {
     for config in configs.iter() {
         if config.metadata.get("schedule").is_some_and(is_truthy)
             && !config.metadata.contains_key("priority")
         {
-            return Err(format!(
-                "Scheduled prompt '{}' is missing required 'priority' field. All prompts with 'schedule' must declare an explicit priority.",
-                config.key
+            return Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.config.priority",
+                [("talent", &(config.key))],
             ));
         }
     }
@@ -237,25 +329,30 @@ pub fn validate(configs: &mut [TalentConfig]) -> Result<(), String> {
         if let Some(config_type) = config_type
             && config_type.as_str() != Some("generate")
         {
-            return Err(format!(
-                "Prompt '{}' has invalid type {}. Expected 'generate'.",
-                config.key,
-                python_repr(config_type)
+            return Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.config.type.invalid",
+                [
+                    ("talent", &(config.key)),
+                    ("value", &(python_repr(config_type))),
+                ],
             ));
         }
         if !output_present && config_type.is_none() {
             continue;
         }
         if config_type.is_none() {
-            return Err(format!(
-                "Prompt '{}' has output but is missing required 'type' field.",
-                config.key
+            return Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.config.type.required",
+                [("talent", &(config.key))],
             ));
         }
         if !output_present {
-            return Err(format!(
-                "Prompt '{}' has type='generate' but is missing required 'output' field.",
-                config.key
+            return Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.config.output.required",
+                [("talent", &(config.key))],
             ));
         }
     }
@@ -267,39 +364,53 @@ pub fn validate(configs: &mut [TalentConfig]) -> Result<(), String> {
                 .and_then(Value::as_array)
                 .is_some_and(|items| !items.is_empty())
         {
-            return Err(format!(
-                "Activity-scheduled prompt '{}' must have a non-empty 'activities' list (activity types to match, or [\"*\"] for all types).",
-                config.key
+            return Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.config.activities",
+                [("talent", &(config.key))],
             ));
         }
     }
     for config in configs.iter() {
-        validate_access_tier(config)?;
-        validate_cwd(config)?;
+        validate_access_tier_in(locale, config)?;
+        validate_cwd_in(locale, config)?;
     }
     // Anything that runs is a talent and needs its own budget: a typed prompt, or an
     // untyped one with a schedule, which runs as generate.
     for config in configs.iter() {
         if config.metadata.contains_key("type") || config.metadata.contains_key("schedule") {
-            validate_output_budget(config)?;
+            validate_output_budget_in(locale, config)?;
         }
     }
     Ok(())
 }
 
 pub fn validate_access_tier(config: &TalentConfig) -> Result<(), String> {
+    validate_access_tier_in(solstone_core_cli_copy::ENGLISH, config)
+}
+
+pub fn validate_access_tier_in(locale: &str, config: &TalentConfig) -> Result<(), String> {
     if config.metadata.contains_key("access_tier") {
-        return Err(format!(
-            "Prompt '{}' sets retired 'access_tier'",
-            config.key
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.config.access.retired",
+            [("talent", &(config.key))],
         ));
     }
     Ok(())
 }
 
 pub fn validate_cwd(config: &TalentConfig) -> Result<(), String> {
+    validate_cwd_in(solstone_core_cli_copy::ENGLISH, config)
+}
+
+pub fn validate_cwd_in(locale: &str, config: &TalentConfig) -> Result<(), String> {
     if config.metadata.contains_key("cwd") {
-        return Err(format!("Prompt '{}' sets retired 'cwd'", config.key));
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.config.cwd.retired",
+            [("talent", &(config.key))],
+        ));
     }
     Ok(())
 }
@@ -307,22 +418,28 @@ pub fn validate_cwd(config: &TalentConfig) -> Result<(), String> {
 /// Every talent declares its own measured `max_output_tokens`; nothing supplies a default.
 /// `thinking_budget` is retired: thinking is the owner's one setting for their own model.
 pub fn validate_output_budget(config: &TalentConfig) -> Result<(), String> {
+    validate_output_budget_in(solstone_core_cli_copy::ENGLISH, config)
+}
+
+pub fn validate_output_budget_in(locale: &str, config: &TalentConfig) -> Result<(), String> {
     if config.metadata.contains_key("thinking_budget") {
-        return Err(format!(
-            "Prompt '{}' declares retired 'thinking_budget'. Thinking is set only in Thinking, for the owner's own model.",
-            config.key
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.config.budget.retired",
+            [("talent", &(config.key))],
         ));
     }
     match config.metadata.get("max_output_tokens") {
         Some(value) if value.as_u64().is_some_and(|tokens| tokens > 0) => Ok(()),
-        Some(value) => Err(format!(
-            "Prompt '{}' has invalid 'max_output_tokens' {}. Expected a positive integer measured against the bundled model.",
-            config.key,
-            python_repr(value)
+        Some(value) => Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.config.budget.invalid",
+            [("talent", &(config.key)), ("value", &(python_repr(value)))],
         )),
-        None => Err(format!(
-            "Prompt '{}' is missing required 'max_output_tokens'. Measure its largest output on the bundled model and declare 1.5 times that, rounded up to a multiple of 256.",
-            config.key
+        None => Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.talent.config.budget.required",
+            [("talent", &(config.key))],
         )),
     }
 }
@@ -422,14 +539,26 @@ fn matches_filter(config: &TalentConfig, filter: TalentFilter<'_>) -> bool {
         && (filter.include_disabled || !config.metadata.get("disabled").is_some_and(is_truthy))
 }
 
-fn markdown_entries(root: &Path) -> Result<Vec<PathBuf>, String> {
+fn markdown_entries(locale: &str, root: &Path) -> Result<Vec<PathBuf>, String> {
     if !root.is_dir() {
         return Ok(Vec::new());
     }
     let mut entries = fs::read_dir(root)
-        .map_err(|error| format!("failed to read {}: {error}", root.display()))?
+        .map_err(|error| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.config.read",
+                [("path", &(root.display())), ("error", &(error))],
+            )
+        })?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("failed to read {}: {error}", root.display()))?
+        .map_err(|error| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.config.read",
+                [("path", &(root.display())), ("error", &(error))],
+            )
+        })?
         .into_iter()
         .map(|entry| entry.path())
         .filter(|path| {
@@ -440,11 +569,17 @@ fn markdown_entries(root: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(entries)
 }
 
-fn stem(path: &Path) -> Result<String, String> {
+fn stem(locale: &str, path: &Path) -> Result<String, String> {
     path.file_stem()
         .and_then(|stem| stem.to_str())
         .map(ToOwned::to_owned)
-        .ok_or_else(|| format!("talent filename has no UTF-8 stem: {}", path.display()))
+        .ok_or_else(|| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.talent.config.stem",
+                [("path", &(path.display()))],
+            )
+        })
 }
 
 fn python_str(value: &Value) -> String {

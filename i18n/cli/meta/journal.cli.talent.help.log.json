@@ -1,0 +1,68 @@
+{
+  "description": "Journal command-line text for help log.",
+  "context": "Journal command-line text for help log.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1ca2f15d2beaeb59df303ac8730601ba4f6b2b6ba388172be5ea0220dddc0acb",
+  "max_length": 405,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal talent log [-h] [--json] [--full] id"
+    },
+    {
+      "name": "id",
+      "kind": "accepted-input",
+      "value": "id          "
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "gap_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "json_option",
+      "kind": "accepted-input",
+      "value": "--json"
+    },
+    {
+      "name": "gap_6",
+      "kind": "whitespace",
+      "value": "      "
+    },
+    {
+      "name": "jsonl",
+      "kind": "accepted-input",
+      "value": "JSONL"
+    },
+    {
+      "name": "full_option",
+      "kind": "accepted-input",
+      "value": "--full"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

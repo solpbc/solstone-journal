@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for compose schema path must not contain.",
+  "context": "Journal command-line text for compose schema path must not contain.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cdf3939ee45032d68da9c61995257a0dc69476721b08d6de3615c54a687abc1f",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

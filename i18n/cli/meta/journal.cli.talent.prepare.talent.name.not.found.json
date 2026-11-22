@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for prepare talent name not found.",
+  "context": "Journal command-line text for prepare talent name not found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cb79d1420295ffa2656215ef58a2fa7aa1653217cc3e7bcbec19e50e5c962a04",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

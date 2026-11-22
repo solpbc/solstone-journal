@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for path escape.",
+  "context": "Journal command-line text for path escape.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "relative",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8981a73af6e7b71af3f49556fff7868fc9bf87323395e69748b018352c573d37",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

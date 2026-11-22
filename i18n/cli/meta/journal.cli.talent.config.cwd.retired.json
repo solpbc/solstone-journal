@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for config cwd retired.",
+  "context": "Journal command-line text for config cwd retired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0c7b676aeb9fca3806c2b289ac7d9c1b47a8d0a252f4fb41e06cdb1d0fb77899",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "cwd",
+      "kind": "accepted-input",
+      "value": "'cwd'"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for config stat.",
+  "context": "Journal command-line text for config stat.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "00302124a42a5331e5f12f18f8717d73f35e3ebdabc9f3c0dffb31d8bbaa3f2d",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

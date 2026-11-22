@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for hook facet missing.",
+  "context": "Journal command-line text for hook facet missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e286cb19f91d7e97dbb56921173333ff63661d8d28aed62ab0423660f273ace7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

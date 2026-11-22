@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for hook entity name.",
+  "context": "Journal command-line text for hook entity name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6b49b5fffebd51a00a70a0e164210cfab56c8b13b47c795b60741608f2b67727",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
