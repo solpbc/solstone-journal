@@ -3,6 +3,8 @@
 
 //! Durable entity merge-review candidates.
 
+pub(super) mod display;
+
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
@@ -123,67 +125,137 @@ pub fn record_merge_candidate_checked(
     needs: Option<i64>,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(Value, bool), EntityReviewCandidateError> {
+    record_evidence(
+        journal_root,
+        facet,
+        day,
+        source,
+        source_slug,
+        target,
+        target_slug,
+        evidence,
+        basis,
+        detections,
+        needs,
+        false,
+        checkpoint,
+    )
+}
+
+/// Only the cross-person reconciliation calls this constructor. The general
+/// writer accepts arbitrary caller words, including an identical sentence.
+pub(super) fn record_meeting_photo_candidate(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    source: &str,
+    source_slug: &str,
+    target: &str,
+    target_slug: &str,
+) -> Result<(Value, bool), EntityReviewCandidateError> {
+    let english = solstone_core_window_catalog::text(
+        solstone_core_window_catalog::ENGLISH,
+        display::FACE_MESSAGE,
+    );
+    record_evidence(
+        root,
+        facet,
+        day,
+        source,
+        source_slug,
+        target,
+        target_slug,
+        &english,
+        Some(crate::faceprints::cross::MERGE_BASIS),
+        None,
+        None,
+        true,
+        &|| Ok(()),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_evidence(
+    journal_root: &Path,
+    facet: &str,
+    day: &str,
+    source: &str,
+    source_slug: &str,
+    target: &str,
+    target_slug: &str,
+    evidence: &str,
+    basis: Option<&str>,
+    detections: Option<i64>,
+    needs: Option<i64>,
+    meeting_photos: bool,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<(Value, bool), EntityReviewCandidateError> {
     let _trust =
         hold_entity_trust_lock(journal_root).map_err(EntityReviewCandidateError::TrustLock)?;
     let census = super::census::scan_identity_census(journal_root)
         .map_err(EntityReviewCandidateError::Store)?;
     let key = candidate_key(facet, source_slug, target_slug);
     let basis = basis.unwrap_or(DEFAULT_BASIS);
-    mutate_candidates_checked(journal_root, checkpoint, |rows| {
-        let now = candidate_now_iso();
-        if let Some(existing) = rows
-            .iter_mut()
-            .find(|row| candidate_key_for_row(row) == key)
-        {
-            let object = existing
-                .as_object_mut()
-                .expect("candidate reader returns objects");
-            let evidence_value = object
-                .entry("evidence".to_owned())
-                .or_insert_with(|| Value::Object(Map::new()));
-            let evidence_object = evidence_value
-                .as_object_mut()
-                .expect("candidate evidence is an object");
-            evidence_object.insert("basis".to_owned(), Value::String(basis.to_owned()));
-            evidence_object.insert("summary".to_owned(), Value::String(evidence.to_owned()));
-            if let Some(detections) = detections {
-                evidence_object.insert("detection_count".to_owned(), Value::from(detections));
+    mutate_candidates_checked(
+        journal_root,
+        checkpoint,
+        Some((&key, meeting_photos)),
+        |rows| {
+            let now = candidate_now_iso();
+            if let Some(existing) = rows
+                .iter_mut()
+                .find(|row| candidate_key_for_row(row) == key)
+            {
+                let object = existing
+                    .as_object_mut()
+                    .expect("candidate reader returns objects");
+                let evidence_value = object
+                    .entry("evidence".to_owned())
+                    .or_insert_with(|| Value::Object(Map::new()));
+                let evidence_object = evidence_value
+                    .as_object_mut()
+                    .expect("candidate evidence is an object");
+                evidence_object.insert("basis".to_owned(), Value::String(basis.to_owned()));
+                evidence_object.insert("summary".to_owned(), Value::String(evidence.to_owned()));
+                if let Some(detections) = detections {
+                    evidence_object.insert("detection_count".to_owned(), Value::from(detections));
+                }
+                if let Some(needs) = needs {
+                    evidence_object.insert("needs".to_owned(), Value::from(needs));
+                }
+                object.insert("last_surfaced".to_owned(), Value::String(day.to_owned()));
+                object.insert("updated_at".to_owned(), Value::String(now.clone()));
+                super::review_policy::apply_merge_candidate_review_policy(object, &census, &now);
+                return Ok((existing.clone(), false));
             }
-            if let Some(needs) = needs {
-                evidence_object.insert("needs".to_owned(), Value::from(needs));
-            }
-            object.insert("last_surfaced".to_owned(), Value::String(day.to_owned()));
-            object.insert("updated_at".to_owned(), Value::String(now.clone()));
-            super::review_policy::apply_merge_candidate_review_policy(object, &census, &now);
-            return Ok((existing.clone(), false));
-        }
 
-        let mut row = serde_json::json!({
-            "facet": facet,
-            "source": source,
-            "source_slug": source_slug,
-            "target": target,
-            "target_slug": target_slug,
-            "status": "open",
-            "evidence": {
-                "basis": basis,
-                "summary": evidence,
-                "detection_count": detections,
-                "needs": needs,
-            },
-            "first_surfaced": day,
-            "last_surfaced": day,
-            "created_at": now,
-            "updated_at": now,
-        });
-        super::review_policy::apply_merge_candidate_review_policy(
-            row.as_object_mut().expect("candidate object"),
-            &census,
-            &now,
-        );
-        rows.push(row.clone());
-        Ok((row, true))
-    })
+            let mut row = serde_json::json!({
+                "facet": facet,
+                "source": source,
+                "source_slug": source_slug,
+                "target": target,
+                "target_slug": target_slug,
+                "status": "open",
+                "evidence": {
+                    "basis": basis,
+                    "summary": evidence,
+                    "detection_count": detections,
+                    "needs": needs,
+                },
+                "first_surfaced": day,
+                "last_surfaced": day,
+                "created_at": now,
+                "updated_at": now,
+            });
+            super::review_policy::apply_merge_candidate_review_policy(
+                row.as_object_mut().expect("candidate object"),
+                &census,
+                &now,
+            );
+            rows.push(row.clone());
+            Ok((row, true))
+        },
+    )
 }
 
 /// Prepared proposal file; owner decisions are preserved in the after-image.
@@ -286,8 +358,21 @@ pub fn publish_merge_proposals(
             Rebase::Published => {}
             Rebase::Pending(bytes) if allow_before => {
                 start().map_err(ReviewOwnerError::failed)?;
+                let dir = display::directory(root);
+                let previous = display::origins(dir.as_deref());
                 write_text(&path, &bytes, AtomicWriteOptions { mode: Some(0o600) })
                     .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+                if !previous.is_empty()
+                    && let Some(dir) = dir
+                    && let Err(error) = display::write_prepared(
+                        &dir,
+                        &previous,
+                        current.as_deref().unwrap_or_default(),
+                        &bytes,
+                    )
+                {
+                    log::warn!("merge candidate display receipt unavailable: {error}");
+                }
             }
             Rebase::Pending(_) | Rebase::Conflict => {
                 return Err(ReviewOwnerError::conflict_message(
@@ -546,6 +631,28 @@ pub fn load_merge_candidates(
         .collect())
 }
 
+/// Owner presentation of the candidate list. The raw store, command and machine
+/// routes continue to return the original evidence summary.
+pub fn load_merge_candidates_for_display(
+    root: &Path,
+    facet: Option<&str>,
+    status: Option<&str>,
+    locale: &str,
+) -> Result<Vec<Value>, EntityStoreError> {
+    if locale == solstone_core_window_catalog::ENGLISH {
+        return load_merge_candidates(root, facet, status);
+    }
+    let dir = display::directory(root);
+    let receipt = dir.as_deref().and_then(display::read);
+    let mut rows = load_merge_candidates(root, facet, status)?;
+    if let Some((version, origins)) = receipt
+        && dir.as_deref().and_then(display::version) == Some(version)
+    {
+        display::project(&mut rows, &origins, locale);
+    }
+    Ok(rows)
+}
+
 /// A write admission must distinguish a missing owner answer from damaged rows.
 pub fn load_merge_candidates_strict(journal_root: &Path) -> Result<Vec<Value>, EntityStoreError> {
     read_candidate_rows(
@@ -558,12 +665,13 @@ pub(crate) fn mutate_candidates<T>(
     journal_root: &Path,
     mutate: impl FnOnce(&mut Vec<Value>) -> Result<T, EntityReviewCandidateError>,
 ) -> Result<T, EntityReviewCandidateError> {
-    mutate_candidates_checked(journal_root, &|| Ok(()), mutate)
+    mutate_candidates_checked(journal_root, &|| Ok(()), None, mutate)
 }
 
 fn mutate_candidates_checked<T>(
     journal_root: &Path,
     checkpoint: &dyn Fn() -> Result<(), String>,
+    authored: Option<(&str, bool)>,
     mutate: impl FnOnce(&mut Vec<Value>) -> Result<T, EntityReviewCandidateError>,
 ) -> Result<T, EntityReviewCandidateError> {
     let path = review_candidates_path(journal_root).map_err(EntityReviewCandidateError::Store)?;
@@ -578,6 +686,8 @@ fn mutate_candidates_checked<T>(
     let mut rows = read_candidate_rows(&path, MalformedPolicy::Raise)
         .map_err(EntityReviewCandidateError::Store)?;
     checkpoint().map_err(EntityReviewCandidateError::PublicationRefused)?;
+    let dir = display::directory(journal_root);
+    let previous = display::origins(dir.as_deref());
     let result = mutate(&mut rows)?;
     let contents = rows
         .iter()
@@ -586,6 +696,11 @@ fn mutate_candidates_checked<T>(
     checkpoint().map_err(EntityReviewCandidateError::PublicationRefused)?;
     write_text(&path, &contents, AtomicWriteOptions { mode: Some(0o600) })
         .map_err(EntityReviewCandidateError::Write)?;
+    if let Some(dir) = dir
+        && let Err(error) = display::write(&dir, &previous, &rows, authored)
+    {
+        log::warn!("merge candidate display receipt unavailable: {error}");
+    }
     Ok(result)
 }
 

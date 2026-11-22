@@ -65951,6 +65951,36 @@
     {
       "bundle": "journal-window",
       "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.merge.evidence.meeting.photos\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e6d657267652e65766964656e63652e6d656574696e672e70686f746f73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e6d657267652e65766964656e63652e6d656574696e672e70686f746f73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.merge.evidence.meeting.photos",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e6d657267652e65766964656e63652e6d656574696e672e70686f746f73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "meeting photos suggest these may be the same person.",
+      "message_id": "journal.window.entities.merge.evidence.meeting.photos",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.merge.evidence.meeting.photos\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e6d657267652e65766964656e63652e6d656574696e672e70686f746f73",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
         "arguments": [
           {
             "name": "total_quantity",
@@ -360112,6 +360142,36 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.merge.confirm.selection\", &[(\"selected\", Value::String(\"sample\")), (\"selected_quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e6d657267652e636f6e6669726d2e73656c656374696f6e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.merge.evidence.meeting.photos\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e6d657267652e65766964656e63652e6d656574696e672e70686f746f73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e6d657267652e65766964656e63652e6d656574696e672e70686f746f73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.merge.evidence.meeting.photos",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e6d657267652e65766964656e63652e6d656574696e672e70686f746f73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "meeting photos suggest these may be the same person.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "meeting photos suggest these may be the same person.",
+      "message_id": "journal.window.entities.merge.evidence.meeting.photos",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.merge.evidence.meeting.photos\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e6d657267652e65766964656e63652e6d656574696e672e70686f746f73",
       "target": "rust"
     },
     {

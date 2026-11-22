@@ -136,6 +136,7 @@ pub(super) fn atomic_replace_detailed(
         path,
         parent_path,
         &parent,
+        &parent,
         parent_identity,
         destination_name,
         contents,
@@ -149,6 +150,7 @@ fn publish_relative(
     path: &Path,
     parent_path: &Path,
     parent: &OwnedHandle,
+    stages: &OwnedHandle,
     parent_identity: WindowsFileIdentity,
     destination_name: &OsStr,
     contents: &[u8],
@@ -172,7 +174,7 @@ fn publish_relative(
             io::Error::new(io::ErrorKind::Interrupted, detail),
         )
     })?;
-    let (stage_name, mut stage_writer) = allocate_stage(parent, destination_name)
+    let (stage_name, mut stage_writer) = allocate_stage(stages, destination_name)
         .map_err(|source| detailed_error(path, "create stage", source))?;
     let stage_identity = match validate_regular_handle(stage_writer.as_raw_handle())
         .and_then(|()| file_identity(stage_writer.as_raw_handle()))
@@ -213,7 +215,7 @@ fn publish_relative(
         drop(stage_writer);
         return Err(cleanup_stage_error(
             path,
-            parent,
+            stages,
             &stage_name,
             stage_identity,
             "prepare stage",
@@ -224,7 +226,7 @@ fn publish_relative(
     checkpoint("close").map_err(|source| {
         cleanup_stage_error(
             path,
-            parent,
+            stages,
             &stage_name,
             stage_identity,
             "close stage",
@@ -234,10 +236,10 @@ fn publish_relative(
     pause_at("close");
 
     let stage =
-        open_stage_for_publication(parent, &stage_name, stage_identity).map_err(|source| {
+        open_stage_for_publication(stages, &stage_name, stage_identity).map_err(|source| {
             cleanup_stage_error(
                 path,
-                parent,
+                stages,
                 &stage_name,
                 stage_identity,
                 "reopen stage",
@@ -263,6 +265,7 @@ fn publish_relative(
             parent_path,
             parent,
             parent_identity,
+            stages,
             stage_handle,
             &stage_name,
             stage_identity,
@@ -374,6 +377,29 @@ pub(super) fn atomic_replace_detailed_bound_checked(
     mode: u32,
     publish_checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<DetailedAtomicOutcome, BoundAtomicPublishError> {
+    atomic_replace_between(
+        parent,
+        parent,
+        expected_parent,
+        destination_name,
+        contents,
+        mode,
+        publish_checkpoint,
+    )
+}
+
+pub(super) fn atomic_replace_between(
+    parent: &WindowsFlatDirectory,
+    stages: &WindowsFlatDirectory,
+    expected_parent: WindowsFileIdentity,
+    destination_name: &OsStr,
+    contents: &[u8],
+    mode: u32,
+    publish_checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<DetailedAtomicOutcome, BoundAtomicPublishError> {
+    if !std::ptr::eq(parent, stages) && stages.revalidate_bound().is_err() {
+        return Err(BoundAtomicPublishError::NamespaceChanged);
+    }
     if parent.revalidate_bound().is_err() || parent.identity() != expected_parent {
         return Err(BoundAtomicPublishError::NamespaceChanged);
     }
@@ -404,6 +430,7 @@ pub(super) fn atomic_replace_detailed_bound_checked(
         &path,
         parent.diagnostic_path(),
         parent.handle(),
+        stages.handle(),
         expected_parent,
         destination_name,
         contents,
@@ -532,6 +559,7 @@ fn revalidate_before_publication(
     parent_path: &Path,
     parent: &OwnedHandle,
     parent_identity: WindowsFileIdentity,
+    stages: &OwnedHandle,
     stage: &OwnedHandle,
     stage_name: &OsStr,
     stage_identity: WindowsFileIdentity,
@@ -559,7 +587,7 @@ fn revalidate_before_publication(
             ),
         ));
     }
-    let reopened_stage = open_stage_for_publication(parent, stage_name, stage_identity)?;
+    let reopened_stage = open_stage_for_publication(stages, stage_name, stage_identity)?;
     drop(reopened_stage);
     if inspect_relative_destination(parent, destination_name)? != initial_destination {
         return Err(io::Error::other(

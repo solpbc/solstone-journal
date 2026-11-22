@@ -14,7 +14,11 @@ use std::{
 
 pub const FILE: &str = "faces_derived.json";
 pub const MERGE_BASIS: &str = "meeting-face";
-pub const MERGE_EVIDENCE: &str = "meeting photos suggest these may be the same person.";
+
+mod candidate_display;
+#[cfg(test)]
+pub(in crate::store) use candidate_display::DISPLAY_STAGES;
+pub(in crate::store) use candidate_display::publish_candidate_display;
 
 #[derive(Clone, Debug)]
 pub struct Summary {
@@ -199,13 +203,25 @@ fn publish(journal: &Path, value: &Derived) -> Result<()> {
     let dir = p.parent().expect("entities file");
     solstone_core_journal_io::create_directory_with_mode(dir, 0o700).map_err(|e| e.to_string())?;
     let binding = JournalRoot::open(dir).map_err(|e| e.to_string())?;
+    let current = solstone_core_journal_io::read_optional_text(&p).map_err(|e| e.to_string())?;
     let bytes = serde_json::to_vec(value).map_err(|e| e.to_string())?;
-    if solstone_core_journal_io::read_optional_text(&p)
-        .map_err(|e| e.to_string())?
-        .as_deref()
-        == std::str::from_utf8(&bytes).ok()
-    {
+    if current.as_deref() == std::str::from_utf8(&bytes).ok() {
         return Ok(());
+    }
+    if let Some(field) = current
+        .as_deref()
+        .and_then(|s| super::super::review_candidates::display::field_for_republish(journal, s))
+    {
+        let mut augmented = serde_json::to_value(value).map_err(|e| e.to_string())?;
+        augmented[super::super::review_candidates::display::FIELD] = field;
+        let augmented = serde_json::to_vec(&augmented).map_err(|e| e.to_string())?;
+        if current.as_deref() == std::str::from_utf8(&augmented).ok() {
+            return Ok(());
+        }
+        match candidate_display::publish_augmented(journal, &augmented) {
+            Ok(()) => return Ok(()),
+            Err(error) => log::warn!("optional face review display unavailable: {error}"),
+        }
     }
     super::storage::publish(dir, &binding, FILE, &bytes)
 }
@@ -383,7 +399,7 @@ pub fn reconcile(journal: &Path) -> Result<Rules> {
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("")
         };
-        crate::record_merge_candidate(
+        super::super::review_candidates::record_meeting_photo_candidate(
             journal,
             &facet,
             &day,
@@ -391,10 +407,6 @@ pub fn reconcile(journal: &Path) -> Result<Rules> {
             a,
             name(b),
             b,
-            MERGE_EVIDENCE,
-            Some(MERGE_BASIS),
-            None,
-            None,
         )
         .map_err(|e| e.to_string())?;
     }

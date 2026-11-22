@@ -100,6 +100,8 @@ struct StateQuery {
     limit: Option<usize>,
     group: Option<String>,
     offset: Option<usize>,
+    #[serde(default)]
+    owner_view: bool,
 }
 
 async fn state(
@@ -111,7 +113,7 @@ async fn state(
     if let Some(response) = corrupt_config(&root) {
         return response;
     }
-    let value = match load_state(&root, locale) {
+    let value = match load_state(&root, locale, query.owner_view) {
         Ok(value) => value,
         Err(error) => {
             return http::error(
@@ -145,7 +147,11 @@ async fn summary(State(root): State<PathBuf>) -> Response {
     if let Some(response) = corrupt_config(&root) {
         return response;
     }
-    match load_state(&root, solstone_core_convey_http::window_catalog::ENGLISH) {
+    match load_state(
+        &root,
+        solstone_core_convey_http::window_catalog::ENGLISH,
+        false,
+    ) {
         Ok(value) => {
             let to_review = suggestions_to_review(&value);
             Json(json!({ "to_review": to_review })).into_response()
@@ -286,7 +292,7 @@ fn is_row_suppressed(row: &Value) -> bool {
         .is_some_and(|s| !s.is_null())
 }
 
-fn load_state(root: &Path, locale: &str) -> Result<Value, String> {
+fn load_state(root: &Path, locale: &str, owner_view: bool) -> Result<Value, String> {
     let facet_items = solstone_core_facets::load_candidates(root)
         .map_err(|error| error.to_string())?
         .into_iter()
@@ -295,7 +301,13 @@ fn load_state(root: &Path, locale: &str) -> Result<Value, String> {
         .collect::<Vec<_>>();
     let mut entity_items = Vec::new();
     let mut set_aside_items = Vec::new();
-    for row in load_merge_candidates(root, None, None).map_err(|error| error.to_string())? {
+    let candidates = if owner_view {
+        solstone_core_entity::load_merge_candidates_for_display(root, None, None, locale)
+    } else {
+        load_merge_candidates(root, None, None)
+    }
+    .map_err(|error| error.to_string())?;
+    for row in candidates {
         match solstone_core_entity::entity_merge_open_class(&row) {
             solstone_core_entity::EntityMergeOpenClass::SuppressedOpen => {
                 set_aside_items.push(set_aside_merge_item(row));
@@ -1821,6 +1833,7 @@ mod tests {
         let before = load_state(
             root.path(),
             solstone_core_convey_http::window_catalog::ENGLISH,
+            false,
         )
         .expect("state");
         let ambiguity_id = before["ambiguity_items"][0]["key"]
@@ -1843,6 +1856,7 @@ mod tests {
         let after = load_state(
             root.path(),
             solstone_core_convey_http::window_catalog::ENGLISH,
+            false,
         )
         .expect("state");
         assert!(
@@ -2277,6 +2291,7 @@ mod tests {
         let state = load_state(
             root.path(),
             solstone_core_convey_http::window_catalog::ENGLISH,
+            false,
         )
         .expect("load_state");
         let amb_items = state["ambiguity_items"]
@@ -2312,6 +2327,7 @@ mod tests {
         let state = load_state(
             root.path(),
             solstone_core_convey_http::window_catalog::ENGLISH,
+            false,
         )
         .expect("load_state");
         let items = state["entity_items"].as_array().expect("entity_items");

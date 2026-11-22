@@ -565,15 +565,14 @@ pub fn atomic_replace_detailed(
         durability_source: sync_error,
         observation_source,
         ..
-    } = publish_into_bound_directory(&directory, name, contents, mode, &|| Ok(())).map_err(
-        |error| DetailedAtomicError {
+    } = publish_into_bound_directory(&directory, &directory, name, contents, mode, &|| Ok(()))
+        .map_err(|error| DetailedAtomicError {
             path: path.to_path_buf(),
             operation: error.operation,
             source: error.source,
             orphan_stage: error.orphan_stage,
             cleanup_error: error.cleanup_error,
-        },
-    )?;
+        })?;
 
     if let Some(observation) = observation_source {
         return Ok(DetailedAtomicOutcome::PublishedParentPathUnverified {
@@ -676,6 +675,27 @@ pub fn atomic_replace_detailed_bound_checked(
     )
 }
 
+/// Publish from a separately retained stage directory on the same volume.
+#[cfg(windows)]
+pub fn atomic_replace_from_bound_stage_checked(
+    parent: &crate::windows_sync_dir::WindowsFlatDirectory,
+    stages: &crate::windows_sync_dir::WindowsFlatDirectory,
+    name: &OsStr,
+    contents: &[u8],
+    mode: u32,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<DetailedAtomicOutcome, BoundAtomicPublishError> {
+    windows_atomic::atomic_replace_between(
+        parent,
+        stages,
+        parent.identity(),
+        name,
+        contents,
+        mode,
+        checkpoint,
+    )
+}
+
 #[cfg(windows)]
 #[path = "windows_atomic.rs"]
 mod windows_atomic;
@@ -730,6 +750,27 @@ pub fn atomic_replace_bound_checked(
     mode: u32,
     publish_checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<BoundAtomicOutcome, DetailedAtomicError> {
+    atomic_replace_from_bound_stage_checked(
+        directory,
+        directory,
+        name,
+        contents,
+        mode,
+        publish_checkpoint,
+    )
+}
+
+/// Atomically replace a destination while keeping its unpublished stages in a
+/// separately retained directory on the same filesystem.
+#[cfg(unix)]
+pub fn atomic_replace_from_bound_stage_checked(
+    directory: &impl AsFd,
+    stages: &impl AsFd,
+    name: &OsStr,
+    contents: &[u8],
+    mode: u32,
+    publish_checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<BoundAtomicOutcome, DetailedAtomicError> {
     let path = Path::new(name);
     if mode > 0o777 {
         return Err(detailed_error(
@@ -748,7 +789,8 @@ pub fn atomic_replace_bound_checked(
             ),
         )
     })?;
-    let result = publish_into_bound_directory(directory, name, contents, mode, publish_checkpoint)?;
+    let result =
+        publish_into_bound_directory(directory, stages, name, contents, mode, publish_checkpoint)?;
     if let Some(source) = result.observation_source {
         return Ok(BoundAtomicOutcome::PublishedObservationUncertain {
             observation: result.observation,
@@ -1419,11 +1461,13 @@ pub(crate) fn publish_open_stage_no_replace(
 #[cfg(unix)]
 fn publish_into_bound_directory(
     directory: &impl AsFd,
+    stages: &impl AsFd,
     name: &OsStr,
     contents: &[u8],
     mode: u32,
     publish_checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<BoundPublicationResult, DetailedAtomicError> {
+    use std::os::fd::AsRawFd;
     let path = Path::new(name);
     let authorize = || {
         publish_checkpoint().map_err(|detail| io::Error::new(io::ErrorKind::Interrupted, detail))
@@ -1433,7 +1477,7 @@ fn publish_into_bound_directory(
     checkpoint(BoundPublicationPrimitive::TempCreate)
         .map_err(|source| detailed_error(path, "create stage", source))?;
     authorize().map_err(|source| detailed_error(path, "authorize stage creation", source))?;
-    let (stage_name, mut stage_file) = allocate_bound_stage(directory, name, path)?;
+    let (stage_name, mut stage_file) = allocate_bound_stage(stages, name, path)?;
     pause_at("temp-create");
     let operation = (|| -> io::Result<FileObservation> {
         checkpoint(BoundPublicationPrimitive::Write)?;
@@ -1456,7 +1500,7 @@ fn publish_into_bound_directory(
         Err(source) => {
             drop(stage_file);
             return Err(cleanup_stage_error(
-                directory,
+                stages,
                 path,
                 stage_name,
                 "prepare stage",
@@ -1467,11 +1511,11 @@ fn publish_into_bound_directory(
     drop(stage_file);
     pause_at("close");
     checkpoint(BoundPublicationPrimitive::Rename).map_err(|source| {
-        cleanup_stage_error(directory, path, stage_name.clone(), "publish stage", source)
+        cleanup_stage_error(stages, path, stage_name.clone(), "publish stage", source)
     })?;
     authorize().map_err(|source| {
         cleanup_stage_error(
-            directory,
+            stages,
             path,
             stage_name.clone(),
             "authorize publication",
@@ -1480,16 +1524,16 @@ fn publish_into_bound_directory(
     })?;
     checkpoint(BoundPublicationPrimitive::AuthorizedRename).map_err(|source| {
         cleanup_stage_error(
-            directory,
+            stages,
             path,
             stage_name.clone(),
             "authorized publication",
             source,
         )
     })?;
-    renameat(directory, stage_name.as_os_str(), directory, name).map_err(|source| {
+    renameat(stages, stage_name.as_os_str(), directory, name).map_err(|source| {
         cleanup_stage_error(
-            directory,
+            stages,
             path,
             stage_name.clone(),
             "publish stage",
@@ -1497,12 +1541,16 @@ fn publish_into_bound_directory(
         )
     })?;
     pause_at("rename");
-    let durability_source = match checkpoint(BoundPublicationPrimitive::ParentSync) {
-        Err(source) => Some(source),
-        Ok(()) => fsync(directory)
-            .err()
-            .map(|error| io::Error::from_raw_os_error(error as i32)),
-    };
+    let durability_source = (|| -> io::Result<()> {
+        checkpoint(BoundPublicationPrimitive::ParentSync)?;
+        fsync(directory).map_err(errno_io)?;
+        if stages.as_fd().as_raw_fd() != directory.as_fd().as_raw_fd() {
+            checkpoint(BoundPublicationPrimitive::ParentSync)?;
+            fsync(stages).map_err(errno_io)?;
+        }
+        Ok(())
+    })()
+    .err();
     pause_at("fsync-bound-parent-dir");
     let observation_source = verify_bound_publication(directory, name, &observation).err();
     Ok(BoundPublicationResult {
@@ -3616,6 +3664,101 @@ mod generic_writers {
             BoundAtomicOutcome::Published { .. }
         ));
         assert_eq!(fs::read(&path).unwrap(), b"published");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn separate_stage_directory_confines_refusal_and_syncs_both_directories() {
+        let temporary = TempDir::new();
+        let stage_path = temporary.path().join("pending");
+        fs::create_dir(&stage_path).unwrap();
+        let destination = fs::File::open(temporary.path()).unwrap();
+        let stages = fs::File::open(&stage_path).unwrap();
+        let path = temporary.path().join("record.json");
+        fs::write(&path, b"before").unwrap();
+        let publish = |check: &dyn Fn() -> Result<(), String>| {
+            atomic_replace_from_bound_stage_checked(
+                &destination,
+                &stages,
+                OsStr::new("record.json"),
+                b"after",
+                0o600,
+                check,
+            )
+        };
+        let refused = publish(&|| {
+            assert!(!candidate_present(temporary.path()));
+            if candidate_present(&stage_path) {
+                Err("refused after staging".into())
+            } else {
+                Ok(())
+            }
+        });
+        assert!(refused.is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"before");
+        assert!(!candidate_present(&stage_path));
+        for nth_sync in [1, 2] {
+            let (result, consumed) = run_with_bound_publication_fault(
+                BoundPublicationPrimitive::ParentSync,
+                nth_sync,
+                Errno::EIO as i32,
+                || publish(&|| Ok(())),
+            );
+            assert!(consumed);
+            assert!(matches!(
+                result.unwrap(),
+                BoundAtomicOutcome::PublishedDurabilityUncertain { .. }
+            ));
+            assert_eq!(fs::read(&path).unwrap(), b"after");
+            assert!(!candidate_present(&stage_path));
+        }
+        assert!(matches!(
+            publish(&|| Ok(())).unwrap(),
+            BoundAtomicOutcome::Published { .. }
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn separate_stage_directory_confines_refusal_and_publishes_on_windows() {
+        use crate::{JournalRoot, create_or_open_windows_flat_directory_bound as child};
+        let temporary = TempDir::new();
+        let root = JournalRoot::open(temporary.path()).unwrap();
+        let destination = child(&root, OsStr::new("live"), temporary.path()).unwrap();
+        let stages = child(&root, OsStr::new("pending"), temporary.path()).unwrap();
+        let dest_path = temporary.path().join("live");
+        let stage_path = temporary.path().join("pending");
+        let path = dest_path.join("record.json");
+        fs::write(&path, b"before").unwrap();
+        let publish = |check: &dyn Fn() -> Result<(), String>| {
+            atomic_replace_from_bound_stage_checked(
+                &destination,
+                &stages,
+                OsStr::new("record.json"),
+                b"after",
+                0o600,
+                check,
+            )
+        };
+        assert!(
+            publish(&|| {
+                assert!(!candidate_present(&dest_path));
+                if candidate_present(&stage_path) {
+                    Err("refused before rename".into())
+                } else {
+                    Ok(())
+                }
+            })
+            .is_err()
+        );
+        assert!(!candidate_present(&stage_path));
+        assert_eq!(fs::read(&path).unwrap(), b"before");
+        assert!(matches!(
+            publish(&|| Ok(())).unwrap(),
+            DetailedAtomicOutcome::Published
+        ));
+        assert!(!candidate_present(&stage_path));
+        assert_eq!(fs::read(&path).unwrap(), b"after");
     }
 
     #[cfg(unix)]

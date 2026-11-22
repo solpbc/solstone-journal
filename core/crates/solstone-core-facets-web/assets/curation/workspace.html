@@ -645,7 +645,7 @@ window.CUR_COPY = CUR_COPY;
   // loads on request from `?group=&offset=`, where the offset is what this page
   // still shows, so suggestions already reviewed here are not skipped.
   const CURATION_PAGE_SIZE = 50;
-  const CURATION_STATE_PATH = `/app/curation/api/state?limit=${CURATION_PAGE_SIZE}`;
+  const CURATION_STATE_PATH = `/app/curation/api/state?limit=${CURATION_PAGE_SIZE}&owner_view=true`;
   // A request that never answers (a dropped relay mid-body) would otherwise
   // leave the spinner up for good; past this it falls through to "try again".
   const CURATION_LOAD_TIMEOUT_MS = 60000;
@@ -782,7 +782,7 @@ window.CUR_COPY = CUR_COPY;
     clearLoadMoreError(button);
     let page;
     try {
-      page = await window.apiJson(`/app/curation/api/state?group=${paged}&offset=${shown}&limit=${CURATION_PAGE_SIZE}`, curationRequestOptions());
+      page = await window.apiJson(`/app/curation/api/state?group=${paged}&offset=${shown}&limit=${CURATION_PAGE_SIZE}&owner_view=true`, curationRequestOptions());
     } catch (err) {
       window.logError?.(err, {context: 'curation-load-more'});
       setBusy(button, false);

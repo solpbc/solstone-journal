@@ -494,6 +494,8 @@ Use the window catalog for labels the journal adds to a briefing, Pulse, a Story
 
 Keep the saved text of location.md and body.md available to prompts and exports. When showing a day document to its owner, render the journal’s headings, counts and attributions from the window catalog if the display metadata matches the saved text. Preserve the words the owner, device or imported source supplied.
 
+Keep the English evidence summary in saved merge suggestions generated from meeting photos. When Curation shows a suggestion from meeting photos, render the summary from the window catalog if the journal recorded its origin. Show evidence supplied by a person or a model as written.
+
 ### Journal command-line strings
 
 Put command-line help, progress and human-readable errors in

@@ -13435,6 +13435,13 @@
       "locales": []
     },
     {
+      "id": "journal.window.entities.merge.evidence.meeting.photos",
+      "source": "5d09bb800ef441c579daaa218d5f73e36a1b5c1e3dcf185c7c259376d8965652",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.entities.merge.keep.done",
       "source": "40518e8291d404d249ddda58cc3eca381f07772bf058915e9385622259564db6",
       "contract": "1a550b334c3b0d4190e2704a5f97b15d52ad47fdd9dc97978982bfc153775296",

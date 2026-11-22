@@ -96,6 +96,8 @@ pub use append::append_text;
 pub use append::run_with_bound_append_open_barrier;
 #[cfg(any(unix, windows))]
 pub use append::{append_text_bound_checked, append_text_checked};
+#[cfg(any(unix, windows))]
+pub use atomic::atomic_replace_from_bound_stage_checked;
 pub use atomic::serialize_json_bytes;
 #[cfg(any(unix, windows))]
 pub use atomic::{

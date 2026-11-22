@@ -21096,3 +21096,5 @@ journal.window.location.day.readings.unlocated.approximate = { $quantity ->
 journal.window.location.day.stay = a stay your journal worked out from { $count } readings from { $device } { $location }: first reading { $first }, last { $last }.
 
 journal.window.location.day.visit = a visit { $device } reported { $location }: { $arrival }, { $departure }.
+
+journal.window.entities.merge.evidence.meeting.photos = meeting photos suggest these may be the same person.

@@ -1,0 +1,16 @@
+{
+  "description": "Evidence summary for a journal-generated suggestion to merge two people.",
+  "context": "Entity merge review. Only the journal’s cross-person meeting-photo reconciliation owns this summary. Other callers may supply their own evidence.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5d09bb800ef441c579daaa218d5f73e36a1b5c1e3dcf185c7c259376d8965652",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
