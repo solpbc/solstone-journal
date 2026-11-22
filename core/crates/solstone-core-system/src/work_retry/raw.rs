@@ -185,7 +185,7 @@ pub fn inspect_output_typed(
             "journal.cli.think.retry.raw.source.mismatch",
         ));
     }
-    let input = super::file_fingerprint_checked(&input_path, checkpoint)?;
+    let input = super::file_fingerprint_typed(&input_path, checkpoint)?;
     let baseline = match record.get("input_sha256") {
         None => input.clone(),
         Some(Value::String(value))
@@ -231,37 +231,45 @@ pub fn observe_checked(
     )
 }
 
-fn selected(
+fn selected_in(
     journal: &Path,
     output: &Path,
     handler: &str,
+    locale: &str,
 ) -> Result<Option<(Unit, Attempt)>, String> {
+    let message = |id| solstone_core_cli_copy::render_for(locale, id, &[]);
     let Some(id) = std::env::var_os(UNIT_ENV) else {
         return Ok(None);
     };
     if std::env::var_os(JOURNAL_ENV).as_deref() != Some(journal.as_os_str()) {
-        return Err("native retry journal does not match".into());
+        return Err(message("journal.cli.describe.pipeline.retry.journal"));
     }
-    let id = id.to_str().ok_or("native retry identity is not UTF-8")?;
+    let id = id
+        .to_str()
+        .ok_or_else(|| message("journal.cli.describe.pipeline.retry.id"))?;
     let cause = std::env::var(CAUSE_ENV).map_err(|e| e.to_string())?;
     let selected: Attempt =
         serde_json::from_str(&std::env::var(ATTEMPT_ENV).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
-    let unit = unit_for_output(journal, output, handler)?;
-    if unit.id()? != id {
+    let unit = unit_for_output_typed(journal, output, handler).map_err(|e| e.render(locale))?;
+    if unit.id_typed().map_err(|e| e.render(locale))? != id {
         return Ok(None);
     }
-    let evidence = inspect_output(journal, output)?.ok_or("native output is no longer held")?;
+    let evidence = inspect_output_typed(journal, output, &|| Ok(()))
+        .map_err(|e| e.render(locale))?
+        .ok_or_else(|| message("journal.cli.think.retry.raw.released"))?;
     if evidence.unit != unit {
-        return Err("native failure handler changed".into());
+        return Err(message("journal.cli.describe.pipeline.retry.handler"));
     }
-    let record = super::read(journal, id)?.ok_or("native retry permission is missing")?;
+    let record = super::read_typed(journal, id)
+        .map_err(|e| e.render(locale))?
+        .ok_or_else(|| message("journal.cli.describe.pipeline.retry.permission.missing"))?;
     let attempt = record
         .permission(&evidence.input, DECLARED_FIXES)
         .filter(|attempt| {
             attempt == &selected && attempt.cause == cause && attempt.reason == evidence.reason
         })
-        .ok_or("native retry permission changed")?;
+        .ok_or_else(|| message("journal.cli.describe.pipeline.retry.permission.changed"))?;
     Ok(Some((unit, attempt)))
 }
 
@@ -321,7 +329,8 @@ pub fn waiting_from_environment(output: &Path, handler: &str) -> bool {
     let Some(journal) = std::env::var_os(JOURNAL_ENV) else {
         return false;
     };
-    selected(Path::new(&journal), output, handler).is_ok_and(|grant| grant.is_some())
+    selected_in(Path::new(&journal), output, handler, super::ENGLISH)
+        .is_ok_and(|grant| grant.is_some())
 }
 
 /// Never call before acquiring the native output execution claim.
@@ -368,16 +377,27 @@ pub fn consume_from_environment(
     output: &Path,
     handler: &str,
 ) -> Result<bool, String> {
-    let Some((unit, attempt)) = selected(journal, output, handler)? else {
+    consume_from_environment_in(journal, output, handler, super::ENGLISH)
+}
+
+pub fn consume_from_environment_in(
+    journal: &Path,
+    output: &Path,
+    handler: &str,
+    locale: &str,
+) -> Result<bool, String> {
+    let Some((unit, attempt)) = selected_in(journal, output, handler, locale)? else {
         return Ok(false);
     };
-    super::consume(
+    super::consume_checked_in(
         journal,
         &unit,
         &attempt,
         &attempt.reason,
         &attempt.input,
         DECLARED_FIXES,
+        &|| Ok(()),
+        locale,
     )?;
     Ok(true)
 }

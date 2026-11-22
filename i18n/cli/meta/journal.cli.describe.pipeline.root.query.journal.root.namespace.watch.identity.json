@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline root query journal root namespace watch identity.",
+  "context": "Journal command-line text for pipeline root query journal root namespace watch identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2d5b5457dbda7b92f485fb05b42ac2c5117d6c75f4a338221a94daa7aaabd9bb",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

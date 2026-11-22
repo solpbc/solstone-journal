@@ -22,6 +22,17 @@ pub fn terminal_locale() -> Option<&'static str> {
     }
 }
 
+static TERMINAL_LOCALE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+
+/// Select the language for log messages in a command and its worker threads.
+pub fn begin_terminal_output() {
+    TERMINAL_LOCALE.get_or_init(|| terminal_locale().unwrap_or(ENGLISH));
+}
+
+pub fn manual_log_locale() -> &'static str {
+    TERMINAL_LOCALE.get().copied().unwrap_or(ENGLISH)
+}
+
 pub fn render_for(locale: &str, id: &str, args: &[(&str, Value<'_>)]) -> String {
     let (locale, id) = id
         .strip_prefix('!')

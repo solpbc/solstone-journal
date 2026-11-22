@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline root journal root is on removable or optical media.",
+  "context": "Journal command-line text for pipeline root journal root is on removable or optical media.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64ab97a423c900eb1a2df08a3a8954087cd3d579191f994167091b2e30f43aae",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

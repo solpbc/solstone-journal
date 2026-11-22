@@ -49,28 +49,51 @@ pub struct CategoryOverride {
 pub fn parse_category_overrides(
     value: Option<&Value>,
 ) -> Result<BTreeMap<String, CategoryOverride>, String> {
+    parse_category_overrides_detail(value).map_err(|error| error.to_string())
+}
+
+pub(crate) fn parse_category_overrides_detail(
+    value: Option<&Value>,
+) -> Result<BTreeMap<String, CategoryOverride>, solstone_core_cli_copy::MessageDetail> {
+    use solstone_core_cli_copy::MessageDetail;
     let categories = match value {
         None => return Ok(BTreeMap::new()),
         Some(Value::Object(categories)) => categories,
-        Some(_) => return Err("describe.categories must be an object".to_owned()),
+        Some(_) => {
+            return Err(MessageDetail::message(
+                "journal.cli.describe.settings.object",
+                [("setting", &"describe.categories")],
+            ));
+        }
     };
     categories
         .iter()
         .filter(|(_, value)| !value.is_null())
         .map(|(name, value)| {
-            let value = value
-                .as_object()
-                .ok_or_else(|| format!("describe.categories.{name} must be an object"))?;
+            let value = value.as_object().ok_or_else(|| {
+                MessageDetail::message(
+                    "journal.cli.describe.settings.object",
+                    [("setting", &format_args!("describe.categories.{name}"))],
+                )
+            })?;
             let importance = match value.get("importance") {
                 None => None,
                 Some(Value::String(value)) => Some(Importance::parse(value).ok_or_else(|| {
-                    format!(
-                        "describe.categories.{name}.importance must be ignore, low, normal, or high"
+                    MessageDetail::message(
+                        "journal.cli.describe.settings.importance",
+                        [(
+                            "setting",
+                            &format_args!("describe.categories.{name}.importance"),
+                        )],
                     )
                 })?),
                 Some(_) => {
-                    return Err(format!(
-                        "describe.categories.{name}.importance must be a string"
+                    return Err(MessageDetail::message(
+                        "journal.cli.describe.settings.string",
+                        [(
+                            "setting",
+                            &format_args!("describe.categories.{name}.importance"),
+                        )],
                     ));
                 }
             };
@@ -78,8 +101,12 @@ pub fn parse_category_overrides(
                 None => None,
                 Some(Value::String(value)) => Some(value.clone()),
                 Some(_) => {
-                    return Err(format!(
-                        "describe.categories.{name}.extraction must be a string"
+                    return Err(MessageDetail::message(
+                        "journal.cli.describe.settings.string",
+                        [(
+                            "setting",
+                            &format_args!("describe.categories.{name}.extraction"),
+                        )],
                     ));
                 }
             };

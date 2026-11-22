@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline retry io parent kind.",
+  "context": "Journal command-line text for pipeline retry io parent kind.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c502078f6fed40f1ce295839020a55c43eebf3d3f2fb17ae7181e53ca8f8e36a",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

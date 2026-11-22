@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline root journal root is a cloud files sync root.",
+  "context": "Journal command-line text for pipeline root journal root is a cloud files sync root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7478cf8f95c7d294bef2dd509dc1e9c669a244bfec73ba59dce9306a7669db9f",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "cloud_files",
+      "kind": "accepted-input",
+      "value": "Cloud Files"
+    }
+  ]
+}

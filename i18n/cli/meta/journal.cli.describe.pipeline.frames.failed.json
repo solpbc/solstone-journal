@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline frames failed.",
+  "context": "Journal command-line text for pipeline frames failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "416a08e7a750ebf4fd508dafc17ad3315b7c13beebe5f5e8185be6f8d892db69",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

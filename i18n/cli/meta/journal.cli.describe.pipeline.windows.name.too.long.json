@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for pipeline windows name too long.",
+  "context": "Journal command-line text for pipeline windows name too long.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "51b4909efc73a1faa162a1518b06bdf73bc399d815c22efdf9005336ee1418c5",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    },
+    {
+      "name": "length_limit",
+      "kind": "accepted-input",
+      "value": "255"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline publish current directory is not valid utf.",
+  "context": "Journal command-line text for pipeline publish current directory is not valid utf.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "43c596091cb22611304e364ff707b6bcf6a3c715faf52cfccb3ee2f6d8f52e89",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

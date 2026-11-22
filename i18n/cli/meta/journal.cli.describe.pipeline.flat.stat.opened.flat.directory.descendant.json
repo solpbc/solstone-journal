@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for pipeline flat stat opened flat directory descendant.",
+  "context": "Journal command-line text for pipeline flat stat opened flat directory descendant.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9a46e83cfcb8f7568e605433e2d4e6a410cea3dacaf3d851a7fe77b64b4934be",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

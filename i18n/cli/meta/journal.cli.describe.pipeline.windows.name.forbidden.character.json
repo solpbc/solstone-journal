@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline windows name forbidden character.",
+  "context": "Journal command-line text for pipeline windows name forbidden character.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d477eea984724423fd726e0cfba6e117cddbf5e5c1afb661ce8e7fbb64ae861",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    }
+  ]
+}

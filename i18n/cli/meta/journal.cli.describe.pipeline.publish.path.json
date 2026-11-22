@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for pipeline publish path.",
+  "context": "Journal command-line text for pipeline publish path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "900f7d2755d29a6d6b8a1dd84f157cb360f4e3c7a007ce67b055e08d7db0f49a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

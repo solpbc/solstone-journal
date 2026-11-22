@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline root query journal root drive type.",
+  "context": "Journal command-line text for pipeline root query journal root drive type.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "39b5659ecc8122577e9004ebb17439acba7c8a21a37ab86f07d14884f1266c2b",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

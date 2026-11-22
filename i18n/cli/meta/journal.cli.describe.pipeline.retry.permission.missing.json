@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline retry permission missing.",
+  "context": "Journal command-line text for pipeline retry permission missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a6881ca9b2faef85e84684d04e0fd7744e4c8cbbdc8323d0addfd3d99dd301d1",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

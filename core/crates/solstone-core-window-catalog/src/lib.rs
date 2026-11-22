@@ -35,6 +35,24 @@ pub fn text(locale: &str, id: &str) -> String {
     render(locale, id, &[])
 }
 
+pub fn screen_category_label(locale: &str, name: &str) -> Option<String> {
+    let id = match name {
+        "browsing" => "journal.window.settings.vision.category.label.browsing",
+        "calendar" => "journal.window.settings.vision.category.label.calendar",
+        "code" => "journal.window.settings.vision.category.label.code",
+        "gaming" => "journal.window.settings.vision.category.label.gaming",
+        "media" => "journal.window.settings.vision.category.label.media",
+        "meeting" => "journal.window.settings.vision.category.label.meeting",
+        "messaging" => "journal.window.settings.vision.category.label.messaging",
+        "productivity" => "journal.window.settings.vision.category.label.productivity",
+        "reading" => "journal.window.settings.vision.category.label.reading",
+        "social" => "journal.window.settings.vision.category.label.social",
+        "terminal" => "journal.window.settings.vision.category.label.terminal",
+        _ => return None,
+    };
+    Some(text(locale, id))
+}
+
 pub fn strings<const N: usize>(locale: &str, id: &str, args: [(&str, &str); N]) -> String {
     render(
         locale,

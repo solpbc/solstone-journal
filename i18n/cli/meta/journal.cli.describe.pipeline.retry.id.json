@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline retry id.",
+  "context": "Journal command-line text for pipeline retry id.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "67f25a8f81d176ea8324a39868f37f347b62d6748895edbfaea68aebb5d3d352",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

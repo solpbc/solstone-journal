@@ -75,6 +75,18 @@ fn parent_namespace_changed_error(change: ParentNamespaceChange) -> io::Error {
     io::Error::other(change)
 }
 
+pub(crate) fn namespace_change_message(
+    cause: &(dyn std::error::Error + Send + Sync + 'static),
+) -> Option<solstone_core_cli_copy::MessageDetail> {
+    let id = match cause.downcast_ref::<ParentNamespaceChange>()? {
+        ParentNamespaceChange::RetainedIdentity => {
+            "journal.cli.describe.pipeline.retry.io.parent.identity"
+        }
+        ParentNamespaceChange::Pathname => "journal.cli.describe.pipeline.retry.io.parent.rename",
+    };
+    Some(solstone_core_cli_copy::MessageDetail::message(id, []))
+}
+
 fn is_parent_namespace_change(error: &DetailedAtomicError) -> bool {
     error
         .source
@@ -188,7 +200,12 @@ fn publish_relative(
         pause_at("fsync-file");
         validate_regular_handle(stage_writer.as_raw_handle())?;
         if file_identity(stage_writer.as_raw_handle())? != stage_identity {
-            return Err(io::Error::other("stage identity changed while preparing"));
+            return Err(io::Error::other(
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.retry.io.prepare",
+                    [],
+                ),
+            ));
         }
         Ok(())
     })();
@@ -481,7 +498,10 @@ fn allocate_stage(parent: &OwnedHandle, destination: &OsStr) -> io::Result<(OsSt
     }
     Err(io::Error::new(
         io::ErrorKind::AlreadyExists,
-        "could not allocate stage",
+        solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.describe.pipeline.retry.io.allocate",
+            [],
+        ),
     ))
 }
 
@@ -498,7 +518,10 @@ fn open_stage_for_publication(
     validate_regular_handle(handle.as_raw_handle())?;
     if file_identity(handle.as_raw_handle())? != expected_identity {
         return Err(io::Error::other(
-            "stage namespace changed before publication",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.retry.io.stage.namespace",
+                [],
+            ),
         ));
     }
     Ok(handle)
@@ -530,14 +553,20 @@ fn revalidate_before_publication(
     validate_regular_handle(stage.as_raw_handle())?;
     if file_identity(stage.as_raw_handle())? != stage_identity {
         return Err(io::Error::other(
-            "stage identity changed before publication",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.retry.io.stage.identity",
+                [],
+            ),
         ));
     }
     let reopened_stage = open_stage_for_publication(parent, stage_name, stage_identity)?;
     drop(reopened_stage);
     if inspect_relative_destination(parent, destination_name)? != initial_destination {
         return Err(io::Error::other(
-            "destination namespace changed before publication",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.retry.io.dest.namespace",
+                [],
+            ),
         ));
     }
     checkpoint("pre-publication-validation")?;
@@ -687,10 +716,20 @@ fn open_existing_relative(
 fn validate_directory_handle(handle: RawHandle) -> io::Result<()> {
     let attributes = attribute_tag(handle)?;
     if attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return Err(io::Error::other("parent is a reparse point"));
+        return Err(io::Error::other(
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.retry.io.parent.reparse",
+                [],
+            ),
+        ));
     }
     if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == 0 {
-        return Err(io::Error::other("parent is not a real directory"));
+        return Err(io::Error::other(
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.retry.io.parent.kind",
+                [],
+            ),
+        ));
     }
     Ok(())
 }
@@ -698,10 +737,20 @@ fn validate_directory_handle(handle: RawHandle) -> io::Result<()> {
 fn validate_regular_handle(handle: RawHandle) -> io::Result<()> {
     let attributes = attribute_tag(handle)?;
     if attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return Err(io::Error::other("entry is a reparse point"));
+        return Err(io::Error::other(
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.retry.io.file.reparse",
+                [],
+            ),
+        ));
     }
     if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
-        return Err(io::Error::other("entry is not a regular file"));
+        return Err(io::Error::other(
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.retry.io.file.kind",
+                [],
+            ),
+        ));
     }
     Ok(())
 }

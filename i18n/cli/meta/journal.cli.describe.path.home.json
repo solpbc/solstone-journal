@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for path home.",
+  "context": "Journal command-line text for path home.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7a6749245ff6233d8106c50693bb25bd179bf1fa67fc070eabb63d282810eac3",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

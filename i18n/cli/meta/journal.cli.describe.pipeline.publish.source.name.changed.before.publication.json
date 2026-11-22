@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline publish source name changed before publication.",
+  "context": "Journal command-line text for pipeline publish source name changed before publication.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a4fb708b27ab95231241a2e34fa82187109e0648b8cfff1b246fbbc1e7e858cc",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

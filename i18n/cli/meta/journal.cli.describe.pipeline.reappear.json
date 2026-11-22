@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline reappear.",
+  "context": "Journal command-line text for pipeline reappear.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "frame",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "32e4999b8b82eef2d2d3565652324655bfef23a0926b02d8e180a0a5bfdee5a7",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

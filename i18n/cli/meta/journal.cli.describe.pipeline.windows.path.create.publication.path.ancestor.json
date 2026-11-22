@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path create publication path ancestor.",
+  "context": "Journal command-line text for pipeline windows path create publication path ancestor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7cdc52e7bd66b4199afb91ff86ff76c559f640c43a2dfdc0c90e23bf854df980",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

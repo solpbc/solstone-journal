@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline retry io allocate.",
+  "context": "Journal command-line text for pipeline retry io allocate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f93e6da727f0891cb64b7679785cc49048ec19f285813cc70ca02e0e4f222d5b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

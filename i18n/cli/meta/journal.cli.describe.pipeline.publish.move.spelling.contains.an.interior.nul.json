@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline publish move spelling contains an interior nul.",
+  "context": "Journal command-line text for pipeline publish move spelling contains an interior nul.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3e905360d8471b5ba6db4b36bd5b61f24aac3e2a8e1cdc2c29b2840e11938131",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "nul",
+      "kind": "accepted-input",
+      "value": "NUL"
+    }
+  ]
+}

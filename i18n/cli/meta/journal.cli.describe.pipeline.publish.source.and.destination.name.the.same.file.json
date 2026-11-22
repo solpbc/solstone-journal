@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline publish source and destination name the same file.",
+  "context": "Journal command-line text for pipeline publish source and destination name the same file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1175cce426b4993ba198486a689932ac395d8d7bad41002730fa037469119a43",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

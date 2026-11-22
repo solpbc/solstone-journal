@@ -4707,3 +4707,405 @@ journal.cli.depict.detection.unavailable.windows = object detection is unavailab
 journal.cli.depict.help = usage: { $syntax }
 
 journal.cli.depict.metadata.invalid = native depict: invalid { $variable } { $format }
+
+journal.cli.describe.cancelled = describe cancelled
+
+journal.cli.describe.decode.failed = failed to decode video: { $path }
+
+journal.cli.describe.deferred = describe deferred
+
+journal.cli.describe.deferred.reason = describe deferred: { $reason }
+
+journal.cli.describe.faces.skipped = face enrichment skipped: { $kind }
+
+journal.cli.describe.file.encoding = video path must have a { $encoding } filename
+
+journal.cli.describe.output.encode = failed to encode output: { $error }
+
+journal.cli.describe.output.write = failed to write output: { $error }
+
+journal.cli.describe.path.config = could not read journal path: { $reason }
+
+journal.cli.describe.path.home = could not resolve home directory: { $reason }
+
+journal.cli.describe.pipeline.flat.bound = bound directory name exists and is not a directory
+
+journal.cli.describe.pipeline.flat.create.flat.directory.child = create flat-directory child failed for { $path }: { $detail }
+
+journal.cli.describe.pipeline.flat.normal = name must be one normal component
+
+journal.cli.describe.pipeline.flat.read.flat.directory.identity = read flat-directory identity failed for { $path }: { $detail }
+
+journal.cli.describe.pipeline.flat.relative = path must be a nonempty sequence of normal portable components
+
+journal.cli.describe.pipeline.flat.revalidate.flat.directory = revalidate flat directory failed for { $path }: { $detail }
+
+journal.cli.describe.pipeline.flat.stat.flat.directory.descendant = stat flat-directory descendant failed for { $path }: { $detail }
+
+journal.cli.describe.pipeline.flat.stat.opened.flat.directory.descendant = stat opened flat-directory descendant failed for { $path }: { $detail }
+
+journal.cli.describe.pipeline.flat.utf8 = the name is not valid { $encoding } text
+
+journal.cli.describe.pipeline.frames.failed = all describe frame requests failed
+
+journal.cli.describe.pipeline.install.observe.installed.destination.after.move = { $path }: observe installed destination after move: { $detail }
+
+journal.cli.describe.pipeline.install.reconcile.install.after.failed.move = { $path }: reconcile install after failed move: { $detail }
+
+journal.cli.describe.pipeline.install.revalidate.install.paths.after.move = { $path }: revalidate install paths after move: { $detail }
+
+journal.cli.describe.pipeline.jobs = { $flag } must be positive
+
+journal.cli.describe.pipeline.merge.frame = missing merge frame
+
+journal.cli.describe.pipeline.metadata.object = { $segment_meta } must be an object
+
+journal.cli.describe.pipeline.ocr.coverage = screen { $ocr } coverage is incomplete; private frame diagnostics record the gap
+
+journal.cli.describe.pipeline.ocr.publication = screen { $ocr } publication failed: { $kind }
+
+journal.cli.describe.pipeline.ocr.retire = screen { $ocr } stale aggregate could not be retired: { $kind }
+
+journal.cli.describe.pipeline.parent = video has no parent
+
+journal.cli.describe.pipeline.progress = describe frame window made no progress
+
+journal.cli.describe.pipeline.publish.anchor.is.not.a.mount.manager.volume.guid.path = anchor is not a { $manager } volume { $guid } path
+
+journal.cli.describe.pipeline.publish.changed = prepared publication changed
+
+journal.cli.describe.pipeline.publish.component = publication leaf is not a plain component
+
+journal.cli.describe.pipeline.publish.current.directory.is.not.valid.utf = current directory is not valid { $encoding }
+
+journal.cli.describe.pipeline.publish.destination = publication destination is not a plain file
+
+journal.cli.describe.pipeline.publish.destination.already.identifies.the.source.file = destination already identifies the source file
+
+journal.cli.describe.pipeline.publish.destination.changed.during.publication = destination changed during publication
+
+journal.cli.describe.pipeline.publish.destination.has.no.normal.name = destination has no normal name
+
+journal.cli.describe.pipeline.publish.destination.is.a.reparse.point = destination is a reparse point
+
+journal.cli.describe.pipeline.publish.destination.is.not.a.regular.file = destination is not a regular file
+
+journal.cli.describe.pipeline.publish.identity = prepared publication identity changed
+
+journal.cli.describe.pipeline.publish.identity.value.out.of.range = identity value out of range
+
+journal.cli.describe.pipeline.publish.install.publication.exhausted = install publication exhausted
+
+journal.cli.describe.pipeline.publish.leaf = publication leaf missing
+
+journal.cli.describe.pipeline.publish.mode.exceeds.o = mode exceeds { $octal }
+
+journal.cli.describe.pipeline.publish.move.spelling.contains.an.interior.nul = move spelling contains an interior { $nul }
+
+journal.cli.describe.pipeline.publish.parent = publication parent missing
+
+journal.cli.describe.pipeline.publish.path = { $path }: { $detail }
+
+journal.cli.describe.pipeline.publish.publication.path.is.not.valid.utf = publication path is not valid { $encoding }
+
+journal.cli.describe.pipeline.publish.published.destination.identity.does.not.match.the.live.source = published destination identity does not match the live source
+
+journal.cli.describe.pipeline.publish.published.destination.is.not.a.regular.file = published destination is not a regular file
+
+journal.cli.describe.pipeline.publish.published.destination.name.is.absent = published destination name is absent
+
+journal.cli.describe.pipeline.publish.source.and.destination.are.on.different.volumes = source and destination are on different volumes
+
+journal.cli.describe.pipeline.publish.source.and.destination.name.the.same.file = source and destination name the same file
+
+journal.cli.describe.pipeline.publish.source.has.no.normal.name = source has no normal name
+
+journal.cli.describe.pipeline.publish.source.identity.changed.before.publication = source identity changed before publication
+
+journal.cli.describe.pipeline.publish.source.identity.is.negative = source identity is negative
+
+journal.cli.describe.pipeline.publish.source.name.changed.before.publication = source name changed before publication
+
+journal.cli.describe.pipeline.publish.source.name.is.absent.before.publication = source name is absent before publication
+
+journal.cli.describe.pipeline.publish.sync = describe publication parent sync failed: { $error }
+
+journal.cli.describe.pipeline.publish.uncertain = { $path }: { $operation }: { $detail }
+
+journal.cli.describe.pipeline.reappear = describe frame { $frame } did not reappear with the same timestamp
+
+journal.cli.describe.pipeline.record.parent.changed = screen text parent changed
+
+journal.cli.describe.pipeline.record.parent.plain = screen text parent is not a plain directory
+
+journal.cli.describe.pipeline.reopen = describe could not reopen the video to materialize frame payloads
+
+journal.cli.describe.pipeline.resize = failed to resize categorization frame
+
+journal.cli.describe.pipeline.response.id = session response omitted id
+
+journal.cli.describe.pipeline.response.unmatched = uncorrelated response
+
+journal.cli.describe.pipeline.retry.binding = { $ocr } retry frame binding changed
+
+journal.cli.describe.pipeline.retry.evidence.missing = missing retry evidence
+
+journal.cli.describe.pipeline.retry.handler = native failure handler changed
+
+journal.cli.describe.pipeline.retry.id = native retry identity is not { $encoding }
+
+journal.cli.describe.pipeline.retry.incomplete = { $ocr } retry did not reach the last qualified frame
+
+journal.cli.describe.pipeline.retry.input.changed = retry input changed while reading
+
+journal.cli.describe.pipeline.retry.input.regular = retry input is not a regular file
+
+journal.cli.describe.pipeline.retry.io.allocate = could not allocate stage
+
+journal.cli.describe.pipeline.retry.io.dest.namespace = destination namespace changed before publication
+
+journal.cli.describe.pipeline.retry.io.file.kind = entry is not a regular file
+
+journal.cli.describe.pipeline.retry.io.file.reparse = entry is a reparse point
+
+journal.cli.describe.pipeline.retry.io.fsync = parent-directory fsync degraded for { $path }: { $error }
+
+journal.cli.describe.pipeline.retry.io.parent.identity = bound parent identity changed before publication
+
+journal.cli.describe.pipeline.retry.io.parent.kind = parent is not a real directory
+
+journal.cli.describe.pipeline.retry.io.parent.rename = parent pathname changed before publication
+
+journal.cli.describe.pipeline.retry.io.parent.reparse = parent is a reparse point
+
+journal.cli.describe.pipeline.retry.io.prepare = stage identity changed while preparing
+
+journal.cli.describe.pipeline.retry.io.stage.identity = stage identity changed before publication
+
+journal.cli.describe.pipeline.retry.io.stage.namespace = stage namespace changed before publication
+
+journal.cli.describe.pipeline.retry.io.tmp = could not allocate unique temporary file
+
+journal.cli.describe.pipeline.retry.journal = native retry journal does not match
+
+journal.cli.describe.pipeline.retry.open = could not reopen video for { $ocr } retry
+
+journal.cli.describe.pipeline.retry.permission.changed = native retry permission changed
+
+journal.cli.describe.pipeline.retry.permission.missing = native retry permission is missing
+
+journal.cli.describe.pipeline.root.canonicalize.journal.root = canonicalize journal root: { $detail }
+
+journal.cli.describe.pipeline.root.cloud.files.sync.root.status.could.not.be.verified = { $cloud_files } sync-root status could not be verified
+
+journal.cli.describe.pipeline.root.filesystem.is.not.ntfs.or.refs = filesystem is not { $ntfs } or { $refs }
+
+journal.cli.describe.pipeline.root.filesystem.type.could.not.be.verified = filesystem type could not be verified
+
+journal.cli.describe.pipeline.root.journal.root.contains.a.reparse.point = journal root contains a reparse point
+
+journal.cli.describe.pipeline.root.journal.root.contains.an.interior.nul = journal root contains an interior { $nul }
+
+journal.cli.describe.pipeline.root.journal.root.has.an.invalid.portable.name = journal root has an invalid portable name
+
+journal.cli.describe.pipeline.root.journal.root.is.a.cloud.files.sync.root = journal root is a { $cloud_files } sync root
+
+journal.cli.describe.pipeline.root.journal.root.is.a.reparse.point = journal root is a reparse point
+
+journal.cli.describe.pipeline.root.journal.root.is.on.a.non.local.volume = journal root is on a non-local volume
+
+journal.cli.describe.pipeline.root.journal.root.is.on.a.ram.disk = journal root is on a { $ram } disk
+
+journal.cli.describe.pipeline.root.journal.root.is.on.removable.or.optical.media = journal root is on removable or optical media
+
+journal.cli.describe.pipeline.root.journal.root.must.be.lexically.canonical = journal root must be lexically canonical
+
+journal.cli.describe.pipeline.root.journal.root.must.use.a.fully.qualified.drive.path = journal root must use a fully qualified drive path
+
+journal.cli.describe.pipeline.root.journal.root.volume.type.is.unknown = journal root volume type is unknown
+
+journal.cli.describe.pipeline.root.open.filesystem.root = open filesystem root: { $detail }
+
+journal.cli.describe.pipeline.root.open.journal.directory = open journal directory: { $detail }
+
+journal.cli.describe.pipeline.root.open.journal.root = open journal root: { $detail }
+
+journal.cli.describe.pipeline.root.open.journal.root.ancestor = open journal root ancestor: { $detail }
+
+journal.cli.describe.pipeline.root.open.journal.root.namespace.watch = open journal root namespace watch: { $detail }
+
+journal.cli.describe.pipeline.root.open.verified.drive.root = open verified drive root: { $detail }
+
+journal.cli.describe.pipeline.root.open.verified.journal.root = open verified journal root: { $detail }
+
+journal.cli.describe.pipeline.root.query.journal.root.ancestor.attributes = query journal root ancestor attributes: { $detail }
+
+journal.cli.describe.pipeline.root.query.journal.root.attributes = query journal root attributes: { $detail }
+
+journal.cli.describe.pipeline.root.query.journal.root.drive.type = query journal root drive type: { $detail }
+
+journal.cli.describe.pipeline.root.query.journal.root.identity = query journal root identity: { $detail }
+
+journal.cli.describe.pipeline.root.query.journal.root.namespace.watch.attributes = query journal root namespace-watch attributes: { $detail }
+
+journal.cli.describe.pipeline.root.query.journal.root.namespace.watch.identity = query journal root namespace-watch identity: { $detail }
+
+journal.cli.describe.pipeline.root.query.retained.journal.root.attributes = query retained journal root attributes: { $detail }
+
+journal.cli.describe.pipeline.root.query.retained.journal.root.identity = query retained journal root identity: { $detail }
+
+journal.cli.describe.pipeline.root.query.verified.drive.root.attributes = query verified drive root attributes: { $detail }
+
+journal.cli.describe.pipeline.root.query.verified.drive.root.identity = query verified drive root identity: { $detail }
+
+journal.cli.describe.pipeline.root.query.verified.journal.root.attributes = query verified journal root attributes: { $detail }
+
+journal.cli.describe.pipeline.root.query.verified.journal.root.identity = query verified journal root identity: { $detail }
+
+journal.cli.describe.pipeline.root.read.source.file.identity = read source file identity: { $detail }
+
+journal.cli.describe.pipeline.root.restat.acquired.journal.root = restat acquired journal root: { $detail }
+
+journal.cli.describe.pipeline.root.stat.acquired.journal.root = stat acquired journal root: { $detail }
+
+journal.cli.describe.pipeline.root.stat.canonical.root.component = stat canonical root component: { $detail }
+
+journal.cli.describe.pipeline.root.stat.opened.canonical.root.component = stat opened canonical root component: { $detail }
+
+journal.cli.describe.pipeline.root.stat.opened.filesystem.root = stat opened filesystem root: { $detail }
+
+journal.cli.describe.pipeline.row.frame = describe row omitted { $frame_key }
+
+journal.cli.describe.pipeline.source.bytes = { $ocr } source bytes changed
+
+journal.cli.describe.pipeline.source.changed = { $ocr } source changed before publication
+
+journal.cli.describe.pipeline.source.identity = { $ocr } source identity changed
+
+journal.cli.describe.pipeline.source.open = { $ocr } source changed while opening
+
+journal.cli.describe.pipeline.source.plain = { $ocr } source is not a plain file
+
+journal.cli.describe.pipeline.temp = could not allocate describe temp file
+
+journal.cli.describe.pipeline.timestamp = describe frame { $frame } omitted timestamp
+
+journal.cli.describe.pipeline.windows.cleanup = { $detail }; could not remove stage { $stage }: { $error }
+
+journal.cli.describe.pipeline.windows.name.alternate.data.stream = the name contains a colon
+
+journal.cli.describe.pipeline.windows.name.control = the name contains a control character
+
+journal.cli.describe.pipeline.windows.name.dot.component = '.' and '..' are not valid names
+
+journal.cli.describe.pipeline.windows.name.empty = the name is empty
+
+journal.cli.describe.pipeline.windows.name.forbidden.character = the name contains a character { $windows } does not allow
+
+journal.cli.describe.pipeline.windows.name.reserved.device = the name is reserved by { $windows }
+
+journal.cli.describe.pipeline.windows.name.root.or.prefix = the name must be a single relative component
+
+journal.cli.describe.pipeline.windows.name.separator = the name contains a path separator
+
+journal.cli.describe.pipeline.windows.name.too.long = the name is longer than { $length_limit } { $encoding } bytes
+
+journal.cli.describe.pipeline.windows.name.trailing.dot.or.space = the name ends in a dot or space
+
+journal.cli.describe.pipeline.windows.path.already.exists = publication path ancestor '{ $component }' appeared during create-only
+
+journal.cli.describe.pipeline.windows.path.classify.install.source = classify install source: { $detail }
+
+journal.cli.describe.pipeline.windows.path.component = publication path component is not portable: { $detail }
+
+journal.cli.describe.pipeline.windows.path.create.publication.path.ancestor = create publication-path ancestor: { $detail }
+
+journal.cli.describe.pipeline.windows.path.dot.component = publication path contains '.' or '..'
+
+journal.cli.describe.pipeline.windows.path.drive.relative = publication path is drive-relative
+
+journal.cli.describe.pipeline.windows.path.empty = publication path is empty
+
+journal.cli.describe.pipeline.windows.path.identity.changed = publication path identity changed at retained level { $level }
+
+journal.cli.describe.pipeline.windows.path.identity.mismatch = publication path ancestor '{ $component }' identity changed between create and reopen
+
+journal.cli.describe.pipeline.windows.path.interior.nul = publication path contains an interior { $nul }
+
+journal.cli.describe.pipeline.windows.path.missing = publication path component '{ $component }' does not exist
+
+journal.cli.describe.pipeline.windows.path.move.spelling.diverged = publication path move spelling no longer names the terminal parent
+
+journal.cli.describe.pipeline.windows.path.not.directory = publication path ancestor '{ $component }' is not a directory
+
+journal.cli.describe.pipeline.windows.path.not.regular.file = publication path leaf '{ $component }' is not a regular file
+
+journal.cli.describe.pipeline.windows.path.open.install.source = open install source: { $detail }
+
+journal.cli.describe.pipeline.windows.path.open.publication.path.ancestor = open publication-path ancestor: { $detail }
+
+journal.cli.describe.pipeline.windows.path.open.publication.path.anchor = open publication-path anchor: { $detail }
+
+journal.cli.describe.pipeline.windows.path.open.publication.path.move.spelling = open publication-path move spelling: { $detail }
+
+journal.cli.describe.pipeline.windows.path.path.too.long = publication path exceeds the extended-length bound
+
+journal.cli.describe.pipeline.windows.path.query.install.path.attributes = query install path attributes: { $detail }
+
+journal.cli.describe.pipeline.windows.path.query.install.source.identity = query install source identity: { $detail }
+
+journal.cli.describe.pipeline.windows.path.query.publication.path.attributes = query publication-path attributes: { $detail }
+
+journal.cli.describe.pipeline.windows.path.query.publication.path.identity = query publication-path identity: { $detail }
+
+journal.cli.describe.pipeline.windows.path.reopen.publication.path.ancestor = reopen publication-path ancestor: { $detail }
+
+journal.cli.describe.pipeline.windows.path.reparse.point = publication path ancestor '{ $component }' is a reparse point
+
+journal.cli.describe.pipeline.windows.path.resolve.publication.path.current.directory = resolve publication-path current directory: { $detail }
+
+journal.cli.describe.pipeline.windows.path.revalidate.install.source.after.classification = revalidate install source after classification: { $detail }
+
+journal.cli.describe.pipeline.windows.path.root.only = publication path is a drive root with no destination
+
+journal.cli.describe.pipeline.windows.path.rooted.without.drive = publication path is rooted without a drive
+
+journal.cli.describe.pipeline.windows.path.unc.or.device.prefix = publication path has a { $unc } or device prefix
+
+journal.cli.describe.pipeline.windows.path.unstable = publication path has no { $manager } volume { $guid }: { $detail }
+
+journal.cli.describe.pipeline.withdraw = screen { $ocr } withdrawal could not be prepared: { $detail }
+
+journal.cli.describe.settings.finite = { $setting } must be a finite number
+
+journal.cli.describe.settings.importance = { $setting } must be { $ignore }, { $low }, { $normal }, or { $high }
+
+journal.cli.describe.settings.object = { $setting } must be an object
+
+journal.cli.describe.settings.string = { $setting } must be a string
+
+journal.cli.describe.settings.strings = { $setting } must be an array of strings
+
+journal.cli.describe.settings.uint = { $setting } must be an unsigned 32-bit integer
+
+journal.cli.describe.stored.error.empty = Empty markdown response for { $category }
+
+journal.cli.describe.stored.error.incomplete = Extraction never completed
+
+journal.cli.describe.stored.error.invalid = Invalid { $format } response
+
+journal.cli.describe.stored.error.invalid.category = Invalid { $format } response for { $category }: { $error }
+
+journal.cli.describe.stored.error.resize = failed to resize extraction frame
+
+journal.cli.describe.stored.error.schema = Schema validation failed for { $category }
+
+journal.cli.describe.stored.error.schema.detail = Schema validation failed for { $category }: { $errors }
+
+journal.cli.describe.stored.error.truncated = Truncated markdown response for { $category }
+
+journal.cli.describe.stored.note.bounded = [{ $mark }: extraction output bounded before journaling - degenerate length sanitized/truncated]
+
+journal.cli.describe.stored.note.ocr = text recognized from your screens. it may contain recognition errors. this says what was visible, not what you read, typed or did. masking passwords and other secrets is best effort; your redaction rules do not apply.
+
+journal.cli.describe.stored.ocr.heading = { $clock } · { $category }

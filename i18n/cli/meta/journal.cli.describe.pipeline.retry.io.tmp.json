@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline retry io tmp.",
+  "context": "Journal command-line text for pipeline retry io tmp.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2c1712c95f6496ac59360bb40442b348d48cd795521fb504b6bbc9dbbc0ead94",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

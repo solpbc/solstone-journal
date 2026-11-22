@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for pipeline retry io fsync.",
+  "context": "Journal command-line text for pipeline retry io fsync.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ec223034a2956a6cb1d494c8de23a38d1b5bb5cdb6dcd76003a0ef9f0ad77396",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

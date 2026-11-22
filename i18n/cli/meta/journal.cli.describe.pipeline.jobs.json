@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline jobs.",
+  "context": "Journal command-line text for pipeline jobs.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3d2ef7105821a8da541a5ce782e355a9d585827f8b73b6c252e12060914ecb6f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "kind": "flag",
+      "value": "--jobs"
+    }
+  ]
+}

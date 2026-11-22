@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path identity mismatch.",
+  "context": "Journal command-line text for pipeline windows path identity mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "component",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bec8702785b8fae6e37c7a7247f6e8f38ebdd89911a7e9f7059617a074316637",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path open install source.",
+  "context": "Journal command-line text for pipeline windows path open install source.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "58d894b2c28f4f777759663b82b4e0c8426965ff74785daf2ccc05efcc7b797c",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

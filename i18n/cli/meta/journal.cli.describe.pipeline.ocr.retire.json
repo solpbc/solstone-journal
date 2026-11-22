@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for pipeline ocr retire.",
+  "context": "Journal command-line text for pipeline ocr retire.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "74db0f461193dbab0e9af7536875e343d1312fec9b5e524dab840a2760aef9eb",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "ocr",
+      "kind": "accepted-input",
+      "value": "OCR"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path query install source identity.",
+  "context": "Journal command-line text for pipeline windows path query install source identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "727734b875b4d008c32310c6eff5abc809087a95aa54eab1dffa706210527687",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

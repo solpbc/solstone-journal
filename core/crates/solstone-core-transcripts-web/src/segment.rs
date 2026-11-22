@@ -344,7 +344,7 @@ fn prepare_segment_localized(
                     if records["screen"].is_none() {
                         records.insert("screen".into(), processing_record(&entries));
                     }
-                    screen_chunks(&mut chunks, &mut media, &context, name, &entries);
+                    screen_chunks(&mut chunks, &mut media, &context, name, &entries, locale);
                 }
                 Err(error) => warnings.push(warning("screen", path, error, now)),
             }
@@ -1411,6 +1411,7 @@ fn screen_chunks(
     context: &SegmentContext<'_>,
     name: &str,
     entries: &[Map<String, Value>],
+    locale: &str,
 ) {
     let raw = entries
         .iter()
@@ -1427,10 +1428,18 @@ fn screen_chunks(
             name,
         );
     }
+    let describe = locale != ENGLISH
+        && processing_record(entries)
+            .as_ref()
+            .and_then(|record| record["handler"].as_str())
+            == Some(vocab::HANDLER_DESCRIBE);
     let mut enriched = entries.to_vec();
     for entry in &mut enriched {
         if !entry.contains_key("timestamp") {
             continue;
+        }
+        if describe {
+            solstone_core_format::stored_markdown::project_screen_extractions(entry, locale);
         }
         let frame_raw = entry
             .get("raw")

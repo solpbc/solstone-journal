@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for pipeline windows path unstable.",
+  "context": "Journal command-line text for pipeline windows path unstable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f756766417efe17ae3d2455ee4c4b3dcadb5742fe1eae38156b241bb7ea4ef3e",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "manager",
+      "kind": "accepted-input",
+      "value": "Mount-Manager"
+    },
+    {
+      "name": "guid",
+      "kind": "accepted-input",
+      "value": "GUID"
+    }
+  ]
+}

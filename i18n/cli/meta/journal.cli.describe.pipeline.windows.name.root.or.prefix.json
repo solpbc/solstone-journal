@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline windows name root or prefix.",
+  "context": "Journal command-line text for pipeline windows name root or prefix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "011d4b41088a728185d9533d5013ec38eee8677c372678a5541d2acf822b0bed",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

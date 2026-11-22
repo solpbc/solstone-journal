@@ -33,5 +33,7 @@ pub use decode::{
 };
 pub use hash::format_dhash;
 pub use screen_ocr::{MobileOcrGap, OcrFailure, OcrWorker, OcrWorkerFactory, RawOccurrence};
-pub use settings::{DescribeSettings, read_config};
+pub use settings::{DescribeSettings, read_config, read_config_in};
+
+use solstone_core_cli_copy::manual_log_locale as terminal_locale;
 pub use winnow::{HashedFrame, WinnowConfig, WinnowCounters, WinnowState, WinnowVerdict, winnow};

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline root journal root contains a reparse point.",
+  "context": "Journal command-line text for pipeline root journal root contains a reparse point.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7a986a80370fe8170df13d506c7deed6380ed31d4f8840417f35a5a89fd42ff1",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

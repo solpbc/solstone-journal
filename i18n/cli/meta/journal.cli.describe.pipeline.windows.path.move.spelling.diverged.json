@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline windows path move spelling diverged.",
+  "context": "Journal command-line text for pipeline windows path move spelling diverged.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ab7d50df2eafbd8fe16df3e4171e3503c233a184ae75c15806e6ad0a3b87a68e",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

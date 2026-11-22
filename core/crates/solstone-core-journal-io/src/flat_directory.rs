@@ -1022,7 +1022,13 @@ fn checked_identifier(
     value.try_into().map_err(|_| FlatDirectoryError::Io {
         operation,
         path: path.to_path_buf(),
-        source: io::Error::new(io::ErrorKind::InvalidData, "identity value out of range"),
+        source: io::Error::new(
+            io::ErrorKind::InvalidData,
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.publish.identity.value.out.of.range",
+                [],
+            ),
+        ),
     })
 }
 

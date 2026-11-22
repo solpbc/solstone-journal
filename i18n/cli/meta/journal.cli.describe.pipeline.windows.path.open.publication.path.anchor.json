@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path open publication path anchor.",
+  "context": "Journal command-line text for pipeline windows path open publication path anchor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b2d3a63a7d6ac2c858a4b424f54e133cd58685b03e9457c94c2b23507c3f0d3e",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

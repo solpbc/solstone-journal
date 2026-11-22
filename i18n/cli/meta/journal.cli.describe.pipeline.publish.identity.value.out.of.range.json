@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline publish identity value out of range.",
+  "context": "Journal command-line text for pipeline publish identity value out of range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fb6925deebed928d200544fe41a5019309dd55e62c94cd468bf2c34b48dd118c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

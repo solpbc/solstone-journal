@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline windows name alternate data stream.",
+  "context": "Journal command-line text for pipeline windows name alternate data stream.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e920134513726a99f386ae7bdc778f5a6fcf7f50aa590a6d39f6f08b1203990",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

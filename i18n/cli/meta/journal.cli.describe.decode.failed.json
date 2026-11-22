@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for decode failed.",
+  "context": "Journal command-line text for decode failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6dfb0cff94aff2d6f8c40be73e603d4e97e4682d460c6e66e9e4e50a1b2394ee",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

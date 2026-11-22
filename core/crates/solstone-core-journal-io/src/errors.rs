@@ -378,6 +378,22 @@ impl fmt::Display for ExclusiveCleanupChain {
     }
 }
 
+#[cfg(windows)]
+pub(crate) fn cleanup_message(
+    error: &(dyn Error + Send + Sync + 'static),
+) -> Option<solstone_core_cli_copy::MessageDetail> {
+    let chain = error.downcast_ref::<ExclusiveCleanupChain>()?;
+    let primary = crate::cli_diagnostics::io_message(&chain.primary)
+        .unwrap_or_else(|| chain.primary.to_string().into());
+    Some(primary.context_with(
+        "journal.cli.describe.pipeline.windows.cleanup",
+        [
+            ("stage", &format!("{:?}", chain.stage)),
+            ("error", &chain.cleanup),
+        ],
+    ))
+}
+
 impl Error for ExclusiveCleanupChain {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(&self.primary)

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline publish publication path is not valid utf.",
+  "context": "Journal command-line text for pipeline publish publication path is not valid utf.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a4ed37f379f3dd02776785926a41b60ba84161d01b8ea1658bbcb2a249bb3bc9",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

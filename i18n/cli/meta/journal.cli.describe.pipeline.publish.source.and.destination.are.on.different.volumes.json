@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline publish source and destination are on different volumes.",
+  "context": "Journal command-line text for pipeline publish source and destination are on different volumes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3f69de466d98252fcfa6629b316f6fe9b24a48ac554fd5aea8f0b4f48fb2239",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

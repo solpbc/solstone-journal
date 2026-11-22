@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path open publication path ancestor.",
+  "context": "Journal command-line text for pipeline windows path open publication path ancestor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1029795931fed2c4d3635e6674092017c8dd9ad37c9506b37c547e863a9464b1",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

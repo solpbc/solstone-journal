@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline row frame.",
+  "context": "Journal command-line text for pipeline row frame.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "957f9ab2bc0889d6a34c6511beac6f0aec4945b0e2e4bf54313c77d8d4b09397",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "frame_key",
+      "kind": "accepted-input",
+      "value": "frame_id"
+    }
+  ]
+}

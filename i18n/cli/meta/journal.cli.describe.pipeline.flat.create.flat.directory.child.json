@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for pipeline flat create flat directory child.",
+  "context": "Journal command-line text for pipeline flat create flat directory child.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9a341b280abb5e28aa455bda3f9efea98d375caabe5e9fd60523097f88ed22a2",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline timestamp.",
+  "context": "Journal command-line text for pipeline timestamp.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "frame",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "795e00108594730a1e0285fbeb8d5f82155cc6f9096b7bac8aee94f785bfa5b0",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

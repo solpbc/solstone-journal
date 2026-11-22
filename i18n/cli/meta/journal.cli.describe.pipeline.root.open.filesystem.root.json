@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline root open filesystem root.",
+  "context": "Journal command-line text for pipeline root open filesystem root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5a8a9c4437e060a51ca6c96dd7e1c9f951ba0452cf946ba8e2c6021d0545dbb1",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

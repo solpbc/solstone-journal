@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stored note ocr.",
+  "context": "Journal command-line text for stored note ocr.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "546dedad9298bc116d8a14a791a535c2a865d59b4f03ae4a7ad40516809b52bc",
+  "max_length": 249,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

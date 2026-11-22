@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline publish destination is not a regular file.",
+  "context": "Journal command-line text for pipeline publish destination is not a regular file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "181fc6c86fff1eafcac5633874dc45bc333062e2f9d23037595fcdf479579b1d",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

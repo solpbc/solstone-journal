@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path query install path attributes.",
+  "context": "Journal command-line text for pipeline windows path query install path attributes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c9efb63243ac2fdedd4d7854b9012b4f8b92d08a3dc3bc7aa7397c30934439c5",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

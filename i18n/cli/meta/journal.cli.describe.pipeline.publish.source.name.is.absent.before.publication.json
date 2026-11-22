@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline publish source name is absent before publication.",
+  "context": "Journal command-line text for pipeline publish source name is absent before publication.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "40ecca6c7b85b7011f9d9e1665064f2150dd866e06f8856b5cde8a5d367cb636",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

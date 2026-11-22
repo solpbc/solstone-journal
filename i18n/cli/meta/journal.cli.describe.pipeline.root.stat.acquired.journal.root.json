@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline root stat acquired journal root.",
+  "context": "Journal command-line text for pipeline root stat acquired journal root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "81e258c446c720dd774fcf2974fe337282a2c3e0fa6a010dde6b5b7c767f8aba",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

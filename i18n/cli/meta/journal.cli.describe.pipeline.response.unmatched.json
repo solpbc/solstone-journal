@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline response unmatched.",
+  "context": "Journal command-line text for pipeline response unmatched.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "abb71f912747cbbbe3d808ea2ebea305bd0113bcfa4636f79f7b39a6fd44cf06",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

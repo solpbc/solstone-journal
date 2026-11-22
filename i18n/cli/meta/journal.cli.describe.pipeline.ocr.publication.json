@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for pipeline ocr publication.",
+  "context": "Journal command-line text for pipeline ocr publication.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9a8205b989bc7ea2115396645ef8ca64d490a8a132296c35a5fbd725a6858989",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "ocr",
+      "kind": "accepted-input",
+      "value": "OCR"
+    }
+  ]
+}

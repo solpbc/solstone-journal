@@ -214,11 +214,20 @@ pub fn file_fingerprint_checked(
     path: &Path,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<String, String> {
+    file_fingerprint_typed(path, checkpoint).map_err(String::from)
+}
+
+fn file_fingerprint_typed(
+    path: &Path,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<String, ReadFailure> {
     use std::io::Read;
     let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let before = file.metadata().map_err(|e| e.to_string())?;
     if !before.is_file() {
-        return Err("retry input is not a regular file".into());
+        return Err(ReadFailure::Message(
+            "journal.cli.describe.pipeline.retry.input.regular",
+        ));
     }
     let mut hash = Sha256::new();
     let mut bytes = [0_u8; 65536];
@@ -235,7 +244,9 @@ pub fn file_fingerprint_checked(
         || before.modified().map_err(|e| e.to_string())?
             != after.modified().map_err(|e| e.to_string())?
     {
-        return Err("retry input changed while reading".into());
+        return Err(ReadFailure::Message(
+            "journal.cli.describe.pipeline.retry.input.changed",
+        ));
     }
     Ok(format!("{:x}", hash.finalize()))
 }
@@ -422,16 +433,19 @@ fn update_checked_in<T>(
     mutate: impl FnOnce(&mut Option<Record>) -> Result<T, String>,
     locale: &str,
 ) -> Result<T, String> {
-    let id = unit.id()?;
+    let id = unit.id_typed().map_err(|error| error.render(locale))?;
     let path = path(journal, &id).map_err(|e| e.render(locale))?;
     std::fs::create_dir_all(directory(journal)).map_err(|e| e.to_string())?;
-    let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
+    let _lock = hold_lock(&path, LockOptions::default())
+        .map_err(|error| solstone_core_journal_io::cli_diagnostics::lock_detail(locale, &error))?;
     checkpoint()?;
     let mut record = read_in(journal, &id, locale)?;
     let result = mutate(&mut record)?;
     if let Some(record) = record {
         checkpoint()?;
-        write_json(path, &record, JsonWriteOptions::default()).map_err(|e| e.to_string())?;
+        write_json(path, &record, JsonWriteOptions::default()).map_err(|error| {
+            solstone_core_journal_io::cli_diagnostics::atomic_message(&error).render(locale)
+        })?;
     }
     Ok(result)
 }
@@ -636,29 +650,61 @@ pub fn consume_checked(
     fixes: &[DeclaredFix],
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), String> {
-    update_checked(journal, unit, checkpoint, |slot| {
-        let record = slot.as_mut().ok_or("missing retry evidence")?;
-        if reason != record.reason
-            || selected.reason != reason
-            || selected.input != input
-            || record.permission(input, fixes).as_ref() != Some(selected)
-        {
-            return Err("retry permission changed".into());
-        }
-        record.consumed.insert(selected.cause.clone());
-        // One attempt satisfies all currently available causes for these
-        // inputs. Otherwise an owner ask plus changed input could run twice.
-        record.consumed.insert(input_cause(input));
-        for fix in fixes
-            .iter()
-            .filter(|fix| fix.reason == reason && fix_available(fix))
-        {
-            record.consumed.insert(format!("fix:{}", fix.id));
-        }
-        record.input = input.into();
-        record.attempt = Some(selected.clone());
-        Ok(())
-    })
+    consume_checked_in(
+        journal, unit, selected, reason, input, fixes, checkpoint, ENGLISH,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn consume_checked_in(
+    journal: &Path,
+    unit: &Unit,
+    selected: &Attempt,
+    reason: &str,
+    input: &str,
+    fixes: &[DeclaredFix],
+    checkpoint: &dyn Fn() -> Result<(), String>,
+    locale: &str,
+) -> Result<(), String> {
+    update_checked_in(
+        journal,
+        unit,
+        checkpoint,
+        |slot| {
+            let record = slot.as_mut().ok_or_else(|| {
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.describe.pipeline.retry.evidence.missing",
+                    &[],
+                )
+            })?;
+            if reason != record.reason
+                || selected.reason != reason
+                || selected.input != input
+                || record.permission(input, fixes).as_ref() != Some(selected)
+            {
+                return Err(solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.think.retry.permission.changed",
+                    &[],
+                ));
+            }
+            record.consumed.insert(selected.cause.clone());
+            // One attempt satisfies all currently available causes for these
+            // inputs. Otherwise an owner ask plus changed input could run twice.
+            record.consumed.insert(input_cause(input));
+            for fix in fixes
+                .iter()
+                .filter(|fix| fix.reason == reason && fix_available(fix))
+            {
+                record.consumed.insert(format!("fix:{}", fix.id));
+            }
+            record.input = input.into();
+            record.attempt = Some(selected.clone());
+            Ok(())
+        },
+        locale,
+    )
 }
 
 /// The caller has observed the actual writer's terminal outcome. A newer owner

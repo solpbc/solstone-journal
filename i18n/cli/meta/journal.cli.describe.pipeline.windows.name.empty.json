@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline windows name empty.",
+  "context": "Journal command-line text for pipeline windows name empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f44ee60ac781a2d7788bed7b4b0a1d1767c26cd7a81bc22349cdf9495632e35",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

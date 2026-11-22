@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline windows name control.",
+  "context": "Journal command-line text for pipeline windows name control.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be287fcd4eb4bb471965f391fed26fe77a7dbf4c882b93f81c54047520459f86",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

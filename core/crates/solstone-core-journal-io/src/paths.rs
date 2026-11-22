@@ -436,7 +436,13 @@ pub(crate) fn create_directory_bound(
     if mode > 0o777 {
         return Err(path_io(
             path,
-            io::Error::new(io::ErrorKind::InvalidInput, "mode exceeds 0o777"),
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.mode.exceeds.o",
+                    [],
+                ),
+            ),
         ));
     }
     match mkdirat(
@@ -455,7 +461,10 @@ pub(crate) fn create_directory_bound(
                     path,
                     io::Error::new(
                         io::ErrorKind::AlreadyExists,
-                        "bound directory name exists and is not a directory",
+                        solstone_core_cli_copy::MessageDetail::message(
+                            "journal.cli.describe.pipeline.flat.bound",
+                            [],
+                        ),
                     ),
                 ))
             }

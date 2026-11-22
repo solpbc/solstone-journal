@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path reopen publication path ancestor.",
+  "context": "Journal command-line text for pipeline windows path reopen publication path ancestor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "731360a394872b2e2fa03831d20c77dd7ad0237f006d3b62eb94da98b2b8164d",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

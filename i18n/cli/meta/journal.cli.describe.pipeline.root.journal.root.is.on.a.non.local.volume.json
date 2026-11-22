@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline root journal root is on a non local volume.",
+  "context": "Journal command-line text for pipeline root journal root is on a non local volume.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6c85010284d4da9b75ed1d401146525d014bf7fe1a42ff967a8c22eae70630fc",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

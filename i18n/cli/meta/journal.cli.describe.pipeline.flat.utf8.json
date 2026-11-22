@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline flat utf8.",
+  "context": "Journal command-line text for pipeline flat utf8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7abef0ac92837f23895daacd4bba5146713c4b071fc353cca17d89fa18482d4a",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline publish published destination identity does not match the live source.",
+  "context": "Journal command-line text for pipeline publish published destination identity does not match the live source.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "165b0d0b763c62be549816746bb4f3f30481b9ae654e4652014a777467c968c5",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

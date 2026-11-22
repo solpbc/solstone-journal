@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline root query verified journal root attributes.",
+  "context": "Journal command-line text for pipeline root query verified journal root attributes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5a71a82ad38f5c29dacc9d1641e13567c2dd1002b8c65c2d308981f549d37a25",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

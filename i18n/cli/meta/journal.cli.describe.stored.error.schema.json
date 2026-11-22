@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for stored error schema.",
+  "context": "Journal command-line text for stored error schema.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "category",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f62433315f960eff541d52a528599565d6738dc423ba44d56fbd676688ff2f2f",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

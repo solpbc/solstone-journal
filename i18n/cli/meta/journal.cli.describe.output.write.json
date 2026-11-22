@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for output write.",
+  "context": "Journal command-line text for output write.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ab8484f411f02a7e5c370bcae54164148210aa98f323b088833e9f5805e01373",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

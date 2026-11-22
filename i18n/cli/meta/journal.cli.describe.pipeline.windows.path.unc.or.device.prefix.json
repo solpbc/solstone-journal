@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline windows path unc or device prefix.",
+  "context": "Journal command-line text for pipeline windows path unc or device prefix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9b6c629282590c8fb0b2a52909ca72080161baebd5c9c88d641c2d484e7451b6",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "unc",
+      "kind": "accepted-input",
+      "value": "UNC"
+    }
+  ]
+}

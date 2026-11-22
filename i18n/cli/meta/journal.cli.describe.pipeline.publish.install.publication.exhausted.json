@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline publish install publication exhausted.",
+  "context": "Journal command-line text for pipeline publish install publication exhausted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "688cd417a61e41639fba5b326cb87652f026e2d6413029199793488d4397b51d",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

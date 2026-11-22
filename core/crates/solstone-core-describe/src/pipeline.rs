@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use serde_json::{Map, Value, json};
+use solstone_core_cli_copy::MessageDetail;
 use solstone_core_generate::{GenerateResponse, RefusalReason, SessionCompletion};
 use solstone_core_processing_record::{
     read_processing_record_header, record_attempts, should_reenter_analysis_output, vocab,
@@ -31,14 +32,12 @@ use crate::session::{DescribeSession, DescribeSessionFactory, SystemSessionFacto
 
 pub const EXIT_PROVIDER_BLOCKED: i32 = 69;
 const MAX_ATTEMPTS: u64 = 5;
-#[cfg(not(windows))]
-const RFDETR_UNAVAILABLE_DETAIL: &str = "Object detection is unavailable. Run `solstone journal install-models` to check or repair the RF-DETR assets.";
 
 #[derive(Debug)]
 pub enum RunError {
     Blocked(Option<String>),
     Cancelled,
-    Internal(String),
+    Internal(MessageDetail),
 }
 
 /// Screen detection for one PNG. Describe does not depend on depict.
@@ -134,26 +133,32 @@ impl RowTemp {
             match OpenOptions::new().write(true).create_new(true).open(&path) {
                 Ok(file) => return Ok(Self { path, file }),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(RunError::Internal(error.to_string())),
+                Err(error) => {
+                    return Err(RunError::Internal(crate::publication::message_detail(
+                        &error,
+                    )));
+                }
             }
         }
-        Err(RunError::Internal(
-            "could not allocate describe temp file".to_owned(),
-        ))
+        Err(RunError::Internal(MessageDetail::message(
+            "journal.cli.describe.pipeline.temp",
+            [],
+        )))
     }
     fn row(&mut self, row: &Value) -> Result<(), RunError> {
-        writeln!(self.file, "{row}").map_err(|error| RunError::Internal(error.to_string()))?;
+        writeln!(self.file, "{row}")
+            .map_err(|error| RunError::Internal(crate::publication::message_detail(&error)))?;
         self.file
             .flush()
-            .map_err(|error| RunError::Internal(error.to_string()))
+            .map_err(|error| RunError::Internal(crate::publication::message_detail(&error)))
     }
     fn raw_row(&mut self, raw_line: &str) -> Result<(), RunError> {
         self.file
             .write_all(raw_line.as_bytes())
-            .map_err(|error| RunError::Internal(error.to_string()))?;
+            .map_err(|error| RunError::Internal(crate::publication::message_detail(&error)))?;
         self.file
             .flush()
-            .map_err(|error| RunError::Internal(error.to_string()))
+            .map_err(|error| RunError::Internal(crate::publication::message_detail(&error)))
     }
 }
 impl Drop for RowTemp {
@@ -170,6 +175,10 @@ pub struct CaptureContext {
 
 impl CaptureContext {
     pub fn from_environment() -> Result<Self, String> {
+        Self::from_environment_detail().map_err(|error| error.to_string())
+    }
+
+    pub fn from_environment_detail() -> Result<Self, MessageDetail> {
         let observer = std::env::var("OBSERVER_NAME")
             .ok()
             .filter(|observer| !observer.is_empty());
@@ -178,7 +187,12 @@ impl CaptureContext {
             .and_then(|meta| serde_json::from_str::<Value>(&meta).ok())
         {
             Some(Value::Object(meta)) => Some(meta),
-            Some(_) => return Err("SEGMENT_META must be an object".to_owned()),
+            Some(_) => {
+                return Err(MessageDetail::message(
+                    "journal.cli.describe.pipeline.metadata.object",
+                    [],
+                ));
+            }
             None => None,
         };
         Ok(Self { observer, meta })
@@ -363,7 +377,10 @@ fn run_prepared(
     decode_start: DecodeStart<'_>,
 ) -> Result<(), RunError> {
     if options.jobs == 0 {
-        return Err(RunError::Internal("--jobs must be positive".to_owned()));
+        return Err(RunError::Internal(MessageDetail::message(
+            "journal.cli.describe.pipeline.jobs",
+            [],
+        )));
     }
     let output = options.video.with_extension("jsonl");
     // A phone or tablet recording gets a note in its frame prompts.
@@ -373,7 +390,7 @@ fn run_prepared(
         .as_ref()
         .and_then(|meta| PhoneScreen::from_segment_meta(&Value::Object(meta.clone())));
     let claims = OutputClaims::acquire([output.clone()], LockOptions::default())
-        .map_err(|error| RunError::Internal(error.to_string()))?;
+        .map_err(|error| RunError::Internal(crate::publication::message_detail(&error)))?;
     let segment = output.parent().unwrap_or_else(|| Path::new(""));
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let mut faces = crate::faces::Enrichment::new(options.journal, options.video)?;
@@ -396,7 +413,9 @@ fn run_prepared(
                     &|| false,
                 );
             }
-            return Err(RunError::Internal(error.to_string()));
+            return Err(RunError::Internal(crate::publication::message_detail(
+                &error,
+            )));
         }
     };
     let source_binding = screen_ocr::source_binding(&claims, &input, options.video, segment).ok();
@@ -434,13 +453,15 @@ fn run_prepared(
             &output,
             vocab::HANDLER_DESCRIBE,
         )
-        .map_err(RunError::Internal)?;
+        .map_err(|error| RunError::Internal(error.into()))?;
         solstone_core_system::work_retry::raw::consume_context_checked(
             options.journal,
             &output,
             vocab::HANDLER_DESCRIBE,
             &solstone_core_system::work_retry::raw::RetryContext {
-                unit_id: unit.id().map_err(RunError::Internal)?,
+                unit_id: unit
+                    .id()
+                    .map_err(|error| RunError::Internal(error.into()))?,
                 attempt: attempt.clone(),
             },
             &|| {
@@ -451,15 +472,16 @@ fn run_prepared(
                 }
             },
         )
-        .map_err(RunError::Internal)?
+        .map_err(|error| RunError::Internal(error.into()))?
         .is_some()
     } else {
-        solstone_core_system::work_retry::raw::consume_from_environment(
+        solstone_core_system::work_retry::raw::consume_from_environment_in(
             options.journal,
             &output,
             vocab::HANDLER_DESCRIBE,
+            crate::terminal_locale(),
         )
-        .map_err(RunError::Internal)?
+        .map_err(|error| RunError::Internal(error.into()))?
     };
     if !options.redo && output.exists() {
         let record = read_processing_record_header(&output);
@@ -519,9 +541,12 @@ fn run_prepared(
     let text_changed = decoded.text_changed.clone();
     let redecode = video_source;
     let start = Instant::now();
-    let parent = output
-        .parent()
-        .ok_or_else(|| RunError::Internal("video has no parent".to_owned()))?;
+    let parent = output.parent().ok_or_else(|| {
+        RunError::Internal(MessageDetail::message(
+            "journal.cli.describe.pipeline.parent",
+            [],
+        ))
+    })?;
     let input_size = input.input_size();
     let mut rows = RowTemp::new(parent)?;
     let existing_artifact = incremental_source
@@ -635,9 +660,10 @@ fn run_prepared(
     let mut live = if video_source && !png_ids.is_empty() {
         let mut pull = crate::decode::FramePull::open(options.video, options.config, true)
             .map_err(|_| {
-                RunError::Internal(
-                    "describe could not reopen the video to materialize frame payloads".to_owned(),
-                )
+                RunError::Internal(MessageDetail::message(
+                    "journal.cli.describe.pipeline.reopen",
+                    [],
+                ))
             })?;
         pull.retain_pngs(png_ids.clone());
         pull.replay_text_changes(text_changed.clone());
@@ -741,9 +767,10 @@ fn run_prepared(
             }
             if waiting.is_empty() && outstanding.is_empty() {
                 if live.as_ref().is_some_and(|pull| !pull.eof) {
-                    return Err(RunError::Internal(
-                        "describe frame window made no progress".to_owned(),
-                    ));
+                    return Err(RunError::Internal(MessageDetail::message(
+                        "journal.cli.describe.pipeline.progress",
+                        [],
+                    )));
                 }
                 break;
             }
@@ -752,7 +779,10 @@ fn run_prepared(
                     break;
                 };
                 let png = resize_for_vlm_png(&pending.frame.png, Some(1024)).ok_or_else(|| {
-                    RunError::Internal("failed to resize categorization frame".to_owned())
+                    RunError::Internal(MessageDetail::message(
+                        "journal.cli.describe.pipeline.resize",
+                        [],
+                    ))
                 })?;
                 let req = request::request(
                     pending.frame.frame_id,
@@ -789,13 +819,21 @@ fn run_prepared(
                 GenerateResponse::Refused(r) => r.id.clone(),
                 GenerateResponse::Cancelled => None,
             }
-            .ok_or_else(|| RunError::Internal("session response omitted id".to_owned()))?;
+            .ok_or_else(|| {
+                RunError::Internal(MessageDetail::message(
+                    "journal.cli.describe.pipeline.response.id",
+                    [],
+                ))
+            })?;
             let Outstanding {
                 pending,
                 submitted_at,
-            } = outstanding
-                .remove(&id)
-                .ok_or_else(|| RunError::Internal("uncorrelated response".to_owned()))?;
+            } = outstanding.remove(&id).ok_or_else(|| {
+                RunError::Internal(MessageDetail::message(
+                    "journal.cli.describe.pipeline.response.unmatched",
+                    [],
+                ))
+            })?;
             let duration = submitted_at.elapsed().as_secs_f64();
             match response {
                 GenerateResponse::Cancelled => {
@@ -813,7 +851,11 @@ fn run_prepared(
                         || parsed.is_none()
                         || schema_validation_failed(generated.schema_validation.as_ref());
                     let error_message = if failed {
-                        Some("Invalid JSON response".to_owned())
+                        Some(solstone_core_cli_copy::render_for(
+                            solstone_core_cli_copy::ENGLISH,
+                            "journal.cli.describe.stored.error.invalid",
+                            &[],
+                        ))
                     } else {
                         None
                     };
@@ -991,9 +1033,10 @@ fn run_prepared(
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             faces: None,
         })?;
-        return Err(RunError::Internal(
-            "all describe frame requests failed".to_owned(),
-        ));
+        return Err(RunError::Internal(MessageDetail::message(
+            "journal.cli.describe.pipeline.frames.failed",
+            [],
+        )));
     }
     let mut selection_frames = categorized
         .iter()
@@ -1166,12 +1209,17 @@ fn run_prepared(
                 phone,
                 checkpoint,
             ) {
-                Ok((value, record)) => {
+                Ok((value, record, bounded)) => {
                     result["requests"]
                         .as_array_mut()
                         .expect("requests array")
                         .push(record);
-                    result["content"][category.name] = value;
+                    solstone_core_format::stored_markdown::set_screen_extraction(
+                        &mut result,
+                        category.name,
+                        value,
+                        bounded,
+                    );
                 }
                 Err(ExtractionError::Failed { error, record }) => {
                     if let Some(record) = record {
@@ -1227,7 +1275,10 @@ fn run_prepared(
                 .get("timestamp")
                 .and_then(Value::as_f64)
                 .ok_or_else(|| {
-                    RunError::Internal(format!("describe frame {frame_id} omitted timestamp"))
+                    RunError::Internal(MessageDetail::message(
+                        "journal.cli.describe.pipeline.timestamp",
+                        [("frame", &frame_id)],
+                    ))
                 })?;
             let png = if redecode {
                 owned_frame_png(
@@ -1241,10 +1292,12 @@ fn run_prepared(
                     checkpoint,
                 )?
             } else {
-                frame_pngs
-                    .get(frame_id)
-                    .cloned()
-                    .ok_or_else(|| RunError::Internal("missing merge frame".to_owned()))?
+                frame_pngs.get(frame_id).cloned().ok_or_else(|| {
+                    RunError::Internal(MessageDetail::message(
+                        "journal.cli.describe.pipeline.merge.frame",
+                        [],
+                    ))
+                })?
             };
             let analysis = result.get("analysis").expect("merge rows have analysis");
             let categories =
@@ -1263,12 +1316,17 @@ fn run_prepared(
                     phone,
                     checkpoint,
                 ) {
-                    Ok((value, record)) => {
+                    Ok((value, record, bounded)) => {
                         result["requests"]
                             .as_array_mut()
                             .expect("requests array")
                             .push(record);
-                        result["content"][*name] = value;
+                        solstone_core_format::stored_markdown::set_screen_extraction(
+                            &mut result,
+                            name,
+                            value,
+                            bounded,
+                        );
                     }
                     Err(ExtractionError::Failed { error, record }) => {
                         if let Some(record) = record {
@@ -1439,8 +1497,9 @@ fn ensure_png_ids_queued(png_ids: &BTreeSet<u64>, queued: &BTreeSet<u64>) -> Res
 }
 
 fn frame_did_not_reappear(frame_id: u64) -> RunError {
-    RunError::Internal(format!(
-        "describe frame {frame_id} did not reappear with the same timestamp"
+    RunError::Internal(MessageDetail::message(
+        "journal.cli.describe.pipeline.reappear",
+        [("frame", &frame_id)],
     ))
 }
 
@@ -1471,9 +1530,7 @@ fn owned_frame_png(
     ) {
         Ok(png) => Ok(png),
         Err(RedecodeFail::Cancelled) => Err(RunError::Cancelled),
-        Err(RedecodeFail::Missing) => Err(RunError::Internal(format!(
-            "describe frame {frame_id} did not reappear with the same timestamp"
-        ))),
+        Err(RedecodeFail::Missing) => Err(frame_did_not_reappear(frame_id)),
     }
 }
 
@@ -1609,7 +1666,7 @@ fn extract_category(
     redact_rules: &[String],
     phone: Option<PhoneScreen>,
     checkpoint: &dyn Fn() -> bool,
-) -> Result<(Value, Value), ExtractionError> {
+) -> Result<(Value, Value, bool), ExtractionError> {
     if checkpoint() {
         return Err(ExtractionError::Cancelled);
     }
@@ -1617,7 +1674,11 @@ fn extract_category(
     loop {
         let request = extraction::request(frame_id, category, png, attempt, redact_rules, phone)
             .ok_or_else(|| ExtractionError::Failed {
-                error: "failed to resize extraction frame".to_owned(),
+                error: solstone_core_cli_copy::render_for(
+                    solstone_core_cli_copy::ENGLISH,
+                    "journal.cli.describe.stored.error.resize",
+                    &[],
+                ),
                 record: None,
             })?;
         let id = request.id.clone().expect("extraction ids are present");
@@ -1647,12 +1708,12 @@ fn extract_category(
             }
             GenerateResponse::Generated(generated) => {
                 let model = generated.model;
-                match extraction::parse_response(
+                match extraction::parse_extraction(
                     category,
                     &generated.text,
                     &generated.finish_reason,
                 ) {
-                    Ok(value) => {
+                    Ok((value, bounded)) => {
                         if category.output == OutputKind::Json
                             && schema_validation_failed(generated.schema_validation.as_ref())
                         {
@@ -1679,6 +1740,7 @@ fn extract_category(
                                 attempt,
                                 Some(category.name),
                             ),
+                            bounded,
                         ));
                     }
                     Err(error) => (error, model),
@@ -1752,7 +1814,11 @@ fn finalize_incomplete(mut results: Vec<(Value, usize)>) -> Vec<Value> {
         .drain(..)
         .map(|(mut result, pending)| {
             if pending > 0 {
-                result["error"] = json!("Extraction never completed");
+                result["error"] = json!(solstone_core_cli_copy::render_for(
+                    solstone_core_cli_copy::ENGLISH,
+                    "journal.cli.describe.stored.error.incomplete",
+                    &[]
+                ));
             }
             result
         })
@@ -1779,12 +1845,20 @@ fn schema_validation_error_message(category_name: &str, validation: Option<&Valu
         .and_then(Value::as_array)
         .filter(|errors| !errors.is_empty())
     {
-        format!(
-            "Schema validation failed for {category_name}: {}",
-            Value::Array(errors.clone())
+        solstone_core_cli_copy::display_for(
+            solstone_core_cli_copy::ENGLISH,
+            "journal.cli.describe.stored.error.schema.detail",
+            [
+                ("category", &(category_name)),
+                ("errors", &(Value::Array(errors.clone()))),
+            ],
         )
     } else {
-        format!("Schema validation failed for {category_name}")
+        solstone_core_cli_copy::display_for(
+            solstone_core_cli_copy::ENGLISH,
+            "journal.cli.describe.stored.error.schema",
+            [("category", &(category_name))],
+        )
     }
 }
 
@@ -1794,10 +1868,12 @@ fn emit_value(
     row: Value,
 ) -> Result<(), RunError> {
     if let Some(incremental_rows) = incremental_rows {
-        let frame_id = row
-            .get("frame_id")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| RunError::Internal("describe row omitted frame_id".to_owned()))?;
+        let frame_id = row.get("frame_id").and_then(Value::as_u64).ok_or_else(|| {
+            RunError::Internal(MessageDetail::message(
+                "journal.cli.describe.pipeline.row.frame",
+                [],
+            ))
+        })?;
         incremental_rows.insert(frame_id, RowContent::Value(row));
         Ok(())
     } else {
@@ -1831,7 +1907,7 @@ fn maybe_detect(
     let result = detector
         .detect(png, journal)
         .and_then(|result| detect::detections_block(&result, "screen", &gate))
-        .map_err(|_| rfdetr_unavailable_detail().to_owned());
+        .map_err(|_| rfdetr_unavailable_detail());
     match result {
         Ok(result) => Ok(Some(result)),
         Err(detail) => {
@@ -1841,15 +1917,12 @@ fn maybe_detect(
     }
 }
 
-fn rfdetr_unavailable_detail() -> &'static str {
+fn rfdetr_unavailable_detail() -> String {
     #[cfg(windows)]
-    {
-        solstone_core_local::install::rfdetr_windows::RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE
-    }
+    let id = "journal.cli.depict.detection.unavailable.windows";
     #[cfg(not(windows))]
-    {
-        RFDETR_UNAVAILABLE_DETAIL
-    }
+    let id = "journal.cli.depict.detection.unavailable";
+    solstone_core_cli_copy::render_for(solstone_core_cli_copy::ENGLISH, id, &[])
 }
 
 fn blocked(journal: &Path, work_key: &str, code: Option<&str>) -> RunError {
@@ -1872,10 +1945,11 @@ fn prepare_ocr_publication(
     match screen_ocr::PreparedPublication::prepare(journal, segment, sidecar, checkpoint) {
         Ok(publication) => Ok(Some(publication)),
         Err(_) if checkpoint() => Err(RunError::Cancelled),
-        Err(error) if error.to_string() == "describe cancelled" => Err(RunError::Cancelled),
-        Err(error) => Err(RunError::Internal(format!(
-            "screen OCR withdrawal could not be prepared: {error}"
-        ))),
+        Err(error) if crate::publication::is_cancelled(&error) => Err(RunError::Cancelled),
+        Err(error) => Err(RunError::Internal(
+            crate::publication::message_detail(&error)
+                .context("journal.cli.describe.pipeline.withdraw"),
+        )),
     }
 }
 
@@ -1916,8 +1990,12 @@ fn prepare_video_ocr(
     {
         return Ok(Some(cached.clone()));
     }
-    let mut pull = crate::decode::FramePull::open(video, config, true)
-        .map_err(|_| RunError::Internal("could not reopen video for OCR retry".into()))?;
+    let mut pull = crate::decode::FramePull::open(video, config, true).map_err(|_| {
+        RunError::Internal(MessageDetail::message(
+            "journal.cli.describe.pipeline.retry.open",
+            [],
+        ))
+    })?;
     pull.replay_text_changes(decoded.text_changed.clone());
     let mut ocr = screen_ocr::StreamingOcr::new();
     loop {
@@ -1927,7 +2005,10 @@ fn prepare_video_ocr(
                 if decoded.qualified_frames.get(index).is_none_or(|expected| {
                     expected.frame_id != frame.frame_id || expected.timestamp != frame.timestamp
                 }) {
-                    return Err(RunError::Internal("OCR retry frame binding changed".into()));
+                    return Err(RunError::Internal(MessageDetail::message(
+                        "journal.cli.describe.pipeline.retry.binding",
+                        [],
+                    )));
                 }
                 ocr.feed(
                     &mut sidecar,
@@ -1942,9 +2023,10 @@ fn prepare_video_ocr(
         }
     }
     if ocr.fed() != decoded.qualified_frames.len() {
-        return Err(RunError::Internal(
-            "OCR retry did not reach the last qualified frame".into(),
-        ));
+        return Err(RunError::Internal(MessageDetail::message(
+            "journal.cli.describe.pipeline.retry.incomplete",
+            [],
+        )));
     }
     ocr.finish(&mut sidecar, factory);
     if let Some(cached) = cached.as_ref() {
@@ -2049,7 +2131,14 @@ fn complete_private_ocr<T, E>(
         matches!(frame.state, screen_ocr::CoverageState::Error)
             || frame.error_code.as_deref() == Some("helper_unavailable")
     }) {
-        log::warn!("screen OCR coverage is incomplete; private frame diagnostics record the gap");
+        log::warn!(
+            "{}",
+            solstone_core_cli_copy::render_for(
+                crate::terminal_locale(),
+                "journal.cli.describe.pipeline.ocr.coverage",
+                &[]
+            )
+        );
     }
     let _ = publish(sidecar);
     outcome
@@ -2564,7 +2653,7 @@ fn stamp_processing(
         Some(attempt) => solstone_core_system::work_retry::raw::stamp_attempt_from(record, attempt),
         None => solstone_core_system::work_retry::raw::stamp_attempt(record),
     }
-    .map_err(RunError::Internal)
+    .map_err(|error| RunError::Internal(error.into()))
 }
 
 fn stamp_failed(
@@ -2643,25 +2732,25 @@ fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
         }
         header.insert("_solstone_processing".to_owned(), record);
         writeln!(final_file, "{}", Value::Object(header))
-            .map_err(|error| RunError::Internal(error.to_string()))?;
+            .map_err(|error| RunError::Internal(crate::publication::message_detail(&error)))?;
         let mut row_file =
-            File::open(promotion.rows).map_err(|error| RunError::Internal(error.to_string()))?;
+            File::open(promotion.rows).map_err(|error| RunError::Internal(crate::publication::message_detail(&error)))?;
         let mut buffer = [0u8; 64 * 1024];
         loop {
             check_promotion(&promotion)?;
             let count = row_file
                 .read(&mut buffer)
-                .map_err(|error| RunError::Internal(error.to_string()))?;
+                .map_err(|error| RunError::Internal(crate::publication::message_detail(&error)))?;
             if count == 0 {
                 break;
             }
             final_file
                 .write_all(&buffer[..count])
-                .map_err(|error| RunError::Internal(error.to_string()))?;
+                .map_err(|error| RunError::Internal(crate::publication::message_detail(&error)))?;
         }
         Ok(())
         })().map_err(|error| match error {
-            RunError::Cancelled => std::io::Error::other("describe cancelled"),
+            RunError::Cancelled => crate::publication::cancelled(),
             RunError::Internal(detail) => std::io::Error::other(detail),
             RunError::Blocked(detail) => std::io::Error::other(format!("describe blocked: {detail:?}")),
         })
@@ -2670,10 +2759,10 @@ fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
 }
 
 fn promotion_error(promotion: &Promotion<'_>, error: std::io::Error) -> RunError {
-    if error.to_string() == "describe cancelled" || (promotion.checkpoint)() {
+    if crate::publication::is_cancelled(&error) || (promotion.checkpoint)() {
         RunError::Cancelled
     } else {
-        RunError::Internal(error.to_string())
+        RunError::Internal(crate::publication::message_detail(&error))
     }
 }
 
@@ -2693,7 +2782,7 @@ fn install_promoted(
             if (promotion.checkpoint)() {
                 RunError::Cancelled
             } else {
-                RunError::Internal(error.to_string())
+                RunError::Internal(crate::publication::message_detail(&error))
             }
         })?;
     check_promotion(promotion)?;
@@ -2704,12 +2793,19 @@ fn install_promoted(
     check_promotion(promotion)?;
     prepared
         .install()
-        .map_err(|error| RunError::Internal(error.to_string()))?;
+        .map_err(|error| RunError::Internal(crate::publication::message_detail(&error)))?;
     if publish_ocr
         && let Some(ocr) = promotion.ocr
         && let Err(error) = ocr.install(&_commit)
     {
-        log::warn!("screen OCR publication failed: {:?}", error.kind());
+        log::warn!(
+            "{}",
+            solstone_core_cli_copy::display_for(
+                crate::terminal_locale(),
+                "journal.cli.describe.pipeline.ocr.publication",
+                [("kind", &format!("{:?}", error.kind()))]
+            )
+        );
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if publish_ocr {
@@ -2752,11 +2848,13 @@ fn retained_reading<'a>(
     if kept == 0 {
         return Ok(None);
     }
-    let file = File::open(promotion.rows).map_err(|error| RunError::Internal(error.to_string()))?;
+    let file = File::open(promotion.rows)
+        .map_err(|error| RunError::Internal(crate::publication::message_detail(&error)))?;
     let mut fresh = 0;
     for line in BufReader::new(file).lines() {
         check_promotion(promotion)?;
-        let line = line.map_err(|error| RunError::Internal(error.to_string()))?;
+        let line =
+            line.map_err(|error| RunError::Internal(crate::publication::message_detail(&error)))?;
         if serde_json::from_str::<Value>(&line)
             .ok()
             .is_some_and(|row| merge::is_analyzed(&row))

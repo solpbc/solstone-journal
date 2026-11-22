@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for settings finite.",
+  "context": "Journal command-line text for settings finite.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "setting",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4e93e6434587d9b297591271cb1e24637915dbd83f2c832ff7a615d16d007d85",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

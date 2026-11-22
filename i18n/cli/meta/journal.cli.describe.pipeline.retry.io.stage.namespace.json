@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline retry io stage namespace.",
+  "context": "Journal command-line text for pipeline retry io stage namespace.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "62429e3293b509ec6ccb956e298c49e01085272242a876d5f7294e667ebe4bec",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

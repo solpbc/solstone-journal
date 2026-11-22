@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline root query journal root namespace watch attributes.",
+  "context": "Journal command-line text for pipeline root query journal root namespace watch attributes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "df84e75dff57f912ee7df7192809c2eed1764e978491559fa036f1afa5f38cfd",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

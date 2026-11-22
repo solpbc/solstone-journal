@@ -732,7 +732,13 @@ fn stat_identifier(value: impl TryInto<u64>) -> Result<u64, JournalRootError> {
     value.try_into().map_err(|_| JournalRootError::Io {
         operation: "read source file identity",
         path: PathBuf::from("/"),
-        source: io::Error::new(io::ErrorKind::InvalidData, "source identity is negative"),
+        source: io::Error::new(
+            io::ErrorKind::InvalidData,
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.publish.source.identity.is.negative",
+                [],
+            ),
+        ),
     })
 }
 

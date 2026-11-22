@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline publish destination already identifies the source file.",
+  "context": "Journal command-line text for pipeline publish destination already identifies the source file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0160bc93da9dd675e307c9eb1c99c502dce5addef17ef75e3344ed07308e3446",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

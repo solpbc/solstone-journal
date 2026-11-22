@@ -5192,6 +5192,7 @@ dependencies = [
  "solstone-core-processing-record",
  "solstone-core-talent-config",
  "solstone-core-time",
+ "solstone-core-window-catalog",
  "tempfile",
  "unicode-normalization",
 ]

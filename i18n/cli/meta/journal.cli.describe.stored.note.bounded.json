@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for stored note bounded.",
+  "context": "Journal command-line text for stored note bounded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbf93aadcdb1a3d89bc8851d6544c45af364934a97d4d9d57c307a243b3ae6d9",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "mark",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

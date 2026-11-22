@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline retry io file reparse.",
+  "context": "Journal command-line text for pipeline retry io file reparse.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4ec73e75870c7138808d5f712c5d08c1ff65de58814ab33c1d0a0d9dd67557ba",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline record parent changed.",
+  "context": "Journal command-line text for pipeline record parent changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3012b7f5def25400936b6ce96527d27866ad0a122c9da7ec54c072bc819213c4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

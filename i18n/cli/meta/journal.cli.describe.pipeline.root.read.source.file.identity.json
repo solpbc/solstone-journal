@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline root read source file identity.",
+  "context": "Journal command-line text for pipeline root read source file identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "09d2948ab3126f4fde436214ff9c0c2e143a52da4665a95554c93da6d6e8d218",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

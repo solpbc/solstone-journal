@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for settings uint.",
+  "context": "Journal command-line text for settings uint.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "setting",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "784bff1b68bc9b55fd1e5edc4d31cb26cb2d65a3bbf14a0935b44ad1b17157b4",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

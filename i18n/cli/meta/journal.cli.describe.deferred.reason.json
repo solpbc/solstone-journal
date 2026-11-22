@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for deferred reason.",
+  "context": "Journal command-line text for deferred reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3cad101635317d3b0381f76f227866ea1e0ae6e711c70ffb84f3f658d1e57c41",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

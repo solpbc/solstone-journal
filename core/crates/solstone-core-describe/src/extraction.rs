@@ -101,19 +101,43 @@ pub fn parse_response(
     text: &str,
     finish_reason: &str,
 ) -> Result<Value, String> {
+    parse_extraction(category, text, finish_reason).map(|(value, _)| value)
+}
+
+pub(crate) fn parse_extraction(
+    category: &CategoryMeta,
+    text: &str,
+    finish_reason: &str,
+) -> Result<(Value, bool), String> {
     if category.output == OutputKind::Json {
         return serde_json::from_str(text)
-            .map_err(|error| format!("Invalid JSON response for {}: {error}", category.name));
+            .map(|v| (v, false))
+            .map_err(|error| {
+                solstone_core_cli_copy::display_for(
+                    solstone_core_cli_copy::ENGLISH,
+                    "journal.cli.describe.stored.error.invalid.category",
+                    [("category", &(category.name)), ("error", &(error))],
+                )
+            });
     }
     // `length` is the native truncation marker; a "", "stop", or "unknown" finish
     // reason is clean, but the body itself must still be non-empty (checked below).
     if !matches!(finish_reason, "" | "stop" | "unknown") {
-        return Err(format!("Truncated markdown response for {}", category.name));
+        return Err(solstone_core_cli_copy::display_for(
+            solstone_core_cli_copy::ENGLISH,
+            "journal.cli.describe.stored.error.truncated",
+            [("category", &(category.name))],
+        ));
     }
     if text.trim().is_empty() {
-        return Err(format!("Empty markdown response for {}", category.name));
+        return Err(solstone_core_cli_copy::display_for(
+            solstone_core_cli_copy::ENGLISH,
+            "journal.cli.describe.stored.error.empty",
+            [("category", &(category.name))],
+        ));
     }
-    Ok(Value::String(bound_extraction_markdown(text)))
+    let (text, bounded) = bound_extraction_markdown(text);
+    Ok((Value::String(text), bounded))
 }
 
 fn category(name: &str) -> Option<&'static CategoryMeta> {

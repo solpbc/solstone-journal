@@ -111,7 +111,14 @@ fn best_effort<T>(result: Result<T, FaceError>) -> Result<Option<T>, crate::pipe
         Ok(value) => Ok(Some(value)),
         Err(error) if error.cancelled => Err(crate::pipeline::RunError::Cancelled),
         Err(error) => {
-            log::warn!("face enrichment skipped: {}", error.kind);
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::terminal_locale(),
+                    "journal.cli.describe.faces.skipped",
+                    [("kind", &error.kind)]
+                )
+            );
             Ok(None)
         }
     }

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline root query verified drive root attributes.",
+  "context": "Journal command-line text for pipeline root query verified drive root attributes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5c34e5484c6bf331ed3df56f82fba90c0817cc1fcb60a9242a0034530e71b954",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

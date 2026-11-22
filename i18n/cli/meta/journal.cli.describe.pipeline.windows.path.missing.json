@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path missing.",
+  "context": "Journal command-line text for pipeline windows path missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "component",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5079b88014e599a254e6aac9037ae5953fb59ba707c34ce1940b4204164aab7c",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

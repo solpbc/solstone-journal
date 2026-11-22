@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline windows path dot component.",
+  "context": "Journal command-line text for pipeline windows path dot component.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70dc47bbeadf71fd6060b45b47e9d69ff8c36155ac61dd920f0c894e0057a0c3",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

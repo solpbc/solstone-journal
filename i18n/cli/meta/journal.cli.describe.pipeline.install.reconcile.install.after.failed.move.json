@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for pipeline install reconcile install after failed move.",
+  "context": "Journal command-line text for pipeline install reconcile install after failed move.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "454653cc2dbfa322fc18367d5ef9eb73b2f590014bc8a2c90c9972464f925ff5",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for deferred.",
+  "context": "Journal command-line text for deferred.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "66bfe668707c4853d9c6025c836f0b4c6cc3088af34c8cfc60a76099c10ae082",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline response id.",
+  "context": "Journal command-line text for pipeline response id.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bfcc157af7395c755c236753d9881b54365085acbf9a361dd74601c86c903a46",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

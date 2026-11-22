@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline root stat opened canonical root component.",
+  "context": "Journal command-line text for pipeline root stat opened canonical root component.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "66de47c3df60fb715e64e5fee38bcb3dba0e6a0e458faeabf5fb1670f2d3f727",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

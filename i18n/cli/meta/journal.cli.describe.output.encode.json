@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for output encode.",
+  "context": "Journal command-line text for output encode.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dba2b39f329d8fbf93e5a301a08eb5a25af294373310861f6f08609c90c69a16",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

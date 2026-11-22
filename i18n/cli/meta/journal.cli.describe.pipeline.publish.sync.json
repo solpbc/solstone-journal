@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline publish sync.",
+  "context": "Journal command-line text for pipeline publish sync.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7a24bb19f4c310d0902863407febdcf721a6ff4233a32482d30d5a9f251e61e9",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

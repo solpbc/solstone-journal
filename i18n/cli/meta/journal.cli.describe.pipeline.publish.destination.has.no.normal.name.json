@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline publish destination has no normal name.",
+  "context": "Journal command-line text for pipeline publish destination has no normal name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "24e05ba84988db1a33f43a84def20e43cd40ed209c10af239b602259a2a04200",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

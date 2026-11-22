@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline root open journal root ancestor.",
+  "context": "Journal command-line text for pipeline root open journal root ancestor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5b9a114feee694d13d61659ff43408ffc6d89ffebaef2f0368f112231513dff8",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

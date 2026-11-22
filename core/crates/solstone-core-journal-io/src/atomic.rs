@@ -680,6 +680,8 @@ pub fn atomic_replace_detailed_bound_checked(
 #[path = "windows_atomic.rs"]
 mod windows_atomic;
 #[cfg(windows)]
+pub(crate) use windows_atomic::namespace_change_message;
+#[cfg(windows)]
 #[path = "windows_create_only.rs"]
 mod windows_create_only;
 #[cfg(windows)]
@@ -1951,8 +1953,12 @@ pub fn sync_file(file: &File) -> io::Result<()> {
 pub(crate) fn fsync_dir(path: &Path) {
     if let Err(error) = File::open(path).and_then(|directory| directory.sync_all()) {
         log::warn!(
-            "parent-directory fsync degraded for {}: {error}",
-            path.display()
+            "{}",
+            solstone_core_cli_copy::display_for(
+                solstone_core_cli_copy::manual_log_locale(),
+                "journal.cli.describe.pipeline.retry.io.fsync",
+                [("path", &path.display()), ("error", &error)]
+            )
         );
     }
 }
@@ -2170,7 +2176,10 @@ fn create_temporary(
         destination,
         io::Error::new(
             io::ErrorKind::AlreadyExists,
-            "could not allocate unique temporary file",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.retry.io.tmp",
+                [],
+            ),
         ),
     ))
 }

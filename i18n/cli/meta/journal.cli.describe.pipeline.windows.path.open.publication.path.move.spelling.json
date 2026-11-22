@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path open publication path move spelling.",
+  "context": "Journal command-line text for pipeline windows path open publication path move spelling.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1901c2d25e7ffaa3ac32c2888a41cd0418ed333718500c7e132e91e2ebe913c4",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

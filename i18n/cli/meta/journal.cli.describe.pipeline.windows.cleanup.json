@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for pipeline windows cleanup.",
+  "context": "Journal command-line text for pipeline windows cleanup.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "stage",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bdc7a3eba2d1d6000a17f27f36d6232212f69303b8a2fce3f81a95e92ca324ae",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

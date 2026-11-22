@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline windows path root only.",
+  "context": "Journal command-line text for pipeline windows path root only.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b0ccb4f2f593d16dbb5fe9b6a07d6152b46993f8d2fdce3856031e71443a598c",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

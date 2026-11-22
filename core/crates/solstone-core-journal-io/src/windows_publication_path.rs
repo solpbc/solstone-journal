@@ -674,7 +674,10 @@ mod windows_impl {
         if wide.contains(&0) || leaf.encode_wide().any(|unit| unit == 0) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "move spelling contains an interior NUL",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.move.spelling.contains.an.interior.nul",
+                    [],
+                ),
             ));
         }
         while matches!(wide.last(), Some(&unit) if unit == u16::from(b'\\') || unit == u16::from(b'/'))
@@ -704,7 +707,10 @@ mod windows_impl {
             operation: "resolve publication-path current directory",
             source: io::Error::new(
                 io::ErrorKind::InvalidData,
-                "current directory is not valid UTF-8",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.current.directory.is.not.valid.utf",
+                    [],
+                ),
             ),
         })?;
         match parse_publication_path(cwd_str) {
@@ -800,7 +806,10 @@ mod windows_impl {
         }
         if !buffer.starts_with(&VOLUME_GUID_PREFIX) {
             return Err(PublicationPathError::UnstableNamespace {
-                source: io::Error::other("anchor is not a Mount-Manager volume GUID path"),
+                source: io::Error::other(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.anchor.is.not.a.mount.manager.volume.guid.path",
+                    [],
+                )),
             });
         }
         Ok(buffer)
@@ -927,7 +936,10 @@ mod windows_impl {
                 operation: "open publication-path move spelling",
                 source: io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "move spelling contains an interior NUL",
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.describe.pipeline.publish.move.spelling.contains.an.interior.nul",
+                        [],
+                    ),
                 ),
             });
         }

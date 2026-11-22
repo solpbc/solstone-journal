@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline reopen.",
+  "context": "Journal command-line text for pipeline reopen.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "214bbef940d3a51bb9c8b449559c8fc6e39c1f58609b80a978311cd63beaf010",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

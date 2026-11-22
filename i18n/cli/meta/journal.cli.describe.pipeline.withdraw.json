@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for pipeline withdraw.",
+  "context": "Journal command-line text for pipeline withdraw.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0809cb8e3f46879da7958a4bd4823ff44e06faa93cdc4a620a5d9f1713c1b10b",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "ocr",
+      "kind": "accepted-input",
+      "value": "OCR"
+    }
+  ]
+}

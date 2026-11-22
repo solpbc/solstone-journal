@@ -24,6 +24,10 @@ const EXIT_PROVIDER_BLOCKED: u8 = 69;
 #[cfg(windows)]
 const EXIT_HOSTED_LAUNCH_ADMISSION_REFUSED: u8 = 78;
 
+fn invocation_locale() -> &'static str {
+    solstone_core_cli_copy::terminal_locale().unwrap_or(solstone_core_cli_copy::ENGLISH)
+}
+
 fn install_logger() {
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
         .try_init();
@@ -37,7 +41,9 @@ fn main() -> ExitCode {
     let _admitted = match solstone_core_system::process::receive_windows_launch() {
         Ok(admitted) => admitted,
         Err(error) => {
-            eprintln!("journal process admission failed: {error}");
+            let detail = solstone_core_cli_copy::MessageDetail::from(error)
+                .context("journal.cli.depict.admission");
+            eprintln!("{}", detail.render(invocation_locale()));
             return ExitCode::from(EXIT_HOSTED_LAUNCH_ADMISSION_REFUSED);
         }
     };
@@ -80,6 +86,8 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         return Err(usage("journal.cli.describe.usage.backfill.desktop"));
     }
+    solstone_core_cli_copy::begin_terminal_output();
+    let locale = invocation_locale();
     match parse_arguments(arguments)? {
         Command::Version => {
             let version = ffmpeg_next::codec::version();
@@ -94,7 +102,7 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
         Command::Help => {
             println!(
                 "{}",
-                solstone_core_cli_copy::text("journal.cli.describe.usage.help")
+                solstone_core_cli_copy::render_for(locale, "journal.cli.describe.usage.help", &[])
             );
             Ok(())
         }
@@ -109,13 +117,14 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
         Command::FramesOnly(arguments) => {
             let journal = effective_journal(arguments.journal.as_deref())?;
             let config = read_config(&journal)?;
-            let capture =
-                pipeline::CaptureContext::from_environment().map_err(CliError::Internal)?;
+            let capture = pipeline::CaptureContext::from_environment_detail()
+                .map_err(|e| CliError::Internal(e.render(locale)))?;
             let result = pipeline::frames(&arguments.video_path, config.winnow, &capture);
             if result.decode_failed {
-                return Err(CliError::Decode(format!(
-                    "failed to decode video: {}",
-                    arguments.video_path.display()
+                return Err(CliError::Decode(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.describe.decode.failed",
+                    [("path", &arguments.video_path.display())],
                 )));
             }
             let frames: Vec<Value> = result
@@ -133,7 +142,11 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
                 .file_name()
                 .and_then(|name| name.to_str())
                 .ok_or_else(|| {
-                    CliError::Usage("video path must have a UTF-8 filename".to_owned())
+                    CliError::Usage(solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.describe.file.encoding",
+                        &[],
+                    ))
                 })?;
             let output = serde_json::json!({
                 "video": video,
@@ -141,17 +154,28 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
                 "height": result.height,
                 "frames": frames,
             });
-            let rendered = serde_json::to_string_pretty(&output)
-                .map_err(|error| CliError::Decode(format!("failed to encode output: {error}")))?;
+            let rendered = serde_json::to_string_pretty(&output).map_err(|error| {
+                CliError::Decode(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.describe.output.encode",
+                    [("error", &error)],
+                ))
+            })?;
             io::stdout()
                 .write_all(format!("{rendered}\n").as_bytes())
-                .map_err(|error| CliError::Decode(format!("failed to write output: {error}")))
+                .map_err(|error| {
+                    CliError::Decode(solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.describe.output.write",
+                        [("error", &error)],
+                    ))
+                })
         }
         Command::Describe(arguments) => {
             let journal = effective_journal(arguments.journal.as_deref())?;
             let config = read_config(&journal)?;
-            let capture =
-                pipeline::CaptureContext::from_environment().map_err(CliError::Internal)?;
+            let capture = pipeline::CaptureContext::from_environment_detail()
+                .map_err(|e| CliError::Internal(e.render(locale)))?;
             pipeline::run(pipeline::DescribeOptions {
                 video: &arguments.video_path,
                 journal: &journal,
@@ -167,9 +191,13 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
             .map_err(|error| match error {
                 pipeline::RunError::Blocked(reason) => CliError::Blocked(reason),
                 pipeline::RunError::Cancelled => {
-                    CliError::Internal("describe cancelled".to_owned())
+                    CliError::Internal(solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.describe.cancelled",
+                        &[],
+                    ))
                 }
-                pipeline::RunError::Internal(message) => CliError::Internal(message),
+                pipeline::RunError::Internal(message) => CliError::Internal(message.render(locale)),
             })
         }
     }
@@ -264,8 +292,16 @@ enum CliError {
 
 fn describe_deferred_message(reason: Option<&str>) -> String {
     match reason {
-        Some(token) if !token.is_empty() => format!("describe deferred: {token}"),
-        _ => "describe deferred".to_string(),
+        Some(token) if !token.is_empty() => solstone_core_cli_copy::display_for(
+            invocation_locale(),
+            "journal.cli.describe.deferred.reason",
+            [("reason", &token)],
+        ),
+        _ => solstone_core_cli_copy::render_for(
+            invocation_locale(),
+            "journal.cli.describe.deferred",
+            &[],
+        ),
     }
 }
 
@@ -341,7 +377,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
                 return Err(usage("journal.cli.describe.usage.journal.repeated"));
             }
         } else if argument.to_string_lossy().starts_with('-') {
-            return Err(CliError::Usage(solstone_core_cli_copy::strings(
+            return Err(CliError::Usage(solstone_core_cli_copy::display_for(
+                invocation_locale(),
                 "journal.cli.describe.usage.argument.unknown",
                 [("argument", &argument.to_string_lossy())],
             )));
@@ -392,10 +429,19 @@ fn effective_journal(explicit: Option<&Path>) -> Result<PathBuf, CliError> {
     let home_env = env::var_os("HOME");
     let fallback_home = env::home_dir();
     let home = discover_home(home_env.as_deref(), fallback_home.as_deref()).map_err(|error| {
-        CliError::Config(format!("could not resolve home directory: {error:?}"))
+        CliError::Config(solstone_core_cli_copy::display_for(
+            invocation_locale(),
+            "journal.cli.describe.path.home",
+            [("reason", &format_args!("{error:?}"))],
+        ))
     })?;
-    let config_journal = read_config_journal(&home)
-        .map_err(|error| CliError::Config(format!("could not read journal path: {error:?}")))?;
+    let config_journal = read_config_journal(&home).map_err(|error| {
+        CliError::Config(solstone_core_cli_copy::display_for(
+            invocation_locale(),
+            "journal.cli.describe.path.config",
+            [("reason", &format_args!("{error:?}"))],
+        ))
+    })?;
     let checkout_root = env::current_exe()
         .ok()
         .and_then(|executable| executable.parent().map(Path::to_path_buf))
@@ -411,7 +457,8 @@ fn effective_journal(explicit: Option<&Path>) -> Result<PathBuf, CliError> {
 }
 
 fn read_config(journal_path: &Path) -> Result<DescribeConfig, CliError> {
-    let settings = solstone_core_describe::read_config(journal_path).map_err(CliError::Config)?;
+    let settings = solstone_core_describe::read_config_in(invocation_locale(), journal_path)
+        .map_err(CliError::Config)?;
     Ok(DescribeConfig {
         winnow: settings.winnow,
         redact_rules: settings.redact_rules,
@@ -421,7 +468,11 @@ fn read_config(journal_path: &Path) -> Result<DescribeConfig, CliError> {
 }
 
 fn usage(id: &str) -> CliError {
-    CliError::Usage(solstone_core_cli_copy::text(id))
+    CliError::Usage(solstone_core_cli_copy::render_for(
+        invocation_locale(),
+        id,
+        &[],
+    ))
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]

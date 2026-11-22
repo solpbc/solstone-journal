@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline windows path interior nul.",
+  "context": "Journal command-line text for pipeline windows path interior nul.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "624fbec1bcdb9c90ed2f75d624608842cc8419646f340d68a71592e53fc45d8a",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "nul",
+      "kind": "accepted-input",
+      "value": "NUL"
+    }
+  ]
+}

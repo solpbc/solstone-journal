@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline retry io dest namespace.",
+  "context": "Journal command-line text for pipeline retry io dest namespace.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "92ef80617b8e7e21bc52ad10cb8441be2d991a2e0bf0b3b15cb0a17645bd469b",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

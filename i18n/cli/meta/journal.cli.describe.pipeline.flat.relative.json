@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline flat relative.",
+  "context": "Journal command-line text for pipeline flat relative.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ee01a98017183280a81fd54cf0809ad2c28e408b9a32cdb58de2cd00a0affc5",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

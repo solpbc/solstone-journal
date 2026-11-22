@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline root journal root contains an interior nul.",
+  "context": "Journal command-line text for pipeline root journal root contains an interior nul.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5a0c81b15a944a41174ae35d5bd59ede4a7977e6909ffc7a83e75cdce98ac66f",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "nul",
+      "kind": "accepted-input",
+      "value": "NUL"
+    }
+  ]
+}

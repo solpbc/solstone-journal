@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline metadata object.",
+  "context": "Journal command-line text for pipeline metadata object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55474f393d1e885f779816d75c05db1ebe2033e48055d9ab12c9f4cb1a39b261",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "segment_meta",
+      "kind": "accepted-input",
+      "value": "SEGMENT_META"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline retry binding.",
+  "context": "Journal command-line text for pipeline retry binding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dcd80efbbe2a0258e1267b51d642a47537ba858652077c0d8f57a2fcc1333301",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "ocr",
+      "kind": "accepted-input",
+      "value": "OCR"
+    }
+  ]
+}

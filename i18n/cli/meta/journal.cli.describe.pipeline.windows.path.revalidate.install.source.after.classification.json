@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path revalidate install source after classification.",
+  "context": "Journal command-line text for pipeline windows path revalidate install source after classification.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "33988a68111316eaf8ebf8c275121f0aa60d5737468ecefc1e8dbbf2ceb4e429",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

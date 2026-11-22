@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline publish source identity is negative.",
+  "context": "Journal command-line text for pipeline publish source identity is negative.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2cf1eac5b0d57c751899aadc1133e24762fed4204a73512f4a82457a0be65683",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -251,7 +251,13 @@ pub(super) fn install_file(
     {
         return Err(io_error(
             path,
-            io::Error::new(io::ErrorKind::InvalidInput, "mode exceeds 0o777"),
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.mode.exceeds.o",
+                    [],
+                ),
+            ),
         ));
     }
     let dest_str = path.to_str().ok_or_else(|| {
@@ -259,7 +265,10 @@ pub(super) fn install_file(
             path,
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "publication path is not valid UTF-8",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.publication.path.is.not.valid.utf",
+                    [],
+                ),
             ),
         )
     })?;
@@ -268,7 +277,10 @@ pub(super) fn install_file(
             path,
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "publication path is not valid UTF-8",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.publication.path.is.not.valid.utf",
+                    [],
+                ),
             ),
         )
     })?;
@@ -277,14 +289,23 @@ pub(super) fn install_file(
             path,
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "destination has no normal name",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.destination.has.no.normal.name",
+                    [],
+                ),
             ),
         ));
     }
     if temporary_path.file_name().is_none() {
         return Err(io_error(
             path,
-            io::Error::new(io::ErrorKind::InvalidInput, "source has no normal name"),
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.source.has.no.normal.name",
+                    [],
+                ),
+            ),
         ));
     }
     parse_publication_path(src_str).map_err(|error| io_error(path, io::Error::other(error)))?;
@@ -328,7 +349,10 @@ pub(super) fn install_file(
             path,
             src_cap.leaf_name(),
             &source_file,
-            io::Error::other("source and destination are on different volumes"),
+            io::Error::other(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.publish.source.and.destination.are.on.different.volumes",
+                [],
+            )),
         ));
     }
 
@@ -351,7 +375,10 @@ pub(super) fn install_file(
             path,
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "source and destination name the same file",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.source.and.destination.name.the.same.file",
+                    [],
+                ),
             ),
         ));
     }
@@ -363,7 +390,10 @@ pub(super) fn install_file(
                 path,
                 io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "destination already identifies the source file",
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.describe.pipeline.publish.destination.already.identifies.the.source.file",
+                        [],
+                    ),
                 ),
             ));
         }
@@ -373,7 +403,10 @@ pub(super) fn install_file(
                 path,
                 src_cap.leaf_name(),
                 &source_file,
-                io::Error::other("destination is not a regular file"),
+                io::Error::other(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.destination.is.not.a.regular.file",
+                    [],
+                )),
             ));
         }
         Ok(DestObservation::Reparse) => {
@@ -381,7 +414,10 @@ pub(super) fn install_file(
                 path,
                 src_cap.leaf_name(),
                 &source_file,
-                io::Error::other("destination is a reparse point"),
+                io::Error::other(solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.destination.is.a.reparse.point",
+                    [],
+                )),
             ));
         }
         Err(source) => {
@@ -471,7 +507,13 @@ pub(super) fn install_file(
         path,
         src_cap.leaf_name(),
         &source_file,
-        io::Error::new(io::ErrorKind::TimedOut, "install publication exhausted"),
+        io::Error::new(
+            io::ErrorKind::TimedOut,
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.publish.install.publication.exhausted",
+                [],
+            ),
+        ),
     ))
 }
 
@@ -493,7 +535,10 @@ fn admit_before_move(
     let live = file_identity(source_file.as_raw_handle()).map_err(PreMoveFailure::Cleanup)?;
     if live != source_identity {
         return Err(PreMoveFailure::Cleanup(io::Error::other(
-            "source identity changed before publication",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.publish.source.identity.changed.before.publication",
+                [],
+            ),
         )));
     }
 
@@ -507,7 +552,10 @@ fn admit_before_move(
     {
         return Err(PreMoveFailure::AliasNoCleanup(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "destination already identifies the source file",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.publish.destination.already.identifies.the.source.file",
+                [],
+            ),
         )));
     }
 
@@ -517,11 +565,17 @@ fn admit_before_move(
         if dest_matches_admitted(&dest_name, dest_state) {
             return Err(PreMoveFailure::Cleanup(io::Error::new(
                 io::ErrorKind::NotFound,
-                "source name is absent before publication",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.source.name.is.absent.before.publication",
+                    [],
+                ),
             )));
         }
         return Err(PreMoveFailure::Cleanup(io::Error::other(
-            "source name changed before publication",
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.describe.pipeline.publish.source.name.changed.before.publication",
+                [],
+            ),
         )));
     }
 
@@ -529,7 +583,10 @@ fn admit_before_move(
         return Ok(());
     }
     Err(PreMoveFailure::Cleanup(io::Error::other(
-        "destination changed during publication",
+        solstone_core_cli_copy::MessageDetail::message(
+            "journal.cli.describe.pipeline.publish.destination.changed.during.publication",
+            [],
+        ),
     )))
 }
 
@@ -648,7 +705,10 @@ fn finish_published(
             operation: "observe installed destination after move",
             source: io::Error::new(
                 io::ErrorKind::InvalidData,
-                "published destination identity does not match the live source",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.published.destination.identity.does.not.match.the.live.source",
+                    [],
+                ),
             ),
         }),
         Ok(DestObservation::Absent) => Err(AtomicWriteError::PublicationUncertain {
@@ -656,7 +716,10 @@ fn finish_published(
             operation: "observe installed destination after move",
             source: io::Error::new(
                 io::ErrorKind::NotFound,
-                "published destination name is absent",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.published.destination.name.is.absent",
+                    [],
+                ),
             ),
         }),
         Ok(DestObservation::Directory | DestObservation::Reparse) => {
@@ -665,7 +728,10 @@ fn finish_published(
                 operation: "observe installed destination after move",
                 source: io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "published destination is not a regular file",
+                    solstone_core_cli_copy::MessageDetail::message(
+                        "journal.cli.describe.pipeline.publish.published.destination.is.not.a.regular.file",
+                        [],
+                    ),
                 ),
             })
         }

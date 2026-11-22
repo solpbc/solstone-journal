@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline record parent plain.",
+  "context": "Journal command-line text for pipeline record parent plain.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "712ec1b3510a3dedeefa7d0a01b315b31ce52f65e26e17939413b946b33ad367",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

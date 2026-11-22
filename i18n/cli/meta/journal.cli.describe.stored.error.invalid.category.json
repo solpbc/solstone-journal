@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for stored error invalid category.",
+  "context": "Journal command-line text for stored error invalid category.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "category",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7e2e5e0e10235b095ebf1dcffda0c3339db1b87cb5a34f66b11456ca3272259f",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "format",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

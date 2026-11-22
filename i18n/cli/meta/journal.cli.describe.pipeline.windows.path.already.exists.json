@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path already exists.",
+  "context": "Journal command-line text for pipeline windows path already exists.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "component",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e341146257630b45ba5eb6cc41c7ac3c24d0d8c728a2b51c10412be617e9dc48",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

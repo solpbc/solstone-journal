@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline retry io parent reparse.",
+  "context": "Journal command-line text for pipeline retry io parent reparse.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "76aef08ad4ec47a492da45da674b4fae2910e515faaf00a421058386fc3eb635",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

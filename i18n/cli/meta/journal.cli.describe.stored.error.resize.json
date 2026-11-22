@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stored error resize.",
+  "context": "Journal command-line text for stored error resize.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c473c2338bcd40ff3a804b94b9d87adaae501dc67b24c0d9247bf5ff4d319a1a",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

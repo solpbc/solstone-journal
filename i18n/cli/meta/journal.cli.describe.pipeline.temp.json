@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline temp.",
+  "context": "Journal command-line text for pipeline temp.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ea68f47bd8ec29d2ae0014e6684317303a26f5c29c83b37febb8b750cdb9bc5",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

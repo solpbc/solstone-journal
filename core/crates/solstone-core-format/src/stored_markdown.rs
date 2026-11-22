@@ -12,7 +12,69 @@ use solstone_core_journal_io::{
     AtomicWriteOptions, JournalRoot, atomic_replace, media::MediaDirectory,
 };
 const ENGLISH: &str = solstone_core_cli_copy::ENGLISH;
-const MAX_RECEIPT: usize = 1 << 20;
+pub const MAX_RECEIPT: usize = 1 << 20;
+
+pub fn screen_extraction_bound_note(locale: &str) -> String {
+    solstone_core_cli_copy::render_for(locale, "journal.cli.describe.stored.note.bounded", &[])
+}
+
+/// Bind only the suffix that this writer added, retaining the original Markdown for raw readers.
+pub fn set_screen_extraction(
+    row: &mut serde_json::Value,
+    category: &str,
+    value: serde_json::Value,
+    bounded: bool,
+) {
+    if let Some(receipts) = row
+        .get_mut("bounded_extractions")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        receipts.remove(category);
+    }
+    if bounded && let Some(text) = value.as_str() {
+        if !row
+            .get("bounded_extractions")
+            .is_some_and(serde_json::Value::is_object)
+        {
+            row["bounded_extractions"] = serde_json::json!({});
+        }
+        row["bounded_extractions"][category] =
+            format!("{:x}", Sha256::digest(text.as_bytes())).into();
+    }
+    row["content"][category] = value;
+}
+
+pub fn project_screen_extractions(
+    row: &mut serde_json::Map<String, serde_json::Value>,
+    locale: &str,
+) {
+    if locale == ENGLISH {
+        return;
+    }
+    let Some(serde_json::Value::Object(receipts)) = row.remove("bounded_extractions") else {
+        return;
+    };
+    let Some(content) = row
+        .get_mut("content")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    let note = screen_extraction_bound_note(ENGLISH);
+    let shown = screen_extraction_bound_note(locale);
+    for (category, digest) in receipts {
+        let Some(serde_json::Value::String(text)) = content.get_mut(&category) else {
+            continue;
+        };
+        if text.ends_with(&note)
+            && text[..text.len() - note.len()].ends_with("\n\n")
+            && digest.as_str() == Some(format!("{:x}", Sha256::digest(text.as_bytes())).as_str())
+        {
+            text.truncate(text.len() - note.len());
+            text.push_str(&shown);
+        }
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "message", rename_all = "snake_case")]
@@ -34,6 +96,11 @@ pub enum Message<T = String> {
     },
     PartialStory,
     TerminalNotice,
+    ScreenOcrNotice,
+    ScreenOcrHeading {
+        offset_ms: i64,
+        category: T,
+    },
     TerminalClock {
         offset_ms: i64,
     },
@@ -57,6 +124,14 @@ impl<T> Message<T> {
             Self::Entities => Message::Entities,
             Self::PartialInput => Message::PartialInput,
             Self::PartialStory => Message::PartialStory,
+            Self::ScreenOcrNotice => Message::ScreenOcrNotice,
+            Self::ScreenOcrHeading {
+                offset_ms,
+                category,
+            } => Message::ScreenOcrHeading {
+                offset_ms: *offset_ms,
+                category: f(category)?,
+            },
             Self::TerminalNotice => Message::TerminalNotice,
             Self::Speaker { number } => Message::Speaker {
                 number: number.clone(),
@@ -211,6 +286,37 @@ impl Message {
                 "journal.cli.think.markdown.partial.story",
                 &[],
             ),
+            Self::ScreenOcrNotice => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.describe.stored.note.ocr",
+                &[],
+            ),
+            Self::ScreenOcrHeading {
+                offset_ms,
+                category,
+            } => {
+                let clock = segment
+                    .and_then(|s| crate::content::screen_text::screen_text_clock(s, *offset_ms))
+                    .unwrap_or_else(|| crate::content::screen_text::screen_text_minute(*offset_ms));
+                let label = if locale == ENGLISH {
+                    None
+                } else if category == "unknown" {
+                    Some(solstone_core_window_catalog::text(
+                        locale,
+                        "journal.window.shared.status.pane.visible.text.unknown",
+                    ))
+                } else {
+                    solstone_core_window_catalog::screen_category_label(locale, category)
+                };
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.describe.stored.ocr.heading",
+                    [
+                        ("clock", &clock),
+                        ("category", &label.as_deref().unwrap_or(category)),
+                    ],
+                )
+            }
             Self::TerminalNotice => solstone_core_cli_copy::render_for(
                 locale,
                 "journal.cli.think.markdown.terminal.notice",
@@ -420,11 +526,20 @@ impl Document {
     /// A missing or torn companion leaves the English document directly readable.
     pub fn save_display_receipt(&self, path: &Path) -> std::io::Result<()> {
         let receipt_path = path.with_extension("md.display");
-        if self.spans.is_empty() {
-            return match std::fs::remove_file(receipt_path) {
+        if let Some(bytes) = self.display_receipt_bytes()? {
+            atomic_replace(&receipt_path, &bytes, AtomicWriteOptions::default())
+                .map_err(std::io::Error::other)
+        } else {
+            match std::fs::remove_file(receipt_path) {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
                 result => result,
-            };
+            }
+        }
+    }
+
+    pub fn display_receipt_bytes(&self) -> std::io::Result<Option<Vec<u8>>> {
+        if self.spans.is_empty() {
+            return Ok(None);
         }
         let spans = self
             .spans
@@ -457,8 +572,7 @@ impl Document {
                 "display receipt exceeds its read limit",
             ));
         }
-        atomic_replace(&receipt_path, &bytes, AtomicWriteOptions::default())
-            .map_err(std::io::Error::other)
+        Ok(Some(bytes))
     }
 }
 

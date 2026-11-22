@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline progress.",
+  "context": "Journal command-line text for pipeline progress.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70d8f4e20a32cb2a33661b041bd5bd81045b1e43e3c01eb747a8e9b6c1fd6c4b",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

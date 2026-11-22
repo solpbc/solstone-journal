@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline source bytes.",
+  "context": "Journal command-line text for pipeline source bytes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b2fe03ecffbfd7ed12d2528a15d4da7bb4a7dc0d8e6ca6c22a4330b219527b8e",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "ocr",
+      "kind": "accepted-input",
+      "value": "OCR"
+    }
+  ]
+}

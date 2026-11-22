@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for settings object.",
+  "context": "Journal command-line text for settings object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "setting",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c28cccea6d1aa8f4cac18a6c4b9a8490d88bfafc227f6f8c5a714304aa6de281",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

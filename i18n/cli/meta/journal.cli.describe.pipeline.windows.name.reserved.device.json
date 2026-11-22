@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline windows name reserved device.",
+  "context": "Journal command-line text for pipeline windows name reserved device.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a4b5a0737e8e1b043f7a0256263645a82120ace33dfdd091c9de9126e9d0a875",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "windows",
+      "kind": "mark-word",
+      "value": "Windows"
+    }
+  ]
+}

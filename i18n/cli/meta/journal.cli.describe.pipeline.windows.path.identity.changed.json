@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path identity changed.",
+  "context": "Journal command-line text for pipeline windows path identity changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "level",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eb9c26e28ced239991613727364bf159409538470e38165a009894af51cae3cb",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

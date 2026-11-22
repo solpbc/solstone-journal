@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for stored ocr heading.",
+  "context": "Journal command-line text for stored ocr heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "clock",
+      "type": "string"
+    },
+    {
+      "name": "category",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "46406b0fdb02e17955ab94cb61d579197706353d50de2b74c4be77eb2b6b31c6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

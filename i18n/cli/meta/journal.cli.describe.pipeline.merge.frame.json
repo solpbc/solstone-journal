@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline merge frame.",
+  "context": "Journal command-line text for pipeline merge frame.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "126236550b8a23a978ae7e5c95c053ee05dd87d37acb792f301a4b45498e6228",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for pipeline flat revalidate flat directory.",
+  "context": "Journal command-line text for pipeline flat revalidate flat directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c06f27399a953a11ee69e8084da270446178a4f4c18a501f472a57eb3f5a2470",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

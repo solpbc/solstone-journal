@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for stored error empty.",
+  "context": "Journal command-line text for stored error empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "category",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e5c155f22d0070583abdd44e77dfeab5cdeeedcefddfba254c357c63aba0fe39",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

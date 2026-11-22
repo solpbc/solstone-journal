@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline publish leaf.",
+  "context": "Journal command-line text for pipeline publish leaf.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f9edc828bc884b5689aacff2ca15e349f95d8c8e622ad3f5bb521f00acfdc4e0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

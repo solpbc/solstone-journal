@@ -43,26 +43,10 @@ pub async fn get(locale: &str, journal_root: PathBuf) -> Response {
 }
 
 fn category_label(locale: &str, name: &str, metadata: &Value) -> Value {
-    let message = match name {
-        "browsing" => "journal.window.settings.vision.category.label.browsing",
-        "calendar" => "journal.window.settings.vision.category.label.calendar",
-        "code" => "journal.window.settings.vision.category.label.code",
-        "gaming" => "journal.window.settings.vision.category.label.gaming",
-        "media" => "journal.window.settings.vision.category.label.media",
-        "meeting" => "journal.window.settings.vision.category.label.meeting",
-        "messaging" => "journal.window.settings.vision.category.label.messaging",
-        "productivity" => "journal.window.settings.vision.category.label.productivity",
-        "reading" => "journal.window.settings.vision.category.label.reading",
-        "social" => "journal.window.settings.vision.category.label.social",
-        "terminal" => "journal.window.settings.vision.category.label.terminal",
-        _ => {
-            return metadata
-                .get("label")
-                .cloned()
-                .unwrap_or_else(|| json!(name));
-        }
-    };
-    json!(text(locale, message))
+    solstone_core_convey_http::window_catalog::screen_category_label(locale, name)
+        .map(Value::String)
+        .or_else(|| metadata.get("label").cloned())
+        .unwrap_or_else(|| json!(name))
 }
 
 pub async fn update(

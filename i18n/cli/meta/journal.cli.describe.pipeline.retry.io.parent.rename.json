@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline retry io parent rename.",
+  "context": "Journal command-line text for pipeline retry io parent rename.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8e23cceda32400a5bc6c8097df451d7b4394cbba7452121931d2c4b5df2b23c2",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

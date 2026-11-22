@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for file encoding.",
+  "context": "Journal command-line text for file encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5519c1e0554f83ee74608c7ee8d82cb4cab45186f7ac1bc215b87fce7ac0ecb7",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

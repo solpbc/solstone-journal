@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline source identity.",
+  "context": "Journal command-line text for pipeline source identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1139f75a891046a418b77dc87e8778e8c7da1c1d91137a20c8b83297436757c9",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "ocr",
+      "kind": "accepted-input",
+      "value": "OCR"
+    }
+  ]
+}

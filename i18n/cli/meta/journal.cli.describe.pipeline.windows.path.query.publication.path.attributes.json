@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path query publication path attributes.",
+  "context": "Journal command-line text for pipeline windows path query publication path attributes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6f679fd1f184633718b7b2ee1dee374963cc556adc7d090db1e17fbb36f4f05e",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

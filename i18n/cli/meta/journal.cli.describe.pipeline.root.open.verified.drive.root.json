@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline root open verified drive root.",
+  "context": "Journal command-line text for pipeline root open verified drive root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "16602f557ab2285cb4724a7ae5a8060d08ea79a7c5128f7e09864db441725f64",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

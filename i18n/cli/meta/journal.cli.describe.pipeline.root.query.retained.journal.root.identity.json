@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline root query retained journal root identity.",
+  "context": "Journal command-line text for pipeline root query retained journal root identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dd1129d88cdf4fab047f03d106fc5437a5c98b660fff83bb1fc5ead22b44bfda",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

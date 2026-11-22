@@ -4,6 +4,7 @@
 //! Durable private files for the short Describe publication boundary.
 
 use sha2::{Digest, Sha256};
+use solstone_core_cli_copy::MessageDetail;
 use solstone_core_journal_io::JournalRoot;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, Metadata};
@@ -11,6 +12,42 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+struct Cancelled;
+
+impl std::fmt::Debug for Cancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.to_string(), f)
+    }
+}
+
+impl std::fmt::Display for Cancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&solstone_core_cli_copy::render_for(
+            solstone_core_cli_copy::ENGLISH,
+            "journal.cli.describe.cancelled",
+            &[],
+        ))
+    }
+}
+impl std::error::Error for Cancelled {}
+
+pub(crate) fn cancelled() -> io::Error {
+    io::Error::other(Cancelled)
+}
+
+pub(crate) fn is_cancelled(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|source| source.is::<Cancelled>())
+}
+
+pub(crate) fn message_detail(error: &io::Error) -> MessageDetail {
+    if is_cancelled(error) {
+        return MessageDetail::message("journal.cli.describe.cancelled", []);
+    }
+    solstone_core_segment::output_attempt::claim_detail(error)
+}
 
 static NEXT_STAGE: AtomicU64 = AtomicU64::new(0);
 
@@ -38,11 +75,7 @@ impl Write for CheckedWriter<'_> {
     }
 }
 fn check(stop: &dyn Fn() -> bool) -> io::Result<()> {
-    if stop() {
-        Err(io::Error::other("describe cancelled"))
-    } else {
-        Ok(())
-    }
+    if stop() { Err(cancelled()) } else { Ok(()) }
 }
 
 impl StagedFile {
@@ -67,15 +100,19 @@ impl StagedFile {
         write: impl FnOnce(&mut dyn Write) -> io::Result<()>,
     ) -> io::Result<Self> {
         check(stop)?;
-        let parent = JournalRoot::open(
-            destination
-                .parent()
-                .ok_or_else(|| io::Error::other("publication parent missing"))?,
-        )
+        let parent = JournalRoot::open(destination.parent().ok_or_else(|| {
+            io::Error::other(MessageDetail::message(
+                "journal.cli.describe.pipeline.publish.parent",
+                [],
+            ))
+        })?)
         .map_err(io::Error::other)?;
-        let name = destination
-            .file_name()
-            .ok_or_else(|| io::Error::other("publication leaf missing"))?;
+        let name = destination.file_name().ok_or_else(|| {
+            io::Error::other(MessageDetail::message(
+                "journal.cli.describe.pipeline.publish.leaf",
+                [],
+            ))
+        })?;
         Self::prepare_in(Arc::new(parent), name, stop, write)
     }
 
@@ -99,9 +136,10 @@ impl StagedFile {
                 Some(std::path::Component::Normal(_))
             )
         {
-            return Err(io::Error::other(
-                "publication leaf is not a plain component",
-            ));
+            return Err(io::Error::other(MessageDetail::message(
+                "journal.cli.describe.pipeline.publish.component",
+                [],
+            )));
         }
         check(stop)?;
         let destination = destination.to_owned();
@@ -161,7 +199,10 @@ impl StagedFile {
                 if solstone_core_journal_io::windows_file_identity(&reader)?
                     != solstone_core_journal_io::windows_file_identity(&file)?
                 {
-                    return Err(io::Error::other("prepared publication identity changed"));
+                    return Err(io::Error::other(MessageDetail::message(
+                        "journal.cli.describe.pipeline.publish.identity",
+                        [],
+                    )));
                 }
                 Some(reader)
             };
@@ -193,7 +234,7 @@ impl StagedFile {
             Err(error) => {
                 remove_owned_stage(parent.as_ref(), &stage, &file);
                 let error = if observed_cancel.get() {
-                    io::Error::other("describe cancelled")
+                    cancelled()
                 } else {
                     error
                 };
@@ -211,7 +252,10 @@ impl StagedFile {
         let opened = self.file.metadata()?;
         if !named.file_type().is_file() || !same(&named, &self.facts) || !same(&opened, &self.facts)
         {
-            return Err(io::Error::other("prepared publication changed"));
+            return Err(io::Error::other(MessageDetail::message(
+                "journal.cli.describe.pipeline.publish.changed",
+                [],
+            )));
         }
         #[cfg(windows)]
         {
@@ -219,7 +263,10 @@ impl StagedFile {
             if solstone_core_journal_io::windows_file_identity(&named)?
                 != solstone_core_journal_io::windows_file_identity(&self.file)?
             {
-                return Err(io::Error::other("prepared publication identity changed"));
+                return Err(io::Error::other(MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.identity",
+                    [],
+                )));
             }
         }
         Ok(())
@@ -230,9 +277,10 @@ impl StagedFile {
         let destination = self.parent.canonical_path().join(&self.destination);
         match fs::symlink_metadata(&destination) {
             Ok(metadata) if !metadata.file_type().is_file() => {
-                return Err(io::Error::other(
-                    "publication destination is not a plain file",
-                ));
+                return Err(io::Error::other(MessageDetail::message(
+                    "journal.cli.describe.pipeline.publish.destination",
+                    [],
+                )));
             }
             Ok(_) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -257,7 +305,14 @@ impl StagedFile {
             // Match JournalIO's existing post-publication directory-sync policy:
             // the rename is already visible and must finish as a committed job.
             if let Err(error) = nix::unistd::fsync(self.parent.as_ref()) {
-                log::warn!("describe publication parent sync failed: {error}");
+                log::warn!(
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        crate::terminal_locale(),
+                        "journal.cli.describe.pipeline.publish.sync",
+                        [("error", &error)]
+                    )
+                );
             }
             Ok(())
         }
@@ -340,7 +395,10 @@ impl SourceWitness {
     ) -> io::Result<Self> {
         let named = fs::symlink_metadata(path)?;
         if !named.file_type().is_file() {
-            return Err(io::Error::other("OCR source is not a plain file"));
+            return Err(io::Error::other(MessageDetail::message(
+                "journal.cli.describe.pipeline.source.plain",
+                [],
+            )));
         }
         #[cfg(unix)]
         let mut file = File::open(path)?;
@@ -356,7 +414,10 @@ impl SourceWitness {
         };
         let facts = file.metadata()?;
         if !same(&named, &facts) {
-            return Err(io::Error::other("OCR source changed while opening"));
+            return Err(io::Error::other(MessageDetail::message(
+                "journal.cli.describe.pipeline.source.open",
+                [],
+            )));
         }
         let mut hash = Sha256::new();
         let mut bytes = [0u8; 64 * 1024];
@@ -369,7 +430,10 @@ impl SourceWitness {
             hash.update(&bytes[..count]);
         }
         if format!("{:x}", hash.finalize()) != expected_sha256 {
-            return Err(io::Error::other("OCR source bytes changed"));
+            return Err(io::Error::other(MessageDetail::message(
+                "journal.cli.describe.pipeline.source.bytes",
+                [],
+            )));
         }
         let witness = Self {
             path: path.to_owned(),
@@ -385,7 +449,10 @@ impl SourceWitness {
             || !same(&named, &self.facts)
             || !same(&self.file.metadata()?, &self.facts)
         {
-            return Err(io::Error::other("OCR source changed before publication"));
+            return Err(io::Error::other(MessageDetail::message(
+                "journal.cli.describe.pipeline.source.changed",
+                [],
+            )));
         }
         #[cfg(windows)]
         {
@@ -393,7 +460,10 @@ impl SourceWitness {
             if solstone_core_journal_io::windows_file_identity(&current)?
                 != solstone_core_journal_io::windows_file_identity(&self.file)?
             {
-                return Err(io::Error::other("OCR source identity changed"));
+                return Err(io::Error::other(MessageDetail::message(
+                    "journal.cli.describe.pipeline.source.identity",
+                    [],
+                )));
             }
         }
         Ok(())
@@ -414,7 +484,13 @@ mod tests {
             stop.set(true);
             Ok(())
         });
-        assert!(result.is_err());
+        let Err(error) = result else {
+            panic!("the checkpoint must stop staging");
+        };
+        let same_words = io::Error::other(error.to_string());
+        assert!(is_cancelled(&error));
+        assert!(!is_cancelled(&same_words));
+        assert_eq!(format!("{error:?}"), format!("{same_words:?}"));
         assert_eq!(fs::read(&output).unwrap(), b"prior reading");
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
     }

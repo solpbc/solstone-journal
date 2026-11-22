@@ -1557,18 +1557,21 @@ pub(crate) fn update_frame_diagnostics(sidecar: &mut PrivateSidecar, rows: &[Val
     sidecar.word_overlap = combined_frame_overlap(sidecar);
 }
 
+#[cfg(test)]
 const PROVENANCE: &str = "text recognized from your screens. it may contain recognition errors. this says what was visible, not what you read, typed or did. masking passwords and other secrets is best effort; your redaction rules do not apply.\n";
 
-fn record_text(lines: &[FoldedLine]) -> String {
-    use solstone_core_format::content::screen_text::{append_screen_text_line, screen_text_minute};
+fn record_text(lines: &[FoldedLine]) -> solstone_core_format::stored_markdown::Document {
+    use solstone_core_format::content::screen_text::screen_text_minute;
+    use solstone_core_format::stored_markdown::{Document, Message};
+    let mut record = Document::default();
     if lines.is_empty() {
-        return String::new();
+        return record;
     }
-    let mut record = String::from(PROVENANCE);
+    record.push_message(Message::ScreenOcrNotice);
+    record.push_str("\n");
     let mut previous = None;
     for line in lines {
-        let clock = screen_text_minute(line.segment_offset_ms);
-        if clock.is_empty() {
+        if screen_text_minute(line.segment_offset_ms).is_empty() {
             continue;
         }
         let group = (
@@ -1578,12 +1581,60 @@ fn record_text(lines: &[FoldedLine]) -> String {
             line.category.as_str(),
         );
         if previous != Some(group) {
-            record.push_str(&format!("\n## {clock} · {}\n", line.category));
+            record.push_str("\n## ");
+            record.push_message(Message::ScreenOcrHeading {
+                offset_ms: line.segment_offset_ms,
+                category: line.category.clone(),
+            });
+            record.push_str("\n");
             previous = Some(group);
         }
-        append_screen_text_line(&mut record, &line.text);
+        record.push_screen_line(&line.text);
     }
     record
+}
+
+/// Retire the optional presentation metadata before withdrawing the record. The
+/// primary publication must still finish if the optional file is inaccessible.
+fn retire_display(segment: &Path, authority: &dyn Fn() -> io::Result<()>) -> io::Result<()> {
+    use solstone_core_journal_io::JournalRoot;
+    #[cfg(unix)]
+    use solstone_core_journal_io::open_flat_directory_bound as open_bound;
+    #[cfg(windows)]
+    use solstone_core_journal_io::open_windows_flat_directory_bound as open_bound;
+    use std::ffi::OsStr;
+    let root = JournalRoot::open(segment).map_err(io::Error::other)?;
+    let Some(directory) =
+        open_bound(&root, OsStr::new("talents"), segment).map_err(io::Error::other)?
+    else {
+        return Ok(());
+    };
+    let name = OsStr::new("screen_text.md.display");
+    #[cfg(unix)]
+    if let Some(observed) = directory.observe(name).map_err(io::Error::other)?
+        && observed.kind == solstone_core_journal_io::JournalEntryKind::RegularFile
+    {
+        authority()?;
+        directory
+            .remove_observed_entry(&observed)
+            .map_err(io::Error::other)?;
+    }
+    #[cfg(windows)]
+    {
+        // All receipts produced by Document fit in this bound.
+        let limit = solstone_core_format::stored_markdown::MAX_RECEIPT;
+        if let Some(observed) =
+            solstone_core_journal_io::read_windows_observed_file_bounded(&directory, name, limit)
+                .map_err(io::Error::other)?
+        {
+            authority()?;
+            solstone_core_journal_io::remove_windows_observed_file_bounded(
+                &directory, name, &observed, limit,
+            )
+            .map_err(io::Error::other)?;
+        }
+    }
+    Ok(())
 }
 
 /// Called only under segment publication exclusion. An empty replacement
@@ -1596,26 +1647,39 @@ fn publish_record(
     stop: &dyn Fn() -> bool,
 ) -> io::Result<()> {
     if stop() {
-        return Err(io::Error::other("describe cancelled"));
+        return Err(crate::publication::cancelled());
     }
     commit.revalidate()?;
     let directory = segment.join("talents");
     let path = directory.join("screen_text.md");
-    if lines.is_empty() && !path.try_exists()? {
-        return Ok(());
+    if lines.is_empty() {
+        let _ = retire_display(segment, &|| commit.revalidate());
+        if !path.try_exists()? {
+            return Ok(());
+        }
     }
-    let bytes = record_text(lines).into_bytes();
+    let doc = record_text(lines);
+    let bytes = doc.as_bytes();
     let unchanged = fs::symlink_metadata(&path)
         .ok()
         .is_some_and(|metadata| metadata.file_type().is_file())
-        && fs::read(&path).ok().as_deref() == Some(bytes.as_slice());
+        && fs::read(&path).ok().as_deref() == Some(bytes);
     if !unchanged {
-        publish_record_bytes(segment, &directory, &path, &bytes, &|| {
+        publish_record_bytes(segment, &directory, &path, bytes, &|| {
             commit.revalidate().map_err(|error| error.to_string())
         })?;
     }
+    if let Ok(Some(receipt)) = doc.display_receipt_bytes() {
+        let _ = publish_record_bytes(
+            segment,
+            &directory,
+            &path.with_extension("md.display"),
+            &receipt,
+            &|| commit.revalidate().map_err(|error| error.to_string()),
+        );
+    }
     if stop() {
-        return Err(io::Error::other("describe cancelled"));
+        return Err(crate::publication::cancelled());
     }
     commit.revalidate()?;
     solstone_core_indexer_todo::enqueue_path(journal, &path)
@@ -1625,7 +1689,7 @@ fn publish_record(
 fn publish_record_bytes(
     segment: &Path,
     directory: &Path,
-    _path: &Path,
+    path: &Path,
     bytes: &[u8],
     authority: &dyn Fn() -> Result<(), String>,
 ) -> io::Result<()> {
@@ -1648,7 +1712,8 @@ fn publish_record_bytes(
     };
     atomic_replace_bound_checked(
         &child,
-        OsStr::new("screen_text.md"),
+        path.file_name()
+            .expect("screen text and its companion are named"),
         bytes,
         0o600,
         &checkpoint,
@@ -1705,7 +1770,7 @@ fn current_policy(journal: &Path) -> io::Result<CurrentPolicy> {
         Some(_) => return Err(io::Error::other("invalid describe policy")),
     };
     let overrides =
-        crate::selection::parse_category_overrides(categories).map_err(io::Error::other)?;
+        crate::selection::parse_category_overrides_detail(categories).map_err(io::Error::other)?;
     let ignored = CATEGORIES_META
         .iter()
         .filter(|category| {
@@ -1764,6 +1829,7 @@ pub(crate) struct PreparedPublication {
     folded: Option<crate::publication::StagedFile>,
     preparation_error: Option<(io::ErrorKind, String)>,
     record: Option<crate::publication::StagedFile>,
+    display: Option<crate::publication::StagedFile>,
     withdrawal: Option<crate::publication::StagedFile>,
 }
 
@@ -1780,7 +1846,7 @@ impl PreparedPublication {
         if let Some(policy) = policy.as_ref() {
             for cached in load_segment_sidecars(segment) {
                 if stop() {
-                    return Err(io::Error::other("describe cancelled"));
+                    return Err(crate::publication::cancelled());
                 }
                 let name = Path::new(&cached.source_name);
                 if cached.segment_identity != sidecar.segment_identity
@@ -1833,6 +1899,7 @@ impl PreparedPublication {
                 )
             })
             .transpose()?;
+        let mut display = None;
         let stages = (|| -> io::Result<_> {
             let source = sources
                 .iter()
@@ -1854,12 +1921,27 @@ impl PreparedPublication {
                 .as_ref()
                 .map(|parent| {
                     let text = record_text(&folded.lines);
-                    crate::publication::StagedFile::prepare_in(
+                    let record = crate::publication::StagedFile::prepare_in(
                         std::sync::Arc::clone(parent),
                         std::ffi::OsStr::new("screen_text.md"),
                         stop,
                         |writer| writer.write_all(text.as_bytes()),
-                    )
+                    )?;
+                    if let Ok(Some(bytes)) = text.display_receipt_bytes() {
+                        match crate::publication::StagedFile::prepare_in(
+                            std::sync::Arc::clone(parent),
+                            std::ffi::OsStr::new("screen_text.md.display"),
+                            stop,
+                            |writer| writer.write_all(&bytes),
+                        ) {
+                            Ok(file) => display = Some(file),
+                            Err(error) if crate::publication::is_cancelled(&error) => {
+                                return Err(error);
+                            }
+                            Err(_) => {}
+                        }
+                    }
+                    Ok::<_, io::Error>(record)
                 })
                 .transpose()?;
             Ok((sidecar_file, folded_file, record))
@@ -1868,8 +1950,8 @@ impl PreparedPublication {
             Ok((sidecar_file, folded_file, record)) => {
                 (sidecar_file, Some(folded_file), record, None)
             }
-            Err(error) if stop() || error.to_string() == "describe cancelled" => {
-                return Err(io::Error::other("describe cancelled"));
+            Err(error) if stop() || crate::publication::is_cancelled(&error) => {
+                return Err(crate::publication::cancelled());
             }
             Err(error) => {
                 siblings.clear();
@@ -1877,7 +1959,7 @@ impl PreparedPublication {
             }
         };
         if stop() {
-            return Err(io::Error::other("describe cancelled"));
+            return Err(crate::publication::cancelled());
         }
         Ok(Self {
             _policy: policy,
@@ -1888,6 +1970,7 @@ impl PreparedPublication {
             folded: folded_file,
             preparation_error,
             record,
+            display,
             withdrawal,
         })
     }
@@ -1916,17 +1999,26 @@ impl PreparedPublication {
             return Err(io::Error::new(*kind, message.clone()));
         }
         let result = (|| {
-            for file in self
-                .sidecar
-                .iter()
-                .chain(self.folded.iter())
-                .chain(self.record.iter())
-            {
+            for file in self.sidecar.iter().chain(self.folded.iter()) {
                 commit.revalidate()?;
                 file.install()?;
             }
-            if self.record.is_some() {
+            if self.display.is_none() {
+                let _ = retire_display(&self.segment, &|| {
+                    commit.revalidate()?;
+                    if let Some(record) = &self.record {
+                        record.validate_stage()?;
+                    }
+                    Ok(())
+                });
+            }
+            if let Some(record) = &self.record {
                 commit.revalidate()?;
+                record.install()?;
+                commit.revalidate()?;
+                if let Some(display) = self.display.as_ref() {
+                    let _ = display.validate_stage().and_then(|()| display.install());
+                }
                 solstone_core_indexer_todo::enqueue_path(
                     &self.journal,
                     &self.segment.join("talents/screen_text.md"),
@@ -1946,10 +2038,21 @@ impl PreparedPublication {
             && error.kind() != io::ErrorKind::NotFound
         {
             log::warn!(
-                "screen OCR stale aggregate could not be retired: {:?}",
-                error.kind()
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::terminal_locale(),
+                    "journal.cli.describe.pipeline.ocr.retire",
+                    [("kind", &format!("{:?}", error.kind()))]
+                )
             );
         }
+        let _ = retire_display(&self.segment, &|| {
+            commit.revalidate()?;
+            if let Some(withdrawal) = &self.withdrawal {
+                withdrawal.validate_stage()?;
+            }
+            Ok(())
+        });
         if let Some(withdrawal) = &self.withdrawal {
             commit.revalidate()?;
             withdrawal.install()?;
@@ -1980,7 +2083,12 @@ fn record_directory(
         let parent = JournalRoot::open(&directory).map_err(io::Error::other)?;
         child.revalidate().map_err(io::Error::other)?;
         if parent.identity() != child.identity() {
-            return Err(io::Error::other("screen text parent changed"));
+            return Err(io::Error::other(
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.record.parent.changed",
+                    [],
+                ),
+            ));
         }
         Ok(std::sync::Arc::new(parent))
     }
@@ -1991,7 +2099,10 @@ fn record_directory(
         }
         if !fs::symlink_metadata(&directory)?.file_type().is_dir() {
             return Err(io::Error::other(
-                "screen text parent is not a plain directory",
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.describe.pipeline.record.parent.plain",
+                    [],
+                ),
             ));
         }
         Ok(std::sync::Arc::new(

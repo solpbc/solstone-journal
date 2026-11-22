@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for settings importance.",
+  "context": "Journal command-line text for settings importance.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "setting",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4f6412737db0f38d8a7b15e25f0843b4cd18dc1d256fd062855949abfac8c646",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "ignore",
+      "kind": "accepted-input",
+      "value": "ignore"
+    },
+    {
+      "name": "normal",
+      "kind": "accepted-input",
+      "value": "normal"
+    },
+    {
+      "name": "high",
+      "kind": "accepted-input",
+      "value": "high"
+    },
+    {
+      "name": "low",
+      "kind": "accepted-input",
+      "value": "low"
+    }
+  ]
+}

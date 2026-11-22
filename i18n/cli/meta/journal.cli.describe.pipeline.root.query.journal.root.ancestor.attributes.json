@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline root query journal root ancestor attributes.",
+  "context": "Journal command-line text for pipeline root query journal root ancestor attributes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7f16773c26c70c85898b66399e492d4a2fa622c62ab6b682dca8600fe29c60a1",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

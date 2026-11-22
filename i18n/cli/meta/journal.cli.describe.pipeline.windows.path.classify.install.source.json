@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path classify install source.",
+  "context": "Journal command-line text for pipeline windows path classify install source.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "84f8b89b347992b48faac78c1e0ee9ebb5f3cf372e398a1a55bd597aca9a97aa",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

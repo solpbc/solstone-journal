@@ -15,7 +15,8 @@ use axum::{
 use crate::coalesce::ResponseLocale;
 
 pub use solstone_core_window_catalog::{
-    ENGLISH, Value, escape_html, html, language_tag, render, resolve_table, strings, text,
+    ENGLISH, Value, escape_html, html, language_tag, render, resolve_table, screen_category_label,
+    strings, text,
 };
 
 pub fn response_locale(locale: Option<Extension<ResponseLocale>>) -> &'static str {

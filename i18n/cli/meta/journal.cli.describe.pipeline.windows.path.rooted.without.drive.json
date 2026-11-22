@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline windows path rooted without drive.",
+  "context": "Journal command-line text for pipeline windows path rooted without drive.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "03402c2e1d9016e3443bac85edbb48e7ef5847428bbf297e7c3bb217b99e2067",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline windows path path too long.",
+  "context": "Journal command-line text for pipeline windows path path too long.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1c1f2f3e04e50791fc35137e616723f012b14e4d27debea7d18048b7e66643cf",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

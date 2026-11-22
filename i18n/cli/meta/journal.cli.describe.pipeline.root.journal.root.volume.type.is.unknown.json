@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline root journal root volume type is unknown.",
+  "context": "Journal command-line text for pipeline root journal root volume type is unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "620658b66b5b7f3137cbd8b57884e733346657402420fb666640f492cfbe19b3",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

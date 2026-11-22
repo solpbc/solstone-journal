@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path resolve publication path current directory.",
+  "context": "Journal command-line text for pipeline windows path resolve publication path current directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5f17386398ba38c2302eab8eb70fcf98f32bbf3bbde7a76304a4158bd15448d6",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

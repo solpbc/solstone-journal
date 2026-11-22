@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for path config.",
+  "context": "Journal command-line text for path config.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d4b644bd40af8fef107e0c620f65dc5dc7cd922c2e54f5de2a2192e864465f31",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline publish mode exceeds o.",
+  "context": "Journal command-line text for pipeline publish mode exceeds o.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d052dfa6c5dba7800389a3ed028e48b667b4127a3e4219d42a2653093a36701f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "octal",
+      "kind": "accepted-input",
+      "value": "0o777"
+    }
+  ]
+}

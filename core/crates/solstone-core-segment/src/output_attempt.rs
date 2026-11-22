@@ -70,27 +70,8 @@ pub fn claim_detail(error: &io::Error) -> MessageDetail {
     if let Some(reason) = cause.downcast_ref::<FixedRefusal>() {
         return MessageDetail::message(reason.0, []);
     }
-    if let Some(reason) = cause.downcast_ref::<solstone_core_journal_io::JournalRootError>() {
-        use solstone_core_journal_io::JournalRootError as Root;
-        return match reason {
-            Root::Invalid { root, reason, .. } => root_reason(reason).context_with(
-                "journal.cli.transcribe.claim.root.invalid",
-                [("path", &root.display())],
-            ),
-            Root::Unsupported { root, reason, .. } => root_reason(reason).context_with(
-                "journal.cli.transcribe.claim.root.unsupported",
-                [("path", &root.display())],
-            ),
-            Root::Io {
-                operation, source, ..
-            } => MessageDetail::message(
-                "journal.cli.transcribe.claim.root.io",
-                [("operation", &(operation)), ("reason", &(source))],
-            ),
-            Root::Changed => {
-                MessageDetail::message("journal.cli.transcribe.claim.root.changed", [])
-            }
-        };
+    if let Some(details) = solstone_core_journal_io::cli_diagnostics::io_message(error) {
+        return details;
     }
     if let Some(reason) = cause.downcast_ref::<ExistingParentLockError>() {
         use ExistingParentLockError as Lock;
@@ -148,31 +129,6 @@ pub fn claim_detail(error: &io::Error) -> MessageDetail {
         };
     }
     error.to_string().into()
-}
-
-// These are typed root-refusal facts from journal-io, never input or helper text.
-fn root_reason(reason: &'static str) -> MessageDetail {
-    match reason {
-        "journal root does not exist" => {
-            MessageDetail::message("journal.cli.transcribe.claim.root.absent", [])
-        }
-        "journal root is not a directory" => {
-            MessageDetail::message("journal.cli.transcribe.claim.root.directory", [])
-        }
-        "journal root must be absolute" => {
-            MessageDetail::message("journal.cli.transcribe.claim.root.absolute", [])
-        }
-        "canonical journal root has no final component" => {
-            MessageDetail::message("journal.cli.transcribe.claim.root.component", [])
-        }
-        "canonical journal root has a non-UTF-8 ancestor" => {
-            MessageDetail::message("journal.cli.transcribe.claim.root.ancestor", [])
-        }
-        "canonical journal root is not absolute" => {
-            MessageDetail::message("journal.cli.transcribe.claim.root.canonical.absolute", [])
-        }
-        technical => technical.into(),
-    }
 }
 
 fn lock_refusal(error: ExistingParentLockError) -> io::Error {

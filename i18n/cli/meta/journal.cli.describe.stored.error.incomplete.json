@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stored error incomplete.",
+  "context": "Journal command-line text for stored error incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "194958502584869d7fd1740f2ed873a69a7b8937a1f783696051f391b8103969",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

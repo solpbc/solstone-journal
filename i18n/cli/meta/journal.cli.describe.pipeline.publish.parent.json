@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline publish parent.",
+  "context": "Journal command-line text for pipeline publish parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "33b782317d08054b43f8f00f661c846478baf33b66c2839fdab3c933860bded5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

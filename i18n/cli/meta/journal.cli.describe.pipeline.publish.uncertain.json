@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for pipeline publish uncertain.",
+  "context": "Journal command-line text for pipeline publish uncertain.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e197012309f97c7c7557297c16ed62b9c08057b7100a27522e0f30d63812411",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for stored error truncated.",
+  "context": "Journal command-line text for stored error truncated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "category",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a04d9e2127082b11bacbbaf84247fdc0811ecb04dbd909e580ec6bf9ccf8ff6e",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

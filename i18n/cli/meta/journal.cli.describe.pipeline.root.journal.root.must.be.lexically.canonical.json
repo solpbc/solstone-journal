@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline root journal root must be lexically canonical.",
+  "context": "Journal command-line text for pipeline root journal root must be lexically canonical.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3c76844b8053120ab8f39bab09a5fb291e7d3d8ea89a6259f1c91dbc7da2ee3d",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

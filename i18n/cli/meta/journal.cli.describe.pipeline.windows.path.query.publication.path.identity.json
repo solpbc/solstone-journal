@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path query publication path identity.",
+  "context": "Journal command-line text for pipeline windows path query publication path identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "83da707bc046a89857f90d4ba453cecdbc88004edd823849b6c7764b73d96b99",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

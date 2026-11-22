@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline root journal root is on a ram disk.",
+  "context": "Journal command-line text for pipeline root journal root is on a ram disk.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2e4047974723dec4626780abd471fd8a4551a8cda94f3d2de43b1cc5d7b203f3",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "ram",
+      "kind": "accepted-input",
+      "value": "RAM"
+    }
+  ]
+}

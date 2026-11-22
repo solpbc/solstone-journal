@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline root journal root has an invalid portable name.",
+  "context": "Journal command-line text for pipeline root journal root has an invalid portable name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "221bf62d3af10fd1700a3099c6ba0eb1eded9fd3df17482a356686a91fc33b76",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

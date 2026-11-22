@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for pipeline windows path reparse point.",
+  "context": "Journal command-line text for pipeline windows path reparse point.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "component",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fec267f09fc78c4b56c6ddc81ea65e7428bd42b3b7b17dfacaf3b9aac7e6ea24",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

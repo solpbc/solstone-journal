@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline windows name separator.",
+  "context": "Journal command-line text for pipeline windows name separator.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a476a9d31920a40ebb8ab1e98264d83289c07303a88a4197d6f966ad8d316568",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

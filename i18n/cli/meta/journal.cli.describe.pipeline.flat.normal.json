@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline flat normal.",
+  "context": "Journal command-line text for pipeline flat normal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b3e1510d38f5203e3afe524ae92a6cf03ab7aee504abbf4b31abef53cf8cfcd1",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

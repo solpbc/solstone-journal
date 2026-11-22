@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for pipeline root filesystem is not ntfs or refs.",
+  "context": "Journal command-line text for pipeline root filesystem is not ntfs or refs.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cc593e6668ad570d4d604a1759a41d25b6df9a41ce2c7b048087b8144db23302",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "ntfs",
+      "kind": "accepted-input",
+      "value": "NTFS"
+    },
+    {
+      "name": "refs",
+      "kind": "accepted-input",
+      "value": "ReFS"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pipeline retry handler.",
+  "context": "Journal command-line text for pipeline retry handler.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a945fea9668aa4824cdd13d4a3a8886aa7bde0b66cc81244f7fdb3b9c01b9da5",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

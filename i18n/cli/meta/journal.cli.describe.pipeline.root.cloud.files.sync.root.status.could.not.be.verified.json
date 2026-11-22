@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pipeline root cloud files sync root status could not be verified.",
+  "context": "Journal command-line text for pipeline root cloud files sync root status could not be verified.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e8a0b59bcc99dd1cd33a8bea8869aaeb1fb1a47e9ce4085d7af857f1349bdb29",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "cloud_files",
+      "kind": "accepted-input",
+      "value": "Cloud Files"
+    }
+  ]
+}
