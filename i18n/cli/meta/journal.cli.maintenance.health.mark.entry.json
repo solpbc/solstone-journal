@@ -1,0 +1,32 @@
+{
+  "description": "Journal maintenance command: health mark entry.",
+  "context": "Journal maintenance command: health mark entry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f9d7ea5443ecb5fa73fc0ae7285612fd625f129320a12ad393ba5c71e474454a",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "indent",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

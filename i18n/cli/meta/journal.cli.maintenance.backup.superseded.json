@@ -1,0 +1,23 @@
+{
+  "description": "Journal maintenance command: backup superseded.",
+  "context": "Journal maintenance command: backup superseded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "07385ca48590295816fb2708dec5809ef08ef00b4532efd60d42c91b0bbd8b12",
+  "max_length": 142,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "enable",
+      "kind": "command",
+      "value": "solstone journal backup enable"
+    }
+  ]
+}

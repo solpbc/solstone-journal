@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: list status nothere.",
+  "context": "Journal maintenance command: list status nothere.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21c68f8f51b0e89e8346de913cca548e5bf7eca40f1eb0123fdf3fe1832e8565",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

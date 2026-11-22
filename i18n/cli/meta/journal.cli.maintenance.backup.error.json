@@ -1,0 +1,28 @@
+{
+  "description": "Journal maintenance command: backup error.",
+  "context": "Journal maintenance command: backup error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d02c4f6b21f3f37fd09a8dc7eb3d0bf92a5d87d8dfcc0a700d0a1f312fa70009",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reason_field",
+      "kind": "accepted-input",
+      "value": "reason="
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: speakers not admitted.",
+  "context": "Journal maintenance command: speakers not admitted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "596c9f386024d80abdbc362077406921e874509d317a133efddf0fc4d3adc8dd",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

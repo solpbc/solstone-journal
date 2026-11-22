@@ -3,6 +3,7 @@
 
 //! In-process health maintenance routines backed by the retention library.
 
+use crate::copy::Output;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -24,9 +25,6 @@ use solstone_core_retention::sweep::plan as plan_sweep;
 
 use crate::{CliRun, HealthServices};
 
-const LOG_ENABLED_ERROR: &str = "retention.journal_logs.enabled must be a boolean";
-const LOG_DAYS_ERROR: &str = "retention.journal_logs.days must be a positive integer";
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct LogRetentionConfig {
     enabled: bool,
@@ -40,12 +38,6 @@ struct PruneStats {
     bytes: u64,
 }
 
-struct PruneError {
-    reason: String,
-    message: String,
-    hint: Option<String>,
-}
-
 pub fn run(id: &str, args: &[String], journal: &Path, services: &HealthServices) -> CliRun {
     run_checked(id, args, journal, services, &|| Ok(()))
 }
@@ -57,28 +49,40 @@ pub fn run_checked(
     services: &HealthServices,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> CliRun {
-    match id {
-        "health:mark-raw" if args.is_empty() => mark_raw(journal, services, checkpoint),
-        "health:mark-raw" => usage_error("health:mark-raw", args, ""),
-        "health:prune-logs" => prune_logs(args, journal, services, checkpoint),
-        _ => usage_error(id, args, ""),
-    }
+    run_checked_in(Output::canonical(), id, args, journal, services, checkpoint)
 }
 
-fn mark_raw(
+pub(crate) fn run_checked_in(
+    copy: Output<'_>,
+    id: &str,
+    args: &[String],
     journal: &Path,
     services: &HealthServices,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> CliRun {
-    let config = match read_config(journal) {
+    match id {
+        "health:mark-raw" if args.is_empty() => mark_raw(copy, journal, services, checkpoint),
+        "health:mark-raw" => usage_error(copy, "health:mark-raw", args),
+        "health:prune-logs" => prune_logs(copy, args, journal, services, checkpoint),
+        _ => usage_error(copy, id, args),
+    }
+}
+
+fn mark_raw(
+    copy: Output<'_>,
+    journal: &Path,
+    services: &HealthServices,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> CliRun {
+    let config = match read_config(copy, journal) {
         Ok(config) => config,
-        Err(error) => return mark_unavailable(error),
+        Err(error) => return mark_unavailable(copy, error),
     };
     let policy = policy_from_journal_config(&config);
     if !policy_would_release(&policy) {
         let register = match load(journal) {
             Ok(register) => register,
-            Err(_) => return mark_refused(),
+            Err(_) => return mark_refused(copy),
         };
         let has_marked_policy_raw_release = register.marks.values().any(|mark| {
             matches!(mark.state, MarkState::Marked) && mark.class == RemovalClass::PolicyRawRelease
@@ -93,16 +97,16 @@ fn mark_raw(
             )
             .is_err()
         {
-            return mark_refused();
+            return mark_refused(copy);
         }
-        return success("mark-raw: your retention settings keep all original media.".to_owned());
+        return success(copy.message("journal.cli.maintenance.health.keep", []));
     }
 
     // The owner's day: the approval in Home re-checks the same date.
     let today = services.now.to_zoned_datetime(services.zone.clone()).date();
     let before = match load(journal) {
         Ok(register) => register,
-        Err(_) => return mark_refused(),
+        Err(_) => return mark_refused(copy),
     };
     let plan = plan_sweep(
         journal,
@@ -113,7 +117,7 @@ fn mark_raw(
         services.now,
     );
     if plan.chronicle_unavailable {
-        return mark_refused();
+        return mark_refused(copy);
     }
     let mut proposals = plan
         .candidates
@@ -122,7 +126,7 @@ fn mark_raw(
         .collect::<Vec<_>>();
     // Only this sweep's fresh decisions have known provenance. A carried proposal may
     // contain caller-supplied English, even when it resembles a policy decision.
-    let locale = solstone_core_cli_copy::cli_locale();
+    let locale = copy.locale();
     let fresh_decisions: BTreeMap<_, _> = if locale == solstone_core_cli_copy::ENGLISH {
         BTreeMap::new()
     } else {
@@ -157,7 +161,7 @@ fn mark_raw(
         checkpoint,
     ) {
         Ok(register) => register,
-        Err(_) => return mark_refused(),
+        Err(_) => return mark_refused(copy),
     };
     let before_ids = policy_mark_ids(&before);
     let after_ids = policy_mark_ids(&after);
@@ -165,20 +169,24 @@ fn mark_raw(
         .difference(&before_ids)
         .cloned()
         .collect::<Vec<_>>();
-    let mut output = format!(
-        "mark-raw: new items: {}.\n  standing total: {}.\n",
-        new_ids.len(),
-        after_ids.len()
+    let mut output = copy.line(
+        "journal.cli.maintenance.health.mark.summary",
+        [("new", &new_ids.len()), ("total", &after_ids.len())],
     );
     for id in new_ids {
         if let Some(mark) = after.marks.get(&id) {
             let displayed = fresh_decisions
                 .get(&id)
                 .map(|decision| decision.proposal_reason(locale));
-            output.push_str(&format!(
-                "  {}: {}\n",
-                id.as_str(),
-                displayed.as_deref().unwrap_or(&mark.proposal.reason)
+            output.push_str(&copy.line(
+                "journal.cli.maintenance.health.mark.entry",
+                [
+                    ("id", &id.as_str()),
+                    (
+                        "reason",
+                        &displayed.as_deref().unwrap_or(&mark.proposal.reason),
+                    ),
+                ],
             ));
         }
     }
@@ -186,6 +194,7 @@ fn mark_raw(
 }
 
 fn prune_logs(
+    copy: Output<'_>,
     args: &[String],
     journal: &Path,
     services: &HealthServices,
@@ -193,30 +202,24 @@ fn prune_logs(
 ) -> CliRun {
     let (dry_run, override_days) = match parse_prune_args(args) {
         Ok(parsed) => parsed,
-        Err(PruneArgError::Usage(message)) => {
-            return usage_error("health:prune-logs", args, &message);
-        }
-        Err(PruneArgError::InvalidDays) => {
-            return CliRun {
-                stdout: String::new(),
-                stderr: "prune-logs: --days must be a positive integer\n".to_owned(),
-                exit_code: 1,
-            };
-        }
+        Err(error) => return prune_usage(copy, &error),
     };
-    let config = match load_log_retention_config(journal) {
+    let config = match load_log_retention_config(copy, journal) {
         Ok(config) => config,
-        Err(error) => return prune_unavailable(error),
+        Err(error) => return prune_unavailable(copy, error),
     };
     let days = match override_days {
         Some(days) => days,
         None => config.days,
     };
     if !config.enabled {
-        return success("prune-logs: disabled".to_owned());
+        return success(copy.message("journal.cli.maintenance.health.prune.disabled", []));
     }
     if !journal.is_dir() {
-        return prune_unavailable("the journal directory is unavailable".to_owned());
+        return prune_unavailable(
+            copy,
+            copy.message("journal.cli.maintenance.health.prune.missing", []),
+        );
     }
     // The owner's day; the injected zone keeps the result deterministic in tests.
     let today = services.now.to_zoned_datetime(services.zone.clone()).date();
@@ -228,12 +231,15 @@ fn prune_logs(
     let oplogs = plan_oplog_retention(journal, &policy, today);
     let compactions = plan_compactions(journal, &policy, today, &plan);
     if dry_run {
-        return render_prune(today, days, true, &plan, &oplogs, &compactions);
+        return render_prune(copy, today, days, true, &plan, &oplogs, &compactions);
     }
     if let Err(message) = checkpoint() {
         return CliRun {
             stdout: String::new(),
-            stderr: format!("prune-logs: {message}\n"),
+            stderr: copy.line(
+                "journal.cli.maintenance.health.prune.halted",
+                [("message", &message)],
+            ),
             exit_code: 1,
         };
     }
@@ -259,9 +265,13 @@ fn prune_logs(
             || (path.starts_with("facets/") && path.contains("/logs/")))
             && let Err(error) = solstone_core_indexer_todo::enqueue_path(journal, Path::new(path))
         {
-            return prune_unavailable(format!(
-                "a log was removed, but its search update could not be queued: {error}"
-            ));
+            return prune_unavailable(
+                copy,
+                copy.message(
+                    "journal.cli.maintenance.health.prune.queue",
+                    [("error", &error)],
+                ),
+            );
         }
     }
     if outcome.halted.is_some()
@@ -270,19 +280,22 @@ fn prune_logs(
             .iter()
             .any(|target| !target.not_removed.is_empty())
     {
-        return prune_refused(&outcome);
+        return prune_refused(copy, &outcome);
     }
-    render_prune(today, days, false, &plan, &oplogs, &compactions)
+    render_prune(copy, today, days, false, &plan, &oplogs, &compactions)
 }
 
-fn read_config(journal: &Path) -> Result<Map<String, Value>, String> {
+fn read_config(copy: Output<'_>, journal: &Path) -> Result<Map<String, Value>, String> {
     read_journal_config(journal)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.render(copy.locale()))
         .map(|read| read.config.unwrap_or_default())
 }
 
-fn load_log_retention_config(journal: &Path) -> Result<LogRetentionConfig, String> {
-    let config = read_config(journal)?;
+fn load_log_retention_config(
+    copy: Output<'_>,
+    journal: &Path,
+) -> Result<LogRetentionConfig, String> {
+    let config = read_config(copy, journal)?;
     let retention = config
         .get("retention")
         .and_then(Value::as_object)
@@ -295,10 +308,11 @@ fn load_log_retention_config(journal: &Path) -> Result<LogRetentionConfig, Strin
         .unwrap_or_default();
     let enabled = logs.get("enabled").cloned().unwrap_or(Value::Bool(true));
     let Value::Bool(enabled) = enabled else {
-        return Err(LOG_ENABLED_ERROR.to_owned());
+        return Err(copy.message("journal.cli.maintenance.health.config.enabled", []));
     };
     let days = logs.get("days").cloned().unwrap_or(Value::from(30));
-    let days = positive_config_days(&days).ok_or_else(|| LOG_DAYS_ERROR.to_owned())?;
+    let days = positive_config_days(&days)
+        .ok_or_else(|| copy.message("journal.cli.maintenance.health.config.days", []))?;
     Ok(LogRetentionConfig { enabled, days })
 }
 
@@ -323,7 +337,9 @@ fn policy_mark_ids(
 }
 
 enum PruneArgError {
-    Usage(String),
+    MissingDays,
+    InvalidInteger(String),
+    Unexpected(String),
     InvalidDays,
 }
 
@@ -336,14 +352,10 @@ fn parse_prune_args(args: &[String]) -> Result<(bool, Option<u32>), PruneArgErro
             "--dry-run" => dry_run = true,
             "--days" => {
                 let Some(value) = args.get(index.saturating_add(1)) else {
-                    return Err(PruneArgError::Usage(
-                        "argument --days: expected one argument".to_owned(),
-                    ));
+                    return Err(PruneArgError::MissingDays);
                 };
                 let Ok(parsed) = value.parse::<i64>() else {
-                    return Err(PruneArgError::Usage(format!(
-                        "argument --days: invalid int value: '{value}'"
-                    )));
+                    return Err(PruneArgError::InvalidInteger(value.clone()));
                 };
                 if parsed < 1 {
                     return Err(PruneArgError::InvalidDays);
@@ -355,10 +367,7 @@ fn parse_prune_args(args: &[String]) -> Result<(bool, Option<u32>), PruneArgErro
                 index = index.saturating_add(1);
             }
             _ => {
-                return Err(PruneArgError::Usage(format!(
-                    "unrecognized arguments: {}",
-                    args[index]
-                )));
+                return Err(PruneArgError::Unexpected(args[index].clone()));
             }
         }
         index = index.saturating_add(1);
@@ -367,6 +376,7 @@ fn parse_prune_args(args: &[String]) -> Result<(bool, Option<u32>), PruneArgErro
 }
 
 fn render_prune(
+    copy: Output<'_>,
     today: Date,
     days: u32,
     dry_run: bool,
@@ -399,19 +409,15 @@ fn render_prune(
         total_dirs = total_dirs.saturating_add(entry.dirs);
     }
     for retained in &plan.retained {
-        let reason = match &retained.reason {
+        match &retained.reason {
             Kept::Undateable => {
-                Some("the entry's retention date could not be determined".to_owned())
+                errors.push(copy.line("journal.cli.maintenance.health.prune.undateable", []))
             }
-            Kept::ContentUnreadable { detail, .. } => Some(detail.clone()),
-            Kept::TooYoung(_) | Kept::Exempt | Kept::NotAMatch | Kept::ContentNotFullyOld => None,
-        };
-        if let Some(reason) = reason {
-            errors.push(PruneError {
-                message: reason.clone(),
-                reason,
-                hint: None,
-            });
+            Kept::ContentUnreadable { detail, .. } => errors.push(copy.line(
+                "journal.cli.maintenance.health.prune.unreadable",
+                [("detail", &detail)],
+            )),
+            Kept::TooYoung(_) | Kept::Exempt | Kept::NotAMatch | Kept::ContentNotFullyOld => {}
         }
     }
     for compaction in compactions {
@@ -420,37 +426,51 @@ fn render_prune(
             .saturating_sub(compaction.bytes_after);
         total_bytes = total_bytes.saturating_add(freed);
     }
-    let action = if dry_run { "would prune" } else { "pruned" };
     let cutoff = jiff::Span::new()
         .try_days(days)
         .ok()
         .and_then(|span| today.checked_sub(span).ok())
         .map(day_key)
         .unwrap_or_default();
-    let mut output = format!(
-        "prune-logs: {action} {total_files} operational-log file(s), {total_dirs} cache dir(s), {} cutoff={cutoff}\n",
-        human_bytes(total_bytes)
+    let id = if dry_run {
+        "journal.cli.maintenance.health.prune.preview"
+    } else {
+        "journal.cli.maintenance.health.prune.result"
+    };
+    let mut output = copy.counted(
+        id,
+        [
+            ("files_quantity", total_files),
+            ("dirs_quantity", total_dirs),
+        ],
+        [
+            ("files", &total_files),
+            ("dirs", &total_dirs),
+            ("bytes", &human_bytes(total_bytes)),
+            ("cutoff", &cutoff),
+        ],
     );
+    output.push('\n');
     for (class, entry) in stats {
         if entry.files > 0 || entry.dirs > 0 || entry.bytes > 0 {
-            output.push_str(&format!(
-                "  {class}: {} file(s), {} cache dir(s), {}\n",
-                entry.files,
-                entry.dirs,
-                human_bytes(entry.bytes)
+            output.push_str(&copy.counted(
+                "journal.cli.maintenance.health.prune.class",
+                [
+                    ("files_quantity", entry.files),
+                    ("dirs_quantity", entry.dirs),
+                ],
+                [
+                    ("class", &class),
+                    ("files", &entry.files),
+                    ("dirs", &entry.dirs),
+                    ("bytes", &human_bytes(entry.bytes)),
+                ],
             ));
+            output.push('\n');
         }
     }
     for error in errors {
-        let hint = error
-            .hint
-            .as_deref()
-            .map(|hint| format!(" hint={hint}"))
-            .unwrap_or_default();
-        output.push_str(&format!(
-            "  error: {}: {}{hint}\n",
-            error.reason, error.message
-        ));
+        output.push_str(&error);
     }
     success(output.trim_end().to_owned())
 }
@@ -470,31 +490,37 @@ fn human_bytes(bytes: u64) -> String {
     format!("{value:.1} PB")
 }
 
-fn mark_refused() -> CliRun {
+fn mark_refused(copy: Output<'_>) -> CliRun {
     CliRun {
         stdout: String::new(),
-        stderr: "mark-raw: some items could not be listed:\n".to_owned(),
+        stderr: copy.line("journal.cli.maintenance.health.mark.refused", []),
         exit_code: 1,
     }
 }
 
-fn mark_unavailable(error: String) -> CliRun {
+fn mark_unavailable(copy: Output<'_>, error: String) -> CliRun {
     CliRun {
         stdout: String::new(),
-        stderr: format!("mark-raw: could not build the list: {error}\n"),
+        stderr: copy.line(
+            "journal.cli.maintenance.health.mark.unavailable",
+            [("error", &error)],
+        ),
         exit_code: 1,
     }
 }
 
-fn prune_unavailable(error: String) -> CliRun {
+fn prune_unavailable(copy: Output<'_>, error: String) -> CliRun {
     CliRun {
         stdout: String::new(),
-        stderr: format!("prune-logs: could not prune logs: {error}\n"),
+        stderr: copy.line(
+            "journal.cli.maintenance.health.prune.unavailable",
+            [("error", &error)],
+        ),
         exit_code: 0,
     }
 }
 
-fn prune_refused(outcome: &Outcome) -> CliRun {
+fn prune_refused(copy: Output<'_>, outcome: &Outcome) -> CliRun {
     let summary = outcome
         .targets
         .iter()
@@ -502,14 +528,17 @@ fn prune_refused(outcome: &Outcome) -> CliRun {
         .map(|failure| format!("{}: {}", failure.entry, failure.reason))
         .collect::<Vec<_>>()
         .join("; ");
-    let summary = if summary.is_empty() {
-        "the retention tool refused without naming an entry."
+    let stderr = if summary.is_empty() {
+        copy.line("journal.cli.maintenance.health.prune.refused.unnamed", [])
     } else {
-        &summary
+        copy.line(
+            "journal.cli.maintenance.health.prune.refused",
+            [("summary", &summary)],
+        )
     };
     CliRun {
         stdout: String::new(),
-        stderr: format!("prune-logs: some logs could not be pruned: {summary}\n"),
+        stderr,
         exit_code: 0,
     }
 }
@@ -522,22 +551,46 @@ fn success(line: String) -> CliRun {
     }
 }
 
-fn usage_error(id: &str, args: &[String], detail: &str) -> CliRun {
-    let usage = match id {
-        "health:prune-logs" => " [-h] [--dry-run] [--days DAYS]",
-        _ => " [-h]",
-    };
-    let detail = if detail.is_empty() {
-        format!("unrecognized arguments: {}", args.join(" "))
-    } else {
-        detail.to_owned()
+fn usage_error(copy: Output<'_>, id: &str, args: &[String]) -> CliRun {
+    CliRun {
+        stdout: String::new(),
+        stderr: copy.line(
+            "journal.cli.maintenance.health.usage",
+            [("id", &id), ("args", &args.join(" "))],
+        ),
+        exit_code: 2,
+    }
+}
+
+fn prune_usage(copy: Output<'_>, error: &PruneArgError) -> CliRun {
+    let (stderr, exit_code) = match error {
+        PruneArgError::MissingDays => (
+            copy.line("journal.cli.maintenance.health.prune.args.missing", []),
+            2,
+        ),
+        PruneArgError::InvalidInteger(value) => (
+            copy.line(
+                "journal.cli.maintenance.health.prune.args.integer",
+                [("value", &value)],
+            ),
+            2,
+        ),
+        PruneArgError::Unexpected(value) => (
+            copy.line(
+                "journal.cli.maintenance.health.prune.args.unexpected",
+                [("value", &value)],
+            ),
+            2,
+        ),
+        PruneArgError::InvalidDays => (
+            copy.line("journal.cli.maintenance.health.prune.args.positive", []),
+            1,
+        ),
     };
     CliRun {
         stdout: String::new(),
-        stderr: format!(
-            "usage: solstone journal maintenance run {id}{usage}\nsolstone journal maintenance run {id}: error: {detail}\n"
-        ),
-        exit_code: 2,
+        stderr,
+        exit_code,
     }
 }
 
@@ -937,7 +990,7 @@ mod tests {
             }],
             halted: None,
         };
-        let result = prune_refused(&outcome);
+        let result = prune_refused(crate::copy::Output::canonical(), &outcome);
         assert_eq!(result.exit_code, 0);
         assert!(result.stdout.is_empty());
         assert_eq!(
@@ -956,7 +1009,7 @@ mod tests {
                 reason: "fixture halt".to_owned(),
             }),
         };
-        let result = prune_refused(&outcome);
+        let result = prune_refused(crate::copy::Output::canonical(), &outcome);
         assert_eq!(result.exit_code, 0);
         assert!(result.stdout.is_empty());
         assert_eq!(

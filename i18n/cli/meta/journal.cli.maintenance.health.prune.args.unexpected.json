@@ -1,0 +1,38 @@
+{
+  "description": "Journal maintenance command: health prune args unexpected.",
+  "context": "Journal maintenance command: health prune args unexpected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3d6fbec286772e40b562e6e3ac2db817d985fac3d52076c71871cb72b7ea65e8",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal maintenance run health:prune-logs"
+    },
+    {
+      "name": "syntax",
+      "kind": "accepted-input",
+      "value": "[-h] [--dry-run] [--days DAYS]"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

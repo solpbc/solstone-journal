@@ -11744,3 +11744,293 @@ journal.cli.check.ram.total = { $gb } GB of system memory
 journal.cli.check.ram.unknown = system memory could not be verified
 
 journal.cli.check.title = { $command } — can this computer run the journal with the bundled local models?
+
+journal.cli.maintenance.backup.erase = backup erase: { $state } { $removed_field }{ $removed } { $shared_field }{ $shared } { $staying_field }{ $staying } { $unreached_field }{ $unreached } { $pending_field }{ $pending }
+
+journal.cli.maintenance.backup.erase.error.detail = backup erase: error { $reason_field }{ $reason } { $detail_field }{ $detail }
+
+journal.cli.maintenance.backup.erase.reason = backup erase: { $state } { $removed_field }{ $removed } { $shared_field }{ $shared } { $staying_field }{ $staying } { $unreached_field }{ $unreached } { $pending_field }{ $pending } { $reason_field }{ $reason }
+
+journal.cli.maintenance.backup.error = backup: error { $reason_field }{ $reason }
+
+journal.cli.maintenance.backup.error.detail = backup: error { $reason_field }{ $reason } { $detail_field }{ $detail }
+
+journal.cli.maintenance.backup.ok = backup: ok { $field }{ $snapshot }
+
+journal.cli.maintenance.backup.paused = backup: skipped. backup is paused, so nothing ran. run `{ $resume }` to start it again.
+
+journal.cli.maintenance.backup.prune.error = backup prune: error { $reason_field }{ $reason }
+
+journal.cli.maintenance.backup.prune.error.detail = backup prune: error { $reason_field }{ $reason } { $detail_field }{ $detail }
+
+journal.cli.maintenance.backup.prune.ok = backup prune: ok
+
+journal.cli.maintenance.backup.prune.paused = backup prune: skipped. backup is paused, so nothing ran. run `{ $resume }` to start it again.
+
+journal.cli.maintenance.backup.prune.skipped = backup prune: skipped
+
+journal.cli.maintenance.backup.skipped = backup: skipped
+
+journal.cli.maintenance.backup.superseded = backup: claimed by another device; local settings were cleared. run `{ $enable }` to set up a new backup here.
+
+journal.cli.maintenance.backup.unavailable = backup maintenance services are unavailable.
+
+journal.cli.maintenance.backup.usage.offload = usage: { $command } { $id }{ $options }{ $line_break }{ $command } { $id }: error: unrecognized arguments: { $args }
+
+journal.cli.maintenance.backup.usage.routine = usage: { $command } { $id }{ $options }{ $line_break }{ $command } { $id }: error: unrecognized arguments: { $args }
+
+journal.cli.maintenance.backup.verify.error = backup verify: error { $reason_field }{ $reason }
+
+journal.cli.maintenance.backup.verify.error.detail = backup verify: error { $reason_field }{ $reason } { $detail_field }{ $detail }
+
+journal.cli.maintenance.backup.verify.ok = backup verify: ok { $field }{ $subset }
+
+journal.cli.maintenance.backup.verify.paused = backup verify: skipped. backup is paused, so nothing ran. run `{ $resume }` to start it again.
+
+journal.cli.maintenance.backup.verify.skipped = backup verify: skipped
+
+journal.cli.maintenance.description.backup.erase = remove what you erased from your backups too, when you chose it.
+
+journal.cli.maintenance.description.backup.offload = offload verified raw media after backup.
+
+journal.cli.maintenance.description.backup.prune = apply encrypted backup retention policy.
+
+journal.cli.maintenance.description.backup.run = run encrypted backup.
+
+journal.cli.maintenance.description.backup.verify = verify encrypted backup read-back.
+
+journal.cli.maintenance.description.faces.backfill = refresh profile pic suggestions from meetings, including past meetings.
+
+journal.cli.maintenance.description.health.mark.raw = list original media ready for removal.
+
+journal.cli.maintenance.description.health.prune.logs = prune old operational logs.
+
+journal.cli.maintenance.description.retention.owner.voice.originals = finish deleting the original audio of recent recordings processed with "leave out other voices" on.
+
+journal.cli.maintenance.description.speakers.backfill.labels = name the speakers, without the model, in audio that has no speaker labels yet.
+
+journal.cli.maintenance.description.speakers.backfill.pool = catch up the voice list from audio already transcribed, then look for your voice.
+
+journal.cli.maintenance.description.speakers.candidate.pair.suggestions = Find dense speaker candidate pairs for Suggestions.
+
+journal.cli.maintenance.description.speakers.consolidate.pool = Consolidate dense speaker candidates.
+
+journal.cli.maintenance.description.speakers.discover.voices = Refresh recurring voice discovery cache.
+
+journal.cli.maintenance.description.speakers.name.variants = Find speaker name variants for Suggestions.
+
+journal.cli.maintenance.description.trash.erase = finish trash steps a stop interrupted and erase what has waited its days.
+
+journal.cli.maintenance.face.priority = face history priority unavailable: { $error }
+
+journal.cli.maintenance.face.reconciliation = face reconciliation: { $error }
+
+journal.cli.maintenance.health.config.days = { $field } must be a positive integer
+
+journal.cli.maintenance.health.config.enabled = { $field } must be a boolean
+
+journal.cli.maintenance.health.keep = { $routine }: your retention settings keep all original media.
+
+journal.cli.maintenance.health.mark.entry = { $indent }{ $id }: { $reason }
+
+journal.cli.maintenance.health.mark.refused = { $routine }: some items could not be listed:
+
+journal.cli.maintenance.health.mark.summary = { $routine }: new items: { $new }.{ $line_break }  standing total: { $total }.
+
+journal.cli.maintenance.health.mark.unavailable = { $routine }: could not build the list: { $error }
+
+journal.cli.maintenance.health.prune.args.integer = usage: { $command } { $syntax }{ $line_break }{ $command }: error: argument { $flag }: invalid int value: '{ $value }'
+
+journal.cli.maintenance.health.prune.args.missing = usage: { $command } { $syntax }{ $line_break }{ $command }: error: argument { $flag }: expected one argument
+
+journal.cli.maintenance.health.prune.args.positive = { $routine }: { $flag } must be a positive integer
+
+journal.cli.maintenance.health.prune.args.unexpected = usage: { $command } { $syntax }{ $line_break }{ $command }: error: unrecognized arguments: { $value }
+
+journal.cli.maintenance.health.prune.class = { $files_quantity ->
+    [one] { $dirs_quantity ->
+        [one] { $indent }{ $class }: { $files } file, { $dirs } cache dir, { $bytes }
+       *[other] { $indent }{ $class }: { $files } file, { $dirs } cache dir(s), { $bytes }
+    }
+   *[other] { $dirs_quantity ->
+        [one] { $indent }{ $class }: { $files } file(s), { $dirs } cache dir, { $bytes }
+       *[other] { $indent }{ $class }: { $files } file(s), { $dirs } cache dir(s), { $bytes }
+    }
+}
+
+journal.cli.maintenance.health.prune.disabled = { $routine }: disabled
+
+journal.cli.maintenance.health.prune.halted = { $routine }: { $message }
+
+journal.cli.maintenance.health.prune.missing = the journal directory is unavailable
+
+journal.cli.maintenance.health.prune.preview = { $files_quantity ->
+    [one] { $dirs_quantity ->
+        [one] { $routine }: would prune { $files } operational-log file, { $dirs } cache dir, { $bytes } { $cutoff_field }{ $cutoff }
+       *[other] { $routine }: would prune { $files } operational-log file, { $dirs } cache dir(s), { $bytes } { $cutoff_field }{ $cutoff }
+    }
+   *[other] { $dirs_quantity ->
+        [one] { $routine }: would prune { $files } operational-log file(s), { $dirs } cache dir, { $bytes } { $cutoff_field }{ $cutoff }
+       *[other] { $routine }: would prune { $files } operational-log file(s), { $dirs } cache dir(s), { $bytes } { $cutoff_field }{ $cutoff }
+    }
+}
+
+journal.cli.maintenance.health.prune.queue = a log was removed, but its search update could not be queued: { $error }
+
+journal.cli.maintenance.health.prune.refused = { $routine }: some logs could not be pruned: { $summary }
+
+journal.cli.maintenance.health.prune.refused.unnamed = { $routine }: some logs could not be pruned: the retention tool refused without naming an entry.
+
+journal.cli.maintenance.health.prune.result = { $files_quantity ->
+    [one] { $dirs_quantity ->
+        [one] { $routine }: pruned { $files } operational-log file, { $dirs } cache dir, { $bytes } { $cutoff_field }{ $cutoff }
+       *[other] { $routine }: pruned { $files } operational-log file, { $dirs } cache dir(s), { $bytes } { $cutoff_field }{ $cutoff }
+    }
+   *[other] { $dirs_quantity ->
+        [one] { $routine }: pruned { $files } operational-log file(s), { $dirs } cache dir, { $bytes } { $cutoff_field }{ $cutoff }
+       *[other] { $routine }: pruned { $files } operational-log file(s), { $dirs } cache dir(s), { $bytes } { $cutoff_field }{ $cutoff }
+    }
+}
+
+journal.cli.maintenance.health.prune.unavailable = { $routine }: could not prune logs: { $error }
+
+journal.cli.maintenance.health.prune.undateable = { $indent }error: the entry's retention date could not be determined: the entry's retention date could not be determined
+
+journal.cli.maintenance.health.prune.unreadable = { $indent }error: { $detail }: { $detail }
+
+journal.cli.maintenance.health.unavailable = health maintenance services are unavailable.
+
+journal.cli.maintenance.health.usage = usage: { $command } { $id } { $syntax }{ $line_break }{ $command } { $id }: error: unrecognized arguments: { $args }
+
+journal.cli.maintenance.help.list = usage: { $syntax }
+
+journal.cli.maintenance.help.root = usage: { $syntax }
+
+journal.cli.maintenance.help.run = usage: { $syntax }
+
+journal.cli.maintenance.help.sync = usage: { $syntax }
+
+
+
+
+journal.cli.maintenance.list.empty = No maintenance routines found.
+
+journal.cli.maintenance.list.heading.description = DESCRIPTION
+
+journal.cli.maintenance.list.heading.every = EVERY
+
+journal.cli.maintenance.list.heading.id = ID
+
+journal.cli.maintenance.list.heading.runtime = MAX RUNTIME
+
+journal.cli.maintenance.list.heading.status = STATUS
+
+
+journal.cli.maintenance.list.status.divergent = divergent
+
+journal.cli.maintenance.list.status.missing = missing
+
+journal.cli.maintenance.list.status.nothere = n/a
+
+journal.cli.maintenance.list.status.synced = synced
+
+journal.cli.maintenance.missing.root = usage: { $syntax }{ $line_break }{ $command }: error: the following arguments are required: { $argument }
+
+journal.cli.maintenance.missing.run = usage: { $syntax }{ $line_break }{ $command }: error: the following arguments are required: { $argument }
+
+journal.cli.maintenance.retention.import.owed = imported audio cleanup incomplete: { $error }
+
+journal.cli.maintenance.retention.owed = owner voice original cleanup incomplete: { $error }
+
+journal.cli.maintenance.retention.summary = { $routine }: deleted { $deleted }, deleted without a record { $deleted_unrecorded }, already gone { $gone }, still owed { $owed }, kept for good { $refused }, not provable { $not_provable }, nothing owed { $not_owed }, skipped while busy { $skipped }, events unreadable { $unknown }
+
+journal.cli.maintenance.retention.usage = usage: { $id } takes no arguments.
+
+journal.cli.maintenance.routine.unimplemented = { $count_quantity ->
+    [one] maintenance routine { $id } is not yet implemented ({ $count } forwarded argument).
+   *[other] maintenance routine { $id } is not yet implemented ({ $count } forwarded argument(s)).
+}
+
+journal.cli.maintenance.routine.unknown = Unknown maintenance routine: { $id }. Run `{ $command }` to see available routines.
+
+journal.cli.maintenance.schedule.error = Error reading/updating { $path }: { $error } (cause: { $error })
+
+journal.cli.maintenance.schedule.io = schedule I/O failed: { $detail }
+
+journal.cli.maintenance.schedule.malformed = malformed schedules config at { $path }
+
+journal.cli.maintenance.schedule.metadata = unknown schedule metadata keys: { $keys }
+
+journal.cli.maintenance.schedule.shape = { $path }: schedules config must be a JSON object
+
+journal.cli.maintenance.schedule.state.shape = schedule state at { $path } must be a JSON object
+
+journal.cli.maintenance.speakers.error.owner.voice.look.failed = owner voice look failed: { $error }
+
+journal.cli.maintenance.speakers.error.speaker.candidate.consolidation.failed = speaker candidate consolidation failed: { $error }
+
+journal.cli.maintenance.speakers.error.speaker.candidate.pair.refresh.failed = speaker candidate-pair refresh failed: { $error }
+
+journal.cli.maintenance.speakers.error.speaker.label.backfill.failed = speaker label backfill failed: { $error }
+
+journal.cli.maintenance.speakers.error.speaker.name.variant.refresh.failed = speaker name-variant refresh failed: { $error }
+
+journal.cli.maintenance.speakers.not.admitted = speaker discovery generation was not admitted at maintenance entry
+
+journal.cli.maintenance.speakers.usage.backfill.labels = usage: { $command }
+
+journal.cli.maintenance.speakers.usage.backfill.pool = usage: { $command }
+
+journal.cli.maintenance.speakers.usage.candidate.pair.suggestions = usage: { $command }
+
+journal.cli.maintenance.speakers.usage.consolidate.pool = usage: { $command }
+
+journal.cli.maintenance.speakers.usage.discover.voices = usage: { $command }
+
+journal.cli.maintenance.speakers.usage.name.variants = usage: { $command }
+
+journal.cli.maintenance.sync.added = added: { $count }: { $ids }
+
+journal.cli.maintenance.sync.added.empty = added: 0
+
+journal.cli.maintenance.sync.disabled = disabled: { $count }: { $ids }
+
+journal.cli.maintenance.sync.disabled.empty = disabled: 0
+
+journal.cli.maintenance.sync.divergent = divergent: { $count }: { $ids }
+
+journal.cli.maintenance.sync.divergent.empty = divergent: 0
+
+journal.cli.maintenance.sync.removed = removed: { $count }: { $ids }
+
+journal.cli.maintenance.sync.removed.empty = removed: 0
+
+journal.cli.maintenance.sync.synced = synced: { $count }: { $ids }
+
+journal.cli.maintenance.sync.synced.empty = synced: 0
+
+journal.cli.maintenance.sync.warning.disabled = WARNING: { $id } schedule is disabled; preserved disabled
+
+journal.cli.maintenance.sync.warning.divergent = WARNING: { $id } schedule is divergent; preserved unchanged
+
+journal.cli.maintenance.trash.erased = trash: erased { $erased }, finished { $finished }, waiting { $waiting }, failed { $failed }
+
+journal.cli.maintenance.trash.error = trash: { $failure }
+
+journal.cli.maintenance.trash.usage = usage: { $id } takes no arguments.
+
+journal.cli.maintenance.usage.face = usage: { $syntax }{ $line_break }{ $command }: error: unrecognized arguments: unexpected face reconciliation arguments
+
+journal.cli.maintenance.usage.unknown = usage: { $syntax }{ $line_break }{ $command }: error: unrecognized arguments: { $arguments }
+
+journal.cli.maintenance.face.generation = face backfill generation was not admitted
+
+journal.cli.maintenance.face.log.cache = face backfill scan cache not saved: { $detail }
+
+journal.cli.maintenance.face.log.deferred = face participation recovery deferred: { $detail }
+
+journal.cli.maintenance.face.log.failed = face backfill failed: { $detail }
+
+journal.cli.maintenance.speakers.discovery.helper = speaker discovery helper failed at { $stage }: { $reason }
+
+journal.cli.maintenance.speakers.discovery.input = speaker discovery failed: { $detail }

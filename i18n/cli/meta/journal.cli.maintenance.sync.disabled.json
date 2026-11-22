@@ -1,0 +1,25 @@
+{
+  "description": "Maintenance sync summary for the disabled group.",
+  "context": "Maintenance sync summary for the disabled group.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "ids",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "086ed9b173c6918cd08a7bf85c4c3825258bf648b60920dff210e275e55789b0",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

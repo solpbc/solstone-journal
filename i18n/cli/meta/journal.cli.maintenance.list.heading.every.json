@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: list heading every.",
+  "context": "Journal maintenance command: list heading every.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "72444eab856da1b981c7aef1c566b4b1244fbc81abc9150047b06cedd299696e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

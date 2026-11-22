@@ -1,0 +1,23 @@
+{
+  "description": "Journal maintenance command: health prune undateable.",
+  "context": "Journal maintenance command: health prune undateable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4c9d2ccac2ce150755b51b3f71208227e5d4db89e9ed28f45e6cd182d6d50b71",
+  "max_length": 152,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "indent",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

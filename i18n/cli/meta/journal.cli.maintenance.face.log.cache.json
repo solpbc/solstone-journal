@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: face log cache.",
+  "context": "Journal maintenance command: face log cache.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5cd7e9c30bdc8357c9a7914c52d925a4e7a9c5a5564df98cef639c8ec307c204",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

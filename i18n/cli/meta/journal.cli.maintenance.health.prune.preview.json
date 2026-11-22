@@ -1,0 +1,59 @@
+{
+  "description": "Journal maintenance command: health prune preview.",
+  "context": "Journal maintenance command: health prune preview.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "files_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "dirs_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "files",
+      "type": "string"
+    },
+    {
+      "name": "dirs",
+      "type": "string"
+    },
+    {
+      "name": "bytes",
+      "type": "string"
+    },
+    {
+      "name": "cutoff",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ae01d05be86ff0a82d19a0aea58cdf2eac7f3482d5c47295a057caf6de09cc70",
+  "max_length": 616,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "files_quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "routine",
+      "kind": "accepted-input",
+      "value": "prune-logs"
+    },
+    {
+      "name": "cutoff_field",
+      "kind": "accepted-input",
+      "value": "cutoff="
+    }
+  ]
+}

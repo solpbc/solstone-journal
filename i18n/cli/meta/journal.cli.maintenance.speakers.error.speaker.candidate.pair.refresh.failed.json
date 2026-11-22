@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: speakers error speaker candidate pair refresh failed.",
+  "context": "Journal maintenance command: speakers error speaker candidate pair refresh failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3b8682514d7c2c80e648d684c5e00dc3bab257cc6b3e42f8a3e72ab58a0b3006",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

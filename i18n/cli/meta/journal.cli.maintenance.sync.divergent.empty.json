@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance sync summary for an empty divergent group.",
+  "context": "Maintenance sync summary for an empty divergent group.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "033254479817cdd6b04e9b7e0e2884572e81ae8298c322bd37ca5203c4c1e4f4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

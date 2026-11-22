@@ -5,110 +5,92 @@ use solstone_core_backup::archive_readback::ReadbackError;
 use solstone_core_backup_runtime::ArchiveError;
 use solstone_core_cli_copy as copy;
 
-pub(super) fn stopped_archive(error: ArchiveError) -> String {
-    match error {
-        ArchiveError::NotConfigured => {
-            copy::text("journal.cli.offload.stopped.archive.not.configured")
-        }
+pub(super) fn stopped_archive(locale: &str, error: ArchiveError) -> String {
+    let id = match error {
+        ArchiveError::NotConfigured => "journal.cli.offload.stopped.archive.not.configured",
         ArchiveError::ConfigurationUnavailable => {
-            copy::text("journal.cli.offload.stopped.archive.configuration.unavailable")
+            "journal.cli.offload.stopped.archive.configuration.unavailable"
         }
         ArchiveError::ConfigurationChanged => {
-            copy::text("journal.cli.offload.stopped.archive.configuration.changed")
+            "journal.cli.offload.stopped.archive.configuration.changed"
         }
         ArchiveError::JournalIdentityChanged => {
-            copy::text("journal.cli.offload.stopped.archive.journal.identity.changed")
+            "journal.cli.offload.stopped.archive.journal.identity.changed"
         }
-        ArchiveError::ToolUnavailable => {
-            copy::text("journal.cli.offload.stopped.archive.tool.unavailable")
-        }
+        ArchiveError::ToolUnavailable => "journal.cli.offload.stopped.archive.tool.unavailable",
         ArchiveError::InvalidCredentialExpiry => {
-            copy::text("journal.cli.offload.stopped.archive.invalid.credential.expiry")
+            "journal.cli.offload.stopped.archive.invalid.credential.expiry"
         }
         ArchiveError::CredentialsExpired => {
-            copy::text("journal.cli.offload.stopped.archive.credentials.expired")
+            "journal.cli.offload.stopped.archive.credentials.expired"
         }
-        ArchiveError::DeadlineExceeded => {
-            copy::text("journal.cli.offload.stopped.archive.deadline.exceeded")
-        }
-        ArchiveError::ClockChanged => {
-            copy::text("journal.cli.offload.stopped.archive.clock.changed")
-        }
-        ArchiveError::Cancelled => copy::text("journal.cli.offload.stopped.archive.cancelled"),
+        ArchiveError::DeadlineExceeded => "journal.cli.offload.stopped.archive.deadline.exceeded",
+        ArchiveError::ClockChanged => "journal.cli.offload.stopped.archive.clock.changed",
+        ArchiveError::Cancelled => "journal.cli.offload.stopped.archive.cancelled",
         ArchiveError::RepositoryIdentityInvalid => {
-            copy::text("journal.cli.offload.stopped.archive.repository.identity.invalid")
+            "journal.cli.offload.stopped.archive.repository.identity.invalid"
         }
         ArchiveError::RepositoryIdentityChanged => {
-            copy::text("journal.cli.offload.stopped.archive.repository.identity.changed")
+            "journal.cli.offload.stopped.archive.repository.identity.changed"
         }
-        ArchiveError::InvalidSelection => {
-            copy::text("journal.cli.offload.stopped.archive.invalid.selection")
-        }
-        ArchiveError::SourceUnavailable => {
-            copy::text("journal.cli.offload.stopped.archive.source.unavailable")
-        }
+        ArchiveError::InvalidSelection => "journal.cli.offload.stopped.archive.invalid.selection",
+        ArchiveError::SourceUnavailable => "journal.cli.offload.stopped.archive.source.unavailable",
         ArchiveError::SnapshotIdentityInvalid => {
-            copy::text("journal.cli.offload.stopped.archive.snapshot.identity.invalid")
+            "journal.cli.offload.stopped.archive.snapshot.identity.invalid"
         }
         ArchiveError::CredentialsUnavailable { reason } | ArchiveError::ToolFailed { reason } => {
-            copy::display(
+            return copy::display_for(
+                locale,
                 "journal.cli.offload.stopped.tool.reason",
                 [("reason", &(reason))],
-            )
+            );
         }
-        ArchiveError::NativeStart { status, .. } => copy::display(
-            "journal.cli.offload.stopped.native.start",
-            [("status", &(status))],
-        ),
-        ArchiveError::Readback(error) => stopped_readback(error),
-    }
+        ArchiveError::NativeStart { status, .. } => {
+            return copy::display_for(
+                locale,
+                "journal.cli.offload.stopped.native.start",
+                [("status", &(status))],
+            );
+        }
+        ArchiveError::Readback(error) => return stopped_readback(locale, error),
+    };
+    copy::render_for(locale, id, &[])
 }
 
-pub(super) fn stopped_readback(error: ReadbackError) -> String {
-    match error {
-        ReadbackError::Unsupported => {
-            copy::text("journal.cli.offload.stopped.readback.unsupported")
-        }
-        ReadbackError::NotConfigured => {
-            copy::text("journal.cli.offload.stopped.readback.not.configured")
-        }
-        ReadbackError::ToolUnavailable => {
-            copy::text("journal.cli.offload.stopped.readback.tool.unavailable")
-        }
-        ReadbackError::ToolChanged => {
-            copy::text("journal.cli.offload.stopped.readback.tool.changed")
-        }
+pub(super) fn stopped_readback(locale: &str, error: ReadbackError) -> String {
+    let id = match error {
+        ReadbackError::Unsupported => "journal.cli.offload.stopped.readback.unsupported",
+        ReadbackError::NotConfigured => "journal.cli.offload.stopped.readback.not.configured",
+        ReadbackError::ToolUnavailable => "journal.cli.offload.stopped.readback.tool.unavailable",
+        ReadbackError::ToolChanged => "journal.cli.offload.stopped.readback.tool.changed",
         ReadbackError::UnsupportedToolVersion => {
-            copy::text("journal.cli.offload.stopped.readback.unsupported.tool.version")
+            "journal.cli.offload.stopped.readback.unsupported.tool.version"
         }
         ReadbackError::UnsupportedBackend => {
-            copy::text("journal.cli.offload.stopped.readback.unsupported.backend")
+            "journal.cli.offload.stopped.readback.unsupported.backend"
         }
         ReadbackError::CredentialsUnavailable => {
-            copy::text("journal.cli.offload.stopped.readback.credentials.unavailable")
+            "journal.cli.offload.stopped.readback.credentials.unavailable"
         }
-        ReadbackError::InvalidSelection => {
-            copy::text("journal.cli.offload.stopped.readback.invalid.selection")
-        }
+        ReadbackError::InvalidSelection => "journal.cli.offload.stopped.readback.invalid.selection",
         ReadbackError::RepositoryIdentityChanged => {
-            copy::text("journal.cli.offload.stopped.archive.repository.identity.changed")
+            "journal.cli.offload.stopped.archive.repository.identity.changed"
         }
         ReadbackError::InvalidRepositoryIdentity => {
-            copy::text("journal.cli.offload.stopped.archive.repository.identity.invalid")
+            "journal.cli.offload.stopped.archive.repository.identity.invalid"
         }
         ReadbackError::SnapshotNodeUnavailable => {
-            copy::text("journal.cli.offload.stopped.readback.snapshot.node.unavailable")
+            "journal.cli.offload.stopped.readback.snapshot.node.unavailable"
         }
         ReadbackError::IncompleteDiscovery | ReadbackError::IncompleteDiscoveryAt(_) => {
-            copy::text("journal.cli.offload.stopped.readback.incomplete.discovery")
+            "journal.cli.offload.stopped.readback.incomplete.discovery"
         }
-        ReadbackError::ToolFailed => copy::text("journal.cli.offload.stopped.readback.tool.failed"),
-        ReadbackError::NativeFailure => {
-            copy::text("journal.cli.offload.stopped.readback.native.failure")
-        }
+        ReadbackError::ToolFailed => "journal.cli.offload.stopped.readback.tool.failed",
+        ReadbackError::NativeFailure => "journal.cli.offload.stopped.readback.native.failure",
         ReadbackError::TargetRootChanged => {
-            copy::text("journal.cli.offload.stopped.readback.target.root.changed")
+            "journal.cli.offload.stopped.readback.target.root.changed"
         }
-        ReadbackError::Admission(error) => stopped_archive(error.into()),
-    }
+        ReadbackError::Admission(error) => return stopped_archive(locale, error.into()),
+    };
+    copy::render_for(locale, id, &[])
 }

@@ -1,0 +1,23 @@
+{
+  "description": "Journal maintenance command: health config enabled.",
+  "context": "Journal maintenance command: health config enabled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "238773a6f5b798c0bda7ebe48f8c114dfb2318aefc9ad87569d21145bc7462bf",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "field",
+      "kind": "accepted-input",
+      "value": "retention.journal_logs.enabled"
+    }
+  ]
+}

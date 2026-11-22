@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: schedule state shape.",
+  "context": "Journal maintenance command: schedule state shape.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ac220d9e6ca8ace74d1832ab44efebe8529996e5c40a2d14eb4ce33414b15c23",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

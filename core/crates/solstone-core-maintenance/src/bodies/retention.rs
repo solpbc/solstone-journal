@@ -3,6 +3,7 @@
 
 //! Daily cleanup of originals voice-only transcription could not delete right away.
 
+use crate::copy::Output;
 use std::path::Path;
 use std::time::Duration;
 
@@ -16,11 +17,12 @@ const BUSY_RETRIES: usize = 6;
 const BUSY_PAUSE: Duration = Duration::from_secs(120);
 
 pub(crate) fn owner_voice_originals(
+    copy: Output<'_>,
     args: &[String],
     journal: &Path,
     services: &HealthServices,
 ) -> CliRun {
-    owner_voice_originals_checked(args, journal, services, &|| Ok(()))
+    owner_voice_originals_in(copy, args, journal, services, &|| Ok(()))
 }
 
 /// Use the same cleanup from an app-owned worker, retaining its Stop checkpoint.
@@ -30,10 +32,20 @@ pub fn owner_voice_originals_checked(
     services: &HealthServices,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> CliRun {
+    owner_voice_originals_in(Output::canonical(), args, journal, services, checkpoint)
+}
+
+fn owner_voice_originals_in(
+    copy: Output<'_>,
+    args: &[String],
+    journal: &Path,
+    services: &HealthServices,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> CliRun {
     if !args.is_empty() {
         return CliRun {
             stdout: String::new(),
-            stderr: "usage: retention:owner-voice-originals takes no arguments.\n".to_owned(),
+            stderr: copy.line("journal.cli.maintenance.retention.usage", []),
             exit_code: 2,
         };
     }
@@ -50,7 +62,10 @@ pub fn owner_voice_originals_checked(
         Err(error) => {
             return CliRun {
                 stdout: String::new(),
-                stderr: format!("owner voice original cleanup incomplete: {error}\n"),
+                stderr: copy.line(
+                    "journal.cli.maintenance.retention.owed",
+                    [("error", &error)],
+                ),
                 exit_code: 1,
             };
         }
@@ -58,22 +73,27 @@ pub fn owner_voice_originals_checked(
     if let Err(error) = solstone_core_import::audio_originals::finish_owed(journal, checkpoint) {
         return CliRun {
             stdout: String::new(),
-            stderr: format!("imported audio cleanup incomplete: {error}\n"),
+            stderr: copy.line(
+                "journal.cli.maintenance.retention.import.owed",
+                [("error", &error)],
+            ),
             exit_code: 1,
         };
     }
     CliRun {
-        stdout: format!(
-            "owner-voice-originals: deleted {}, deleted without a record {}, already gone {}, still owed {}, kept for good {}, not provable {}, nothing owed {}, skipped while busy {}, events unreadable {}\n",
-            counts.deleted,
-            counts.deleted_unrecorded,
-            counts.gone,
-            counts.owed,
-            counts.refused,
-            counts.not_provable,
-            counts.not_owed,
-            counts.skipped,
-            counts.unknown,
+        stdout: copy.line(
+            "journal.cli.maintenance.retention.summary",
+            [
+                ("deleted", &counts.deleted),
+                ("deleted_unrecorded", &counts.deleted_unrecorded),
+                ("gone", &counts.gone),
+                ("owed", &counts.owed),
+                ("refused", &counts.refused),
+                ("not_provable", &counts.not_provable),
+                ("not_owed", &counts.not_owed),
+                ("skipped", &counts.skipped),
+                ("unknown", &counts.unknown),
+            ],
         ),
         stderr: String::new(),
         exit_code: i32::from(counts.unknown > 0 || counts.deleted_unrecorded > 0),

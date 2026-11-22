@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: health prune queue.",
+  "context": "Journal maintenance command: health prune queue.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "71c8101ea82d34f692c0b14e214dfc345f30c5b0d4ae0bad2d52f0207c9eacfa",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

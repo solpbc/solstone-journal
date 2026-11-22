@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: face log failed.",
+  "context": "Journal maintenance command: face log failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1f9e5abd93dd01a25df987dad671dc716bc3289bb0c9723706538d5c25640b28",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

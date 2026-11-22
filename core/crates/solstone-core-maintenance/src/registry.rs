@@ -29,114 +29,158 @@ pub struct RoutineDescriptor {
     pub max_runtime: Option<&'static str>,
 }
 
-const ROUTINES: [RoutineDescriptor; 17] = [
-    RoutineDescriptor {
+struct Definition {
+    id: &'static str,
+    description_id: &'static str,
+    cadence: Cadence,
+    max_runtime: Option<&'static str>,
+}
+
+const DEFINITIONS: [Definition; 17] = [
+    Definition {
         id: "faces:backfill",
-        description: "refresh profile pic suggestions from meetings, including past meetings.",
+        description_id: "journal.cli.maintenance.description.faces.backfill",
         cadence: Cadence::Hourly,
         max_runtime: Some("40m"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "faces:reconcile",
-        description: "refresh profile pic suggestions from meetings, including past meetings.",
+        description_id: "journal.cli.maintenance.description.faces.backfill",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "speakers:discover-voices",
-        description: "Refresh recurring voice discovery cache.",
+        description_id: "journal.cli.maintenance.description.speakers.discover.voices",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "speakers:candidate-pair-suggestions",
-        description: "Find dense speaker candidate pairs for Suggestions.",
+        description_id: "journal.cli.maintenance.description.speakers.candidate.pair.suggestions",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "speakers:name-variants",
-        description: "Find speaker name variants for Suggestions.",
+        description_id: "journal.cli.maintenance.description.speakers.name.variants",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "speakers:consolidate-pool",
-        description: "Consolidate dense speaker candidates.",
+        description_id: "journal.cli.maintenance.description.speakers.consolidate.pool",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "speakers:backfill-pool",
-        description: "catch up the voice list from audio already transcribed, then look for your voice.",
+        description_id: "journal.cli.maintenance.description.speakers.backfill.pool",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "speakers:backfill-labels",
-        description: "name the speakers, without the model, in audio that has no speaker labels yet.",
+        description_id: "journal.cli.maintenance.description.speakers.backfill.labels",
         cadence: Cadence::Daily,
         max_runtime: Some("30m"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "backup:run",
-        description: "run encrypted backup.",
+        description_id: "journal.cli.maintenance.description.backup.run",
         cadence: Cadence::Hourly,
         max_runtime: Some("49h"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "backup:prune",
-        description: "apply encrypted backup retention policy.",
+        description_id: "journal.cli.maintenance.description.backup.prune",
         cadence: Cadence::Daily,
         max_runtime: Some("3h"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "backup:erase",
-        description: "remove what you erased from your backups too, when you chose it.",
+        description_id: "journal.cli.maintenance.description.backup.erase",
         cadence: Cadence::Hourly,
         max_runtime: Some("7h"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "backup:verify",
-        description: "verify encrypted backup read-back.",
+        description_id: "journal.cli.maintenance.description.backup.verify",
         cadence: Cadence::Weekly,
         max_runtime: Some("90m"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "backup:offload",
-        description: "offload verified raw media after backup.",
+        description_id: "journal.cli.maintenance.description.backup.offload",
         cadence: Cadence::Daily,
         max_runtime: Some("7h"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "health:mark-raw",
-        description: "list original media ready for removal.",
+        description_id: "journal.cli.maintenance.description.health.mark.raw",
         cadence: Cadence::Daily,
         max_runtime: Some("60m"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "health:prune-logs",
-        description: "prune old operational logs.",
+        description_id: "journal.cli.maintenance.description.health.prune.logs",
         cadence: Cadence::Daily,
         max_runtime: Some("30m"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "trash:erase",
-        description: "finish trash steps a stop interrupted and erase what has waited its days.",
+        description_id: "journal.cli.maintenance.description.trash.erase",
         cadence: Cadence::Hourly,
         max_runtime: Some("30m"),
     },
-    RoutineDescriptor {
+    Definition {
         id: "retention:owner-voice-originals",
-        description: "finish deleting the original audio of recent recordings processed with \"leave out other voices\" on.",
+        description_id: "journal.cli.maintenance.description.retention.owner.voice.originals",
         cadence: Cadence::Daily,
         max_runtime: Some("30m"),
     },
 ];
 
+// Keep the reference descriptor's public English field available to existing callers.
+static ENGLISH_DESCRIPTIONS: std::sync::LazyLock<[String; DEFINITIONS.len()]> =
+    std::sync::LazyLock::new(|| {
+        std::array::from_fn(|i| {
+            crate::copy::Output::canonical().message(DEFINITIONS[i].description_id, [])
+        })
+    });
+static ROUTINES: std::sync::LazyLock<[RoutineDescriptor; DEFINITIONS.len()]> =
+    std::sync::LazyLock::new(|| {
+        std::array::from_fn(|i| {
+            let definition = &DEFINITIONS[i];
+            RoutineDescriptor {
+                id: definition.id,
+                description: &ENGLISH_DESCRIPTIONS[i],
+                cadence: definition.cadence,
+                max_runtime: definition.max_runtime,
+            }
+        })
+    });
+
 /// All routines in the fixed native maintenance census.
-pub const fn routines() -> &'static [RoutineDescriptor] {
-    &ROUTINES
+pub fn routines() -> &'static [RoutineDescriptor] {
+    ROUTINES.as_slice()
+}
+
+impl RoutineDescriptor {
+    pub(crate) fn display_description(self, copy: crate::copy::Output<'_>) -> String {
+        // An injected descriptor can use the same ID with its own prose. Only
+        // the registry's own string (including a copied descriptor) has a catalog identity.
+        routines()
+            .iter()
+            .zip(&DEFINITIONS)
+            .find(|(native, _)| {
+                native.id == self.id && std::ptr::eq(native.description, self.description)
+            })
+            .map_or_else(
+                || self.description.to_owned(),
+                |(_, definition)| copy.message(definition.description_id, []),
+            )
+    }
 }
 
 /// Look up a routine by its stable `app:routine` identifier.

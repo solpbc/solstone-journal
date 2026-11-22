@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: face generation.",
+  "context": "Journal maintenance command: face generation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7ee7bc98d32ebeac361f4dc03cfe48ddc21dab1f4d528ddd1a7c8bc88f43d23c",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

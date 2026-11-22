@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: list status synced.",
+  "context": "Journal maintenance command: list status synced.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d3d12e60e6d67c1365b77d27441c37b8413754af7fd37ae8beb9596e617ca2a4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

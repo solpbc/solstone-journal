@@ -1,0 +1,28 @@
+{
+  "description": "Journal maintenance command: backup ok.",
+  "context": "Journal maintenance command: backup ok.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "snapshot",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "be8c69703566bcb96e33e977cc19c357e0b56a2ed8552f40ad0fe6124c5e8a1c",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "field",
+      "kind": "accepted-input",
+      "value": "snapshot_id="
+    }
+  ]
+}

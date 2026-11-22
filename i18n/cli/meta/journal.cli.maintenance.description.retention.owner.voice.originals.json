@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for retention:owner-voice-originals.",
+  "context": "Maintenance list description for retention:owner-voice-originals.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e9ba41fb1dfee2154f667e467ede18e8289dbbb0430b9c5350cffb4ae248bec",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

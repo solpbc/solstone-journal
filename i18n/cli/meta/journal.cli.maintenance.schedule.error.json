@@ -1,0 +1,25 @@
+{
+  "description": "Journal maintenance command: schedule error.",
+  "context": "Journal maintenance command: schedule error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "75e23fce50828e1e091b430bb21c0ae271613779f3b8123adce2ce81883d0de6",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

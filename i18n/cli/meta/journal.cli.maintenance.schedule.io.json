@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: schedule io.",
+  "context": "Journal maintenance command: schedule io.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c0209b7fb0015979e05e982e14835f17eb20e24dd4f61eb96dfeefb61f5b837f",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

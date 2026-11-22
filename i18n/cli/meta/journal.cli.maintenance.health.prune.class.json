@@ -1,0 +1,54 @@
+{
+  "description": "Journal maintenance command: health prune class.",
+  "context": "Journal maintenance command: health prune class.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "files_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "dirs_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "class",
+      "type": "string"
+    },
+    {
+      "name": "files",
+      "type": "string"
+    },
+    {
+      "name": "dirs",
+      "type": "string"
+    },
+    {
+      "name": "bytes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1514da2dd11f452f333acb09db5496765ba69c56c78c9122f7733b7e6494565a",
+  "max_length": 464,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "files_quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "indent",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

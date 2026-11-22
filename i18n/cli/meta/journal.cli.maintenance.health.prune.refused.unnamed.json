@@ -1,0 +1,23 @@
+{
+  "description": "Journal maintenance command: health prune refused unnamed.",
+  "context": "Journal maintenance command: health prune refused unnamed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "77e035d828186a216b34a7aad4805d122316623388391fbe405a43a2208b53e7",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "routine",
+      "kind": "accepted-input",
+      "value": "prune-logs"
+    }
+  ]
+}

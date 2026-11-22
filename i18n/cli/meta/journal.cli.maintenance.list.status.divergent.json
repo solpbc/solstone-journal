@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: list status divergent.",
+  "context": "Journal maintenance command: list status divergent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "41aaed1234d026ef532be18b2726b6b2841a59575bd4f6f9ac38014d73f05385",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

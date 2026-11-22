@@ -1,0 +1,42 @@
+{
+  "description": "Maintenance routine usage for offload.",
+  "context": "Maintenance routine usage for offload.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "args",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2d6acfd094b4c204b78438918cb0bf4e97213524768902671d5cd79e9d303b4a",
+  "max_length": 148,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal maintenance run"
+    },
+    {
+      "name": "options",
+      "kind": "accepted-input",
+      "value": " [-h] [--dry-run]"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

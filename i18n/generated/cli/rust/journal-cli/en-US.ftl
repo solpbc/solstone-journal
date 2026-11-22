@@ -6535,6 +6535,292 @@ m6a6f75726e616c2e636c692e6a6f75726e616c2e726f6f742e696e7370656374 = native journ
 
 m6a6f75726e616c2e636c692e6a6f75726e616c2e726f6f742e7061636b616765 = native journal project root resolution failed: could not locate source checkout or installed { "solstone" } package from { $path }
 
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e6572617365 = backup erase: { $state } { "removed=" }{ $removed } { "shared=" }{ $shared } { "staying=" }{ $staying } { "unreached=" }{ $unreached } { "pending=" }{ $pending }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e65726173652e6572726f722e64657461696c = backup erase: error { "reason=" }{ $reason } { "detail=" }{ $detail }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e65726173652e726561736f6e = backup erase: { $state } { "removed=" }{ $removed } { "shared=" }{ $shared } { "staying=" }{ $staying } { "unreached=" }{ $unreached } { "pending=" }{ $pending } { "reason=" }{ $reason }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e6572726f72 = backup: error { "reason=" }{ $reason }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e6572726f722e64657461696c = backup: error { "reason=" }{ $reason } { "detail=" }{ $detail }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e6f6b = backup: ok { "snapshot_id=" }{ $snapshot }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e706175736564 = backup: skipped. backup is paused, so nothing ran. run `{ "solstone journal backup resume" }` to start it again.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e7072756e652e6572726f72 = backup prune: error { "reason=" }{ $reason }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e7072756e652e6572726f722e64657461696c = backup prune: error { "reason=" }{ $reason } { "detail=" }{ $detail }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e7072756e652e6f6b = backup prune: ok
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e7072756e652e706175736564 = backup prune: skipped. backup is paused, so nothing ran. run `{ "solstone journal backup resume" }` to start it again.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e7072756e652e736b6970706564 = backup prune: skipped
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e736b6970706564 = backup: skipped
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e73757065727365646564 = backup: claimed by another device; local settings were cleared. run `{ "solstone journal backup enable" }` to set up a new backup here.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e756e617661696c61626c65 = backup maintenance services are unavailable.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e75736167652e6f66666c6f6164 = usage: { "solstone journal maintenance run" } { $id }{ " [-h] [--dry-run]" }{ "\u000a" }{ "solstone journal maintenance run" } { $id }: error: unrecognized arguments: { $args }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e75736167652e726f7574696e65 = usage: { "solstone journal maintenance run" } { $id }{ " [-h]" }{ "\u000a" }{ "solstone journal maintenance run" } { $id }: error: unrecognized arguments: { $args }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e7665726966792e6572726f72 = backup verify: error { "reason=" }{ $reason }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e7665726966792e6572726f722e64657461696c = backup verify: error { "reason=" }{ $reason } { "detail=" }{ $detail }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e7665726966792e6f6b = backup verify: ok { "subset=" }{ $subset }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e7665726966792e706175736564 = backup verify: skipped. backup is paused, so nothing ran. run `{ "solstone journal backup resume" }` to start it again.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6261636b75702e7665726966792e736b6970706564 = backup verify: skipped
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e6261636b75702e6572617365 = remove what you erased from your backups too, when you chose it.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e6261636b75702e6f66666c6f6164 = offload verified raw media after backup.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e6261636b75702e7072756e65 = apply encrypted backup retention policy.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e6261636b75702e72756e = run encrypted backup.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e6261636b75702e766572696679 = verify encrypted backup read-back.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e66616365732e6261636b66696c6c = refresh profile pic suggestions from meetings, including past meetings.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e6865616c74682e6d61726b2e726177 = list original media ready for removal.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e6865616c74682e7072756e652e6c6f6773 = prune old operational logs.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e726574656e74696f6e2e6f776e65722e766f6963652e6f726967696e616c73 = finish deleting the original audio of recent recordings processed with "leave out other voices" on.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e737065616b6572732e6261636b66696c6c2e6c6162656c73 = name the speakers, without the model, in audio that has no speaker labels yet.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e737065616b6572732e6261636b66696c6c2e706f6f6c = catch up the voice list from audio already transcribed, then look for your voice.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e737065616b6572732e63616e6469646174652e706169722e73756767657374696f6e73 = Find dense speaker candidate pairs for Suggestions.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e737065616b6572732e636f6e736f6c69646174652e706f6f6c = Consolidate dense speaker candidates.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e737065616b6572732e646973636f7665722e766f69636573 = Refresh recurring voice discovery cache.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e737065616b6572732e6e616d652e76617269616e7473 = Find speaker name variants for Suggestions.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6465736372697074696f6e2e74726173682e6572617365 = finish trash steps a stop interrupted and erase what has waited its days.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e666163652e67656e65726174696f6e = face backfill generation was not admitted
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e666163652e6c6f672e6361636865 = face backfill scan cache not saved: { $detail }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e666163652e6c6f672e6465666572726564 = face participation recovery deferred: { $detail }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e666163652e6c6f672e6661696c6564 = face backfill failed: { $detail }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e666163652e7072696f72697479 = face history priority unavailable: { $error }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e666163652e7265636f6e63696c696174696f6e = face reconciliation: { $error }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e636f6e6669672e64617973 = { "retention.journal_logs.days" } must be a positive integer
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e636f6e6669672e656e61626c6564 = { "retention.journal_logs.enabled" } must be a boolean
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e6b656570 = { "mark-raw" }: your retention settings keep all original media.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e6d61726b2e656e747279 = { "  " }{ $id }: { $reason }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e6d61726b2e72656675736564 = { "mark-raw" }: some items could not be listed:
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e6d61726b2e73756d6d617279 = { "mark-raw" }: new items: { $new }.{ "\u000a" }  standing total: { $total }.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e6d61726b2e756e617661696c61626c65 = { "mark-raw" }: could not build the list: { $error }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e617267732e696e7465676572 = usage: { "solstone journal maintenance run health:prune-logs" } { "[-h] [--dry-run] [--days DAYS]" }{ "\u000a" }{ "solstone journal maintenance run health:prune-logs" }: error: argument { "--days" }: invalid int value: '{ $value }'
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e617267732e6d697373696e67 = usage: { "solstone journal maintenance run health:prune-logs" } { "[-h] [--dry-run] [--days DAYS]" }{ "\u000a" }{ "solstone journal maintenance run health:prune-logs" }: error: argument { "--days" }: expected one argument
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e617267732e706f736974697665 = { "prune-logs" }: { "--days" } must be a positive integer
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e617267732e756e6578706563746564 = usage: { "solstone journal maintenance run health:prune-logs" } { "[-h] [--dry-run] [--days DAYS]" }{ "\u000a" }{ "solstone journal maintenance run health:prune-logs" }: error: unrecognized arguments: { $value }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e636c617373 = { $i18nCategory ->
+    [one] { $i18nCategory-dirs_quantity ->
+        [one] { "  " }{ $class }: { $files } file, { $dirs } cache dir, { $bytes }
+       *[other] { "  " }{ $class }: { $files } file, { $dirs } cache dir(s), { $bytes }
+    }
+   *[other] { $i18nCategory-dirs_quantity ->
+        [one] { "  " }{ $class }: { $files } file(s), { $dirs } cache dir, { $bytes }
+       *[other] { "  " }{ $class }: { $files } file(s), { $dirs } cache dir(s), { $bytes }
+    }
+}
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e64697361626c6564 = { "prune-logs" }: disabled
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e68616c746564 = { "prune-logs" }: { $message }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e6d697373696e67 = the journal directory is unavailable
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e70726576696577 = { $i18nCategory ->
+    [one] { $i18nCategory-dirs_quantity ->
+        [one] { "prune-logs" }: would prune { $files } operational-log file, { $dirs } cache dir, { $bytes } { "cutoff=" }{ $cutoff }
+       *[other] { "prune-logs" }: would prune { $files } operational-log file, { $dirs } cache dir(s), { $bytes } { "cutoff=" }{ $cutoff }
+    }
+   *[other] { $i18nCategory-dirs_quantity ->
+        [one] { "prune-logs" }: would prune { $files } operational-log file(s), { $dirs } cache dir, { $bytes } { "cutoff=" }{ $cutoff }
+       *[other] { "prune-logs" }: would prune { $files } operational-log file(s), { $dirs } cache dir(s), { $bytes } { "cutoff=" }{ $cutoff }
+    }
+}
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e7175657565 = a log was removed, but its search update could not be queued: { $error }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e72656675736564 = { "prune-logs" }: some logs could not be pruned: { $summary }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e726566757365642e756e6e616d6564 = { "prune-logs" }: some logs could not be pruned: the retention tool refused without naming an entry.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e726573756c74 = { $i18nCategory ->
+    [one] { $i18nCategory-dirs_quantity ->
+        [one] { "prune-logs" }: pruned { $files } operational-log file, { $dirs } cache dir, { $bytes } { "cutoff=" }{ $cutoff }
+       *[other] { "prune-logs" }: pruned { $files } operational-log file, { $dirs } cache dir(s), { $bytes } { "cutoff=" }{ $cutoff }
+    }
+   *[other] { $i18nCategory-dirs_quantity ->
+        [one] { "prune-logs" }: pruned { $files } operational-log file(s), { $dirs } cache dir, { $bytes } { "cutoff=" }{ $cutoff }
+       *[other] { "prune-logs" }: pruned { $files } operational-log file(s), { $dirs } cache dir(s), { $bytes } { "cutoff=" }{ $cutoff }
+    }
+}
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e756e617661696c61626c65 = { "prune-logs" }: could not prune logs: { $error }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e756e6461746561626c65 = { "  " }error: the entry's retention date could not be determined: the entry's retention date could not be determined
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7072756e652e756e7265616461626c65 = { "  " }error: { $detail }: { $detail }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e756e617661696c61626c65 = health maintenance services are unavailable.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6865616c74682e7573616765 = usage: { "solstone journal maintenance run" } { $id } { "[-h]" }{ "\u000a" }{ "solstone journal maintenance run" } { $id }: error: unrecognized arguments: { $args }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e68656c702e6c697374 = usage: { "solstone journal maintenance list" }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e68656c702e726f6f74 = usage: { "solstone journal maintenance <command> [options]" }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e68656c702e72756e = usage: { "solstone journal maintenance run ID [ARGS...]" }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e68656c702e73796e63 = usage: { "solstone journal maintenance sync" }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6c6973742e656d707479 = No maintenance routines found.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6c6973742e68656164696e672e6465736372697074696f6e = DESCRIPTION
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6c6973742e68656164696e672e6576657279 = EVERY
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6c6973742e68656164696e672e6964 = ID
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6c6973742e68656164696e672e72756e74696d65 = MAX RUNTIME
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6c6973742e68656164696e672e737461747573 = STATUS
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6c6973742e7374617475732e646976657267656e74 = divergent
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6c6973742e7374617475732e6d697373696e67 = missing
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6c6973742e7374617475732e6e6f7468657265 = n/a
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6c6973742e7374617475732e73796e636564 = synced
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6d697373696e672e726f6f74 = usage: { "solstone journal maintenance <command> [options]" }{ "\u000a" }{ "solstone journal maintenance" }: error: the following arguments are required: { "command" }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e6d697373696e672e72756e = usage: { "solstone journal maintenance run ID [ARGS...]" }{ "\u000a" }{ "solstone journal maintenance run" }: error: the following arguments are required: { "ID" }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e726574656e74696f6e2e696d706f72742e6f776564 = imported audio cleanup incomplete: { $error }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e726574656e74696f6e2e6f776564 = owner voice original cleanup incomplete: { $error }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e726574656e74696f6e2e73756d6d617279 = { "owner-voice-originals" }: deleted { $deleted }, deleted without a record { $deleted_unrecorded }, already gone { $gone }, still owed { $owed }, kept for good { $refused }, not provable { $not_provable }, nothing owed { $not_owed }, skipped while busy { $skipped }, events unreadable { $unknown }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e726574656e74696f6e2e7573616765 = usage: { "retention:owner-voice-originals" } takes no arguments.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e726f7574696e652e756e696d706c656d656e746564 = { $i18nCategory ->
+    [one] maintenance routine { $id } is not yet implemented ({ $count } forwarded argument).
+   *[other] maintenance routine { $id } is not yet implemented ({ $count } forwarded argument(s)).
+}
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e726f7574696e652e756e6b6e6f776e = Unknown maintenance routine: { $id }. Run `{ "solstone journal maintenance list" }` to see available routines.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e7363686564756c652e6572726f72 = Error reading/updating { $path }: { $error } (cause: { $error })
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e7363686564756c652e696f = schedule I/O failed: { $detail }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e7363686564756c652e6d616c666f726d6564 = malformed schedules config at { $path }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e7363686564756c652e6d65746164617461 = unknown schedule metadata keys: { $keys }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e7363686564756c652e7368617065 = { $path }: schedules config must be a JSON object
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e7363686564756c652e73746174652e7368617065 = schedule state at { $path } must be a JSON object
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e646973636f766572792e68656c706572 = speaker discovery helper failed at { $stage }: { $reason }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e646973636f766572792e696e707574 = speaker discovery failed: { $detail }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e6572726f722e6f776e65722e766f6963652e6c6f6f6b2e6661696c6564 = owner voice look failed: { $error }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e6572726f722e737065616b65722e63616e6469646174652e636f6e736f6c69646174696f6e2e6661696c6564 = speaker candidate consolidation failed: { $error }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e6572726f722e737065616b65722e63616e6469646174652e706169722e726566726573682e6661696c6564 = speaker candidate-pair refresh failed: { $error }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e6572726f722e737065616b65722e6c6162656c2e6261636b66696c6c2e6661696c6564 = speaker label backfill failed: { $error }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e6572726f722e737065616b65722e6e616d652e76617269616e742e726566726573682e6661696c6564 = speaker name-variant refresh failed: { $error }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e6e6f742e61646d6974746564 = speaker discovery generation was not admitted at maintenance entry
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e75736167652e6261636b66696c6c2e6c6162656c73 = usage: { "solstone journal maintenance run speakers:backfill-labels" }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e75736167652e6261636b66696c6c2e706f6f6c = usage: { "solstone journal maintenance run speakers:backfill-pool" }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e75736167652e63616e6469646174652e706169722e73756767657374696f6e73 = usage: { "solstone journal maintenance run speakers:candidate-pair-suggestions" }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e75736167652e636f6e736f6c69646174652e706f6f6c = usage: { "solstone journal maintenance run speakers:consolidate-pool" }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e75736167652e646973636f7665722e766f69636573 = usage: { "solstone journal maintenance run speakers:discover-voices" }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e737065616b6572732e75736167652e6e616d652e76617269616e7473 = usage: { "solstone journal maintenance run speakers:name-variants" }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e73796e632e6164646564 = added: { $count }: { $ids }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e73796e632e61646465642e656d707479 = added: 0
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e73796e632e64697361626c6564 = disabled: { $count }: { $ids }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e73796e632e64697361626c65642e656d707479 = disabled: 0
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e73796e632e646976657267656e74 = divergent: { $count }: { $ids }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e73796e632e646976657267656e742e656d707479 = divergent: 0
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e73796e632e72656d6f766564 = removed: { $count }: { $ids }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e73796e632e72656d6f7665642e656d707479 = removed: 0
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e73796e632e73796e636564 = synced: { $count }: { $ids }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e73796e632e73796e6365642e656d707479 = synced: 0
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e73796e632e7761726e696e672e64697361626c6564 = WARNING: { $id } schedule is disabled; preserved disabled
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e73796e632e7761726e696e672e646976657267656e74 = WARNING: { $id } schedule is divergent; preserved unchanged
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e74726173682e657261736564 = trash: erased { $erased }, finished { $finished }, waiting { $waiting }, failed { $failed }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e74726173682e6572726f72 = trash: { $failure }
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e74726173682e7573616765 = usage: { "trash:erase" } takes no arguments.
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e75736167652e66616365 = usage: { "solstone journal maintenance run ID [ARGS...]" }{ "\u000a" }{ "solstone journal maintenance" }: error: unrecognized arguments: unexpected face reconciliation arguments
+
+m6a6f75726e616c2e636c692e6d61696e74656e616e63652e75736167652e756e6b6e6f776e = usage: { "solstone journal maintenance <command> [options]" }{ "\u000a" }{ "solstone journal maintenance" }: error: unrecognized arguments: { $arguments }
+
 m6a6f75726e616c2e636c692e6f66666c6f61642e67756964616e63652e6368616e6765642e7265747279 = offload stopped because your journal changed while it was running. nothing was removed from this computer. run it again.
 
 m6a6f75726e616c2e636c692e6f66666c6f61642e67756964616e63652e6368616e6765642e726576696577 = offload stopped because your journal changed while it was running. nothing was removed from this computer. keep offload's recovery files and review the recorded effects before retrying.

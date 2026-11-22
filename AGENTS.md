@@ -512,9 +512,11 @@ For native Sol commands, render terminal messages in the caller's language. Keep
 
 The journal host chooses the terminal language after it identifies the command and its option values. Keep service receipts, supervisor logs and machine output in their canonical form. For `journal check`, render the terminal report in the caller’s language. Keep the JSON report in English, including its diagnostic details.
 
+For maintenance commands, render routine descriptions and terminal reports in the caller’s language. Keep schedule files, embedded receipts and speaker statistics in their original form.
+
 Keep the English Markdown that Think and Describe write readable on its own. Store the message identities and argument ranges in the matching `.md.display` file. When reading it, check that it still matches the Markdown before translating only the marked messages.
 
-Converted crates: `solstone-core-about`, `solstone-core-backfill-cli`, `solstone-core-backup-cli`, `solstone-core-brain`, `solstone-core-brain-owner`, `solstone-core-cli-boundary`, `solstone-core-depict`, `solstone-core-describe`, `solstone-core-doctor`, `solstone-core-journal-cli`, `solstone-core-journal-stats-cli`, `solstone-core-linked-share`, `solstone-core-offload`, `solstone-core-reprocess-cli`, `solstone-core-retention`, `solstone-core-segment-cli`, `solstone-core-sol`, `solstone-core-streams-cli`, `solstone-core-talent-cli`, `solstone-core-talent-config`, `solstone-core-think-cli`, `solstone-core-transcribe`, `solstone-core-update`.
+Converted crates: `solstone-core-about`, `solstone-core-backfill-cli`, `solstone-core-backup-cli`, `solstone-core-brain`, `solstone-core-brain-owner`, `solstone-core-cli-boundary`, `solstone-core-depict`, `solstone-core-describe`, `solstone-core-doctor`, `solstone-core-journal-cli`, `solstone-core-journal-stats-cli`, `solstone-core-linked-share`, `solstone-core-maintenance`, `solstone-core-offload`, `solstone-core-reprocess-cli`, `solstone-core-retention`, `solstone-core-segment-cli`, `solstone-core-sol`, `solstone-core-streams-cli`, `solstone-core-talent-cli`, `solstone-core-talent-config`, `solstone-core-think-cli`, `solstone-core-transcribe`, `solstone-core-update`.
 
 ## 9. File headers, naming, dependencies
 

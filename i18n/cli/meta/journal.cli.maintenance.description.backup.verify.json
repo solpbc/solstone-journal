@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for backup:verify.",
+  "context": "Maintenance list description for backup:verify.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3e80352e567c885d6c2e612e00eebcdf319d361a2919b5b60cd654a1d255a0fc",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

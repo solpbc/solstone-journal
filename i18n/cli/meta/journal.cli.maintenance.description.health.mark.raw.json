@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for health:mark-raw.",
+  "context": "Maintenance list description for health:mark-raw.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6f8a2cc3d9de78e797e848f193c71b45d2259367f79870ed3bf9759504173b82",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

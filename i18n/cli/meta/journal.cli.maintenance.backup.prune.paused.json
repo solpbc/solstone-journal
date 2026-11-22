@@ -1,0 +1,23 @@
+{
+  "description": "Journal maintenance command: backup prune paused.",
+  "context": "Journal maintenance command: backup prune paused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81784e4ad20b1304857f8e9d3205e3b640eeb957c005d05e135f2e3de5519687",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "resume",
+      "kind": "command",
+      "value": "solstone journal backup resume"
+    }
+  ]
+}

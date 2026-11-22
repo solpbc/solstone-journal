@@ -4,6 +4,8 @@
 //! Native registry and command surface for recurring journal maintenance.
 
 pub mod bodies;
+mod copy;
+use copy::Output;
 mod parser;
 pub mod registry;
 pub mod schedule_sync;
@@ -84,14 +86,29 @@ impl CliOutcome {
 
 /// Run the production maintenance command parser, retaining any offload owner.
 pub fn run_cli(args: &[String], journal: &Path) -> CliOutcome {
+    run_cli_output(
+        Output::terminal(solstone_core_cli_copy::terminal_locale()),
+        args,
+        journal,
+    )
+}
+
+pub fn run_cli_in(locale: Option<&str>, args: &[String], journal: &Path) -> CliOutcome {
+    run_cli_output(Output::terminal(locale), args, journal)
+}
+
+fn run_cli_output(copy: Output<'_>, args: &[String], journal: &Path) -> CliOutcome {
     if let Some(dry_run) = owned_offload_options(args) {
-        return CliOutcome::Offload(Box::new(solstone_core_offload::cli_run::run_cli_offload(
-            journal,
-            std::sync::Arc::new(ProductionClock),
-            dry_run,
-        )));
+        return CliOutcome::Offload(Box::new(
+            solstone_core_offload::cli_run::run_cli_offload_in(
+                journal,
+                std::sync::Arc::new(ProductionClock),
+                dry_run,
+                copy.locale(),
+            ),
+        ));
     }
-    CliOutcome::Rendered(run_rendered_cli(args, journal))
+    CliOutcome::Rendered(run_rendered_cli(copy, args, journal))
 }
 
 fn owned_offload_options(args: &[String]) -> Option<bool> {
@@ -191,7 +208,7 @@ mod owned_offload_tests {
     }
 }
 
-fn run_rendered_cli(args: &[String], journal: &Path) -> CliRun {
+fn run_rendered_cli(copy: Output<'_>, args: &[String], journal: &Path) -> CliRun {
     let executable = match std::env::current_exe() {
         Ok(exe) => exe,
         Err(err) => {
@@ -205,14 +222,15 @@ fn run_rendered_cli(args: &[String], journal: &Path) -> CliRun {
                 && let Ok(capability) = prepare(journal, &clock)
             {
                 return bodies::backup::backup_run_result(
+                    copy,
                     capability.record_tool_error(&clock, error),
                 );
             }
-            return format_backup_resolution_error(args, &error);
+            return format_backup_resolution_error(copy, args, &error);
         }
     };
     let http = UreqHttpTransport;
-    run_cli_with_deps(args, journal, &SystemToolRunner, &http, &executable)
+    run_cli_with_deps(copy, args, journal, &SystemToolRunner, &http, &executable)
 }
 
 /// Select only an actual discovery body; help and other maintenance verbs need no generation.
@@ -249,7 +267,14 @@ pub fn run_cli_with_discovery_generation(
         routines: routines(),
         discovery_generation: Some(generation),
     };
-    parser::run(args, journal, &services, None, None)
+    parser::run(
+        Output::terminal(solstone_core_cli_copy::terminal_locale()),
+        args,
+        journal,
+        &services,
+        None,
+        None,
+    )
 }
 
 /// The maintenance requests emitted by the embedded backup owner routes.
@@ -279,6 +304,7 @@ pub fn run_embedded_backup(
         EmbeddedBackupRoutine::Prune => "backup:prune",
     };
     run_cli_with_deps(
+        Output::canonical(),
         &["run".to_owned(), id.to_owned()],
         journal,
         runner,
@@ -288,6 +314,7 @@ pub fn run_embedded_backup(
 }
 
 fn run_cli_with_deps(
+    copy: Output<'_>,
     args: &[String],
     journal: &Path,
     runner: &dyn ToolRunner,
@@ -307,7 +334,7 @@ fn run_cli_with_deps(
         journal_maintenance: &restore_hooks,
     };
     if is_bare_backup_run(args) {
-        return run_admitted_backup(journal, &clock, runner, executable, placeholder);
+        return run_admitted_backup(copy, journal, &clock, runner, executable, placeholder);
     }
     let maintenance_services = MaintenanceServices::new(routines());
     let health = HealthServices {
@@ -315,7 +342,8 @@ fn run_cli_with_deps(
         zone: solstone_core_journal_config::owner_zone(journal),
     };
     match classify_maintenance_tool_resolution(args) {
-        None => run_cli_with_services(
+        None => run_cli_with_services_in(
+            copy,
             args,
             journal,
             &maintenance_services,
@@ -330,7 +358,8 @@ fn run_cli_with_deps(
                         rclone_path: tools.rclone_path.as_deref(),
                         ..placeholder
                     };
-                    run_cli_with_services(
+                    run_cli_with_services_in(
+                        copy,
                         args,
                         journal,
                         &maintenance_services,
@@ -341,7 +370,8 @@ fn run_cli_with_deps(
                 // A journal without backup turned on skips these bodies before
                 // running any tool, so a missing tool is not its error.
                 Err(_) if !solstone_core_backup_runtime::backup_enabled(journal) => {
-                    run_cli_with_services(
+                    run_cli_with_services_in(
+                        copy,
                         args,
                         journal,
                         &maintenance_services,
@@ -349,20 +379,33 @@ fn run_cli_with_deps(
                         Some(&health),
                     )
                 }
-                Err(error) => format_backup_resolution_error(args, &error),
+                Err(error) => format_backup_resolution_error(copy, args, &error),
             }
         }
     }
 }
 
-fn format_backup_resolution_error(args: &[String], error: &ClosedToolError) -> CliRun {
+fn format_backup_resolution_error(
+    copy: Output<'_>,
+    args: &[String],
+    error: &ClosedToolError,
+) -> CliRun {
     let outer = error.to_string();
     let detail = error.detail();
     let id = classify_maintenance_routine_id(args);
     let line = match id.as_deref() {
-        Some("backup:prune") => format!("backup prune: error reason={outer} detail={detail}"),
-        Some("backup:erase") => format!("backup erase: error reason={outer} detail={detail}"),
-        Some("backup:verify") => format!("backup verify: error reason={outer} detail={detail}"),
+        Some("backup:prune") => copy.message(
+            "journal.cli.maintenance.backup.prune.error.detail",
+            [("reason", &outer), ("detail", &detail)],
+        ),
+        Some("backup:erase") => copy.message(
+            "journal.cli.maintenance.backup.erase.error.detail",
+            [("reason", &outer), ("detail", &detail)],
+        ),
+        Some("backup:verify") => copy.message(
+            "journal.cli.maintenance.backup.verify.error.detail",
+            [("reason", &outer), ("detail", &detail)],
+        ),
         Some("backup:offload") => format_offload_result(&OffloadResult {
             status: "stalled".into(),
             reason: Some(outer),
@@ -377,7 +420,10 @@ fn format_backup_resolution_error(args: &[String], error: &ClosedToolError) -> C
             audit_recording_failure: None,
             recording_failure: None,
         }),
-        _ => format!("backup: error reason={outer} detail={detail}"),
+        _ => copy.message(
+            "journal.cli.maintenance.backup.error.detail",
+            [("reason", &outer), ("detail", &detail)],
+        ),
     };
     CliRun {
         stdout: format!("{line}\n"),
@@ -387,6 +433,7 @@ fn format_backup_resolution_error(args: &[String], error: &ClosedToolError) -> C
 }
 
 fn run_admitted_backup(
+    copy: Output<'_>,
     journal: &Path,
     clock: &dyn Clock,
     runner: &dyn ToolRunner,
@@ -401,13 +448,14 @@ fn run_admitted_backup(
                     rclone_path: tools.rclone_path.as_deref(),
                     ..placeholder
                 };
-                bodies::backup::backup_run_result(capability.execute(&services))
+                bodies::backup::backup_run_result(copy, capability.execute(&services))
             }
-            Err(tool_error) => {
-                bodies::backup::backup_run_result(capability.record_tool_error(clock, tool_error))
-            }
+            Err(tool_error) => bodies::backup::backup_run_result(
+                copy,
+                capability.record_tool_error(clock, tool_error),
+            ),
         },
-        Err(result) => bodies::backup::backup_run_result(result),
+        Err(result) => bodies::backup::backup_run_result(copy, result),
     }
 }
 
@@ -483,7 +531,14 @@ fn maintenance_has_help(args: &[String]) -> bool {
 
 /// Run the maintenance parser with an injected registry.
 pub fn run_cli_with(args: &[String], journal: &Path, services: &MaintenanceServices<'_>) -> CliRun {
-    parser::run(args, journal, services, None, None)
+    parser::run(
+        Output::terminal(solstone_core_cli_copy::terminal_locale()),
+        args,
+        journal,
+        services,
+        None,
+        None,
+    )
 }
 
 /// Run the maintenance parser with an injected backup runtime service set.
@@ -493,7 +548,14 @@ pub fn run_cli_with_backup(
     services: &MaintenanceServices<'_>,
     backup_services: &BackupServices<'_>,
 ) -> CliRun {
-    parser::run(args, journal, services, Some(backup_services), None)
+    parser::run(
+        Output::terminal(solstone_core_cli_copy::terminal_locale()),
+        args,
+        journal,
+        services,
+        Some(backup_services),
+        None,
+    )
 }
 
 /// Run the maintenance parser with injected backup and health routine services.
@@ -504,7 +566,32 @@ pub fn run_cli_with_services(
     backup_services: Option<&BackupServices<'_>>,
     health_services: Option<&HealthServices>,
 ) -> CliRun {
-    parser::run(args, journal, services, backup_services, health_services)
+    run_cli_with_services_in(
+        Output::terminal(solstone_core_cli_copy::terminal_locale()),
+        args,
+        journal,
+        services,
+        backup_services,
+        health_services,
+    )
+}
+
+fn run_cli_with_services_in(
+    copy: Output<'_>,
+    args: &[String],
+    journal: &Path,
+    services: &MaintenanceServices<'_>,
+    backup_services: Option<&BackupServices<'_>>,
+    health_services: Option<&HealthServices>,
+) -> CliRun {
+    parser::run(
+        copy,
+        args,
+        journal,
+        services,
+        backup_services,
+        health_services,
+    )
 }
 
 struct ProductionClock;
@@ -540,7 +627,7 @@ mod composed_tests {
     use std::io;
     use std::path::Path;
 
-    use super::{HealthServices, MaintenanceServices, registry, run_cli_with_services};
+    use super::{HealthServices, MaintenanceServices, Output, registry, run_cli_with_services};
     use jiff::tz::TimeZone;
     use serde_json::json;
     use solstone_core_backup_runtime::hosted_runtime::HttpError;
@@ -567,7 +654,11 @@ mod composed_tests {
                 if dry_run {
                     args.push("--dry-run".into());
                 }
-                let result = super::format_backup_resolution_error(&args, &error);
+                let result = super::format_backup_resolution_error(
+                    Output::terminal(Some(solstone_core_cli_copy::ENGLISH)),
+                    &args,
+                    &error,
+                );
                 assert_eq!(result.exit_code, 1);
                 assert!(result.stdout.starts_with("backup offload: stalled"));
                 assert!(result.stdout.contains(error.detail()));
@@ -706,6 +797,22 @@ mod resolution_tests {
     #[cfg(unix)]
     use solstone_core_backup_runtime::install_backup_tool_resolution_started_hook;
     use solstone_core_backup_runtime::{HttpTransport, ToolOutput, ToolRequest, ToolRunner};
+    fn run_cli_with_deps(
+        args: &[String],
+        journal: &Path,
+        runner: &dyn ToolRunner,
+        http: &dyn HttpTransport,
+        executable: &Path,
+    ) -> CliRun {
+        super::run_cli_with_deps(
+            Output::terminal(Some(solstone_core_cli_copy::ENGLISH)),
+            args,
+            journal,
+            runner,
+            http,
+            executable,
+        )
+    }
     #[cfg(unix)]
     use solstone_core_backup_runtime::{
         backup_journal_resolved_hook_armed, backup_path_resolution_attempts,

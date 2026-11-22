@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: speakers error speaker label backfill failed.",
+  "context": "Journal maintenance command: speakers error speaker label backfill failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "10436ef38cbb6efbf787ff77b648f480db5506dbcfdd7dd35a2953343a05c5bf",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

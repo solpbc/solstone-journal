@@ -1,0 +1,38 @@
+{
+  "description": "Journal maintenance command: usage unknown.",
+  "context": "Journal maintenance command: usage unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "arguments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9c0a4c7a547c4a73131fd562a8dc652816e8f550f353af8de8121c64963eeebe",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "syntax",
+      "kind": "accepted-input",
+      "value": "solstone journal maintenance <command> [options]"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal maintenance"
+    }
+  ]
+}

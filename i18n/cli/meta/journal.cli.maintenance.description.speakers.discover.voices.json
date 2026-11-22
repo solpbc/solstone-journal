@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for speakers:discover-voices.",
+  "context": "Maintenance list description for speakers:discover-voices.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "48252a03390297891b86a68d4d2f8856f620685503949d736d094ee256d4253f",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

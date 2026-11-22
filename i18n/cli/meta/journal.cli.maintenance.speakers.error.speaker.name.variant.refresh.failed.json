@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: speakers error speaker name variant refresh failed.",
+  "context": "Journal maintenance command: speakers error speaker name variant refresh failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9a5113a0e4ac77e900b4d2646063019d5e2756136127c5401283e6441507cfff",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

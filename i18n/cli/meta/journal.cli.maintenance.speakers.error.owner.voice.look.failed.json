@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: speakers error owner voice look failed.",
+  "context": "Journal maintenance command: speakers error owner voice look failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5fbc1e0a92d68d2eee002a9fe951c1ef893c8a12c4de2bf112cbf275a60207ee",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

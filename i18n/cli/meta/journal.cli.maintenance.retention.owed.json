@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: retention owed.",
+  "context": "Journal maintenance command: retention owed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "65f02e9d4c85be64d3753879c55d17c4ac4c4e2f29889fc15522ce5b89e9729d",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

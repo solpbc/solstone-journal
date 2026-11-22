@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: backup prune ok.",
+  "context": "Journal maintenance command: backup prune ok.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f76331f6290de66a2feb54d770be79b39d435df1317a020c5ff3f7d7e1481c6d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

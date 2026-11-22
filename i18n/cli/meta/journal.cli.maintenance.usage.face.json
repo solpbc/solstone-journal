@@ -1,0 +1,33 @@
+{
+  "description": "Journal maintenance command: usage face.",
+  "context": "Journal maintenance command: usage face.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dbab4601753c9bdd9b5787145832925fdc1a83ee5a1ce29577451f4fbfd2d1ef",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "syntax",
+      "kind": "accepted-input",
+      "value": "solstone journal maintenance run ID [ARGS...]"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal maintenance"
+    }
+  ]
+}

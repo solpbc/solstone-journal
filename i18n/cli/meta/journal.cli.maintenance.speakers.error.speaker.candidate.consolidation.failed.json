@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: speakers error speaker candidate consolidation failed.",
+  "context": "Journal maintenance command: speakers error speaker candidate consolidation failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "388bcf040942d688f786513a9bf64b98a993d93571a3d9c8b18cac5136e7b1e5",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: face log deferred.",
+  "context": "Journal maintenance command: face log deferred.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dd63cf98e0e7aeea0312841b29ebc00c2a64e67f86d4e886fcde459ac247c1dd",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

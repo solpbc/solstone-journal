@@ -1,0 +1,23 @@
+{
+  "description": "Journal maintenance command: health prune disabled.",
+  "context": "Journal maintenance command: health prune disabled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4053dca8a086f977b10802b6ca01a1596f834fc8b4a84064e4fd2a8f5e3f904f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "routine",
+      "kind": "accepted-input",
+      "value": "prune-logs"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "description": "Missing maintenance command.",
+  "context": "Missing maintenance command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cb67caba77baf627cc4eb0b14b0c3326a75ac354d032e398727902286953d541",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "accepted-input",
+      "value": "solstone journal maintenance <command> [options]"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal maintenance"
+    },
+    {
+      "name": "argument",
+      "kind": "accepted-input",
+      "value": "command"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "description": "Journal maintenance command: backup erase.",
+  "context": "Journal maintenance command: backup erase.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "state",
+      "type": "string"
+    },
+    {
+      "name": "removed",
+      "type": "string"
+    },
+    {
+      "name": "shared",
+      "type": "string"
+    },
+    {
+      "name": "staying",
+      "type": "string"
+    },
+    {
+      "name": "unreached",
+      "type": "string"
+    },
+    {
+      "name": "pending",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "983e627591cbed8b3f7058d9b8350614e48ec622f872b25c1de96251938d7ff9",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "removed_field",
+      "kind": "accepted-input",
+      "value": "removed="
+    },
+    {
+      "name": "shared_field",
+      "kind": "accepted-input",
+      "value": "shared="
+    },
+    {
+      "name": "staying_field",
+      "kind": "accepted-input",
+      "value": "staying="
+    },
+    {
+      "name": "unreached_field",
+      "kind": "accepted-input",
+      "value": "unreached="
+    },
+    {
+      "name": "pending_field",
+      "kind": "accepted-input",
+      "value": "pending="
+    }
+  ]
+}

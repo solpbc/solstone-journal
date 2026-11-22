@@ -1,0 +1,25 @@
+{
+  "description": "Journal maintenance command: speakers discovery helper.",
+  "context": "Journal maintenance command: speakers discovery helper.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stage",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9cface54b35bdf653e45850af35cc29099b48e253134a8ad8fc0d2e881d81074",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

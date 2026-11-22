@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for faces:backfill.",
+  "context": "Maintenance list description for faces:backfill.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d965fc0db33a36cbc12632b8df84c0091734471118c3b6b6b5fecdfc9251f1a3",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

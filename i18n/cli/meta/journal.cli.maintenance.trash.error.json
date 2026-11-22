@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: trash error.",
+  "context": "Journal maintenance command: trash error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "failure",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "da0700aa2c544b5df08484f654e0d5efb8fc3eb56c8f2a3fab1e237a0859201c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

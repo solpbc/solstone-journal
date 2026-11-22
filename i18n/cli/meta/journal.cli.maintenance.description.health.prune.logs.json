@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for health:prune-logs.",
+  "context": "Maintenance list description for health:prune-logs.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fbf8134da41485f420401ce5a1fa3758b2ee6ce08004d392c9bebc995ee66f5e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

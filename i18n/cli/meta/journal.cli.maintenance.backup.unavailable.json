@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: backup unavailable.",
+  "context": "Journal maintenance command: backup unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9136d2629c5ca4396492b57444d698464066074ba4b94370caf51771dcd5c946",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

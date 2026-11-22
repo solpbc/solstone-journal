@@ -1,0 +1,23 @@
+{
+  "description": "Journal maintenance command: speakers usage consolidate pool.",
+  "context": "Journal maintenance command: speakers usage consolidate pool.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1d4363dbf8e182447c3d2d914ba1142f3d6b21158cbb9409f62922d55fcfbff6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal maintenance run speakers:consolidate-pool"
+    }
+  ]
+}

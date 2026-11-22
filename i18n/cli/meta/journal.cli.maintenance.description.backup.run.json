@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for backup:run.",
+  "context": "Maintenance list description for backup:run.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "63467756e0e1dd89b8e89b7a6ba09fd8d5eba0924cb6da7e791a8795ce51927a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

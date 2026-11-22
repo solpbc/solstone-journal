@@ -1,0 +1,23 @@
+{
+  "description": "Journal maintenance command: trash usage.",
+  "context": "Journal maintenance command: trash usage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b8ce3a341411f2c6cf51027756d6cab81fe8a141d6b1741143e101f142c7fc18",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "id",
+      "kind": "accepted-input",
+      "value": "trash:erase"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Maintenance sync summary for the divergent group.",
+  "context": "Maintenance sync summary for the divergent group.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "ids",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "37f9904258e9fcee085d96207db10116f0202b75517399172abb1ba6df41bd58",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

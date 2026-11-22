@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: backup prune skipped.",
+  "context": "Journal maintenance command: backup prune skipped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "39c7bcee83e46988935ed43da7ae4712812e530c303094ad2db950898fe45211",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

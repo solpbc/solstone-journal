@@ -1,0 +1,23 @@
+{
+  "description": "Journal maintenance command: health mark refused.",
+  "context": "Journal maintenance command: health mark refused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "00928d7bdb1e45629c9cfe7d3b6ebadef28ae9a5c155df94b552f8ede51b256e",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "routine",
+      "kind": "accepted-input",
+      "value": "mark-raw"
+    }
+  ]
+}

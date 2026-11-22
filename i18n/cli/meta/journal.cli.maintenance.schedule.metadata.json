@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: schedule metadata.",
+  "context": "Journal maintenance command: schedule metadata.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "keys",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "27e684b2f8218aa7909dcb625fb2407abecf684c2245a88ddb642637f8e69142",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "description": "Journal maintenance command: health prune args integer.",
+  "context": "Journal maintenance command: health prune args integer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cbfaac922eee55ba8043220736eeba2110f8a9f10c7da32de84a93482b63305a",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal maintenance run health:prune-logs"
+    },
+    {
+      "name": "syntax",
+      "kind": "accepted-input",
+      "value": "[-h] [--dry-run] [--days DAYS]"
+    },
+    {
+      "name": "flag",
+      "kind": "flag",
+      "value": "--days"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

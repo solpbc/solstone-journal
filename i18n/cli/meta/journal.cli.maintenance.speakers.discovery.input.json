@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: speakers discovery input.",
+  "context": "Journal maintenance command: speakers discovery input.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "edd08e7c62e4e44e4fbb9f5d1c9a969c8d82239f519d476f35e721c7363f45a2",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

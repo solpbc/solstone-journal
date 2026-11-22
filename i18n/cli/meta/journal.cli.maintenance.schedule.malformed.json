@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: schedule malformed.",
+  "context": "Journal maintenance command: schedule malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d4135d2b4272cbde10178355a455f06bdd1be1e616cdbf94e5916ab786826f8f",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

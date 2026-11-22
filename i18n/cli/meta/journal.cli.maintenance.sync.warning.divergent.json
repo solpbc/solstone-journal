@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: sync warning divergent.",
+  "context": "Journal maintenance command: sync warning divergent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4b764d5d8a98d1e51083002690506c0a0c9a163e5df113f5dd17aa8d928b40fa",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

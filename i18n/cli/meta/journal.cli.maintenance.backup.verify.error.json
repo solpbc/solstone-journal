@@ -1,0 +1,28 @@
+{
+  "description": "Journal maintenance command: backup verify error.",
+  "context": "Journal maintenance command: backup verify error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "941874ec558fd62b95022570e3eab068e5e121ad543a06145c3f8aab03ba8370",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reason_field",
+      "kind": "accepted-input",
+      "value": "reason="
+    }
+  ]
+}

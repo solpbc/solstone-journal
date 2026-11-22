@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for speakers:backfill-labels.",
+  "context": "Maintenance list description for speakers:backfill-labels.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3e00b838cc2f343d886077164872f6c8395b70b05fa1a21c4f083647592e7cba",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

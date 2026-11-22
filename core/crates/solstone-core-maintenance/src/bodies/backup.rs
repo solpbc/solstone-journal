@@ -3,6 +3,7 @@
 
 //! In-process implementations of the backup-owned maintenance routines.
 
+use crate::copy::Output;
 use std::path::Path;
 
 use solstone_core_backup_runtime::{
@@ -13,73 +14,97 @@ use solstone_core_backup_runtime::{
 use crate::CliRun;
 
 pub(crate) fn run(
+    copy: Output<'_>,
     id: &str,
     args: &[String],
     journal: &Path,
     services: &BackupServices<'_>,
 ) -> CliRun {
     match id {
-        "backup:run" if args.is_empty() => {
-            backup_run_result(match prepare(journal, services.clock) {
+        "backup:run" if args.is_empty() => backup_run_result(
+            copy,
+            match prepare(journal, services.clock) {
                 Ok(capability) => capability.execute(services),
                 Err(result) => result,
-            })
-        }
-        "backup:prune" if args.is_empty() => backup_prune(journal, services),
-        "backup:verify" if args.is_empty() => backup_verify(journal, services),
-        "backup:erase" if args.is_empty() => backup_erase(journal, services),
-        "backup:offload" => backup_offload(args, journal, services),
-        _ => usage_error(id, args),
+            },
+        ),
+        "backup:prune" if args.is_empty() => backup_prune(copy, journal, services),
+        "backup:verify" if args.is_empty() => backup_verify(copy, journal, services),
+        "backup:erase" if args.is_empty() => backup_erase(copy, journal, services),
+        "backup:offload" => backup_offload(copy, args, journal, services),
+        _ => usage_error(copy, id, args),
     }
 }
 
-pub(crate) fn backup_run_result(result: BackupResult) -> CliRun {
+pub(crate) fn backup_run_result(copy: Output<'_>, result: BackupResult) -> CliRun {
     let line = match result.status.as_str() {
-        "ok" => format!(
-            "backup: ok snapshot_id={}",
-            result.snapshot_id.as_deref().unwrap_or("None")
+        "ok" => copy.message(
+            "journal.cli.maintenance.backup.ok",
+            [("snapshot", &result.snapshot_id.as_deref().unwrap_or("None"))],
         ),
         "skipped" if result.detail.as_deref() == Some("paused") => {
-            format!("backup: skipped. {PAUSED_NOTHING_RAN}")
+            copy.message("journal.cli.maintenance.backup.paused", [])
         }
-        "skipped" => "backup: skipped".to_owned(),
+        "skipped" => copy.message("journal.cli.maintenance.backup.skipped", []),
         // ⛔ Not a retry candidate: the broker has told us, permanently, that
         // this device's binding was replaced by a newer one. Local settings
         // are already cleared by the time this line prints (engine.rs), so
         // the schedule stops asking a question with a known answer.
-        "cleared_superseded" => "backup: claimed by another device; local settings were \
-             cleared. run `solstone journal backup enable` to set up a new backup here."
-            .to_owned(),
+        "cleared_superseded" => copy.message("journal.cli.maintenance.backup.superseded", []),
         _ => {
             let reason = result.error_reason.as_deref().unwrap_or("None");
             if let Some(detail) = result.detail.as_deref() {
-                format!("backup: error reason={reason} detail={detail}")
+                copy.message(
+                    "journal.cli.maintenance.backup.error.detail",
+                    [("reason", &reason), ("detail", &detail)],
+                )
             } else {
-                format!("backup: error reason={reason}")
+                copy.message(
+                    "journal.cli.maintenance.backup.error",
+                    [("reason", &reason)],
+                )
             }
         }
     };
     routine_result(line, &result.status)
 }
 
-fn backup_prune(journal: &Path, services: &BackupServices<'_>) -> CliRun {
-    paused_line(journal, backup_prune_result(run_prune(journal, services)))
+fn backup_prune(copy: Output<'_>, journal: &Path, services: &BackupServices<'_>) -> CliRun {
+    let result = run_prune(journal, services);
+    backup_prune_result_for(
+        copy,
+        result,
+        solstone_core_backup_runtime::backup_paused(journal),
+    )
 }
 
-fn backup_erase(journal: &Path, services: &BackupServices<'_>) -> CliRun {
+fn backup_erase(copy: Output<'_>, journal: &Path, services: &BackupServices<'_>) -> CliRun {
     let report = solstone_core_offload::backup_erase::run(journal, services);
-    let mut line = format!(
-        "backup erase: {} removed={} shared={} staying={} unreached={} pending={}",
-        report.state,
-        report.removed,
-        report.shared,
-        report.staying,
-        report.unreached,
-        report.pending
-    );
-    if let Some(reason) = &report.reason {
-        line.push_str(&format!(" reason={reason}"));
-    }
+    let line = match &report.reason {
+        Some(reason) => copy.message(
+            "journal.cli.maintenance.backup.erase.reason",
+            [
+                ("state", &report.state),
+                ("removed", &report.removed),
+                ("shared", &report.shared),
+                ("staying", &report.staying),
+                ("unreached", &report.unreached),
+                ("pending", &report.pending),
+                ("reason", &reason),
+            ],
+        ),
+        None => copy.message(
+            "journal.cli.maintenance.backup.erase",
+            [
+                ("state", &report.state),
+                ("removed", &report.removed),
+                ("shared", &report.shared),
+                ("staying", &report.staying),
+                ("unreached", &report.unreached),
+                ("pending", &report.pending),
+            ],
+        ),
+    };
     let ok = matches!(
         report.state.as_str(),
         "nothing" | "done" | "idle" | "waiting" | "running"
@@ -91,54 +116,55 @@ fn backup_erase(journal: &Path, services: &BackupServices<'_>) -> CliRun {
     }
 }
 
-const PAUSED_NOTHING_RAN: &str =
-    "backup is paused, so nothing ran. run `solstone journal backup resume` to start it again.";
-
-// A skip while paused says why, so a direct run doesn't read as a fault.
-fn paused_line(journal: &Path, mut run: CliRun) -> CliRun {
-    if solstone_core_backup_runtime::backup_paused(journal) && run.stdout.ends_with(": skipped\n") {
-        run.stdout = format!("{}. {PAUSED_NOTHING_RAN}\n", run.stdout.trim_end());
-    }
-    run
-}
-
-fn backup_prune_result(result: PruneResult) -> CliRun {
+fn backup_prune_result_for(copy: Output<'_>, result: PruneResult, paused: bool) -> CliRun {
     let line = match result.status.as_str() {
-        "ok" => "backup prune: ok".to_owned(),
-        "skipped" => "backup prune: skipped".to_owned(),
-        _ => format!(
-            "backup prune: error reason={}",
-            result.error_reason.as_deref().unwrap_or("None")
+        "ok" => copy.message("journal.cli.maintenance.backup.prune.ok", []),
+        "skipped" if paused => copy.message("journal.cli.maintenance.backup.prune.paused", []),
+        "skipped" => copy.message("journal.cli.maintenance.backup.prune.skipped", []),
+        _ => copy.message(
+            "journal.cli.maintenance.backup.prune.error",
+            [("reason", &result.error_reason.as_deref().unwrap_or("None"))],
         ),
     };
     routine_result(line, &result.status)
 }
 
-fn backup_verify(journal: &Path, services: &BackupServices<'_>) -> CliRun {
-    paused_line(
-        journal,
-        backup_verify_result(run_verification(journal, services, services.clock)),
+fn backup_verify(copy: Output<'_>, journal: &Path, services: &BackupServices<'_>) -> CliRun {
+    let result = run_verification(journal, services, services.clock);
+    backup_verify_result_for(
+        copy,
+        result,
+        solstone_core_backup_runtime::backup_paused(journal),
     )
 }
 
-fn backup_verify_result(result: VerificationResult) -> CliRun {
+fn backup_verify_result_for(copy: Output<'_>, result: VerificationResult, paused: bool) -> CliRun {
     let line = match result.status.as_str() {
-        "ok" => format!(
-            "backup verify: ok subset={}",
-            result.checked_subset.as_deref().unwrap_or("None")
+        "ok" => copy.message(
+            "journal.cli.maintenance.backup.verify.ok",
+            [(
+                "subset",
+                &result.checked_subset.as_deref().unwrap_or("None"),
+            )],
         ),
-        "skipped" => "backup verify: skipped".to_owned(),
-        _ => format!(
-            "backup verify: error reason={}",
-            result.reason.as_deref().unwrap_or("None")
+        "skipped" if paused => copy.message("journal.cli.maintenance.backup.verify.paused", []),
+        "skipped" => copy.message("journal.cli.maintenance.backup.verify.skipped", []),
+        _ => copy.message(
+            "journal.cli.maintenance.backup.verify.error",
+            [("reason", &result.reason.as_deref().unwrap_or("None"))],
         ),
     };
     routine_result(line, &result.status)
 }
 
-fn backup_offload(args: &[String], _journal: &Path, _services: &BackupServices<'_>) -> CliRun {
+fn backup_offload(
+    copy: Output<'_>,
+    args: &[String],
+    _journal: &Path,
+    _services: &BackupServices<'_>,
+) -> CliRun {
     if args.iter().any(|argument| argument != "--dry-run") {
-        return usage_error("backup:offload", args);
+        return usage_error(copy, "backup:offload", args);
     }
     let dry_run = args.iter().any(|argument| argument == "--dry-run");
     CliRun {
@@ -151,10 +177,9 @@ fn backup_offload(args: &[String], _journal: &Path, _services: &BackupServices<'
             }
         ),
         stderr: if dry_run {
-            "a read-only offload preview is unavailable. no offload work was started.\n".into()
+            copy.line("journal.cli.backup.offload.preview.held", [])
         } else {
-            "run `solstone journal backup offload run` with the installed solstone command.\n"
-                .into()
+            copy.line("journal.cli.backup.offload.use.installed", [])
         },
         exit_code: 1,
     }
@@ -175,18 +200,21 @@ fn success(line: String) -> CliRun {
     }
 }
 
-fn usage_error(id: &str, args: &[String]) -> CliRun {
-    let options = if id == "backup:offload" {
-        " [-h] [--dry-run]"
+fn usage_error(copy: Output<'_>, id: &str, args: &[String]) -> CliRun {
+    let stderr = if id == "backup:offload" {
+        copy.line(
+            "journal.cli.maintenance.backup.usage.offload",
+            [("id", &id), ("args", &args.join(" "))],
+        )
     } else {
-        " [-h]"
+        copy.line(
+            "journal.cli.maintenance.backup.usage.routine",
+            [("id", &id), ("args", &args.join(" "))],
+        )
     };
     CliRun {
         stdout: String::new(),
-        stderr: format!(
-            "usage: solstone journal maintenance run {id}{options}\nsolstone journal maintenance run {id}: error: unrecognized arguments: {}\n",
-            args.join(" ")
-        ),
+        stderr,
         exit_code: 2,
     }
 }
@@ -208,7 +236,16 @@ mod tests {
         JournalMaintenance, JournalMaintenanceError, ToolOutput, ToolRequest, ToolRunner,
     };
 
-    use super::{backup_run_result, run};
+    use super::{Output, backup_run_result};
+
+    fn run(
+        id: &str,
+        args: &[String],
+        journal: &std::path::Path,
+        services: &BackupServices<'_>,
+    ) -> crate::CliRun {
+        super::run(Output::canonical(), id, args, journal, services)
+    }
 
     struct FixtureRunner(RefCell<VecDeque<ToolOutput>>);
 
@@ -430,13 +467,16 @@ mod tests {
         // The broker-to-clear mechanics are proven in
         // solstone-core-backup-runtime::engine; this is the CLI rendering
         // for the outcome that reaches the scheduler.
-        let result = backup_run_result(BackupResult {
-            status: "cleared_superseded".into(),
-            snapshot_id: None,
-            error_reason: Some("binding_superseded".into()),
-            unreadable: None,
-            detail: None,
-        });
+        let result = backup_run_result(
+            Output::canonical(),
+            BackupResult {
+                status: "cleared_superseded".into(),
+                snapshot_id: None,
+                error_reason: Some("binding_superseded".into()),
+                unreadable: None,
+                detail: None,
+            },
+        );
         assert_eq!(
             result.stdout,
             "backup: claimed by another device; local settings were cleared. run \

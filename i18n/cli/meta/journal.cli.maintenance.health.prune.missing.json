@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: health prune missing.",
+  "context": "Journal maintenance command: health prune missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a13db1efde22950a4f21a388220180b28f67f1f61762939c1491ccc4a1cf6d71",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

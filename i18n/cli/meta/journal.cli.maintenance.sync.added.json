@@ -1,0 +1,25 @@
+{
+  "description": "Maintenance sync summary for the added group.",
+  "context": "Maintenance sync summary for the added group.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "ids",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "264117295f82b14fc26285fe3a7dc86957ce7049c4495b3c3fd2ce6abaf41fd9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

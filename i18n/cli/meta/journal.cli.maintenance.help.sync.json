@@ -1,0 +1,23 @@
+{
+  "description": "Journal maintenance command: help sync.",
+  "context": "Journal maintenance command: help sync.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6ded81f9571f0cedd45f361f8e3355b68941d9484132c7499112f9e3254b2bb8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "accepted-input",
+      "value": "solstone journal maintenance sync"
+    }
+  ]
+}

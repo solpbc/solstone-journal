@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: face reconciliation.",
+  "context": "Journal maintenance command: face reconciliation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "17edfafe8369aca220d1f121e6f603d743aee8b23efc7ba34d5b9883e54bf8e0",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for backup:prune.",
+  "context": "Maintenance list description for backup:prune.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5f39ded0f971e3d229638e40df4c532445d23d46ffd1fdab37c6798909e08c3",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

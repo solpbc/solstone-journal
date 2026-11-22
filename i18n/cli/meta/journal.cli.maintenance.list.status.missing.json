@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: list status missing.",
+  "context": "Journal maintenance command: list status missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "25060bf572f5fe2aefcd7433e33ff366c74148f1ff3a7be8476fcda113f499ec",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

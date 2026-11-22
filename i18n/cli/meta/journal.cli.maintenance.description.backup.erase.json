@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for backup:erase.",
+  "context": "Maintenance list description for backup:erase.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59cec7e6d20b0105edb51555820d74ac0e0bc64feb16c965897d2ffbde3ddd46",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

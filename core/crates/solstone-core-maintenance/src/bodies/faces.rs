@@ -133,7 +133,14 @@ fn save_scan(journal: &Path, scan: &BTreeMap<String, String>) {
             .map_err(|e| e.to_string())
         });
     if let Err(error) = result {
-        log::warn!("face backfill scan cache not saved: {error}");
+        log::warn!(
+            "{}",
+            solstone_core_cli_copy::display_for(
+                solstone_core_cli_copy::manual_log_locale(),
+                "journal.cli.maintenance.face.log.cache",
+                [("detail", &error)]
+            )
+        );
     }
 }
 #[cfg(test)]
@@ -468,7 +475,14 @@ fn run(
                 break;
             }
             other => {
-                log::warn!("face backfill failed: {other:?}");
+                log::warn!(
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        solstone_core_cli_copy::manual_log_locale(),
+                        "journal.cli.maintenance.face.log.failed",
+                        [("detail", &format!("{other:?}"))]
+                    )
+                );
                 stats.failed += 1;
             }
         }
@@ -497,7 +511,14 @@ fn recover(
     stats.added = match recovery {
         Ok(added) => added,
         Err(error) => {
-            log::warn!("face participation recovery deferred: {error}");
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    solstone_core_cli_copy::manual_log_locale(),
+                    "journal.cli.maintenance.face.log.deferred",
+                    [("detail", &error)]
+                )
+            );
             stats.recovery_failed = true;
             return Ok(stats);
         }
@@ -526,7 +547,13 @@ fn extract(
             "solstone-core-describe"
         });
     #[cfg(windows)]
-    let generation = generation.ok_or("face backfill generation was not admitted")?;
+    let generation = generation.ok_or_else(|| {
+        solstone_core_cli_copy::display_for(
+            solstone_core_cli_copy::manual_log_locale(),
+            "journal.cli.maintenance.face.generation",
+            [],
+        )
+    })?;
     let request = ManagedLaunchRequest {
         command: vec![
             binary.to_string_lossy().into_owned(),

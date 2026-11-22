@@ -1,0 +1,42 @@
+{
+  "description": "Journal maintenance command: health usage.",
+  "context": "Journal maintenance command: health usage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "args",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f4f8895703d481f96f1ac649f26fd72bab0f6d4bbffc3db745625f5018d7905f",
+  "max_length": 148,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal maintenance run"
+    },
+    {
+      "name": "syntax",
+      "kind": "accepted-input",
+      "value": "[-h]"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

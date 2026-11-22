@@ -1,0 +1,28 @@
+{
+  "description": "Journal maintenance command: backup verify ok.",
+  "context": "Journal maintenance command: backup verify ok.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "subset",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "477e0584650535467117eee77e3d38eb07638a5333bcee07ae7202dc8125a9b2",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "field",
+      "kind": "accepted-input",
+      "value": "subset="
+    }
+  ]
+}

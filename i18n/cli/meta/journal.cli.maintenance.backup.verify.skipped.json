@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: backup verify skipped.",
+  "context": "Journal maintenance command: backup verify skipped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c27d0140e5fbf269c11420449cc7f0868af6a51d3a4a925aff7259898a0dfd1f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

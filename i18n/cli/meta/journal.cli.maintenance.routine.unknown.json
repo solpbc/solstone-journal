@@ -1,0 +1,28 @@
+{
+  "description": "Journal maintenance command: routine unknown.",
+  "context": "Journal maintenance command: routine unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4ab6707b3166bf6a5789c73020e0580bf3f4f62555cc765b19ffc21b16716bfc",
+  "max_length": 115,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal maintenance list"
+    }
+  ]
+}

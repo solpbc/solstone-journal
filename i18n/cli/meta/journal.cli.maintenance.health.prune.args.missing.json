@@ -1,0 +1,38 @@
+{
+  "description": "Journal maintenance command: health prune args missing.",
+  "context": "Journal maintenance command: health prune args missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ad305a3f0d885419e7f110a17a04aa488048cb149755192ff99b60f44c49650e",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal maintenance run health:prune-logs"
+    },
+    {
+      "name": "syntax",
+      "kind": "accepted-input",
+      "value": "[-h] [--dry-run] [--days DAYS]"
+    },
+    {
+      "name": "flag",
+      "kind": "flag",
+      "value": "--days"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

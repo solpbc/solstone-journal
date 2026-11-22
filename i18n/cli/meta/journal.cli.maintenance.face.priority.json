@@ -1,0 +1,21 @@
+{
+  "description": "Journal maintenance command: face priority.",
+  "context": "Journal maintenance command: face priority.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "54fd8b7221befbaa7f38663836497bfb66ef14d3784679466ffab10393496ea2",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

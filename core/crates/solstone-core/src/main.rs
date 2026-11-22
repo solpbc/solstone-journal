@@ -1913,7 +1913,11 @@ fn run_maintenance(
                 solstone_core_maintenance::CliOutcome::Rendered(run),
             );
         }
-        OwnedBackupCommand::Maintenance(solstone_core_maintenance::run_cli(arguments, journal))
+        OwnedBackupCommand::Maintenance(solstone_core_maintenance::run_cli_in(
+            solstone_core_cli_copy::terminal_locale().map(|_| host_locale()),
+            arguments,
+            journal,
+        ))
     })
 }
 

@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance sync summary for an empty synced group.",
+  "context": "Maintenance sync summary for an empty synced group.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2db31bfb41249d3983609cab85e4552487451c59ecd05ff4caabd2d96c631ffa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

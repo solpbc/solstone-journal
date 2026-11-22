@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: list empty.",
+  "context": "Journal maintenance command: list empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e28e242ccdfa7af55b257c0bcddd515042c47d08594299a7de168a67226f25cb",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

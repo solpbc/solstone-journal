@@ -398,7 +398,8 @@ fn journal_changed(
 }
 
 impl OwnedOffloadCliRun {
-    pub(super) fn render(&mut self) {
+    pub(super) fn render(&mut self, locale: &str) {
+        let text = |id| copy::render_for(locale, id, &[]);
         let complete = matches!(self.custody, Custody::Finished { .. })
             && self
                 .runtime()
@@ -485,39 +486,41 @@ impl OwnedOffloadCliRun {
             String::new()
         } else {
             let guidance = match reason {
-                "dry_run_unavailable" => copy::text("journal.cli.backup.offload.preview.held"),
-                "platform_unavailable" => copy::text("journal.cli.offload.guidance.platform"),
-                "installed_tool_unavailable" => copy::text("journal.cli.offload.guidance.tool"),
+                "dry_run_unavailable" => text("journal.cli.backup.offload.preview.held"),
+                "platform_unavailable" => text("journal.cli.offload.guidance.platform"),
+                "installed_tool_unavailable" => text("journal.cli.offload.guidance.tool"),
                 "journal_unavailable" | "original_changed" => {
-                    copy::text("journal.cli.offload.guidance.journal")
+                    text("journal.cli.offload.guidance.journal")
                 }
                 "deadline_unavailable" | "clock_unavailable" => {
-                    copy::text("journal.cli.offload.guidance.clock")
+                    text("journal.cli.offload.guidance.clock")
                 }
                 // Planning refuses before admission: no media has left or been removed.
                 "preparation_refused" | "planning_refused" => {
-                    copy::text("journal.cli.offload.guidance.start")
+                    text("journal.cli.offload.guidance.start")
                 }
                 // Nothing was proposed. On local storage the next run removes
                 // any copies this one staged before it starts, so a plain
                 // retry is safe; elsewhere those copies stay for review.
                 "plan_held" if journal_changed && retry_clears => {
-                    copy::text("journal.cli.offload.guidance.changed.retry")
+                    text("journal.cli.offload.guidance.changed.retry")
                 }
                 "plan_held" if journal_changed => {
-                    copy::text("journal.cli.offload.guidance.changed.review")
+                    text("journal.cli.offload.guidance.changed.review")
                 }
-                _ => copy::text("journal.cli.offload.guidance.unfinished"),
+                _ => text("journal.cli.offload.guidance.unfinished"),
             };
             match &self.custody {
                 // Name why admission refused; the closed message carries no secret.
                 Custody::AdmissionFailure { failure, .. } => {
-                    format!("{}\n{guidance}\n", stopped_archive(failure.error()))
+                    format!("{}\n{guidance}\n", stopped_archive(locale, failure.error()))
                 }
-                Custody::PlanHold { plan, .. } if !journal_changed => match hold_reason(plan) {
-                    Some(message) => format!("{message}\n{guidance}\n"),
-                    None => format!("{guidance}\n"),
-                },
+                Custody::PlanHold { plan, .. } if !journal_changed => {
+                    match hold_reason(locale, plan) {
+                        Some(message) => format!("{message}\n{guidance}\n"),
+                        None => format!("{guidance}\n"),
+                    }
+                }
                 _ => format!("{guidance}\n"),
             }
         };
@@ -533,45 +536,49 @@ fn size(bytes: u64) -> String {
 }
 
 /// Why a plan held, in closed words. The system's own IO text goes to stdout.
-fn hold_reason(plan: &OwnedOffloadPlanHold) -> Option<String> {
+fn hold_reason(locale: &str, plan: &OwnedOffloadPlanHold) -> Option<String> {
+    let text = |id| copy::render_for(locale, id, &[]);
     use crate::run::OwnedOffloadPlanFinishRefusal as Finish;
     use OffloadOfferRefusal as Offer;
     let Some(reason) = plan.reason() else {
         return plan.finish_refusal().map(|refusal| match refusal {
-            Finish::IncompletePlan => copy::text("journal.cli.offload.stopped.plan.incomplete"),
-            Finish::Creation => copy::text("journal.cli.offload.stopped.creation"),
-            Finish::Readback(_) => copy::text("journal.cli.offload.stopped.readback"),
+            Finish::IncompletePlan => text("journal.cli.offload.stopped.plan.incomplete"),
+            Finish::Creation => text("journal.cli.offload.stopped.creation"),
+            Finish::Readback(_) => text("journal.cli.offload.stopped.readback"),
             Finish::Census(_) | Finish::Obligations(_) => {
-                copy::text("journal.cli.offload.stopped.unfinished.work")
+                text("journal.cli.offload.stopped.unfinished.work")
             }
         });
     };
     Some(match reason {
         OffloadCreationRefusal::Inputs(Offer::Io(_)) => {
-            copy::text("journal.cli.offload.stopped.inputs.io")
+            text("journal.cli.offload.stopped.inputs.io")
         }
         OffloadCreationRefusal::Inputs(Offer::InsufficientSpace {
             available,
             required,
-        }) => copy::display(
+        }) => copy::display_for(
+            locale,
             "journal.cli.offload.stopped.inputs.space",
             [
                 ("available", &(size(*available))),
                 ("required", &(size(*required))),
             ],
         ),
-        OffloadCreationRefusal::Inputs(Offer::Admission(error)) => stopped_archive((*error).into()),
+        OffloadCreationRefusal::Inputs(Offer::Admission(error)) => {
+            stopped_archive(locale, (*error).into())
+        }
         OffloadCreationRefusal::Inputs(Offer::Readback(error))
-        | OffloadCreationRefusal::Readback(error) => stopped_readback(*error),
-        OffloadCreationRefusal::Archive(error) => stopped_archive(*error),
-        OffloadCreationRefusal::Inputs(_) => copy::text("journal.cli.offload.stopped.selection"),
-        OffloadCreationRefusal::Planning(_) => copy::text("journal.cli.offload.stopped.planning"),
-        OffloadCreationRefusal::Native => copy::text("journal.cli.offload.stopped.temporary.copy"),
+        | OffloadCreationRefusal::Readback(error) => stopped_readback(locale, *error),
+        OffloadCreationRefusal::Archive(error) => stopped_archive(locale, *error),
+        OffloadCreationRefusal::Inputs(_) => text("journal.cli.offload.stopped.selection"),
+        OffloadCreationRefusal::Planning(_) => text("journal.cli.offload.stopped.planning"),
+        OffloadCreationRefusal::Native => text("journal.cli.offload.stopped.temporary.copy"),
         OffloadCreationRefusal::Metadata
         | OffloadCreationRefusal::Entropy
         | OffloadCreationRefusal::Ledger
         | OffloadCreationRefusal::Verification
-        | OffloadCreationRefusal::Publication => copy::text("journal.cli.offload.stopped.record"),
+        | OffloadCreationRefusal::Publication => text("journal.cli.offload.stopped.record"),
     })
 }
 

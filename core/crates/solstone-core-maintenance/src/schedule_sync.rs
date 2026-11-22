@@ -3,6 +3,7 @@
 
 //! Read-only maintenance schedule status and additive schedule synchronization.
 
+use crate::copy::Output;
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
@@ -11,7 +12,7 @@ use solstone_core_system::schedule::{
     ScheduleMutation, initialize_schedule_config, mutate_schedule_entries,
 };
 
-use crate::registry::RoutineDescriptor;
+use crate::registry::{Cadence, RoutineDescriptor};
 
 const MAINTENANCE_PREFIX: &str = "maintenance:";
 const RETIRED_ENTRIES: &[&str] = &[
@@ -90,16 +91,28 @@ pub fn statuses<'a>(
     path: &Path,
     routines: &'a [RoutineDescriptor],
 ) -> Result<Vec<RoutineStatus<'a>>, String> {
-    let raw = read_raw_schedules(path)?;
+    let raw = read_raw_schedules(Output::canonical(), path)?;
     Ok(classify(routines, &raw, host_unscheduled()))
 }
 
 /// Render the reference maintenance routine list.
 pub fn render_list(path: &Path, routines: &[RoutineDescriptor]) -> Result<String, String> {
+    render_list_in(Output::canonical(), path, routines)
+}
+
+pub(crate) fn render_list_in(
+    copy: Output<'_>,
+    path: &Path,
+    routines: &[RoutineDescriptor],
+) -> Result<String, String> {
     if routines.is_empty() {
-        return Ok("No maintenance routines found.\n".to_owned());
+        return Ok(copy.line("journal.cli.maintenance.list.empty", []));
     }
-    let statuses = statuses(path, routines)?;
+    let statuses = classify(
+        routines,
+        &read_raw_schedules(copy, path)?,
+        host_unscheduled(),
+    );
     let id_width = routines
         .iter()
         .map(|descriptor| descriptor.id.len())
@@ -107,18 +120,44 @@ pub fn render_list(path: &Path, routines: &[RoutineDescriptor]) -> Result<String
         .unwrap_or(2)
         .max(2);
     let mut output = format!(
-        "  {:<id_width$}  {:<8}  {:<9}  {:<11}  DESCRIPTION\n",
-        "ID", "EVERY", "STATUS", "MAX RUNTIME"
+        "  {:<id_width$}  {:<8}  {:<9}  {:<11}  {}\n",
+        copy.message("journal.cli.maintenance.list.heading.id", []),
+        copy.message("journal.cli.maintenance.list.heading.every", []),
+        copy.message("journal.cli.maintenance.list.heading.status", []),
+        copy.message("journal.cli.maintenance.list.heading.runtime", []),
+        copy.message("journal.cli.maintenance.list.heading.description", [])
     );
     for item in statuses {
         let descriptor = item.descriptor;
         output.push_str(&format!(
             "  {:<id_width$}  {:<8}  {:<9}  {:<11}  {}\n",
             descriptor.id,
-            descriptor.cadence.as_str(),
-            item.status.as_str(),
+            solstone_core_cli_copy::MessageDetail::window(
+                match descriptor.cadence {
+                    Cadence::Hourly =>
+                        "journal.window.backup.copy.management.retention.labels.hourly",
+                    Cadence::Daily =>
+                        "journal.window.backup.copy.management.retention.labels.daily",
+                    Cadence::Weekly =>
+                        "journal.window.backup.copy.management.retention.labels.weekly",
+                },
+                []
+            )
+            .render(copy.locale()),
+            match item.status {
+                ScheduleStatus::Missing =>
+                    copy.message("journal.cli.maintenance.list.status.missing", []),
+                ScheduleStatus::Synced =>
+                    copy.message("journal.cli.maintenance.list.status.synced", []),
+                ScheduleStatus::Divergent =>
+                    copy.message("journal.cli.maintenance.list.status.divergent", []),
+                ScheduleStatus::Disabled =>
+                    copy.message("journal.cli.talent.list.tag.disabled", []),
+                ScheduleStatus::NotHere =>
+                    copy.message("journal.cli.maintenance.list.status.nothere", []),
+            },
             descriptor.max_runtime.unwrap_or("-"),
-            descriptor.description,
+            descriptor.display_description(copy),
         ));
     }
     Ok(output)
@@ -127,7 +166,15 @@ pub fn render_list(path: &Path, routines: &[RoutineDescriptor]) -> Result<String
 /// Prune retired schedule entries and add missing generated entries in one
 /// locked whole-file transaction.
 pub fn sync(path: &Path, routines: &[RoutineDescriptor]) -> Result<SyncSummary, String> {
-    initialize_schedule_config(path).map_err(|error| error.to_string())?;
+    sync_in(Output::canonical(), path, routines)
+}
+
+pub(crate) fn sync_in(
+    copy: Output<'_>,
+    path: &Path,
+    routines: &[RoutineDescriptor],
+) -> Result<SyncSummary, String> {
+    initialize_schedule_config(path).map_err(|error| schedule_detail(copy, error))?;
     mutate_schedule_entries(path, |raw| {
         let mut next = raw.clone();
         let summary = plan_sync(&mut next, routines, host_unscheduled());
@@ -140,7 +187,31 @@ pub fn sync(path: &Path, routines: &[RoutineDescriptor]) -> Result<SyncSummary, 
             value: summary,
         }
     })
-    .map_err(|error| error.to_string())
+    .map_err(|error| schedule_detail(copy, error))
+}
+
+fn schedule_detail(
+    copy: Output<'_>,
+    error: solstone_core_system::schedule::ScheduleError,
+) -> String {
+    use solstone_core_system::schedule::ScheduleError;
+    match error {
+        ScheduleError::Io(detail) => {
+            copy.message("journal.cli.maintenance.schedule.io", [("detail", &detail)])
+        }
+        ScheduleError::MalformedConfig { path } => copy.message(
+            "journal.cli.maintenance.schedule.malformed",
+            [("path", &path.display())],
+        ),
+        ScheduleError::StateShape { path } => copy.message(
+            "journal.cli.maintenance.schedule.state.shape",
+            [("path", &path.display())],
+        ),
+        ScheduleError::UnknownMetadataKeys { keys } => copy.message(
+            "journal.cli.maintenance.schedule.metadata",
+            [("keys", &format!("{keys:?}"))],
+        ),
+    }
 }
 
 /// Match a direct invocation of the retired audio-folder sync command without
@@ -336,29 +407,55 @@ fn plan_sync(
 
 /// Render the reference schedule synchronization summary and warnings.
 pub fn render_summary(summary: &SyncSummary) -> String {
+    render_summary_in(Output::canonical(), summary)
+}
+
+pub(crate) fn render_summary_in(copy: Output<'_>, summary: &SyncSummary) -> String {
     let mut output = String::new();
-    for (name, ids) in [
-        ("removed", &summary.removed),
-        ("added", &summary.added),
-        ("synced", &summary.synced),
-        ("divergent", &summary.divergent),
-        ("disabled", &summary.disabled),
+    for (ids, empty, populated) in [
+        (
+            &summary.removed,
+            "journal.cli.maintenance.sync.removed.empty",
+            "journal.cli.maintenance.sync.removed",
+        ),
+        (
+            &summary.added,
+            "journal.cli.maintenance.sync.added.empty",
+            "journal.cli.maintenance.sync.added",
+        ),
+        (
+            &summary.synced,
+            "journal.cli.maintenance.sync.synced.empty",
+            "journal.cli.maintenance.sync.synced",
+        ),
+        (
+            &summary.divergent,
+            "journal.cli.maintenance.sync.divergent.empty",
+            "journal.cli.maintenance.sync.divergent",
+        ),
+        (
+            &summary.disabled,
+            "journal.cli.maintenance.sync.disabled.empty",
+            "journal.cli.maintenance.sync.disabled",
+        ),
     ] {
-        let suffix = if ids.is_empty() {
-            String::new()
+        let line = if ids.is_empty() {
+            copy.line(empty, [])
         } else {
-            format!(": {}", ids.join(", "))
+            copy.line(populated, [("count", &ids.len()), ("ids", &ids.join(", "))])
         };
-        output.push_str(&format!("{name}: {}{suffix}\n", ids.len()));
+        output.push_str(&line);
     }
     for id in &summary.divergent {
-        output.push_str(&format!(
-            "WARNING: {id} schedule is divergent; preserved unchanged\n"
+        output.push_str(&copy.line(
+            "journal.cli.maintenance.sync.warning.divergent",
+            [("id", &id)],
         ));
     }
     for id in &summary.disabled {
-        output.push_str(&format!(
-            "WARNING: {id} schedule is disabled; preserved disabled\n"
+        output.push_str(&copy.line(
+            "journal.cli.maintenance.sync.warning.disabled",
+            [("id", &id)],
         ));
     }
     output
@@ -398,15 +495,15 @@ fn is_retired_schedule_entry(id: &str) -> bool {
     RETIRED_ENTRIES.contains(&name.as_str())
 }
 
-fn read_raw_schedules(path: &Path) -> Result<Map<String, Value>, String> {
+fn read_raw_schedules(copy: Output<'_>, path: &Path) -> Result<Map<String, Value>, String> {
     match read_json_durable::<Value>(ArtifactId::SchedulesConfig, path) {
         Ok(DurableRead::Present(Value::Object(map))) => Ok(map),
         Ok(DurableRead::Absent) => Ok(Map::new()),
         Ok(DurableRead::SetAside(_))
         | Ok(DurableRead::Unreadable { .. })
-        | Ok(DurableRead::Present(_)) => Err(format!(
-            "{}: schedules config must be a JSON object",
-            path.display()
+        | Ok(DurableRead::Present(_)) => Err(copy.message(
+            "journal.cli.maintenance.schedule.shape",
+            [("path", &path.display())],
         )),
         Err(error) => Err(format!("{}: {error}", path.display())),
     }

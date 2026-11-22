@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for speakers:consolidate-pool.",
+  "context": "Maintenance list description for speakers:consolidate-pool.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "79d4f1b95c420fe13c0f1a2ff934e71a2375cd5c6fc6470aba6f5d8b473a20f8",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

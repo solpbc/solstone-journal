@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for speakers:candidate-pair-suggestions.",
+  "context": "Maintenance list description for speakers:candidate-pair-suggestions.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a79020f318766ed8653bbc9eac72028389d319a624bec6aa629b71d756e4d055",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

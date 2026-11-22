@@ -1,0 +1,60 @@
+{
+  "description": "Journal maintenance command: retention summary.",
+  "context": "Journal maintenance command: retention summary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "deleted",
+      "type": "string"
+    },
+    {
+      "name": "deleted_unrecorded",
+      "type": "string"
+    },
+    {
+      "name": "gone",
+      "type": "string"
+    },
+    {
+      "name": "owed",
+      "type": "string"
+    },
+    {
+      "name": "refused",
+      "type": "string"
+    },
+    {
+      "name": "not_provable",
+      "type": "string"
+    },
+    {
+      "name": "not_owed",
+      "type": "string"
+    },
+    {
+      "name": "skipped",
+      "type": "string"
+    },
+    {
+      "name": "unknown",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0741e66ce632b86eaa56002560230ee51cbd9f1897c3857d5590d8f85bb5fa2e",
+  "max_length": 315,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "routine",
+      "kind": "accepted-input",
+      "value": "owner-voice-originals"
+    }
+  ]
+}

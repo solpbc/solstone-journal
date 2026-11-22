@@ -1,0 +1,28 @@
+{
+  "description": "Journal maintenance command: backup prune error.",
+  "context": "Journal maintenance command: backup prune error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "781f35460f641e0518ec08dde08670966f053a3eb3ee2845813e4c06442f7225",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reason_field",
+      "kind": "accepted-input",
+      "value": "reason="
+    }
+  ]
+}

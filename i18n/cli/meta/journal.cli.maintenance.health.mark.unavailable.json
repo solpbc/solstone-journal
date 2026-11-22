@@ -1,0 +1,28 @@
+{
+  "description": "Journal maintenance command: health mark unavailable.",
+  "context": "Journal maintenance command: health mark unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2f48731a8cce2f4d798aa1a70a1201896d6415d5ae7b6a74f7b5920dc5de5c9e",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "routine",
+      "kind": "accepted-input",
+      "value": "mark-raw"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal maintenance command: health keep.",
+  "context": "Journal maintenance command: health keep.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "efc35a0acae7b3c262af42bc3f2766cbf40ef182794aba3d9d1015869b2a8481",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "routine",
+      "kind": "accepted-input",
+      "value": "mark-raw"
+    }
+  ]
+}

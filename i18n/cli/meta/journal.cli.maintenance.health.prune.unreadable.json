@@ -1,0 +1,28 @@
+{
+  "description": "Journal maintenance command: health prune unreadable.",
+  "context": "Journal maintenance command: health prune unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "29784238338a6b1e7b0c1072ac6f5ad59413e687f0b8d5c15c1508d84e291ef0",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "indent",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

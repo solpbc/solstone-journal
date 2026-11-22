@@ -1,0 +1,28 @@
+{
+  "description": "Journal maintenance command: health prune unavailable.",
+  "context": "Journal maintenance command: health prune unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e9171302feee4bf8fde1c5ffd1326c5391b81c446db5c1c77a70f4e27024f042",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "routine",
+      "kind": "accepted-input",
+      "value": "prune-logs"
+    }
+  ]
+}

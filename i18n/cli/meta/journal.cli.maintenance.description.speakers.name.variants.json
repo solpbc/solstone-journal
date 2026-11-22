@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for speakers:name-variants.",
+  "context": "Maintenance list description for speakers:name-variants.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "98de54602229ac6cd651cb55b6eb1259a172e3acf9cdf545b5edde08b18f56cd",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

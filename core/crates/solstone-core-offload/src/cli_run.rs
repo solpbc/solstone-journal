@@ -248,7 +248,7 @@ impl OwnedOffloadCliRun {
         }
     }
 
-    fn receive(custody: Custody, observed: CliObservedEffects) -> Self {
+    fn receive(custody: Custody, observed: CliObservedEffects, locale: &str) -> Self {
         let mut run = Self {
             custody,
             observed,
@@ -262,12 +262,12 @@ impl OwnedOffloadCliRun {
         {
             run.binding_errors.push(error);
         }
-        run.render();
+        run.render(locale);
         if let Some(custody) = run.preparation_custody()
             && let Err(error) = custody.revalidate()
         {
             run.binding_errors.push(error);
-            run.render();
+            run.render(locale);
         }
         run
     }
@@ -293,13 +293,25 @@ pub fn run_cli_offload(
     clock: Arc<dyn Clock + Send + Sync>,
     dry_run: bool,
 ) -> OwnedOffloadCliRun {
+    let locale =
+        solstone_core_cli_copy::terminal_locale().unwrap_or(solstone_core_cli_copy::ENGLISH);
+    run_cli_offload_in(journal, clock, dry_run, locale)
+}
+
+pub fn run_cli_offload_in(
+    journal: &Path,
+    clock: Arc<dyn Clock + Send + Sync>,
+    dry_run: bool,
+    locale: &str,
+) -> OwnedOffloadCliRun {
     const BATCH_START_WINDOW: std::time::Duration = std::time::Duration::from_secs(4 * 60 * 60);
     let started = std::time::Instant::now();
     let mut earlier = String::new();
     let mut batch = 1usize;
     let mut projected = u64::MAX;
     loop {
-        let mut run = run_cli_offload_batch(journal, Arc::clone(&clock), dry_run);
+        let (custody, observed) = run_cli_offload_batch(journal, Arc::clone(&clock), dry_run);
+        let mut run = OwnedOffloadCliRun::receive(custody, observed, locale);
         let next = (run.phase() == CliRunPhase::Finished && run.exit_code == 0)
             .then(|| run.settled_report())
             .flatten()
@@ -333,7 +345,7 @@ fn run_cli_offload_batch(
     journal: &Path,
     clock: Arc<dyn Clock + Send + Sync>,
     dry_run: bool,
-) -> OwnedOffloadCliRun {
+) -> (Custody, CliObservedEffects) {
     let refusal = if dry_run {
         Some(CliPrelaunchRefusal::DryRun)
     } else if !PRODUCER_SUPPORTED {
@@ -342,7 +354,7 @@ fn run_cli_offload_batch(
         None
     };
     if let Some(refusal) = refusal {
-        return OwnedOffloadCliRun::receive(
+        return (
             Custody::Prelaunch {
                 refusal,
                 _root: None,
@@ -354,7 +366,7 @@ fn run_cli_offload_batch(
     let root = match JournalRoot::open(journal) {
         Ok(root) => Arc::new(root),
         Err(error) => {
-            return OwnedOffloadCliRun::receive(
+            return (
                 Custody::Prelaunch {
                     refusal: CliPrelaunchRefusal::Root(error),
                     _root: None,
@@ -370,7 +382,7 @@ fn run_cli_offload_batch(
         && let Err(error) = recover_interrupted_removals(&activity)
             .and_then(|_| recover_abandoned_restores(&activity).map(|_| ()))
     {
-        return OwnedOffloadCliRun::receive(
+        return (
             Custody::Prelaunch {
                 refusal: CliPrelaunchRefusal::Recovery(error),
                 _root: Some(root),
@@ -384,7 +396,7 @@ fn run_cli_offload_batch(
     // that can't be read goes on to preparation, which refuses it.
     let captured = ArchiveConfiguration::capture(&root).ok();
     if let Some(config) = captured.filter(|config| !config.offload_enabled() || config.paused()) {
-        return OwnedOffloadCliRun::receive(
+        return (
             Custody::Skipped {
                 paused: config.paused(),
                 _root: root,
@@ -396,7 +408,7 @@ fn run_cli_offload_batch(
     let budget = match ArchiveBudget::new(clock.as_ref()) {
         Ok(budget) => budget,
         Err(error) => {
-            return OwnedOffloadCliRun::receive(
+            return (
                 Custody::Prelaunch {
                     refusal: CliPrelaunchRefusal::Budget(error),
                     _root: Some(root),
@@ -409,7 +421,7 @@ fn run_cli_offload_batch(
     let (input, custody) = match OwnedArchivePreparationInput::capture(root, budget, clock) {
         Ok(pair) => pair,
         Err(failure) => {
-            return OwnedOffloadCliRun::receive(
+            return (
                 Custody::PreparationFailure {
                     failure: Box::new(failure),
                     custody: None,
@@ -424,7 +436,7 @@ fn run_cli_offload_batch(
     })) {
         Ok(Ok(prepared)) => prepared,
         Ok(Err(failure)) => {
-            return OwnedOffloadCliRun::receive(
+            return (
                 Custody::PreparationFailure {
                     failure: Box::new(failure),
                     custody: Some(custody),
@@ -445,7 +457,7 @@ fn run_cli_offload_batch(
         }
     };
     let Ok(at) = Timestamp::new(prepared.owned_clock().now_unix(), 0) else {
-        return OwnedOffloadCliRun::receive(
+        return (
             Custody::PreparedHold {
                 prepared: Box::new(prepared.into_owned_hold()),
                 refusal: CliPreparedRefusal::Timestamp,
@@ -462,7 +474,7 @@ fn run_cli_offload_batch(
         Ok(Ok(readiness)) => readiness,
         Ok(Err(failure)) => {
             let observed = CliObservedEffects::planning(failure.planning());
-            return OwnedOffloadCliRun::receive(
+            return (
                 Custody::PreparedHold {
                     prepared: Box::new(prepared.into_owned_hold()),
                     refusal: CliPreparedRefusal::Planning(Box::new(failure)),
@@ -488,7 +500,7 @@ fn run_cli_offload_batch(
     let executable = match std::env::current_exe() {
         Ok(executable) => executable,
         Err(error) => {
-            return OwnedOffloadCliRun::receive(
+            return (
                 Custody::PreparedHold {
                     prepared: Box::new(prepared.into_owned_hold()),
                     refusal: CliPreparedRefusal::Executable(error),
@@ -511,7 +523,7 @@ fn run_cli_offload_batch(
     let (restic, rclone) = match tools {
         Ok(tools) => tools,
         Err(error) => {
-            return OwnedOffloadCliRun::receive(
+            return (
                 Custody::PreparedHold {
                     prepared: Box::new(prepared.into_owned_hold()),
                     refusal: CliPreparedRefusal::Member(error),
@@ -530,7 +542,7 @@ fn run_cli_offload_batch(
             .map(CliPreparedRefusal::Operation),
     };
     if let Some(refusal) = refusal {
-        return OwnedOffloadCliRun::receive(
+        return (
             Custody::PreparedHold {
                 prepared: Box::new(prepared.into_owned_hold()),
                 refusal,
@@ -552,7 +564,7 @@ fn run_cli_offload_batch(
     })) {
         Ok(Ok(creator)) => creator,
         Ok(Err(failure)) => {
-            return OwnedOffloadCliRun::receive(
+            return (
                 Custody::AdmissionFailure {
                     failure: Box::new(failure),
                     readiness: Box::new(readiness),
@@ -599,7 +611,7 @@ fn run_cli_offload_batch(
     match finish {
         Ok(OwnedOffloadPlanFinish::Held(plan)) => {
             let observed = CliObservedEffects::held(&plan);
-            OwnedOffloadCliRun::receive(
+            (
                 Custody::PlanHold {
                     plan,
                     outside,
@@ -617,7 +629,7 @@ fn run_cli_offload_batch(
                 outside.finish_owned(read)
             }));
             match finish {
-                Ok(runtime) => OwnedOffloadCliRun::receive(
+                Ok(runtime) => (
                     Custody::Finished {
                         report: Box::new(report),
                         runtime,
@@ -656,8 +668,8 @@ fn unknown(
     runtime: Option<OwnedDirectReadFinish>,
     report: Option<Box<SettledOffloadPlanReport>>,
     observed: CliObservedEffects,
-) -> OwnedOffloadCliRun {
-    OwnedOffloadCliRun::receive(
+) -> (Custody, CliObservedEffects) {
+    (
         Custody::Unknown {
             phase,
             prepared,

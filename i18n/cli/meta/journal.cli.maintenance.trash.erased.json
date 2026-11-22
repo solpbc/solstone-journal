@@ -1,0 +1,33 @@
+{
+  "description": "Journal maintenance command: trash erased.",
+  "context": "Journal maintenance command: trash erased.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "erased",
+      "type": "string"
+    },
+    {
+      "name": "finished",
+      "type": "string"
+    },
+    {
+      "name": "waiting",
+      "type": "string"
+    },
+    {
+      "name": "failed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2aa010558cfc9585309dd3499b5d4bb50a7128b6f46b22741dbd80350963c2eb",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

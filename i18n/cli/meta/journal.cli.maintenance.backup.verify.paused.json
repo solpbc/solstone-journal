@@ -1,0 +1,23 @@
+{
+  "description": "Journal maintenance command: backup verify paused.",
+  "context": "Journal maintenance command: backup verify paused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f28fb32b8ae4e71f14979b52fa4d05906265608ed05719d19c920ab1f060558a",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "resume",
+      "kind": "command",
+      "value": "solstone journal backup resume"
+    }
+  ]
+}

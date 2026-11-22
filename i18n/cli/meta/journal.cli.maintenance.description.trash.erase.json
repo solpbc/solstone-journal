@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for trash:erase.",
+  "context": "Maintenance list description for trash:erase.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "03cf5f9ba8f1184706be39be767f070276f4111ac4af6d0379382a917f912933",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

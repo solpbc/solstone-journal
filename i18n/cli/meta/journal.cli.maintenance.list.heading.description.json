@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: list heading description.",
+  "context": "Journal maintenance command: list heading description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2336f47758fde2310343754b35a4223ca8d78f68e189728ee6b3fa6f72a1099",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

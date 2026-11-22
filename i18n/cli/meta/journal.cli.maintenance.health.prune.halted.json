@@ -1,0 +1,28 @@
+{
+  "description": "Journal maintenance command: health prune halted.",
+  "context": "Journal maintenance command: health prune halted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "message",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "091001f77dde63d448443c23aadc5ee5be69014951a2be47475f764c44b1ea69",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "routine",
+      "kind": "accepted-input",
+      "value": "prune-logs"
+    }
+  ]
+}

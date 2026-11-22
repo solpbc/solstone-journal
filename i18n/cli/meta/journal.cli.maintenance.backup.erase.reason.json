@@ -1,0 +1,77 @@
+{
+  "description": "Journal maintenance command: backup erase reason.",
+  "context": "Journal maintenance command: backup erase reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "state",
+      "type": "string"
+    },
+    {
+      "name": "removed",
+      "type": "string"
+    },
+    {
+      "name": "shared",
+      "type": "string"
+    },
+    {
+      "name": "staying",
+      "type": "string"
+    },
+    {
+      "name": "unreached",
+      "type": "string"
+    },
+    {
+      "name": "pending",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7b761a2a98a0357a07843021e04a63b9303d1531752d73672406742be9dfddfd",
+  "max_length": 242,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "removed_field",
+      "kind": "accepted-input",
+      "value": "removed="
+    },
+    {
+      "name": "shared_field",
+      "kind": "accepted-input",
+      "value": "shared="
+    },
+    {
+      "name": "staying_field",
+      "kind": "accepted-input",
+      "value": "staying="
+    },
+    {
+      "name": "unreached_field",
+      "kind": "accepted-input",
+      "value": "unreached="
+    },
+    {
+      "name": "pending_field",
+      "kind": "accepted-input",
+      "value": "pending="
+    },
+    {
+      "name": "reason_field",
+      "kind": "accepted-input",
+      "value": "reason="
+    }
+  ]
+}

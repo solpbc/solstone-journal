@@ -1,0 +1,16 @@
+{
+  "description": "Journal maintenance command: health unavailable.",
+  "context": "Journal maintenance command: health unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "251437cf3492c58aa24389806274a23982c79f39fa0cb890bd0d3806889ae7db",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

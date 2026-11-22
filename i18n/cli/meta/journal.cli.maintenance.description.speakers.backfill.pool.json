@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for speakers:backfill-pool.",
+  "context": "Maintenance list description for speakers:backfill-pool.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "084ae3d2485d42927b51678258fd73bed134d4233163677b85374ecd704e2f17",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

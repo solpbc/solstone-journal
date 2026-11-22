@@ -1,0 +1,16 @@
+{
+  "description": "Maintenance list description for backup:offload.",
+  "context": "Maintenance list description for backup:offload.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd2aae3aa40782d0954c204fa6d98b28df28b1faa8e4772369fbfd97958dc692",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

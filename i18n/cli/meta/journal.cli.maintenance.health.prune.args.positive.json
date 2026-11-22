@@ -1,0 +1,28 @@
+{
+  "description": "Journal maintenance command: health prune args positive.",
+  "context": "Journal maintenance command: health prune args positive.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7eecb528b0ae83ff47bde9a76b373746c7a578983c3906f37119716729697023",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "kind": "flag",
+      "value": "--days"
+    },
+    {
+      "name": "routine",
+      "kind": "accepted-input",
+      "value": "prune-logs"
+    }
+  ]
+}

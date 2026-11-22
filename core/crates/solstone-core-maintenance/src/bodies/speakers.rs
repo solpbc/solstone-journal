@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::copy::Output;
 use std::path::Path;
 
 use solstone_core_speaker_resolve::candidate_tracker::CandidateTracker;
 
 use crate::CliRun;
 
-pub(crate) fn backfill_pool(args: &[String], journal: &Path) -> CliRun {
+pub(crate) fn backfill_pool(copy: Output<'_>, args: &[String], journal: &Path) -> CliRun {
     if !args.is_empty() {
         return CliRun {
             stdout: String::new(),
-            stderr: "usage: solstone journal maintenance run speakers:backfill-pool\n".to_owned(),
+            stderr: copy.line("journal.cli.maintenance.speakers.usage.backfill.pool", []),
             exit_code: 2,
         };
     }
@@ -31,7 +32,10 @@ pub(crate) fn backfill_pool(args: &[String], journal: &Path) -> CliRun {
                 },
                 Err(error) => CliRun {
                     stdout: format!("{}\n", serde_json::json!({"pool":report})),
-                    stderr: format!("owner voice look failed: {error}\n"),
+                    stderr: copy.line(
+                        "journal.cli.maintenance.speakers.error.owner.voice.look.failed",
+                        [("error", &error)],
+                    ),
                     exit_code: 1,
                 },
             }
@@ -50,11 +54,11 @@ pub(crate) fn backfill_pool(args: &[String], journal: &Path) -> CliRun {
 /// no speaker labels yet or only a stub: segments thought before speakers were resolved
 /// everywhere, and any a live run missed. Labelled segments are never touched again here,
 /// and no voiceprint learns from this pass.
-pub(crate) fn backfill_labels(args: &[String], journal: &Path) -> CliRun {
+pub(crate) fn backfill_labels(copy: Output<'_>, args: &[String], journal: &Path) -> CliRun {
     if !args.is_empty() {
         return CliRun {
             stdout: String::new(),
-            stderr: "usage: solstone journal maintenance run speakers:backfill-labels\n".to_owned(),
+            stderr: copy.line("journal.cli.maintenance.speakers.usage.backfill.labels", []),
             exit_code: 2,
         };
     }
@@ -78,18 +82,23 @@ pub(crate) fn backfill_labels(args: &[String], journal: &Path) -> CliRun {
         },
         Err(error) => CliRun {
             stdout: String::new(),
-            stderr: format!("speaker label backfill failed: {error}\n"),
+            stderr: copy.line(
+                "journal.cli.maintenance.speakers.error.speaker.label.backfill.failed",
+                [("error", &error)],
+            ),
             exit_code: 1,
         },
     }
 }
 
-pub(crate) fn consolidate(args: &[String], journal: &Path) -> CliRun {
+pub(crate) fn consolidate(copy: Output<'_>, args: &[String], journal: &Path) -> CliRun {
     if !args.is_empty() {
         return CliRun {
             stdout: String::new(),
-            stderr: "usage: solstone journal maintenance run speakers:consolidate-pool\n"
-                .to_owned(),
+            stderr: copy.line(
+                "journal.cli.maintenance.speakers.usage.consolidate.pool",
+                [],
+            ),
             exit_code: 2,
         };
     }
@@ -101,17 +110,20 @@ pub(crate) fn consolidate(args: &[String], journal: &Path) -> CliRun {
         },
         Err(error) => CliRun {
             stdout: String::new(),
-            stderr: format!("speaker candidate consolidation failed: {error}\n"),
+            stderr: copy.line(
+                "journal.cli.maintenance.speakers.error.speaker.candidate.consolidation.failed",
+                [("error", &error)],
+            ),
             exit_code: 1,
         },
     }
 }
 
-pub(crate) fn name_variants(args: &[String], journal: &Path) -> CliRun {
+pub(crate) fn name_variants(copy: Output<'_>, args: &[String], journal: &Path) -> CliRun {
     if !args.is_empty() {
         return CliRun {
             stdout: String::new(),
-            stderr: "usage: solstone journal maintenance run speakers:name-variants\n".to_owned(),
+            stderr: copy.line("journal.cli.maintenance.speakers.usage.name.variants", []),
             exit_code: 2,
         };
     }
@@ -152,28 +164,34 @@ pub(crate) fn name_variants(args: &[String], journal: &Path) -> CliRun {
         },
         Err(error) => CliRun {
             stdout: String::new(),
-            stderr: format!("speaker name-variant refresh failed: {error}\n"),
+            stderr: copy.line(
+                "journal.cli.maintenance.speakers.error.speaker.name.variant.refresh.failed",
+                [("error", &error)],
+            ),
             exit_code: 1,
         },
     }
 }
 
-pub(crate) fn candidate_pairs(args: &[String], journal: &Path) -> CliRun {
+pub(crate) fn candidate_pairs(copy: Output<'_>, args: &[String], journal: &Path) -> CliRun {
     if !args.is_empty() {
         return CliRun {
             stdout: String::new(),
-            stderr: "usage: solstone journal maintenance run speakers:candidate-pair-suggestions\n"
-                .to_owned(),
+            stderr: copy.line(
+                "journal.cli.maintenance.speakers.usage.candidate.pair.suggestions",
+                [],
+            ),
             exit_code: 2,
         };
     }
     match solstone_core_speaker_resolve::candidate_pair_suggestions::refresh_candidate_pair_suggestions(journal) {
         Ok(report) => CliRun { stdout:format!("{report}\n"), stderr:String::new(), exit_code:0 },
-        Err(error) => CliRun { stdout:String::new(), stderr:format!("speaker candidate-pair refresh failed: {error}\n"), exit_code:1 },
+        Err(error) => CliRun { stdout:String::new(), stderr:copy.line("journal.cli.maintenance.speakers.error.speaker.candidate.pair.refresh.failed", [("error", &error)]), exit_code:1 },
     }
 }
 
 pub(crate) fn discovery(
+    copy: Output<'_>,
     args: &[String],
     journal: &Path,
     #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
@@ -184,7 +202,7 @@ pub(crate) fn discovery(
     if !args.is_empty() {
         return CliRun {
             stdout: String::new(),
-            stderr: "usage: solstone journal maintenance run speakers:discover-voices\n".to_owned(),
+            stderr: copy.line("journal.cli.maintenance.speakers.usage.discover.voices", []),
             exit_code: 2,
         };
     }
@@ -207,14 +225,25 @@ pub(crate) fn discovery(
             serde_json::json!({"status":if dropped_invalid==0 {"ok"} else {"degraded"},"clusters":clusters.len(),"dropped_invalid":dropped_invalid})
         }
         Err(error) => {
-            let exit_code = if matches!(error, DiscoveryRefreshError::Helper(_)) {
-                2
-            } else {
-                1
+            let (stderr, exit_code) = match error {
+                DiscoveryRefreshError::Input(detail) => (
+                    copy.line(
+                        "journal.cli.maintenance.speakers.discovery.input",
+                        [("detail", &detail)],
+                    ),
+                    1,
+                ),
+                DiscoveryRefreshError::Helper(error) => (
+                    copy.line(
+                        "journal.cli.maintenance.speakers.discovery.helper",
+                        [("stage", &error.stage), ("reason", &error.reason)],
+                    ),
+                    2,
+                ),
             };
             return CliRun {
                 stdout: String::new(),
-                stderr: format!("{error}\n"),
+                stderr,
                 exit_code,
             };
         }
