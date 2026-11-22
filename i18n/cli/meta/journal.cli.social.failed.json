@@ -1,0 +1,21 @@
+{
+  "description": "Journal social memory command (development builds): failed.",
+  "context": "Journal social memory command (development builds): failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1102a13abb85a3c2a9f1898cb8d6b69d7a474d747811f4103c6eea25d38a5da6",
+  "max_length": 148,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

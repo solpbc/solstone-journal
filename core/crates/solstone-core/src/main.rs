@@ -593,6 +593,10 @@ fn main() -> ExitCode {
         }
     };
     install_logger();
+    #[cfg(feature = "social-memory-dev")]
+    if args.first().is_some_and(|command| command == "__social") {
+        return run_social_dev(&args[1..]);
+    }
     match evaluate_args(&args) {
         Ok(Command::Version) => {
             print!("{}", version_line(env!("CARGO_PKG_VERSION")));
@@ -1757,6 +1761,27 @@ fn run_talent(args: Vec<OsString>) -> ExitCode {
 
 /// `journal share`: read-only matching and packaging. Talents run in process
 /// through the installed talent tree and the sibling generate client.
+/// `__social`: social memory's sign-in and share, in development builds only.
+#[cfg(feature = "social-memory-dev")]
+fn run_social_dev(args: &[OsString]) -> ExitCode {
+    use solstone_core_cli_copy::{ENGLISH, terminal_locale};
+    solstone_core_cli_copy::begin_terminal_output();
+    let locale = terminal_locale().unwrap_or(ENGLISH);
+    let journal = if solstone_core_social_memory::cli::is_help(args) {
+        PathBuf::new()
+    } else {
+        match resolve_process_journal_path() {
+            Ok(journal) => journal.path,
+            Err(error) => {
+                eprint_journal_path_error_in(locale, error);
+                return ExitCode::from(EXIT_TEMPFAIL);
+            }
+        }
+    };
+    let code = solstone_core_social_memory::cli::run(args, &journal, locale);
+    ExitCode::from(u8::try_from(code).unwrap_or(1))
+}
+
 fn run_share(args: Vec<OsString>) -> ExitCode {
     use solstone_core_cli_copy::{ENGLISH, MessageDetail, terminal_locale};
     use solstone_core_generate::SiblingError;

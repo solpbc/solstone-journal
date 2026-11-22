@@ -16,6 +16,9 @@ unsafe_code = "deny"
 full-tests = ["solstone-core-journal-io/test-hooks", "solstone-core-local/test-hooks", "solstone-core-chatgpt-auth/test-hooks", "solstone-core-indexer-store/test-hooks", "solstone-core-user-skill/test-hooks"]
 test-hooks = ["solstone-core-system/test-hooks", "solstone-core-local/test-hooks"]
 journal-mcp-endpoint = ["dep:solstone-core-mcp-endpoint"]
+# Social memory's sign-in and share command, for development builds and
+# rehearsals only. No shipped feature list names it.
+social-memory-dev = ["dep:solstone-core-social-memory", "solstone-core-social-memory/dev-command"]
 
 [lib]
 path = "src/lib.rs"
@@ -177,6 +180,7 @@ solstone-core-journal-io.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-mcp-endpoint = { workspace = true, optional = true }
+solstone-core-social-memory = { workspace = true, optional = true }
 solstone-core-local.workspace = true
 solstone-core-location.workspace = true
 solstone-core-assets.workspace = true

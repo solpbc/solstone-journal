@@ -1,0 +1,16 @@
+{
+  "description": "Journal social memory command (development builds): signin expired.",
+  "context": "Journal social memory command (development builds): signin expired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5749b19d81ec63e7811865ffea1b0f98d55929dba2c948158b757f9664fdb91d",
+  "max_length": 184,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

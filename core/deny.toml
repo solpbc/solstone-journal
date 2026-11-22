@@ -10,8 +10,11 @@ ignore = [
     # single-question A/AAAA/CNAME/CAA lookups for a hostname precheck; it does
     # not encode untrusted multi-record messages, and lookup errors refuse the
     # precheck. The patched 0.26.1 line requires a DNSSEC rewrite that did not
-    # pass product review. Revisit if a compatible patched resolver is available
-    # or this use grows beyond the bounded stub-client queries.
+    # pass product review. Since 2026-11-22 the development-only social memory
+    # command also sends one bounded single-question TXT lookup of
+    # `_atproto.<handle>` to resolve a handle (solstone-core-dns). Revisit if a
+    # compatible patched resolver is available or this use grows beyond the
+    # bounded stub-client queries.
     # Upstream: https://rustsec.org/advisories/RUSTSEC-2026-0119
     { id = "RUSTSEC-2026-0119", reason = "sol pbc product engineering: hickory-proto 0.24.4 only encodes bounded single-question stub lookups, not attacker-supplied multi-record messages; patched 0.26.1 requires an unaccepted DNSSEC rewrite" },
     # Product engineering compatibility exception, 2026-11-12: three more

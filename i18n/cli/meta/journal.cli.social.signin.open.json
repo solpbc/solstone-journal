@@ -1,0 +1,28 @@
+{
+  "description": "Journal social memory command (development builds): signin open.",
+  "context": "Journal social memory command (development builds): signin open.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "address",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "95be2b428cd847eb8ed69b2c1c443d4328ae157c4ccf87ee8196c5ed73bcccd9",
+  "max_length": 193,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

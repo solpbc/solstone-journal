@@ -75,6 +75,7 @@ members = [
     "crates/solstone-core-social-memory",
     "crates/solstone-core-sol-link",
     "crates/solstone-core-mcp-endpoint",
+    "crates/solstone-core-dns",
     "crates/solstone-core-mcp-audit",
     "crates/solstone-core-convey-http",
     "crates/solstone-core-window-catalog",
@@ -245,6 +246,7 @@ solstone-core-sol-client-cli = { path = "crates/solstone-core-sol-client-cli" }
 solstone-core-social-memory = { path = "crates/solstone-core-social-memory" }
 solstone-core-sol-link = { path = "crates/solstone-core-sol-link", default-features = false }
 solstone-core-mcp-endpoint = { path = "crates/solstone-core-mcp-endpoint" }
+solstone-core-dns = { path = "crates/solstone-core-dns" }
 solstone-core-convey-http = { path = "crates/solstone-core-convey-http" }
 solstone-core-window-catalog = { path = "crates/solstone-core-window-catalog" }
 solstone-core-cli-copy = { path = "crates/solstone-core-cli-copy" }

@@ -1,0 +1,30 @@
+{
+  "description": "Journal social memory command (development builds): sync removed.",
+  "context": "Journal social memory command (development builds): sync removed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "activity_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "activities",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e9d4f5349da691c13061369f95e7c5dd1df2b901426d034293d8509a166e93e9",
+  "max_length": 319,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "activity_quantity",
+    "type": "cardinal"
+  }
+}

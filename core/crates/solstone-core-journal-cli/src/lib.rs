@@ -360,7 +360,12 @@ pub fn evaluate_args(args: &[OsString]) -> JournalCommand {
     let Some(value) = first.to_str() else {
         return JournalCommand::Unknown;
     };
-    if matches!(value, "__journal-route-inspect" | "__journal-route-repair") {
+    // `__social` reaches social memory's command, which only development
+    // builds of the native binary carry; other builds refuse it as unknown.
+    if matches!(
+        value,
+        "__journal-route-inspect" | "__journal-route-repair" | "__social"
+    ) {
         return JournalCommand::HiddenNative {
             argv: std::iter::once(first.clone())
                 .chain(rest.iter().cloned())
@@ -1022,6 +1027,16 @@ mod tests {
         assert_eq!(
             help::version_line(),
             format!("journal (solstone) {}\n", env!("CARGO_PKG_VERSION"))
+        );
+    }
+
+    #[test]
+    fn the_hidden_social_command_passes_through_to_the_native_binary() {
+        assert_eq!(
+            evaluate_args(&args(&["__social", "status"])),
+            JournalCommand::HiddenNative {
+                argv: args(&["__social", "status"]),
+            }
         );
     }
 

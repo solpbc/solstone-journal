@@ -2405,6 +2405,31 @@ pub enum MessageId {
     m6a6f75726e616c2e636c692e73686172652e75736167652e6d61746368,
     m6a6f75726e616c2e636c692e73686172652e75736167652e7061636b616765,
     m6a6f75726e616c2e636c692e73686172652e75736167652e726f6f74,
+    m6a6f75726e616c2e636c692e736f6369616c2e6661696c6564,
+    m6a6f75726e616c2e636c692e736f6369616c2e666f6c6c6f772e646f6e65,
+    m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6164646564,
+    m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6661696c6564,
+    m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6e6f6e65,
+    m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6e6f7468696e67,
+    m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e72656d6f766564,
+    m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e75706461746564,
+    m6a6f75726e616c2e636c692e736f6369616c2e7265736f6c76652e646f6e65,
+    m6a6f75726e616c2e636c692e736f6369616c2e73686172652e646f6e65,
+    m6a6f75726e616c2e636c692e736f6369616c2e7369676e65642e6f7574,
+    m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e6465636c696e6564,
+    m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e646f6e65,
+    m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e65787069726564,
+    m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e6f70656e,
+    m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e6163636f756e74,
+    m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e6d656d6f72696573,
+    m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e736861726573,
+    m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e737061636573,
+    m6a6f75726e616c2e636c692e736f6369616c2e73796e632e63757272656e74,
+    m6a6f75726e616c2e636c692e736f6369616c2e73796e632e72656d6f766564,
+    m6a6f75726e616c2e636c692e736f6369616c2e73796e632e75706461746564,
+    m6a6f75726e616c2e636c692e736f6369616c2e756e73686172652e646f6e65,
+    m6a6f75726e616c2e636c692e736f6369616c2e756e73686172652e756e6b6e6f776e,
+    m6a6f75726e616c2e636c692e736f6369616c2e7573616765,
     m6a6f75726e616c2e636c692e736f6c2e63616c6c2e616374697669746965732e6461792e696e76616c6964,
     m6a6f75726e616c2e636c692e736f6c2e63616c6c2e616374697669746965732e6461792e6d697373696e67,
     m6a6f75726e616c2e636c692e736f6c2e63616c6c2e616374697669746965732e656d707479,
@@ -6730,6 +6755,31 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.cli.share.usage.match", MessageId::m6a6f75726e616c2e636c692e73686172652e75736167652e6d61746368),
         ("journal.cli.share.usage.package", MessageId::m6a6f75726e616c2e636c692e73686172652e75736167652e7061636b616765),
         ("journal.cli.share.usage.root", MessageId::m6a6f75726e616c2e636c692e73686172652e75736167652e726f6f74),
+        ("journal.cli.social.failed", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e6661696c6564),
+        ("journal.cli.social.follow.done", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e666f6c6c6f772e646f6e65),
+        ("journal.cli.social.receive.added", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6164646564),
+        ("journal.cli.social.receive.failed", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6661696c6564),
+        ("journal.cli.social.receive.none", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6e6f6e65),
+        ("journal.cli.social.receive.nothing", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6e6f7468696e67),
+        ("journal.cli.social.receive.removed", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e72656d6f766564),
+        ("journal.cli.social.receive.updated", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e75706461746564),
+        ("journal.cli.social.resolve.done", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e7265736f6c76652e646f6e65),
+        ("journal.cli.social.share.done", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e73686172652e646f6e65),
+        ("journal.cli.social.signed.out", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e7369676e65642e6f7574),
+        ("journal.cli.social.signin.declined", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e6465636c696e6564),
+        ("journal.cli.social.signin.done", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e646f6e65),
+        ("journal.cli.social.signin.expired", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e65787069726564),
+        ("journal.cli.social.signin.open", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e6f70656e),
+        ("journal.cli.social.status.account", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e6163636f756e74),
+        ("journal.cli.social.status.memories", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e6d656d6f72696573),
+        ("journal.cli.social.status.shares", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e736861726573),
+        ("journal.cli.social.status.spaces", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e737061636573),
+        ("journal.cli.social.sync.current", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e73796e632e63757272656e74),
+        ("journal.cli.social.sync.removed", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e73796e632e72656d6f766564),
+        ("journal.cli.social.sync.updated", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e73796e632e75706461746564),
+        ("journal.cli.social.unshare.done", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e756e73686172652e646f6e65),
+        ("journal.cli.social.unshare.unknown", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e756e73686172652e756e6b6e6f776e),
+        ("journal.cli.social.usage", MessageId::m6a6f75726e616c2e636c692e736f6369616c2e7573616765),
         ("journal.cli.sol.call.activities.day.invalid", MessageId::m6a6f75726e616c2e636c692e736f6c2e63616c6c2e616374697669746965732e6461792e696e76616c6964),
         ("journal.cli.sol.call.activities.day.missing", MessageId::m6a6f75726e616c2e636c692e736f6c2e63616c6c2e616374697669746965732e6461792e6d697373696e67),
         ("journal.cli.sol.call.activities.empty", MessageId::m6a6f75726e616c2e636c692e736f6c2e63616c6c2e616374697669746965732e656d707479),
@@ -11083,6 +11133,31 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e636c692e73686172652e75736167652e6d61746368", no_arguments),
     ("m6a6f75726e616c2e636c692e73686172652e75736167652e7061636b616765", no_arguments),
     ("m6a6f75726e616c2e636c692e73686172652e75736167652e726f6f74", no_arguments),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e6661696c6564", prepare_m6a6f75726e616c2e636c692e736f6369616c2e6661696c6564),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e666f6c6c6f772e646f6e65", prepare_m6a6f75726e616c2e636c692e736f6369616c2e666f6c6c6f772e646f6e65),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6164646564", prepare_m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6164646564),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6661696c6564", prepare_m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6661696c6564),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6e6f6e65", prepare_m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6e6f6e65),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6e6f7468696e67", no_arguments),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e72656d6f766564", prepare_m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e72656d6f766564),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e75706461746564", prepare_m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e75706461746564),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e7265736f6c76652e646f6e65", prepare_m6a6f75726e616c2e636c692e736f6369616c2e7265736f6c76652e646f6e65),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e73686172652e646f6e65", prepare_m6a6f75726e616c2e636c692e736f6369616c2e73686172652e646f6e65),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e7369676e65642e6f7574", no_arguments),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e6465636c696e6564", no_arguments),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e646f6e65", prepare_m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e646f6e65),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e65787069726564", no_arguments),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e6f70656e", prepare_m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e6f70656e),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e6163636f756e74", prepare_m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e6163636f756e74),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e6d656d6f72696573", prepare_m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e6d656d6f72696573),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e736861726573", prepare_m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e736861726573),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e737061636573", prepare_m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e737061636573),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e73796e632e63757272656e74", no_arguments),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e73796e632e72656d6f766564", prepare_m6a6f75726e616c2e636c692e736f6369616c2e73796e632e72656d6f766564),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e73796e632e75706461746564", prepare_m6a6f75726e616c2e636c692e736f6369616c2e73796e632e75706461746564),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e756e73686172652e646f6e65", no_arguments),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e756e73686172652e756e6b6e6f776e", no_arguments),
+    ("m6a6f75726e616c2e636c692e736f6369616c2e7573616765", no_arguments),
     ("m6a6f75726e616c2e636c692e736f6c2e63616c6c2e616374697669746965732e6461792e696e76616c6964", prepare_m6a6f75726e616c2e636c692e736f6c2e63616c6c2e616374697669746965732e6461792e696e76616c6964),
     ("m6a6f75726e616c2e636c692e736f6c2e63616c6c2e616374697669746965732e6461792e6d697373696e67", no_arguments),
     ("m6a6f75726e616c2e636c692e736f6c2e63616c6c2e616374697669746965732e656d707479", no_arguments),
@@ -38362,6 +38437,424 @@ fn prepare_m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e777269746572
         _ => return Err(RenderError::InvalidArgumentType("detail".to_string())),
     };
     f_args.set("detail", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e6661696c6564(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["detail"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "detail").ok_or_else(|| RenderError::MissingArgument("detail".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("detail".to_string())),
+    };
+    f_args.set("detail", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e666f6c6c6f772e646f6e65(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["sharer"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "sharer").ok_or_else(|| RenderError::MissingArgument("sharer".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("sharer".to_string())),
+    };
+    f_args.set("sharer", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6164646564(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["activity_quantity", "activities", "sharer"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "activity_quantity").ok_or_else(|| RenderError::MissingArgument("activity_quantity".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("activity_quantity".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("activity_quantity".to_string())); }
+    f_args.set("activity_quantity", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "activities").ok_or_else(|| RenderError::MissingArgument("activities".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("activities".to_string())),
+    };
+    f_args.set("activities", FluentValue::from(v1.clone()));
+    let val_v2 = args.iter().find(|(n, _)| *n == "sharer").ok_or_else(|| RenderError::MissingArgument("sharer".to_string()))?.1.clone();
+    let v2 = match val_v2 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("sharer".to_string())),
+    };
+    f_args.set("sharer", FluentValue::from(v2.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6661696c6564(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["sharer", "detail"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "sharer").ok_or_else(|| RenderError::MissingArgument("sharer".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("sharer".to_string())),
+    };
+    f_args.set("sharer", FluentValue::from(v0.clone()));
+    let val_v1 = args.iter().find(|(n, _)| *n == "detail").ok_or_else(|| RenderError::MissingArgument("detail".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("detail".to_string())),
+    };
+    f_args.set("detail", FluentValue::from(v1.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6e6f6e65(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["sharer"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "sharer").ok_or_else(|| RenderError::MissingArgument("sharer".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("sharer".to_string())),
+    };
+    f_args.set("sharer", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e72656d6f766564(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["activity_quantity", "activities", "sharer"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "activity_quantity").ok_or_else(|| RenderError::MissingArgument("activity_quantity".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("activity_quantity".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("activity_quantity".to_string())); }
+    f_args.set("activity_quantity", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "activities").ok_or_else(|| RenderError::MissingArgument("activities".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("activities".to_string())),
+    };
+    f_args.set("activities", FluentValue::from(v1.clone()));
+    let val_v2 = args.iter().find(|(n, _)| *n == "sharer").ok_or_else(|| RenderError::MissingArgument("sharer".to_string()))?.1.clone();
+    let v2 = match val_v2 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("sharer".to_string())),
+    };
+    f_args.set("sharer", FluentValue::from(v2.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e75706461746564(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["activity_quantity", "activities", "sharer"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "activity_quantity").ok_or_else(|| RenderError::MissingArgument("activity_quantity".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("activity_quantity".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("activity_quantity".to_string())); }
+    f_args.set("activity_quantity", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "activities").ok_or_else(|| RenderError::MissingArgument("activities".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("activities".to_string())),
+    };
+    f_args.set("activities", FluentValue::from(v1.clone()));
+    let val_v2 = args.iter().find(|(n, _)| *n == "sharer").ok_or_else(|| RenderError::MissingArgument("sharer".to_string()))?.1.clone();
+    let v2 = match val_v2 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("sharer".to_string())),
+    };
+    f_args.set("sharer", FluentValue::from(v2.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e7265736f6c76652e646f6e65(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["account", "did", "host"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "account").ok_or_else(|| RenderError::MissingArgument("account".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("account".to_string())),
+    };
+    f_args.set("account", FluentValue::from(v0.clone()));
+    let val_v1 = args.iter().find(|(n, _)| *n == "did").ok_or_else(|| RenderError::MissingArgument("did".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("did".to_string())),
+    };
+    f_args.set("did", FluentValue::from(v1.clone()));
+    let val_v2 = args.iter().find(|(n, _)| *n == "host").ok_or_else(|| RenderError::MissingArgument("host".to_string()))?.1.clone();
+    let v2 = match val_v2 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("host".to_string())),
+    };
+    f_args.set("host", FluentValue::from(v2.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e73686172652e646f6e65(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["title", "space"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "title").ok_or_else(|| RenderError::MissingArgument("title".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("title".to_string())),
+    };
+    f_args.set("title", FluentValue::from(v0.clone()));
+    let val_v1 = args.iter().find(|(n, _)| *n == "space").ok_or_else(|| RenderError::MissingArgument("space".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("space".to_string())),
+    };
+    f_args.set("space", FluentValue::from(v1.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e646f6e65(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["account"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "account").ok_or_else(|| RenderError::MissingArgument("account".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("account".to_string())),
+    };
+    f_args.set("account", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e6f70656e(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["address"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "address").ok_or_else(|| RenderError::MissingArgument("address".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("address".to_string())),
+    };
+    f_args.set("address", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e6163636f756e74(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["account", "host"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "account").ok_or_else(|| RenderError::MissingArgument("account".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("account".to_string())),
+    };
+    f_args.set("account", FluentValue::from(v0.clone()));
+    let val_v1 = args.iter().find(|(n, _)| *n == "host").ok_or_else(|| RenderError::MissingArgument("host".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("host".to_string())),
+    };
+    f_args.set("host", FluentValue::from(v1.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e6d656d6f72696573(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["memory_quantity", "memories"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "memory_quantity").ok_or_else(|| RenderError::MissingArgument("memory_quantity".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("memory_quantity".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("memory_quantity".to_string())); }
+    f_args.set("memory_quantity", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "memories").ok_or_else(|| RenderError::MissingArgument("memories".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("memories".to_string())),
+    };
+    f_args.set("memories", FluentValue::from(v1.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e736861726573(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["share_quantity", "shares"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "share_quantity").ok_or_else(|| RenderError::MissingArgument("share_quantity".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("share_quantity".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("share_quantity".to_string())); }
+    f_args.set("share_quantity", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "shares").ok_or_else(|| RenderError::MissingArgument("shares".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("shares".to_string())),
+    };
+    f_args.set("shares", FluentValue::from(v1.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e737061636573(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["space_quantity", "spaces"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "space_quantity").ok_or_else(|| RenderError::MissingArgument("space_quantity".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("space_quantity".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("space_quantity".to_string())); }
+    f_args.set("space_quantity", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "spaces").ok_or_else(|| RenderError::MissingArgument("spaces".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("spaces".to_string())),
+    };
+    f_args.set("spaces", FluentValue::from(v1.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e73796e632e72656d6f766564(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["activity_quantity", "activities"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "activity_quantity").ok_or_else(|| RenderError::MissingArgument("activity_quantity".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("activity_quantity".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("activity_quantity".to_string())); }
+    f_args.set("activity_quantity", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "activities").ok_or_else(|| RenderError::MissingArgument("activities".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("activities".to_string())),
+    };
+    f_args.set("activities", FluentValue::from(v1.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e736f6369616c2e73796e632e75706461746564(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["activity_quantity", "activities"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "activity_quantity").ok_or_else(|| RenderError::MissingArgument("activity_quantity".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("activity_quantity".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("activity_quantity".to_string())); }
+    f_args.set("activity_quantity", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "activities").ok_or_else(|| RenderError::MissingArgument("activities".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("activities".to_string())),
+    };
+    f_args.set("activities", FluentValue::from(v1.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
     Ok((_resource_key, f_args))
 }
 

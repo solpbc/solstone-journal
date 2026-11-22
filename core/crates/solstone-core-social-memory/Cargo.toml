@@ -12,12 +12,19 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+# The development-build command and rehearsal rig. No shipped build enables it.
+dev-command = ["dep:rustls", "dep:solstone-core-cli-copy"]
+
 [dependencies]
 jiff.workspace = true
 ring.workspace = true
+rustls = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+solstone-core-cli-copy = { workspace = true, optional = true }
+solstone-core-dns.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-format.workspace = true
 solstone-core-journal-config.workspace = true

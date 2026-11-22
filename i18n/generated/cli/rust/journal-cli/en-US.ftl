@@ -5214,6 +5214,80 @@ m6a6f75726e616c2e636c692e73686172652e75736167652e7061636b616765 = usage: { "sols
 
 m6a6f75726e616c2e636c692e73686172652e75736167652e726f6f74 = usage: { "solstone journal share [-h] {match,package} ..." }
 
+m6a6f75726e616c2e636c692e736f6369616c2e6661696c6564 = couldn't finish: { $detail }
+
+m6a6f75726e616c2e636c692e736f6369616c2e666f6c6c6f772e646f6e65 = following the space { $sharer } shared with you.
+
+m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6164646564 = { $i18nCategory ->
+    [one] { $sharer } shared { $activities } new activity with you.
+   *[other] { $sharer } shared { $activities } new activities with you.
+}
+
+m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6661696c6564 = couldn't read the space { $sharer } shared with you: { $detail }
+
+m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6e6f6e65 = nothing new from { $sharer }.
+
+m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e6e6f7468696e67 = you're not following any spaces yet.
+
+m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e72656d6f766564 = { $i18nCategory ->
+    [one] { $sharer } stopped sharing { $activities } activity, so it's gone from your journal.
+   *[other] { $sharer } stopped sharing { $activities } activities, so they're gone from your journal.
+}
+
+m6a6f75726e616c2e636c692e736f6369616c2e726563656976652e75706461746564 = { $i18nCategory ->
+    [one] { $sharer } updated { $activities } activity they shared with you.
+   *[other] { $sharer } updated { $activities } activities they shared with you.
+}
+
+m6a6f75726e616c2e636c692e736f6369616c2e7265736f6c76652e646f6e65 = { $account } is { $did }, hosted at { $host }.
+
+m6a6f75726e616c2e636c692e736f6369616c2e73686172652e646f6e65 = shared "{ $title }". send this space address to the people you shared it with, so their journals can follow it:{ "\u000a" }{ $space }
+
+m6a6f75726e616c2e636c692e736f6369616c2e7369676e65642e6f7574 = you're not signed in. start with { "solstone journal __social sign-in HANDLE" }
+
+m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e6465636c696e6564 = the sign-in was declined, so nothing changed.
+
+m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e646f6e65 = signed in as { $account }.
+
+m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e65787069726564 = the sign-in wasn't finished in time. run it again to start over.
+
+m6a6f75726e616c2e636c692e736f6369616c2e7369676e696e2e6f70656e = to sign in, open this address in your browser:{ "\u000a" }{ $address }
+
+m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e6163636f756e74 = signed in as { $account } on { $host }.
+
+m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e6d656d6f72696573 = { $i18nCategory ->
+    [one] holding { $memories } activity shared with you.
+   *[other] holding { $memories } activities shared with you.
+}
+
+m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e736861726573 = { $i18nCategory ->
+    [one] sharing { $shares } activity.
+   *[other] sharing { $shares } activities.
+}
+
+m6a6f75726e616c2e636c692e736f6369616c2e7374617475732e737061636573 = { $i18nCategory ->
+    [one] following { $spaces } space.
+   *[other] following { $spaces } spaces.
+}
+
+m6a6f75726e616c2e636c692e736f6369616c2e73796e632e63757272656e74 = every shared activity is up to date.
+
+m6a6f75726e616c2e636c692e736f6369616c2e73796e632e72656d6f766564 = { $i18nCategory ->
+    [one] removed { $activities } shared activity that's no longer in your journal.
+   *[other] removed { $activities } shared activities that are no longer in your journal.
+}
+
+m6a6f75726e616c2e636c692e736f6369616c2e73796e632e75706461746564 = { $i18nCategory ->
+    [one] updated { $activities } shared activity.
+   *[other] updated { $activities } shared activities.
+}
+
+m6a6f75726e616c2e636c692e736f6369616c2e756e73686172652e646f6e65 = stopped sharing that activity, and it's gone from every space you shared it in.
+
+m6a6f75726e616c2e636c692e736f6369616c2e756e73686172652e756e6b6e6f776e = that activity isn't shared.
+
+m6a6f75726e616c2e636c692e736f6369616c2e7573616765 = usage: { "solstone journal __social {resolve HANDLE | sign-in HANDLE | status | share FACET DAY ACTIVITY --with HANDLE [--with HANDLE ...] | sync | unshare FACET DAY ACTIVITY | follow SPACE | receive}" }{ "\u000a" }{ "\u000a" }share an activity from your journal with people you choose, through a space on your own atproto account, and follow spaces others share with you. your journal keeps what they share apart from your own memories. development builds only.
+
 m6a6f75726e616c2e636c692e736f6c2e63616c6c2e616374697669746965732e6461792e696e76616c6964 = Error: invalid day '{ $value }'
 
 m6a6f75726e616c2e636c692e736f6c2e63616c6c2e616374697669746965732e6461792e6d697373696e67 = Error: day is required (pass as argument or set { "SOL_DAY" }).

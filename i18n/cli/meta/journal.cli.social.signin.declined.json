@@ -1,0 +1,16 @@
+{
+  "description": "Journal social memory command (development builds): signin declined.",
+  "context": "Journal social memory command (development builds): signin declined.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c2873dd9620f53cae6f6d7ab7ba711caca3da473eb608d9d0dd31b4852d50986",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

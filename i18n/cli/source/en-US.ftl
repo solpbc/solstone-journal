@@ -9661,3 +9661,77 @@ journal.cli.sol.speakers.wipe.total.files.b = { $quantity ->
     [one] total{ $spacing_14 }: { $files } file ({ $bytes } B)
    *[other] total{ $spacing_14 }: { $files } files ({ $bytes } B)
     }
+
+journal.cli.social.usage = usage: { $syntax }{ $line_break }{ $line_break }share an activity from your journal with people you choose, through a space on your own atproto account, and follow spaces others share with you. your journal keeps what they share apart from your own memories. development builds only.
+
+journal.cli.social.signin.open = to sign in, open this address in your browser:{ $line_break }{ $address }
+
+journal.cli.social.signin.done = signed in as { $account }.
+
+journal.cli.social.signin.expired = the sign-in wasn't finished in time. run it again to start over.
+
+journal.cli.social.signin.declined = the sign-in was declined, so nothing changed.
+
+journal.cli.social.signed.out = you're not signed in. start with { $sign_in }
+
+journal.cli.social.status.account = signed in as { $account } on { $host }.
+
+journal.cli.social.status.shares = { $share_quantity ->
+    [one] sharing { $shares } activity.
+   *[other] sharing { $shares } activities.
+}
+
+journal.cli.social.status.spaces = { $space_quantity ->
+    [one] following { $spaces } space.
+   *[other] following { $spaces } spaces.
+}
+
+journal.cli.social.status.memories = { $memory_quantity ->
+    [one] holding { $memories } activity shared with you.
+   *[other] holding { $memories } activities shared with you.
+}
+
+journal.cli.social.share.done = shared "{ $title }". send this space address to the people you shared it with, so their journals can follow it:{ $line_break }{ $space }
+
+journal.cli.social.sync.current = every shared activity is up to date.
+
+journal.cli.social.sync.updated = { $activity_quantity ->
+    [one] updated { $activities } shared activity.
+   *[other] updated { $activities } shared activities.
+}
+
+journal.cli.social.sync.removed = { $activity_quantity ->
+    [one] removed { $activities } shared activity that's no longer in your journal.
+   *[other] removed { $activities } shared activities that are no longer in your journal.
+}
+
+journal.cli.social.unshare.done = stopped sharing that activity, and it's gone from every space you shared it in.
+
+journal.cli.social.unshare.unknown = that activity isn't shared.
+
+journal.cli.social.follow.done = following the space { $sharer } shared with you.
+
+journal.cli.social.receive.none = nothing new from { $sharer }.
+
+journal.cli.social.receive.added = { $activity_quantity ->
+    [one] { $sharer } shared { $activities } new activity with you.
+   *[other] { $sharer } shared { $activities } new activities with you.
+}
+
+journal.cli.social.receive.updated = { $activity_quantity ->
+    [one] { $sharer } updated { $activities } activity they shared with you.
+   *[other] { $sharer } updated { $activities } activities they shared with you.
+}
+
+journal.cli.social.receive.removed = { $activity_quantity ->
+    [one] { $sharer } stopped sharing { $activities } activity, so it's gone from your journal.
+   *[other] { $sharer } stopped sharing { $activities } activities, so they're gone from your journal.
+}
+
+journal.cli.social.receive.nothing = you're not following any spaces yet.
+
+journal.cli.social.failed = couldn't finish: { $detail }
+
+journal.cli.social.receive.failed = couldn't read the space { $sharer } shared with you: { $detail }
+
+journal.cli.social.resolve.done = { $account } is { $did }, hosted at { $host }.

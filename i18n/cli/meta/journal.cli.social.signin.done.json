@@ -1,0 +1,21 @@
+{
+  "description": "Journal social memory command (development builds): signin done.",
+  "context": "Journal social memory command (development builds): signin done.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "account",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "83ebb29dc288b5b99afbf35b4aad67308a69bca7356c6e32f22a7216781f3ff3",
+  "max_length": 146,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

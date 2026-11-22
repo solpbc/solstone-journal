@@ -1,0 +1,25 @@
+{
+  "description": "Journal social memory command (development builds): status account.",
+  "context": "Journal social memory command (development builds): status account.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "account",
+      "type": "string"
+    },
+    {
+      "name": "host",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3e4b4a6387e74fde019819c234cf58f67bd82f9e6dfce2b027b0d750f1195713",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

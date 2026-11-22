@@ -1,0 +1,16 @@
+{
+  "description": "Journal social memory command (development builds): unshare done.",
+  "context": "Journal social memory command (development builds): unshare done.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3243db20a1c93df861b22a5c9d62235de4523180b95289aad644c0e4df9af03",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

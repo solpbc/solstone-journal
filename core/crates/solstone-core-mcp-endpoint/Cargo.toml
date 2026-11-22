@@ -11,7 +11,7 @@ publish = false
 
 [features]
 default = []
-full-tests = ["solstone-core-callosum/full-tests"]
+full-tests = ["solstone-core-callosum/full-tests", "solstone-core-dns/full-tests"]
 test-hooks = [
     "solstone-core-journal-io/test-hooks",
     "solstone-core-sol-link/test-hooks",
@@ -50,6 +50,7 @@ serde.workspace = true
 serde_json.workspace = true
 socket2.workspace = true
 solstone-core-callosum.workspace = true
+solstone-core-dns.workspace = true
 solstone-core-convey-http.workspace = true
 solstone-core-window-catalog.workspace = true
 solstone-core-indexer-query.workspace = true
@@ -88,8 +89,6 @@ x509-parser = { version = "0.16.0", features = ["verify"] }
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["dir", "fs", "user", "resource"] }
 
-[target.'cfg(windows)'.dependencies]
-ipconfig = { version = "0.3.2", default-features = false }
 
 [dev-dependencies]
 solstone-core-removals.workspace = true

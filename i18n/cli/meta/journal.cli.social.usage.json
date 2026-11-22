@@ -1,0 +1,28 @@
+{
+  "description": "Journal social memory command (development builds): usage.",
+  "context": "Journal social memory command (development builds): usage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fb51ec73e632679dd9e57f640d5ab2181912147986ebd1d37e211027a32a1513",
+  "max_length": 364,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal __social {resolve HANDLE | sign-in HANDLE | status | share FACET DAY ACTIVITY --with HANDLE [--with HANDLE ...] | sync | unshare FACET DAY ACTIVITY | follow SPACE | receive}"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -4356,6 +4356,7 @@ dependencies = [
  "solstone-core-service-unit",
  "solstone-core-setup",
  "solstone-core-skill-state",
+ "solstone-core-social-memory",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
  "solstone-core-spl",
@@ -4999,6 +5000,14 @@ dependencies = [
  "toml_edit",
  "windows-sys 0.61.2",
  "zip",
+]
+
+[[package]]
+name = "solstone-core-dns"
+version = "2.0.87"
+dependencies = [
+ "hickory-resolver",
+ "ipconfig",
 ]
 
 [[package]]
@@ -6055,7 +6064,6 @@ dependencies = [
  "hyper-util",
  "image",
  "instant-acme",
- "ipconfig",
  "jiff 1.0.0",
  "log",
  "nix 0.30.1",
@@ -6073,6 +6081,7 @@ dependencies = [
  "socket2",
  "solstone-core-callosum",
  "solstone-core-convey-http",
+ "solstone-core-dns",
  "solstone-core-entities",
  "solstone-core-entity",
  "solstone-core-entity-matching",
@@ -6624,9 +6633,12 @@ version = "2.0.87"
 dependencies = [
  "jiff 1.0.0",
  "ring",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-cli-copy",
+ "solstone-core-dns",
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-journal-config",

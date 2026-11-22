@@ -1,0 +1,32 @@
+{
+  "description": "Journal social memory command (development builds): share done.",
+  "context": "Journal social memory command (development builds): share done.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "title",
+      "type": "string"
+    },
+    {
+      "name": "space",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a51078350a2d766b19956a2a2b5d89a1ede6ee265fdaa84f023efbdc6ed3a4d9",
+  "max_length": 255,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal social memory command (development builds): sync current.",
+  "context": "Journal social memory command (development builds): sync current.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f3f2aa30fef81f5a597b8686cfaf2cfd89f435f51f143472d8ef960b15ac8e8b",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

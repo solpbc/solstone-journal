@@ -1,0 +1,29 @@
+{
+  "description": "Journal social memory command (development builds): resolve done.",
+  "context": "Journal social memory command (development builds): resolve done.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "account",
+      "type": "string"
+    },
+    {
+      "name": "did",
+      "type": "string"
+    },
+    {
+      "name": "host",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3432771fa50a4604cf27dda899a0135c2910a5a92089f9aa99e6cfcf588f84d5",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -14,8 +14,13 @@
 //! The record and space-type names are provisional until the lexicon is
 //! published.
 
+#[cfg(feature = "dev-command")]
+pub mod cli;
 pub mod credential;
+pub mod dns;
 pub mod record;
+#[cfg(feature = "dev-command")]
+pub mod rig;
 pub mod space;
 pub mod store;
 

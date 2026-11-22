@@ -1,0 +1,23 @@
+{
+  "description": "Journal social memory command (development builds): signed out.",
+  "context": "Journal social memory command (development builds): signed out.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c09dfa82999781976ea7102bace483e4fa526c3690af2badfdf56b4520d0deb",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "sign_in",
+      "kind": "command",
+      "value": "solstone journal __social sign-in HANDLE"
+    }
+  ]
+}

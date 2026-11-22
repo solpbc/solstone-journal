@@ -1,0 +1,30 @@
+{
+  "description": "Journal social memory command (development builds): status spaces.",
+  "context": "Journal social memory command (development builds): status spaces.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "space_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "spaces",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d85694399ca1c21e1b25420bc4e0957a4683132ca50fc24ddaed01d7c1778656",
+  "max_length": 223,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "space_quantity",
+    "type": "cardinal"
+  }
+}

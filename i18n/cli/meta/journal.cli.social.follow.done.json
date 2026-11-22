@@ -1,0 +1,21 @@
+{
+  "description": "Journal social memory command (development builds): follow done.",
+  "context": "Journal social memory command (development builds): follow done.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "sharer",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c40687cdd21bc556431799441e0d7bb9f7686a0e38d24dd3d318b55c6616c62d",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

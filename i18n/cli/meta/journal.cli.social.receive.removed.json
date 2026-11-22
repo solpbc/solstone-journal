@@ -1,0 +1,34 @@
+{
+  "description": "Journal social memory command (development builds): receive removed.",
+  "context": "Journal social memory command (development builds): receive removed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "activity_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "activities",
+      "type": "string"
+    },
+    {
+      "name": "sharer",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a5d047489216e069525f4dfaba789fee220bb3cbf27280da74d22e9d0f1d715b",
+  "max_length": 344,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "activity_quantity",
+    "type": "cardinal"
+  }
+}

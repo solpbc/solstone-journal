@@ -1,0 +1,16 @@
+{
+  "description": "Journal social memory command (development builds): receive nothing.",
+  "context": "Journal social memory command (development builds): receive nothing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b78b6c874412aa6ab91c5339e3f09a2c7f533d50f53b6da0485ce2fdd3fd6f4d",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

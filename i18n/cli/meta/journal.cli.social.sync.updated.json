@@ -1,0 +1,30 @@
+{
+  "description": "Journal social memory command (development builds): sync updated.",
+  "context": "Journal social memory command (development builds): sync updated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "activity_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "activities",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e41ddc474ab87127c6016c60dd297da334e366ca164763db14b82957f1ab6b03",
+  "max_length": 251,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "activity_quantity",
+    "type": "cardinal"
+  }
+}

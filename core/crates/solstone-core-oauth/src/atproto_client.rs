@@ -46,6 +46,7 @@ const MAX_DID_DOCUMENT_BYTES: usize = 64 * 1024;
 pub enum AtprotoClientError {
     InvalidIdentifier,
     HandleNotResolved,
+    HandleConflict,
     DidDocumentInvalid,
     NoPds,
     HandleMismatch,
@@ -68,6 +69,9 @@ impl fmt::Display for AtprotoClientError {
         match self {
             Self::InvalidIdentifier => formatter.write_str("not a handle or DID"),
             Self::HandleNotResolved => formatter.write_str("handle did not resolve to a DID"),
+            Self::HandleConflict => {
+                formatter.write_str("handle's DNS record and well-known file name different DIDs")
+            }
             Self::DidDocumentInvalid => formatter.write_str("DID document is missing or invalid"),
             Self::NoPds => formatter.write_str("DID document names no atproto host"),
             Self::HandleMismatch => {
@@ -210,27 +214,78 @@ fn get_bounded(
         .map_err(AtprotoClientError::Fetch)
 }
 
-/// Resolve a handle to a DID through `https://<handle>/.well-known/atproto-did`.
+/// Looks up DNS TXT records for handle resolution. A name with no TXT
+/// records answers an empty list; `None` means the lookup itself failed.
+pub trait HandleDns: Send + Sync {
+    fn txt(&self, name: &str) -> Option<Vec<String>>;
+}
+
+/// Resolves handles by their HTTPS well-known file alone.
+pub struct NoHandleDns;
+
+impl HandleDns for NoHandleDns {
+    fn txt(&self, _name: &str) -> Option<Vec<String>> {
+        Some(Vec::new())
+    }
+}
+
+/// The DID a handle's `_atproto.<handle>` TXT records name, if any. Records
+/// not of the `did=` form are ignored; two different DIDs are a conflict. A
+/// failed lookup counts as no answer, so the well-known file can still
+/// resolve the handle.
+fn handle_did_from_dns(
+    dns: &dyn HandleDns,
+    handle: &str,
+) -> Result<Option<String>, AtprotoClientError> {
+    let Some(records) = dns.txt(&format!("_atproto.{handle}")) else {
+        return Ok(None);
+    };
+    let mut found: Option<String> = None;
+    for did in records
+        .iter()
+        .filter_map(|record| record.trim().strip_prefix("did="))
+        .map(str::trim)
+        .filter(|did| is_atproto_did(did))
+    {
+        match &found {
+            Some(existing) if existing != did => return Err(AtprotoClientError::HandleConflict),
+            Some(_) => {}
+            None => found = Some(did.to_owned()),
+        }
+    }
+    Ok(found)
+}
+
+/// The DID `https://<handle>/.well-known/atproto-did` names, if it answers.
+fn handle_did_from_well_known(http: &dyn OAuthHttpClient, handle: &str) -> Option<String> {
+    let url = format!("https://{handle}/.well-known/atproto-did");
+    let response = get_bounded(http, &url, 2048).ok()?;
+    if response.status != 200 {
+        return None;
+    }
+    let did = std::str::from_utf8(&response.body).ok()?.trim();
+    is_atproto_did(did).then(|| did.to_owned())
+}
+
+/// Resolve a handle to a DID, the two ways atproto publishes one: the
+/// `_atproto.<handle>` DNS TXT record first, then the handle's HTTPS
+/// well-known file. Either alone resolves the handle; when both answer and
+/// name different DIDs the handle is refused.
 pub fn resolve_handle(
     http: &dyn OAuthHttpClient,
+    dns: &dyn HandleDns,
     handle: &str,
 ) -> Result<String, AtprotoClientError> {
     let handle = normalize_handle(handle).ok_or(AtprotoClientError::InvalidIdentifier)?;
-    let url = format!("https://{handle}/.well-known/atproto-did");
-    let response = get_bounded(http, &url, 2048).map_err(|err| match err {
-        AtprotoClientError::Fetch(_) => AtprotoClientError::HandleNotResolved,
-        other => other,
-    })?;
-    if response.status != 200 {
-        return Err(AtprotoClientError::HandleNotResolved);
+    let from_dns = handle_did_from_dns(dns, &handle)?;
+    let from_well_known = handle_did_from_well_known(http, &handle);
+    match (from_dns, from_well_known) {
+        (Some(dns_did), Some(web_did)) if dns_did != web_did => {
+            Err(AtprotoClientError::HandleConflict)
+        }
+        (Some(did), _) | (None, Some(did)) => Ok(did),
+        (None, None) => Err(AtprotoClientError::HandleNotResolved),
     }
-    let did = std::str::from_utf8(&response.body)
-        .map_err(|_| AtprotoClientError::HandleNotResolved)?
-        .trim();
-    if !is_atproto_did(did) {
-        return Err(AtprotoClientError::HandleNotResolved);
-    }
-    Ok(did.to_owned())
 }
 
 /// Resolve a DID to its document: `did:plc` through the PLC directory,
@@ -270,6 +325,7 @@ pub fn resolve_did_document(
 /// when that handle resolves back to it.
 pub fn resolve_identity(
     http: &dyn OAuthHttpClient,
+    dns: &dyn HandleDns,
     input: &str,
     plc_directory: &str,
 ) -> Result<ResolvedIdentity, AtprotoClientError> {
@@ -279,7 +335,7 @@ pub fn resolve_identity(
         let pds = document.pds.clone().ok_or(AtprotoClientError::NoPds)?;
         let handle = document
             .claimed_handle()
-            .filter(|handle| resolve_handle(http, handle).ok().as_deref() == Some(input));
+            .filter(|handle| resolve_handle(http, dns, handle).ok().as_deref() == Some(input));
         return Ok(ResolvedIdentity {
             did: document.id,
             handle,
@@ -287,7 +343,7 @@ pub fn resolve_identity(
         });
     }
     let handle = normalize_handle(input).ok_or(AtprotoClientError::InvalidIdentifier)?;
-    let did = resolve_handle(http, &handle)?;
+    let did = resolve_handle(http, dns, &handle)?;
     let document = resolve_did_document(http, &did, plc_directory)?;
     if document.claimed_handle().as_deref() != Some(handle.as_str()) {
         return Err(AtprotoClientError::HandleMismatch);
@@ -731,8 +787,13 @@ mod tests {
                 did_doc("alice.example.org"),
             ),
         ]);
-        let identity =
-            resolve_identity(&http, "@Alice.Example.org", DEFAULT_PLC_DIRECTORY).unwrap();
+        let identity = resolve_identity(
+            &http,
+            &NoHandleDns,
+            "@Alice.Example.org",
+            DEFAULT_PLC_DIRECTORY,
+        )
+        .unwrap();
         assert_eq!(identity.did, DID);
         assert_eq!(identity.handle.as_deref(), Some("alice.example.org"));
         assert_eq!(identity.pds, PDS);
@@ -753,8 +814,98 @@ mod tests {
             ),
         ]);
         assert_eq!(
-            resolve_identity(&http, "alice.example.org", DEFAULT_PLC_DIRECTORY),
+            resolve_identity(
+                &http,
+                &NoHandleDns,
+                "alice.example.org",
+                DEFAULT_PLC_DIRECTORY
+            ),
             Err(AtprotoClientError::HandleMismatch)
+        );
+    }
+
+    struct MapDns(Vec<(&'static str, Option<Vec<String>>)>);
+
+    impl HandleDns for MapDns {
+        fn txt(&self, name: &str) -> Option<Vec<String>> {
+            self.0
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map_or(Some(Vec::new()), |(_, answer)| answer.clone())
+        }
+    }
+
+    const OTHER: &str = "did:plc:zzzzzzzzzzzzzzzzzzzzzzzz";
+
+    #[test]
+    fn a_handle_published_only_by_dns_resolves() {
+        let http = RoutedHttp::new(vec![
+            (
+                "https://alice.example.org/.well-known/atproto-did",
+                404,
+                Value::String("not found".to_owned()),
+            ),
+            (
+                "https://plc.directory/did:plc:",
+                200,
+                did_doc("alice.example.org"),
+            ),
+        ]);
+        let dns = MapDns(vec![(
+            "_atproto.alice.example.org",
+            Some(vec!["v=other".to_owned(), format!("did={DID}")]),
+        )]);
+        let identity =
+            resolve_identity(&http, &dns, "alice.example.org", DEFAULT_PLC_DIRECTORY).unwrap();
+        assert_eq!(identity.did, DID);
+        assert_eq!(identity.handle.as_deref(), Some("alice.example.org"));
+    }
+
+    #[test]
+    fn dns_and_well_known_naming_different_accounts_is_refused() {
+        let http = RoutedHttp::new(vec![(
+            "https://alice.example.org/.well-known/atproto-did",
+            200,
+            Value::String(OTHER.to_owned()),
+        )]);
+        let dns = MapDns(vec![(
+            "_atproto.alice.example.org",
+            Some(vec![format!("did={DID}")]),
+        )]);
+        assert_eq!(
+            resolve_handle(&http, &dns, "alice.example.org"),
+            Err(AtprotoClientError::HandleConflict)
+        );
+    }
+
+    #[test]
+    fn two_dns_records_naming_different_accounts_are_refused() {
+        let http = RoutedHttp::new(vec![]);
+        let dns = MapDns(vec![(
+            "_atproto.alice.example.org",
+            Some(vec![format!("did={DID}"), format!("did={OTHER}")]),
+        )]);
+        assert_eq!(
+            resolve_handle(&http, &dns, "alice.example.org"),
+            Err(AtprotoClientError::HandleConflict)
+        );
+    }
+
+    #[test]
+    fn a_failed_dns_lookup_falls_back_to_the_well_known_file() {
+        let http = RoutedHttp::new(vec![(
+            "https://alice.example.org/.well-known/atproto-did",
+            200,
+            Value::String(DID.to_owned()),
+        )]);
+        let dns = MapDns(vec![("_atproto.alice.example.org", None)]);
+        assert_eq!(
+            resolve_handle(&http, &dns, "alice.example.org").as_deref(),
+            Ok(DID)
+        );
+        assert_eq!(
+            resolve_handle(&RoutedHttp::new(vec![]), &dns, "alice.example.org"),
+            Err(AtprotoClientError::HandleNotResolved)
         );
     }
 

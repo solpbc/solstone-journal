@@ -86,11 +86,15 @@ pub struct Session<'a> {
     pub access_token: &'a str,
     pub dpop_key: &'a DpopKeyPair,
     pub now_unix: u64,
+    /// The PDS's latest DPoP nonce, kept so each call after the first skips
+    /// the nonce challenge.
+    pub nonce: std::sync::Mutex<Option<String>>,
 }
 
 impl Session<'_> {
     fn call(&self, nsid: &str, body: XrpcBody<'_>) -> Result<Value, SpaceError> {
-        let (response, _) = xrpc_call(
+        let nonce = self.nonce.lock().ok().and_then(|held| held.clone());
+        let (response, latest) = xrpc_call(
             self.http,
             self.pds,
             nsid,
@@ -98,12 +102,17 @@ impl Session<'_> {
             &XrpcAuth {
                 access_token: self.access_token,
                 dpop_key: self.dpop_key,
-                nonce: None,
+                nonce: nonce.as_deref(),
             },
             self.now_unix,
             TIMEOUT,
             MAX_PAGE_BYTES,
         )?;
+        if latest.is_some()
+            && let Ok(mut held) = self.nonce.lock()
+        {
+            *held = latest;
+        }
         json_body(&response)
     }
 }
@@ -198,11 +207,12 @@ pub fn delete_activity(session: &Session<'_>, space: &str, rkey: &str) -> Result
     Ok(())
 }
 
-/// One activity record as the sharer's host lists it.
+/// One activity record as the sharer's host lists it: the space listing
+/// names a record by its collection and key, not by a URI.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemoteRecord {
+    pub collection: String,
     pub rkey: String,
-    pub uri: String,
     pub cid: String,
     pub value: Value,
 }
@@ -275,16 +285,9 @@ pub fn list_shared_activities(
             .and_then(Value::as_array)
             .ok_or(SpaceError::Malformed("records"))?;
         for item in items {
-            let uri = string_field(item, "uri")?;
-            let rkey = uri
-                .rsplit('/')
-                .next()
-                .filter(|rkey| !rkey.is_empty())
-                .ok_or(SpaceError::Malformed("uri"))?
-                .to_owned();
             records.push(RemoteRecord {
-                rkey,
-                uri,
+                collection: string_field(item, "collection")?,
+                rkey: string_field(item, "rkey")?,
                 cid: string_field(item, "cid")?,
                 value: item.get("value").cloned().unwrap_or(Value::Null),
             });
@@ -393,6 +396,7 @@ pub(crate) mod tests {
             access_token: "t",
             dpop_key: &key,
             now_unix: 1,
+            nonce: Default::default(),
         };
         let space = create_space(&session).unwrap();
         add_readers(&session, &space, &[BOB]).unwrap();
@@ -448,7 +452,7 @@ pub(crate) mod tests {
                 200,
                 json!({
                     "cursor": "c1",
-                    "records": [{"uri": format!("{space}/{ALICE}/{ACTIVITY_COLLECTION}/r1"), "cid": "bafy1", "value": {"title": "one"}}]
+                    "records": [{"collection": ACTIVITY_COLLECTION, "rkey": "r1", "cid": "bafy1", "value": {"title": "one"}}]
                 }),
             ),
             (
@@ -465,6 +469,7 @@ pub(crate) mod tests {
             access_token: "t",
             dpop_key: &key,
             now_unix: 1,
+            nonce: Default::default(),
         };
         let records = list_shared_activities(&session, &space, "https://plc.test").unwrap();
         assert_eq!(records.len(), 1);

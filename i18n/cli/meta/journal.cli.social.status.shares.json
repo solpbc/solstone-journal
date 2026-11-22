@@ -1,0 +1,30 @@
+{
+  "description": "Journal social memory command (development builds): status shares.",
+  "context": "Journal social memory command (development builds): status shares.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "share_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "shares",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e35a3927268788c79ae428422d712861028ea6ad71552269fc97fee3913d85e1",
+  "max_length": 226,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "share_quantity",
+    "type": "cardinal"
+  }
+}

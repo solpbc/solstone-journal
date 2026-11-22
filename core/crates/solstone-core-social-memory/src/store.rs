@@ -247,7 +247,7 @@ pub struct ReceivedMemory {
     pub shared: bool,
     pub shared_by: SharedBy,
     pub space: String,
-    pub uri: String,
+    pub collection: String,
     pub cid: String,
     pub received_at: String,
     pub updated_at: String,
@@ -276,6 +276,28 @@ fn safe_rkey(rkey: &str) -> bool {
         && rkey
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b':' | b'~'))
+}
+
+/// The spaces this journal follows.
+pub fn followed_spaces(journal: &Path) -> Result<Vec<ReceivedSpace>, StoreError> {
+    let dir = journal.join(SOCIAL_DIR).join("received");
+    let entries = match fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(StoreError::Io(dir, err.to_string())),
+    };
+    let mut spaces = Vec::new();
+    for entry in entries {
+        let path = entry
+            .map_err(|err| StoreError::Io(dir.clone(), err.to_string()))?
+            .path()
+            .join("space.json");
+        if let Some(space) = read::<ReceivedSpace>(&path)? {
+            spaces.push(space);
+        }
+    }
+    spaces.sort_by(|a, b| a.added_at.cmp(&b.added_at));
+    Ok(spaces)
 }
 
 /// The received memories of one space, by record key.
@@ -329,7 +351,11 @@ pub fn plan_receive<'a>(
 ) -> (Vec<&'a RemoteRecord>, Vec<String>) {
     let current: BTreeMap<&str, &RemoteRecord> = listed
         .iter()
-        .filter(|r| safe_rkey(&r.rkey) && ActivityRecord::from_received(&r.value).is_some())
+        .filter(|r| {
+            r.collection == crate::ACTIVITY_COLLECTION
+                && safe_rkey(&r.rkey)
+                && ActivityRecord::from_received(&r.value).is_some()
+        })
         .map(|r| (r.rkey.as_str(), r))
         .collect();
     let store = current
@@ -360,8 +386,10 @@ pub fn receive_space(
         did: space_authority(space)?.to_owned(),
         handle: sharer_handle.map(ToOwned::to_owned),
     };
-    let dir = space_dir(journal, space);
-    let space_file = dir.join("space.json");
+    // The space is followed once its sharer's host has let this account read
+    // it, never on a reference that has not worked yet.
+    let listed = list_shared_activities(session, space, plc_directory)?;
+    let space_file = space_dir(journal, space).join("space.json");
     if read::<ReceivedSpace>(&space_file)?.is_none() {
         write(
             &space_file,
@@ -372,7 +400,6 @@ pub fn receive_space(
             },
         )?;
     }
-    let listed = list_shared_activities(session, space, plc_directory)?;
     apply_receive(journal, space, &shared_by, &listed, now)
 }
 
@@ -404,7 +431,7 @@ pub fn apply_receive(
                 shared: true,
                 shared_by: shared_by.clone(),
                 space: space.to_owned(),
-                uri: remote.uri.clone(),
+                collection: remote.collection.clone(),
                 cid: remote.cid.clone(),
                 received_at,
                 updated_at: now.to_string(),
@@ -437,8 +464,8 @@ mod tests {
 
     fn remote(rkey: &str, cid: &str, title: &str) -> RemoteRecord {
         RemoteRecord {
+            collection: ACTIVITY_COLLECTION.to_owned(),
             rkey: rkey.to_owned(),
-            uri: format!("at://{ALICE}/space/x/s/{ALICE}/{ACTIVITY_COLLECTION}/{rkey}"),
             cid: cid.to_owned(),
             value: json!({
                 "$type": ACTIVITY_COLLECTION, "title": title, "startedAt": "2026-11-21T16:00:00Z",
@@ -545,6 +572,7 @@ mod tests {
             access_token: "t",
             dpop_key: &key,
             now_unix: 1,
+            nonce: Default::default(),
         };
         let at = |time: &str| -> Timestamp { format!("2026-11-22T{time}:00Z").parse().unwrap() };
         let sent = |index: usize| -> Value {
