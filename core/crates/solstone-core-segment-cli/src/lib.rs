@@ -894,6 +894,27 @@ mod tests {
         let no_subcommand = run_cli_with(&[], root.path(), |_| None, || true);
         assert_eq!(no_subcommand.exit_code, 1);
         assert_eq!(no_subcommand.stdout, help("segment --help"));
+        for (argv, required) in [
+            (["list"].as_slice(), "day"),
+            (["inspect"].as_slice(), "path"),
+            (["move"].as_slice(), "path"),
+            (["move", "20260304/090000_60"].as_slice(), "--to-day"),
+        ] {
+            let missing = bypass(argv, root.path());
+            assert_eq!(missing.exit_code, 2, "argv={argv:?}");
+            assert_eq!(missing.stdout, "", "argv={argv:?}");
+            assert_eq!(
+                missing.stderr,
+                format!(
+                    "usage: solstone journal segment <command> [options]\nsolstone journal segment: error: the following arguments are required: {required}\n"
+                ),
+                "argv={argv:?}"
+            );
+            assert!(
+                !missing.stderr.contains("unrecognized arguments"),
+                "argv={argv:?}"
+            );
+        }
         let unavailable = run_cli_with(
             &args(&["list", "20260304"]),
             root.path(),

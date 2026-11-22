@@ -1,0 +1,50 @@
+{
+  "description": "Journal command-line text for backlog inventory partial last without holds.",
+  "context": "Journal command-line text for backlog inventory partial last without holds.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "inspected",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "oldest",
+      "type": "string"
+    },
+    {
+      "name": "newest",
+      "type": "string"
+    },
+    {
+      "name": "as_of",
+      "type": "string"
+    },
+    {
+      "name": "bands",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ce368abc917f40d9dd930af9924c9cacd0b68c863d12f5d7a185dcd61d771810",
+  "max_length": 417,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

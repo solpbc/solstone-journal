@@ -1857,6 +1857,34 @@
       "locales": []
     },
     {
+      "id": "journal.cli.backup.usage.missing.destination",
+      "source": "93d8c25511570a2e18a0d38c6fa67e9bb486d9d04b96a3a042bef4554bd232e9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "eb765a6362c50351e94679208e2b45ab0e49657ff630da6d84db8b6094b088e9",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.backup.usage.missing.offload",
+      "source": "93d8c25511570a2e18a0d38c6fa67e9bb486d9d04b96a3a042bef4554bd232e9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "56daf33ff4f1e5c58530e690aea884057bf4d023bcefaafc88dfeacc96cc7b99",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.backup.usage.missing.recovery.key",
+      "source": "93d8c25511570a2e18a0d38c6fa67e9bb486d9d04b96a3a042bef4554bd232e9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "2a44adb890fe0af545bdfce3996ee09c13ee5e8f119c8258914832857ac829f8",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.backup.usage.missing.root",
+      "source": "93d8c25511570a2e18a0d38c6fa67e9bb486d9d04b96a3a042bef4554bd232e9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "366ac024dde4501055400c41d6ae07200a7c51b4dafc160421d0768b8226f684",
+      "locales": []
+    },
+    {
       "id": "journal.cli.backup.usage.offload",
       "source": "7937cf311874e6c6213a18f3c95ff7af808065f962c0478f91ae9073b48bd6ec",
       "contract": "c8e6e69059f9fee02939e9ddcaab3f0215a0ecd0d0142dbbc5ed0ee33fd56fb7",
@@ -5777,9 +5805,23 @@
       "locales": []
     },
     {
+      "id": "journal.cli.doctor.backlog.inventory.partial.current.clear",
+      "source": "4417d8073a53f7090cff9bbdd917895dbec8a11a18800a39e871a25e307bfa5c",
+      "contract": "71351bcec73d33c704d8ef59cadf6ad86b52fd31f295bb443d5a0ba73c229146",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.cli.doctor.backlog.inventory.partial.last",
       "source": "df41079b94cc3ecbf1b494229ac6e6568226f3556e15716cb784bcb3026ee242",
       "contract": "d997066954a985e7e9f46274931411dbe70636225cf01efef78e2a9a3f9a7917",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.doctor.backlog.inventory.partial.last.clear",
+      "source": "ce368abc917f40d9dd930af9924c9cacd0b68c863d12f5d7a185dcd61d771810",
+      "contract": "71351bcec73d33c704d8ef59cadf6ad86b52fd31f295bb443d5a0ba73c229146",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
@@ -5791,9 +5833,23 @@
       "locales": []
     },
     {
+      "id": "journal.cli.doctor.backlog.inventory.whole.current.clear",
+      "source": "f0067f0f0e9fa3127edefc2a50e90d3a213587fd569bab71ac2ea900d74338a7",
+      "contract": "71351bcec73d33c704d8ef59cadf6ad86b52fd31f295bb443d5a0ba73c229146",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.cli.doctor.backlog.inventory.whole.last",
       "source": "f5802d7275abd6b5ebda82676cda72be511a871df35dd1eb812638bf3d4c2a61",
       "contract": "d997066954a985e7e9f46274931411dbe70636225cf01efef78e2a9a3f9a7917",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.doctor.backlog.inventory.whole.last.clear",
+      "source": "27ed0b328d34c1ebed11725ef9abca2af843cac7e71ccb9f29f6ad82cde01333",
+      "contract": "71351bcec73d33c704d8ef59cadf6ad86b52fd31f295bb443d5a0ba73c229146",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
@@ -21122,7 +21178,7 @@
     },
     {
       "id": "journal.cli.segment.argument.missing",
-      "source": "93f9fdf1ebd6d74b44587cfb5a61fa194789a94f0e4bd296856fab489db9372e",
+      "source": "bb87ce8e8a09839314fa959090669f3e94c47da738e86125d0fdc945790b8e1b",
       "contract": "ce07844da5106f2a61f8443fb4e464756dcf4a81307648ef2856d7212302997e",
       "protected": "552582541213e2b031486c497374bd396fd0e215e66895c43f2485e7c89c7531",
       "locales": []

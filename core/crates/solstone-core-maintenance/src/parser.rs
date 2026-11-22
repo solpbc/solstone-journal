@@ -25,7 +25,7 @@ pub(crate) fn run(
         return success(usage_for_scope(&args).to_owned());
     }
     let Some((command, rest)) = args.split_first() else {
-        return usage_error(USAGE, "");
+        return missing_argument_error(USAGE, "solstone journal maintenance", "command");
     };
     match command.as_str() {
         "list" if no_positionals(rest) => list(journal, services),
@@ -100,7 +100,7 @@ fn run_routine(
     health_services: Option<&HealthServices>,
 ) -> CliRun {
     let Some((id, routine_args)) = args.split_first() else {
-        return usage_error(RUN_USAGE, "");
+        return missing_argument_error(RUN_USAGE, "solstone journal maintenance run", "ID");
     };
     let forwarded = routine_args
         .strip_prefix(&["--".to_owned()])
@@ -268,6 +268,16 @@ fn schedule_error(path: &Path, error: String) -> CliRun {
     }
 }
 
+fn missing_argument_error(usage: &str, command: &str, required: &str) -> CliRun {
+    CliRun {
+        stdout: String::new(),
+        stderr: format!(
+            "{usage}{command}: error: the following arguments are required: {required}\n"
+        ),
+        exit_code: 2,
+    }
+}
+
 fn usage_error(usage: &str, arguments: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
@@ -332,5 +342,36 @@ mod tests {
         );
         assert_eq!(result.exit_code, 0);
         assert_eq!(result.stdout, "No maintenance routines found.\n");
+    }
+
+    #[test]
+    fn missing_command_and_run_id_report_required_argument_instead_of_empty_unrecognized_args() {
+        let bare = run(
+            &[],
+            Path::new("/unused"),
+            &MaintenanceServices::new(routines()),
+            None,
+            None,
+        );
+        assert_eq!(bare.exit_code, 2);
+        assert_eq!(bare.stdout, "");
+        assert_eq!(
+            bare.stderr,
+            "usage: solstone journal maintenance <command> [options]\nsolstone journal maintenance: error: the following arguments are required: command\n"
+        );
+
+        let bare_run = run(
+            &["run".to_owned()],
+            Path::new("/unused"),
+            &MaintenanceServices::new(routines()),
+            None,
+            None,
+        );
+        assert_eq!(bare_run.exit_code, 2);
+        assert_eq!(bare_run.stdout, "");
+        assert_eq!(
+            bare_run.stderr,
+            "usage: solstone journal maintenance run ID [ARGS...]\nsolstone journal maintenance run: error: the following arguments are required: ID\n"
+        );
     }
 }

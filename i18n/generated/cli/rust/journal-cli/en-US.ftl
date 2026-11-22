@@ -540,6 +540,14 @@ m6a6f75726e616c2e636c692e6261636b75702e74656172646f776e2e7072656c61756e63682e686
 
 m6a6f75726e616c2e636c692e6261636b75702e75736167652e64657374696e6174696f6e = { "solstone journal backup destination" }: error: unrecognized arguments: { $arguments }
 
+m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e64657374696e6174696f6e = { "solstone journal backup destination" }: error: the following arguments are required: { "command" }
+
+m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e6f66666c6f6164 = { "solstone journal backup offload" }: error: the following arguments are required: { "command" }
+
+m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e7265636f766572792e6b6579 = { "solstone journal backup recovery-key" }: error: the following arguments are required: { "command" }
+
+m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e726f6f74 = { "solstone journal backup" }: error: the following arguments are required: { "command" }
+
 m6a6f75726e616c2e636c692e6261636b75702e75736167652e6f66666c6f6164 = { "solstone journal backup offload" }: error: unrecognized arguments: { $arguments }
 
 m6a6f75726e616c2e636c692e6261636b75702e75736167652e7265636f766572792e6b6579 = { "solstone journal backup recovery-key" }: error: unrecognized arguments: { $arguments }
@@ -1720,9 +1728,19 @@ m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e70617
    *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection; set aside: { $holds }
 }
 
+m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e742e636c656172 = { $i18nCategory ->
+    [one] inspected { $inspected } of { $total } day, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection
+   *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection
+}
+
 m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c617374 = { $i18nCategory ->
     [one] inspected { $inspected } of { $total } day, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection; last known progress; set aside: { $holds }
    *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection; last known progress; set aside: { $holds }
+}
+
+m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c6173742e636c656172 = { $i18nCategory ->
+    [one] inspected { $inspected } of { $total } day, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection; last known progress
+   *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection; last known progress
 }
 
 m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e74 = { $i18nCategory ->
@@ -1730,9 +1748,19 @@ m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686
    *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection; set aside: { $holds }
 }
 
+m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e742e636c656172 = { $i18nCategory ->
+    [one] inspected { $inspected } of { $total } day, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection
+   *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection
+}
+
 m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c617374 = { $i18nCategory ->
     [one] inspected { $inspected } of { $total } day, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection; last known progress; set aside: { $holds }
    *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection; last known progress; set aside: { $holds }
+}
+
+m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c6173742e636c656172 = { $i18nCategory ->
+    [one] inspected { $inspected } of { $total } day, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection; last known progress
+   *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection; last known progress
 }
 
 m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e70656e64696e67 = pending: { $days }
@@ -6763,7 +6791,7 @@ m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e7365676d656e742e7
 
 m6a6f75726e616c2e636c692e726574656e74696f6e2e72656d6f76616c2e756e6365727461696e = deletion couldn't be completed or confirmed. recovery is needed.
 
-m6a6f75726e616c2e636c692e7365676d656e742e617267756d656e742e6d697373696e67 = usage: { "solstone journal segment <command> [options]" }{ "\u000a" }{ "solstone journal segment" }: error: unrecognized arguments: the following arguments are required: { $input }
+m6a6f75726e616c2e636c692e7365676d656e742e617267756d656e742e6d697373696e67 = usage: { "solstone journal segment <command> [options]" }{ "\u000a" }{ "solstone journal segment" }: error: the following arguments are required: { $input }
 
 m6a6f75726e616c2e636c692e7365676d656e742e617267756d656e742e756e6b6e6f776e = usage: { "solstone journal segment <command> [options]" }{ "\u000a" }{ "solstone journal segment" }: error: unrecognized arguments: { $arguments }
 

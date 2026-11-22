@@ -293,6 +293,10 @@ pub enum MessageId {
     m6a6f75726e616c2e636c692e6261636b75702e74656172646f776e2e7061727469616c,
     m6a6f75726e616c2e636c692e6261636b75702e74656172646f776e2e7072656c61756e63682e68656c64,
     m6a6f75726e616c2e636c692e6261636b75702e75736167652e64657374696e6174696f6e,
+    m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e64657374696e6174696f6e,
+    m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e6f66666c6f6164,
+    m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e7265636f766572792e6b6579,
+    m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e726f6f74,
     m6a6f75726e616c2e636c692e6261636b75702e75736167652e6f66666c6f6164,
     m6a6f75726e616c2e636c692e6261636b75702e75736167652e7265636f766572792e6b6579,
     m6a6f75726e616c2e636c692e6261636b75702e75736167652e726f6f74,
@@ -853,9 +857,13 @@ pub enum MessageId {
     m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e6578686175737465642e726561736f6e,
     m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e686f6c642e7265747279,
     m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e74,
+    m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e742e636c656172,
     m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c617374,
+    m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c6173742e636c656172,
     m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e74,
+    m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e742e636c656172,
     m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c617374,
+    m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c6173742e636c656172,
     m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e70656e64696e67,
     m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e70656e64696e672e636f756e7473,
     m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e70656e64696e672e6f6c64657374,
@@ -5459,6 +5467,10 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.cli.backup.teardown.partial", MessageId::m6a6f75726e616c2e636c692e6261636b75702e74656172646f776e2e7061727469616c),
         ("journal.cli.backup.teardown.prelaunch.held", MessageId::m6a6f75726e616c2e636c692e6261636b75702e74656172646f776e2e7072656c61756e63682e68656c64),
         ("journal.cli.backup.usage.destination", MessageId::m6a6f75726e616c2e636c692e6261636b75702e75736167652e64657374696e6174696f6e),
+        ("journal.cli.backup.usage.missing.destination", MessageId::m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e64657374696e6174696f6e),
+        ("journal.cli.backup.usage.missing.offload", MessageId::m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e6f66666c6f6164),
+        ("journal.cli.backup.usage.missing.recovery.key", MessageId::m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e7265636f766572792e6b6579),
+        ("journal.cli.backup.usage.missing.root", MessageId::m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e726f6f74),
         ("journal.cli.backup.usage.offload", MessageId::m6a6f75726e616c2e636c692e6261636b75702e75736167652e6f66666c6f6164),
         ("journal.cli.backup.usage.recovery.key", MessageId::m6a6f75726e616c2e636c692e6261636b75702e75736167652e7265636f766572792e6b6579),
         ("journal.cli.backup.usage.root", MessageId::m6a6f75726e616c2e636c692e6261636b75702e75736167652e726f6f74),
@@ -6019,9 +6031,13 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.cli.doctor.backlog.exhausted.reason", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e6578686175737465642e726561736f6e),
         ("journal.cli.doctor.backlog.hold.retry", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e686f6c642e7265747279),
         ("journal.cli.doctor.backlog.inventory.partial.current", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e74),
+        ("journal.cli.doctor.backlog.inventory.partial.current.clear", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e742e636c656172),
         ("journal.cli.doctor.backlog.inventory.partial.last", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c617374),
+        ("journal.cli.doctor.backlog.inventory.partial.last.clear", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c6173742e636c656172),
         ("journal.cli.doctor.backlog.inventory.whole.current", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e74),
+        ("journal.cli.doctor.backlog.inventory.whole.current.clear", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e742e636c656172),
         ("journal.cli.doctor.backlog.inventory.whole.last", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c617374),
+        ("journal.cli.doctor.backlog.inventory.whole.last.clear", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c6173742e636c656172),
         ("journal.cli.doctor.backlog.pending", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e70656e64696e67),
         ("journal.cli.doctor.backlog.pending.counts", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e70656e64696e672e636f756e7473),
         ("journal.cli.doctor.backlog.pending.oldest", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e70656e64696e672e6f6c64657374),
@@ -10653,6 +10669,10 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e636c692e6261636b75702e74656172646f776e2e7061727469616c", no_arguments),
     ("m6a6f75726e616c2e636c692e6261636b75702e74656172646f776e2e7072656c61756e63682e68656c64", no_arguments),
     ("m6a6f75726e616c2e636c692e6261636b75702e75736167652e64657374696e6174696f6e", prepare_m6a6f75726e616c2e636c692e6261636b75702e75736167652e64657374696e6174696f6e),
+    ("m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e64657374696e6174696f6e", no_arguments),
+    ("m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e6f66666c6f6164", no_arguments),
+    ("m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e7265636f766572792e6b6579", no_arguments),
+    ("m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e726f6f74", no_arguments),
     ("m6a6f75726e616c2e636c692e6261636b75702e75736167652e6f66666c6f6164", prepare_m6a6f75726e616c2e636c692e6261636b75702e75736167652e6f66666c6f6164),
     ("m6a6f75726e616c2e636c692e6261636b75702e75736167652e7265636f766572792e6b6579", prepare_m6a6f75726e616c2e636c692e6261636b75702e75736167652e7265636f766572792e6b6579),
     ("m6a6f75726e616c2e636c692e6261636b75702e75736167652e726f6f74", prepare_m6a6f75726e616c2e636c692e6261636b75702e75736167652e726f6f74),
@@ -11213,9 +11233,13 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e6578686175737465642e726561736f6e", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e6578686175737465642e726561736f6e),
     ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e686f6c642e7265747279", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e686f6c642e7265747279),
     ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e74", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e74),
+    ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e742e636c656172", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e742e636c656172),
     ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c617374", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c617374),
+    ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c6173742e636c656172", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c6173742e636c656172),
     ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e74", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e74),
+    ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e742e636c656172", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e742e636c656172),
     ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c617374", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c617374),
+    ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c6173742e636c656172", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c6173742e636c656172),
     ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e70656e64696e67", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e70656e64696e67),
     ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e70656e64696e672e636f756e7473", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e70656e64696e672e636f756e7473),
     ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e70656e64696e672e6f6c64657374", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e70656e64696e672e6f6c64657374),
@@ -21139,6 +21163,62 @@ fn prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f
     Ok((_resource_key, f_args))
 }
 
+fn prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e742e636c656172(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["quantity", "inspected", "total", "oldest", "newest", "as_of", "bands"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "quantity").ok_or_else(|| RenderError::MissingArgument("quantity".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("quantity".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("quantity".to_string())); }
+    f_args.set("quantity", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "inspected").ok_or_else(|| RenderError::MissingArgument("inspected".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("inspected".to_string())),
+    };
+    f_args.set("inspected", FluentValue::from(v1.clone()));
+    let val_v2 = args.iter().find(|(n, _)| *n == "total").ok_or_else(|| RenderError::MissingArgument("total".to_string()))?.1.clone();
+    let v2 = match val_v2 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("total".to_string())),
+    };
+    f_args.set("total", FluentValue::from(v2.clone()));
+    let val_v3 = args.iter().find(|(n, _)| *n == "oldest").ok_or_else(|| RenderError::MissingArgument("oldest".to_string()))?.1.clone();
+    let v3 = match val_v3 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("oldest".to_string())),
+    };
+    f_args.set("oldest", FluentValue::from(v3.clone()));
+    let val_v4 = args.iter().find(|(n, _)| *n == "newest").ok_or_else(|| RenderError::MissingArgument("newest".to_string()))?.1.clone();
+    let v4 = match val_v4 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("newest".to_string())),
+    };
+    f_args.set("newest", FluentValue::from(v4.clone()));
+    let val_v5 = args.iter().find(|(n, _)| *n == "as_of").ok_or_else(|| RenderError::MissingArgument("as_of".to_string()))?.1.clone();
+    let v5 = match val_v5 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("as_of".to_string())),
+    };
+    f_args.set("as_of", FluentValue::from(v5.clone()));
+    let val_v6 = args.iter().find(|(n, _)| *n == "bands").ok_or_else(|| RenderError::MissingArgument("bands".to_string()))?.1.clone();
+    let v6 = match val_v6 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("bands".to_string())),
+    };
+    f_args.set("bands", FluentValue::from(v6.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
+    Ok((_resource_key, f_args))
+}
+
 fn prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c617374(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
     const DECLARED: &[&str] = &["quantity", "inspected", "total", "oldest", "newest", "as_of", "bands", "holds"];
     for (name, _) in args {
@@ -21197,6 +21277,62 @@ fn prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f
         _ => return Err(RenderError::InvalidArgumentType("holds".to_string())),
     };
     f_args.set("holds", FluentValue::from(v7.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c6173742e636c656172(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["quantity", "inspected", "total", "oldest", "newest", "as_of", "bands"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "quantity").ok_or_else(|| RenderError::MissingArgument("quantity".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("quantity".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("quantity".to_string())); }
+    f_args.set("quantity", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "inspected").ok_or_else(|| RenderError::MissingArgument("inspected".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("inspected".to_string())),
+    };
+    f_args.set("inspected", FluentValue::from(v1.clone()));
+    let val_v2 = args.iter().find(|(n, _)| *n == "total").ok_or_else(|| RenderError::MissingArgument("total".to_string()))?.1.clone();
+    let v2 = match val_v2 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("total".to_string())),
+    };
+    f_args.set("total", FluentValue::from(v2.clone()));
+    let val_v3 = args.iter().find(|(n, _)| *n == "oldest").ok_or_else(|| RenderError::MissingArgument("oldest".to_string()))?.1.clone();
+    let v3 = match val_v3 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("oldest".to_string())),
+    };
+    f_args.set("oldest", FluentValue::from(v3.clone()));
+    let val_v4 = args.iter().find(|(n, _)| *n == "newest").ok_or_else(|| RenderError::MissingArgument("newest".to_string()))?.1.clone();
+    let v4 = match val_v4 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("newest".to_string())),
+    };
+    f_args.set("newest", FluentValue::from(v4.clone()));
+    let val_v5 = args.iter().find(|(n, _)| *n == "as_of").ok_or_else(|| RenderError::MissingArgument("as_of".to_string()))?.1.clone();
+    let v5 = match val_v5 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("as_of".to_string())),
+    };
+    f_args.set("as_of", FluentValue::from(v5.clone()));
+    let val_v6 = args.iter().find(|(n, _)| *n == "bands").ok_or_else(|| RenderError::MissingArgument("bands".to_string()))?.1.clone();
+    let v6 = match val_v6 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("bands".to_string())),
+    };
+    f_args.set("bands", FluentValue::from(v6.clone()));
     f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
     Ok((_resource_key, f_args))
 }
@@ -21263,6 +21399,62 @@ fn prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f
     Ok((_resource_key, f_args))
 }
 
+fn prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e742e636c656172(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["quantity", "inspected", "total", "oldest", "newest", "as_of", "bands"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "quantity").ok_or_else(|| RenderError::MissingArgument("quantity".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("quantity".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("quantity".to_string())); }
+    f_args.set("quantity", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "inspected").ok_or_else(|| RenderError::MissingArgument("inspected".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("inspected".to_string())),
+    };
+    f_args.set("inspected", FluentValue::from(v1.clone()));
+    let val_v2 = args.iter().find(|(n, _)| *n == "total").ok_or_else(|| RenderError::MissingArgument("total".to_string()))?.1.clone();
+    let v2 = match val_v2 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("total".to_string())),
+    };
+    f_args.set("total", FluentValue::from(v2.clone()));
+    let val_v3 = args.iter().find(|(n, _)| *n == "oldest").ok_or_else(|| RenderError::MissingArgument("oldest".to_string()))?.1.clone();
+    let v3 = match val_v3 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("oldest".to_string())),
+    };
+    f_args.set("oldest", FluentValue::from(v3.clone()));
+    let val_v4 = args.iter().find(|(n, _)| *n == "newest").ok_or_else(|| RenderError::MissingArgument("newest".to_string()))?.1.clone();
+    let v4 = match val_v4 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("newest".to_string())),
+    };
+    f_args.set("newest", FluentValue::from(v4.clone()));
+    let val_v5 = args.iter().find(|(n, _)| *n == "as_of").ok_or_else(|| RenderError::MissingArgument("as_of".to_string()))?.1.clone();
+    let v5 = match val_v5 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("as_of".to_string())),
+    };
+    f_args.set("as_of", FluentValue::from(v5.clone()));
+    let val_v6 = args.iter().find(|(n, _)| *n == "bands").ok_or_else(|| RenderError::MissingArgument("bands".to_string()))?.1.clone();
+    let v6 = match val_v6 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("bands".to_string())),
+    };
+    f_args.set("bands", FluentValue::from(v6.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
+    Ok((_resource_key, f_args))
+}
+
 fn prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c617374(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
     const DECLARED: &[&str] = &["quantity", "inspected", "total", "oldest", "newest", "as_of", "bands", "holds"];
     for (name, _) in args {
@@ -21321,6 +21513,62 @@ fn prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f
         _ => return Err(RenderError::InvalidArgumentType("holds".to_string())),
     };
     f_args.set("holds", FluentValue::from(v7.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c6173742e636c656172(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["quantity", "inspected", "total", "oldest", "newest", "as_of", "bands"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "quantity").ok_or_else(|| RenderError::MissingArgument("quantity".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("quantity".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("quantity".to_string())); }
+    f_args.set("quantity", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "inspected").ok_or_else(|| RenderError::MissingArgument("inspected".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("inspected".to_string())),
+    };
+    f_args.set("inspected", FluentValue::from(v1.clone()));
+    let val_v2 = args.iter().find(|(n, _)| *n == "total").ok_or_else(|| RenderError::MissingArgument("total".to_string()))?.1.clone();
+    let v2 = match val_v2 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("total".to_string())),
+    };
+    f_args.set("total", FluentValue::from(v2.clone()));
+    let val_v3 = args.iter().find(|(n, _)| *n == "oldest").ok_or_else(|| RenderError::MissingArgument("oldest".to_string()))?.1.clone();
+    let v3 = match val_v3 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("oldest".to_string())),
+    };
+    f_args.set("oldest", FluentValue::from(v3.clone()));
+    let val_v4 = args.iter().find(|(n, _)| *n == "newest").ok_or_else(|| RenderError::MissingArgument("newest".to_string()))?.1.clone();
+    let v4 = match val_v4 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("newest".to_string())),
+    };
+    f_args.set("newest", FluentValue::from(v4.clone()));
+    let val_v5 = args.iter().find(|(n, _)| *n == "as_of").ok_or_else(|| RenderError::MissingArgument("as_of".to_string()))?.1.clone();
+    let v5 = match val_v5 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("as_of".to_string())),
+    };
+    f_args.set("as_of", FluentValue::from(v5.clone()));
+    let val_v6 = args.iter().find(|(n, _)| *n == "bands").ok_or_else(|| RenderError::MissingArgument("bands".to_string()))?.1.clone();
+    let v6 = match val_v6 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("bands".to_string())),
+    };
+    f_args.set("bands", FluentValue::from(v6.clone()));
     f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
     Ok((_resource_key, f_args))
 }

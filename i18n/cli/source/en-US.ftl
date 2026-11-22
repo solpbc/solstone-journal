@@ -681,9 +681,19 @@ journal.cli.doctor.backlog.inventory.partial.current = { $quantity ->
    *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection; set aside: { $holds }
 }
 
+journal.cli.doctor.backlog.inventory.partial.current.clear = { $quantity ->
+    [one] inspected { $inspected } of { $total } day, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection
+   *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection
+}
+
 journal.cli.doctor.backlog.inventory.partial.last = { $quantity ->
     [one] inspected { $inspected } of { $total } day, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection; last known progress; set aside: { $holds }
    *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection; last known progress; set aside: { $holds }
+}
+
+journal.cli.doctor.backlog.inventory.partial.last.clear = { $quantity ->
+    [one] inspected { $inspected } of { $total } day, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection; last known progress
+   *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; incomplete inspection; last known progress
 }
 
 journal.cli.doctor.backlog.inventory.whole.current = { $quantity ->
@@ -691,9 +701,19 @@ journal.cli.doctor.backlog.inventory.whole.current = { $quantity ->
    *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection; set aside: { $holds }
 }
 
+journal.cli.doctor.backlog.inventory.whole.current.clear = { $quantity ->
+    [one] inspected { $inspected } of { $total } day, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection
+   *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection
+}
+
 journal.cli.doctor.backlog.inventory.whole.last = { $quantity ->
     [one] inspected { $inspected } of { $total } day, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection; last known progress; set aside: { $holds }
    *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection; last known progress; set aside: { $holds }
+}
+
+journal.cli.doctor.backlog.inventory.whole.last.clear = { $quantity ->
+    [one] inspected { $inspected } of { $total } day, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection; last known progress
+   *[other] inspected { $inspected } of { $total } days, { $oldest } through { $newest }, as of { $as_of }; { $bands }; whole-journal inspection; last known progress
 }
 
 journal.cli.doctor.backlog.pending.counts = { $pending_count ->
@@ -1512,7 +1532,7 @@ journal.cli.retention.recovery.segment.unconfirmed = this could not be confirmed
 
 journal.cli.retention.recovery.segment.unfinished = a previous removal of this segment did not finish; it needs looking at before this can be retried
 
-journal.cli.segment.argument.missing = usage: { $syntax }{ $line_break }{ $command }: error: unrecognized arguments: the following arguments are required: { $input }
+journal.cli.segment.argument.missing = usage: { $syntax }{ $line_break }{ $command }: error: the following arguments are required: { $input }
 
 journal.cli.segment.argument.unknown = usage: { $syntax }{ $line_break }{ $command }: error: unrecognized arguments: { $arguments }
 
@@ -2197,6 +2217,14 @@ journal.cli.backup.teardown.partial = backup teardown did not finish. keep recov
 journal.cli.backup.teardown.prelaunch.held = turning off and deleting your backup isn't available here. no backup changes were made.
 
 journal.cli.backup.usage.destination = { $command }: error: unrecognized arguments: { $arguments }
+
+journal.cli.backup.usage.missing.destination = { $command }: error: the following arguments are required: { $required }
+
+journal.cli.backup.usage.missing.offload = { $command }: error: the following arguments are required: { $required }
+
+journal.cli.backup.usage.missing.recovery.key = { $command }: error: the following arguments are required: { $required }
+
+journal.cli.backup.usage.missing.root = { $command }: error: the following arguments are required: { $required }
 
 journal.cli.backup.usage.offload = { $command }: error: unrecognized arguments: { $arguments }
 

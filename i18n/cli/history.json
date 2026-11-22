@@ -4727,6 +4727,98 @@
       "selector": null
     },
     {
+      "id": "journal.cli.backup.usage.missing.destination",
+      "resource": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e64657374696e6174696f6e",
+      "namespace": "journal.cli.backup.usage.missing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal backup destination"
+        },
+        {
+          "name": "required",
+          "kind": "accepted-input",
+          "value": "command"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backup.usage.missing.offload",
+      "resource": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e6f66666c6f6164",
+      "namespace": "journal.cli.backup.usage.missing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal backup offload"
+        },
+        {
+          "name": "required",
+          "kind": "accepted-input",
+          "value": "command"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backup.usage.missing.recovery.key",
+      "resource": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e7265636f766572792e6b6579",
+      "namespace": "journal.cli.backup.usage.missing.recovery",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal backup recovery-key"
+        },
+        {
+          "name": "required",
+          "kind": "accepted-input",
+          "value": "command"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backup.usage.missing.root",
+      "resource": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e726f6f74",
+      "namespace": "journal.cli.backup.usage.missing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal backup"
+        },
+        {
+          "name": "required",
+          "kind": "accepted-input",
+          "value": "command"
+        }
+      ],
+      "selector": null
+    },
+    {
       "id": "journal.cli.backup.usage.offload",
       "resource": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6f66666c6f6164",
       "namespace": "journal.cli.backup.usage",
@@ -15006,6 +15098,73 @@
       }
     },
     {
+      "id": "journal.cli.doctor.backlog.inventory.partial.current.clear",
+      "resource": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e742e636c656172",
+      "namespace": "journal.cli.doctor.backlog.inventory.partial.current",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "inspected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "oldest",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "newest",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "as_of",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "bands",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.cli.doctor.backlog.inventory.partial.last",
       "resource": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c617374",
       "namespace": "journal.cli.doctor.backlog.inventory.partial",
@@ -15065,6 +15224,73 @@
         },
         {
           "name": "holds",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.doctor.backlog.inventory.partial.last.clear",
+      "resource": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c6173742e636c656172",
+      "namespace": "journal.cli.doctor.backlog.inventory.partial.last",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "inspected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "oldest",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "newest",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "as_of",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "bands",
           "type": "string",
           "numeric_style": null,
           "min": null,
@@ -15154,6 +15380,73 @@
       }
     },
     {
+      "id": "journal.cli.doctor.backlog.inventory.whole.current.clear",
+      "resource": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e742e636c656172",
+      "namespace": "journal.cli.doctor.backlog.inventory.whole.current",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "inspected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "oldest",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "newest",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "as_of",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "bands",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.cli.doctor.backlog.inventory.whole.last",
       "resource": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c617374",
       "namespace": "journal.cli.doctor.backlog.inventory.whole",
@@ -15213,6 +15506,73 @@
         },
         {
           "name": "holds",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.doctor.backlog.inventory.whole.last.clear",
+      "resource": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c6173742e636c656172",
+      "namespace": "journal.cli.doctor.backlog.inventory.whole.last",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "inspected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "oldest",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "newest",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "as_of",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "bands",
           "type": "string",
           "numeric_style": null,
           "min": null,

@@ -8687,6 +8687,126 @@
     {
       "bundle": "journal-cli",
       "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.backup.usage.missing.destination\u0004m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e64657374696e6174696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e64657374696e6174696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.backup.usage.missing.destination",
+        "resource_key": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e64657374696e6174696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "solstone journal backup destination: error: the following arguments are required: command",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "solstone journal backup destination: error: the following arguments are required: command",
+      "message_id": "journal.cli.backup.usage.missing.destination",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.backup.usage.missing.destination\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e64657374696e6174696f6e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.backup.usage.missing.offload\u0004m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e6f66666c6f6164",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e6f66666c6f6164_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.backup.usage.missing.offload",
+        "resource_key": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e6f66666c6f6164",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "solstone journal backup offload: error: the following arguments are required: command",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "solstone journal backup offload: error: the following arguments are required: command",
+      "message_id": "journal.cli.backup.usage.missing.offload",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.backup.usage.missing.offload\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e6f66666c6f6164",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.backup.usage.missing.recovery.key\u0004m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e7265636f766572792e6b6579",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e7265636f766572792e6b6579_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.backup.usage.missing.recovery.key",
+        "resource_key": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e7265636f766572792e6b6579",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "solstone journal backup recovery-key: error: the following arguments are required: command",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "solstone journal backup recovery-key: error: the following arguments are required: command",
+      "message_id": "journal.cli.backup.usage.missing.recovery.key",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.backup.usage.missing.recovery.key\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e7265636f766572792e6b6579",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.backup.usage.missing.root\u0004m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e726f6f74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e726f6f74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.backup.usage.missing.root",
+        "resource_key": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e726f6f74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "solstone journal backup: error: the following arguments are required: command",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "solstone journal backup: error: the following arguments are required: command",
+      "message_id": "journal.cli.backup.usage.missing.root",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.backup.usage.missing.root\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e6261636b75702e75736167652e6d697373696e672e726f6f74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
         "arguments": [
           {
             "name": "arguments",
@@ -28284,6 +28404,80 @@
             "name": "bands",
             "type": "string",
             "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.doctor.backlog.inventory.partial.current.clear\u0004m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e742e636c656172",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e742e636c656172_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.doctor.backlog.inventory.partial.current.clear",
+        "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e742e636c656172",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "inspected ⁨sample⁩ of ⁨sample⁩ days, ⁨sample⁩ through ⁨sample⁩, as of ⁨sample⁩; ⁨sample⁩; incomplete inspection",
+      "folder": null,
+      "inputs": {
+        "as_of": "sample",
+        "bands": "sample",
+        "inspected": "sample",
+        "newest": "sample",
+        "oldest": "sample",
+        "quantity": 0,
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "inspected ⁨sample⁩ of ⁨sample⁩ days, ⁨sample⁩ through ⁨sample⁩, as of ⁨sample⁩; ⁨sample⁩; incomplete inspection",
+      "message_id": "journal.cli.doctor.backlog.inventory.partial.current.clear",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.doctor.backlog.inventory.partial.current.clear\", &[(\"as_of\", Value::String(\"sample\")), (\"bands\", Value::String(\"sample\")), (\"inspected\", Value::String(\"sample\")), (\"newest\", Value::String(\"sample\")), (\"oldest\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e63757272656e742e636c656172",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "inspected",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "oldest",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "newest",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "as_of",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "bands",
+            "type": "string",
+            "value": "sample"
           },
           {
             "name": "holds",
@@ -28324,6 +28518,80 @@
       "own_reader_call": "render(\"en-US\", \"journal.cli.doctor.backlog.inventory.partial.last\", &[(\"as_of\", Value::String(\"sample\")), (\"bands\", Value::String(\"sample\")), (\"holds\", Value::String(\"sample\")), (\"inspected\", Value::String(\"sample\")), (\"newest\", Value::String(\"sample\")), (\"oldest\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c617374",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "inspected",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "oldest",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "newest",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "as_of",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "bands",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.doctor.backlog.inventory.partial.last.clear\u0004m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c6173742e636c656172",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c6173742e636c656172_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.doctor.backlog.inventory.partial.last.clear",
+        "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c6173742e636c656172",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "inspected ⁨sample⁩ of ⁨sample⁩ days, ⁨sample⁩ through ⁨sample⁩, as of ⁨sample⁩; ⁨sample⁩; incomplete inspection; last known progress",
+      "folder": null,
+      "inputs": {
+        "as_of": "sample",
+        "bands": "sample",
+        "inspected": "sample",
+        "newest": "sample",
+        "oldest": "sample",
+        "quantity": 0,
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "inspected ⁨sample⁩ of ⁨sample⁩ days, ⁨sample⁩ through ⁨sample⁩, as of ⁨sample⁩; ⁨sample⁩; incomplete inspection; last known progress",
+      "message_id": "journal.cli.doctor.backlog.inventory.partial.last.clear",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.doctor.backlog.inventory.partial.last.clear\", &[(\"as_of\", Value::String(\"sample\")), (\"bands\", Value::String(\"sample\")), (\"inspected\", Value::String(\"sample\")), (\"newest\", Value::String(\"sample\")), (\"oldest\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e7061727469616c2e6c6173742e636c656172",
       "target": "rust"
     },
     {
@@ -28444,6 +28712,80 @@
             "name": "bands",
             "type": "string",
             "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.doctor.backlog.inventory.whole.current.clear\u0004m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e742e636c656172",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e742e636c656172_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.doctor.backlog.inventory.whole.current.clear",
+        "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e742e636c656172",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "inspected ⁨sample⁩ of ⁨sample⁩ days, ⁨sample⁩ through ⁨sample⁩, as of ⁨sample⁩; ⁨sample⁩; whole-journal inspection",
+      "folder": null,
+      "inputs": {
+        "as_of": "sample",
+        "bands": "sample",
+        "inspected": "sample",
+        "newest": "sample",
+        "oldest": "sample",
+        "quantity": 0,
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "inspected ⁨sample⁩ of ⁨sample⁩ days, ⁨sample⁩ through ⁨sample⁩, as of ⁨sample⁩; ⁨sample⁩; whole-journal inspection",
+      "message_id": "journal.cli.doctor.backlog.inventory.whole.current.clear",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.doctor.backlog.inventory.whole.current.clear\", &[(\"as_of\", Value::String(\"sample\")), (\"bands\", Value::String(\"sample\")), (\"inspected\", Value::String(\"sample\")), (\"newest\", Value::String(\"sample\")), (\"oldest\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e63757272656e742e636c656172",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "inspected",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "oldest",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "newest",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "as_of",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "bands",
+            "type": "string",
+            "value": "sample"
           },
           {
             "name": "holds",
@@ -28484,6 +28826,80 @@
       "own_reader_call": "render(\"en-US\", \"journal.cli.doctor.backlog.inventory.whole.last\", &[(\"as_of\", Value::String(\"sample\")), (\"bands\", Value::String(\"sample\")), (\"holds\", Value::String(\"sample\")), (\"inspected\", Value::String(\"sample\")), (\"newest\", Value::String(\"sample\")), (\"oldest\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c617374",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "inspected",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "oldest",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "newest",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "as_of",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "bands",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.doctor.backlog.inventory.whole.last.clear\u0004m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c6173742e636c656172",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c6173742e636c656172_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.doctor.backlog.inventory.whole.last.clear",
+        "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c6173742e636c656172",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "inspected ⁨sample⁩ of ⁨sample⁩ days, ⁨sample⁩ through ⁨sample⁩, as of ⁨sample⁩; ⁨sample⁩; whole-journal inspection; last known progress",
+      "folder": null,
+      "inputs": {
+        "as_of": "sample",
+        "bands": "sample",
+        "inspected": "sample",
+        "newest": "sample",
+        "oldest": "sample",
+        "quantity": 0,
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "inspected ⁨sample⁩ of ⁨sample⁩ days, ⁨sample⁩ through ⁨sample⁩, as of ⁨sample⁩; ⁨sample⁩; whole-journal inspection; last known progress",
+      "message_id": "journal.cli.doctor.backlog.inventory.whole.last.clear",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.doctor.backlog.inventory.whole.last.clear\", &[(\"as_of\", Value::String(\"sample\")), (\"bands\", Value::String(\"sample\")), (\"inspected\", Value::String(\"sample\")), (\"newest\", Value::String(\"sample\")), (\"oldest\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e696e76656e746f72792e77686f6c652e6c6173742e636c656172",
       "target": "rust"
     },
     {
@@ -109990,13 +110406,13 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "usage: solstone journal segment <command> [options]\nsolstone journal segment: error: unrecognized arguments: the following arguments are required: ⁨sample⁩",
+      "expected": "usage: solstone journal segment <command> [options]\nsolstone journal segment: error: the following arguments are required: ⁨sample⁩",
       "folder": null,
       "inputs": {
         "input": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "usage: solstone journal segment <command> [options]\nsolstone journal segment: error: unrecognized arguments: the following arguments are required: ⁨sample⁩",
+      "logical_expected": "usage: solstone journal segment <command> [options]\nsolstone journal segment: error: the following arguments are required: ⁨sample⁩",
       "message_id": "journal.cli.segment.argument.missing",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.cli.segment.argument.missing\", &[(\"input\", Value::String(\"sample\"))])",
