@@ -193,13 +193,6 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
     ),
     (
         "core/crates/solstone-core-journal-cli/src/local_ops.rs",
-        "facet_merge_preview_text",
-        "facet.json",
-        1,
-        "message: the merge preview tells the owner which declaration is kept",
-    ),
-    (
-        "core/crates/solstone-core-journal-cli/src/local_ops.rs",
         "merge_tree_entry",
         "entity.json",
         1,
@@ -211,13 +204,6 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
         "facet.json",
         1,
         "derived: a facet merge keeps the destination's declaration and leaves the source's out by name",
-    ),
-    (
-        "core/crates/solstone-core-journal-cli/src/local_ops.rs",
-        "unclear_orphan_groups",
-        "facet.json",
-        1,
-        "message: the doctor names the facet whose declaration needs repair",
     ),
     (
         "core/crates/solstone-core-journal-io/src/durability.rs",

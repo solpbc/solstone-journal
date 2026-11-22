@@ -128,6 +128,14 @@ fn is_test_only(attrs: &[syn::Attribute]) -> bool {
     })
 }
 
+/// Whether a string names the trash folder: `.trash` as a path component.
+/// A catalog key such as `journal.cli.facet.merge.trash.failed` is a dotted
+/// name, not a path, and does not.
+fn names_the_trash_dir(text: &str) -> bool {
+    text.split(['/', '\\'])
+        .any(|component| component == ".trash")
+}
+
 #[derive(Default)]
 struct Scan {
     names_trash: Vec<usize>,
@@ -142,7 +150,8 @@ impl Scan {
                     self.names_trash.push(ident.span().start().line);
                 }
                 proc_macro2::TokenTree::Literal(literal)
-                    if literal.to_string().contains(".trash") =>
+                    if syn::parse_str::<syn::LitStr>(&literal.to_string())
+                        .is_ok_and(|text| names_the_trash_dir(&text.value())) =>
                 {
                     self.names_trash.push(literal.span().start().line);
                 }
@@ -218,7 +227,7 @@ impl<'ast> Visit<'ast> for Scan {
     }
 
     fn visit_lit_str(&mut self, literal: &'ast syn::LitStr) {
-        if literal.value().contains(".trash") {
+        if names_the_trash_dir(&literal.value()) {
             self.names_trash.push(literal.span().start().line);
         }
     }
@@ -304,6 +313,8 @@ fn the_scan_finds_what_it_forbids() {
             let _ = journal.join(TRASH_DIR);
             let _ = journal.join(".trash/x");
             let _ = format!("{}/.trash", 1);
+            let _ = message("journal.cli.journal.indexer.rel.trash");
+            let _ = format!("{}", "journal.cli.journal.facet.merge.collisions.trashed");
         }
         #[cfg(test)]
         mod tests {
