@@ -5919,6 +5919,15 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     $('chatgptReopen')?.addEventListener('click', reopenChatGptTab);
     $('chatgptCancel')?.addEventListener('click', cancelChatGptSignIn);
     $('chatgptFinish')?.addEventListener('click', () => pressed('chatgptFinish', () => [$('chatgptModelHeading')], finishChatGptSignIn));
+    const keepChatGptAddressVisible = () => {
+      const address = $('chatgptRedirectUrl');
+      if (address && address === document.activeElement) {
+        address.scrollIntoView({block: 'center'});
+      }
+    };
+    // Mobile keyboards can resize the layout viewport or just the visual viewport.
+    ctx.on(window, 'resize', keepChatGptAddressVisible);
+    if (window.visualViewport) ctx.on(window.visualViewport, 'resize', keepChatGptAddressVisible);
     $('chatgptSignOut')?.addEventListener('click', () => pressed('chatgptSignOut', () => [$('chatgptCardContinue')], () => signOutChatGpt({ forget: false })));
     $('chatgptPanelStartOver')?.addEventListener('click', () => pressed('chatgptPanelStartOver', signingIn, () => startChatGptSignIn({ startOver: true })));
     $('chatgptPickOther')?.addEventListener('click', () => {
