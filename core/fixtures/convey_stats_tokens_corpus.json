@@ -1637,7 +1637,7 @@
                     "day_count": 0,
                     "oldest_day": null
                   },
-                  "verdict": "it's unclear whether your journal is caught up; the last update age is unknown."
+                  "verdict": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
                 },
                 "summary": {
                   "completed": 2,
@@ -2532,7 +2532,7 @@
                     "day_count": 0,
                     "oldest_day": null
                   },
-                  "verdict": "it's unclear whether your journal is caught up; the last update age is unknown."
+                  "verdict": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
                 },
                 "summary": {
                   "completed": 2,

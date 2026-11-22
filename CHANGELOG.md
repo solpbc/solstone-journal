@@ -30,6 +30,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- if the last status update has no reliable time, health now explains why it can't tell whether your journal is caught up.
 - an entity's notes count, on its all-facets page and in the entities list, no longer includes notes in facets you've muted, and its all-facets page no longer lists those facets. a moment now shows only the day it came up, not the time your journal wrote it down. each of a person's saved voice samples now names where it came from, such as the device, instead of the recording's internal name, which shows when you hover over the device.
 - work an agent does on its own in a tmux session you've listed in `output_sessions` is now usually described as the agent's, such as "the agent in qa ran the tests", so your journal is less likely to credit it to you. thanks @dvanduzer for the report (#424).
 - search results from imported captions show the speaker's name instead of caption markup.

@@ -30257,7 +30257,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -30280,7 +30280,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -30303,7 +30303,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -30326,7 +30326,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -30349,7 +30349,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -30377,7 +30377,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -30405,7 +30405,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/thinking/",
@@ -30433,7 +30433,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -30456,7 +30456,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -30479,7 +30479,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -30502,7 +30502,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -30525,7 +30525,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -30553,7 +30553,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -30581,7 +30581,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/thinking/",
@@ -30609,7 +30609,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30637,7 +30637,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30665,7 +30665,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30693,7 +30693,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30721,7 +30721,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30754,7 +30754,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30787,7 +30787,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30820,7 +30820,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30848,7 +30848,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30876,7 +30876,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30904,7 +30904,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30932,7 +30932,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30965,7 +30965,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30998,7 +30998,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31031,7 +31031,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -31059,7 +31059,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -31087,7 +31087,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -31115,7 +31115,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -31143,7 +31143,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -31176,7 +31176,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -31209,7 +31209,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -31242,7 +31242,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -31265,7 +31265,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -31288,7 +31288,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -31311,7 +31311,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -31334,7 +31334,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -31362,7 +31362,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -31390,7 +31390,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/thinking/",
@@ -31418,7 +31418,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -31441,7 +31441,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -31464,7 +31464,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -31487,7 +31487,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -31510,7 +31510,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -31538,7 +31538,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -31566,7 +31566,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/thinking/",
@@ -31594,7 +31594,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31622,7 +31622,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31650,7 +31650,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31678,7 +31678,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31706,7 +31706,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31739,7 +31739,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31772,7 +31772,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31805,7 +31805,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31833,7 +31833,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31861,7 +31861,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31889,7 +31889,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31917,7 +31917,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31950,7 +31950,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -31983,7 +31983,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32016,7 +32016,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -32044,7 +32044,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -32072,7 +32072,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -32100,7 +32100,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -32128,7 +32128,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -32161,7 +32161,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -32194,7 +32194,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -32227,7 +32227,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -32250,7 +32250,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -32273,7 +32273,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -32296,7 +32296,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -32319,7 +32319,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -32347,7 +32347,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -32375,7 +32375,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/thinking/",
@@ -32403,7 +32403,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -32426,7 +32426,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -32449,7 +32449,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -32472,7 +32472,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -32495,7 +32495,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -32523,7 +32523,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -32551,7 +32551,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/thinking/",
@@ -32579,7 +32579,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32607,7 +32607,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32635,7 +32635,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32663,7 +32663,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32691,7 +32691,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32724,7 +32724,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32757,7 +32757,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32790,7 +32790,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32818,7 +32818,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32846,7 +32846,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32874,7 +32874,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32902,7 +32902,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32935,7 +32935,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -32968,7 +32968,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33001,7 +33001,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -33029,7 +33029,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -33057,7 +33057,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -33085,7 +33085,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -33113,7 +33113,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -33146,7 +33146,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -33179,7 +33179,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -33212,7 +33212,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -33235,7 +33235,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -33258,7 +33258,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -33281,7 +33281,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -33304,7 +33304,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -33332,7 +33332,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -33360,7 +33360,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/thinking/",
@@ -33388,7 +33388,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -33411,7 +33411,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -33434,7 +33434,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -33457,7 +33457,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -33480,7 +33480,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -33508,7 +33508,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -33536,7 +33536,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/thinking/",
@@ -33564,7 +33564,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33592,7 +33592,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33620,7 +33620,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33648,7 +33648,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33676,7 +33676,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33709,7 +33709,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33742,7 +33742,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33775,7 +33775,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33803,7 +33803,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33831,7 +33831,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33859,7 +33859,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33887,7 +33887,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33920,7 +33920,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33953,7 +33953,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -33986,7 +33986,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -34014,7 +34014,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -34042,7 +34042,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -34070,7 +34070,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -34098,7 +34098,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -34131,7 +34131,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -34164,7 +34164,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -34197,7 +34197,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -34220,7 +34220,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -34243,7 +34243,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -34266,7 +34266,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -34289,7 +34289,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -34317,7 +34317,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -34345,7 +34345,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/thinking/",
@@ -34373,7 +34373,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -34396,7 +34396,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -34419,7 +34419,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -34442,7 +34442,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -34465,7 +34465,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -34493,7 +34493,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -34521,7 +34521,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/thinking/",
@@ -34549,7 +34549,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34577,7 +34577,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34605,7 +34605,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34633,7 +34633,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34661,7 +34661,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34694,7 +34694,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34727,7 +34727,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34760,7 +34760,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34788,7 +34788,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34816,7 +34816,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34844,7 +34844,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34872,7 +34872,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34905,7 +34905,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34938,7 +34938,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -34971,7 +34971,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -34999,7 +34999,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -35027,7 +35027,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -35055,7 +35055,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -35083,7 +35083,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -35116,7 +35116,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -35149,7 +35149,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -35182,7 +35182,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35210,7 +35210,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35238,7 +35238,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35266,7 +35266,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35294,7 +35294,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35327,7 +35327,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35360,7 +35360,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35393,7 +35393,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35421,7 +35421,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35449,7 +35449,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35477,7 +35477,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35505,7 +35505,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35538,7 +35538,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35571,7 +35571,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35604,7 +35604,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35637,7 +35637,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35670,7 +35670,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35703,7 +35703,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35736,7 +35736,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35774,7 +35774,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35812,7 +35812,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35850,7 +35850,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35883,7 +35883,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35916,7 +35916,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35949,7 +35949,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -35982,7 +35982,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -36020,7 +36020,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -36058,7 +36058,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -36096,7 +36096,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -36129,7 +36129,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -36162,7 +36162,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -36195,7 +36195,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -36228,7 +36228,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -36266,7 +36266,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -36304,7 +36304,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health",
@@ -36342,7 +36342,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -36365,7 +36365,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -36388,7 +36388,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -36411,7 +36411,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -36434,7 +36434,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -36462,7 +36462,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -36490,7 +36490,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/thinking/",
@@ -36518,7 +36518,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -36541,7 +36541,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -36564,7 +36564,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -36587,7 +36587,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             }
           ],
           "last_observation": null,
@@ -36610,7 +36610,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -36638,7 +36638,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health/#brain",
@@ -36666,7 +36666,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/thinking/",
@@ -36694,7 +36694,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36722,7 +36722,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36750,7 +36750,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36778,7 +36778,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36806,7 +36806,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36839,7 +36839,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36872,7 +36872,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36905,7 +36905,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36933,7 +36933,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36961,7 +36961,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36989,7 +36989,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37017,7 +37017,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37050,7 +37050,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37083,7 +37083,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37116,7 +37116,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -37144,7 +37144,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -37172,7 +37172,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -37200,7 +37200,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -37228,7 +37228,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -37261,7 +37261,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",
@@ -37294,7 +37294,7 @@
             {
               "href": "/app/health",
               "severity": "amber",
-              "text": "it's unclear whether your journal is caught up; the last update age is unknown."
+              "text": "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             },
             {
               "href": "/app/support",

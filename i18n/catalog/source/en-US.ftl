@@ -13732,7 +13732,7 @@ journal.window.system.health.backlog.day.waiting.to.retry.automatically.no.actio
 
 journal.window.system.health.backlog.day.your.ai.provider.turned.down.your.key.check.it.on.the.thinking.page = your AI provider turned down your key. check it on the thinking page
 
-journal.window.system.health.backlog.verdict.age.unknown = it's unclear whether your journal is caught up; the last update age is unknown.
+journal.window.system.health.backlog.verdict.age.unknown = without a reliable time for its last status update, your journal can't tell whether it's caught up.
 
 journal.window.system.health.backlog.verdict.all.caught.up = your journal's all caught up.
 
@@ -13764,7 +13764,7 @@ journal.window.system.health.backlog.verdict.stale.hour = { $quantity ->
        *[other] it's unclear whether your journal is caught up; the last update was { $count } hours ago.
     }
 
-journal.window.system.health.backlog.verdict.stale.unknown = it's unclear whether your journal is caught up; the last update was unknown ago.
+journal.window.system.health.backlog.verdict.stale.unknown = without a reliable time for its last status update, your journal can't tell whether it's caught up.
 
 journal.window.system.health.backlog.verdict.stuck = { $quantity ->
         [one] caught up except 1 day that needs a hand.

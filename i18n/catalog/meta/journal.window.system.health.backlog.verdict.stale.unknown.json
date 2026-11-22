@@ -6,7 +6,7 @@
   ],
   "arguments": [],
   "format_intent": "text",
-  "source_revision": "52a9f257c50c1255b0eea4521f4192bade8f729c14554b15707174a6f26708fc",
+  "source_revision": "1238aa86b7e3936fc62fe624dcfd72ae9989299285354591071853b8b19b09ea",
   "max_length": 1000,
   "risk": "routine",
   "auto_merge": true,

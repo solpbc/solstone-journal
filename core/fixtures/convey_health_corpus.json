@@ -511,7 +511,7 @@
           "response": {
             "body": {
               "backlog": {
-                "verdict": "it's unclear whether your journal is caught up; the last update age is unknown.",
+                "verdict": "without a reliable time for its last status update, your journal can't tell whether it's caught up.",
                 "pending_days": 0,
                 "oldest_pending_day": null,
                 "freshness": {
@@ -803,7 +803,7 @@
           "response": {
             "body": {
               "backlog": {
-                "verdict": "it's unclear whether your journal is caught up; the last update age is unknown.",
+                "verdict": "without a reliable time for its last status update, your journal can't tell whether it's caught up.",
                 "pending_days": 0,
                 "oldest_pending_day": null,
                 "freshness": {

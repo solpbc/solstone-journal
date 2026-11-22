@@ -780,7 +780,7 @@ mod tests {
             assert_eq!(bnogen["backlog"]["freshness"]["state"], "unknown");
             assert_eq!(
                 bnogen["backlog"]["verdict"],
-                "it's unclear whether your journal is caught up; the last update age is unknown."
+                "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             );
 
             // Set generated_at one hour after now -> unknown future sentence
@@ -804,7 +804,7 @@ mod tests {
             assert_eq!(bfut["backlog"]["freshness"]["state"], "unknown");
             assert_eq!(
                 bfut["backlog"]["verdict"],
-                "it's unclear whether your journal is caught up; the last update age is unknown."
+                "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             );
 
             // Delete stats.json -> unclear whether the journal is caught up,

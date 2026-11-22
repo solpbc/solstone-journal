@@ -277,7 +277,7 @@ mod tests {
             assert_eq!(bnogen["stats"]["journal_status"]["freshness"], "unknown");
             assert_eq!(
                 bnogen["stats"]["journal_status"]["verdict"],
-                "it's unclear whether your journal is caught up; the last update age is unknown."
+                "without a reliable time for its last status update, your journal can't tell whether it's caught up."
             );
 
             // One pending day in a 40-hour-old summary uses the unclear sentence with 40 hours, not 1 day is still catching up.

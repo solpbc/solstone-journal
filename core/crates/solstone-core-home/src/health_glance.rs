@@ -592,7 +592,7 @@ mod tests {
         assert_eq!(issues.len(), 1);
         assert_eq!(
             issues[0]["text"],
-            "it's unclear whether your journal is caught up; the last update age is unknown."
+            "without a reliable time for its last status update, your journal can't tell whether it's caught up."
         );
 
         // 2 minutes in the future -> tolerated within 5 min skew, no age issue
