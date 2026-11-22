@@ -11,3 +11,4 @@ solstone-core-mcp-endpoint = "owner-agent endpoint compiled into produced linux,
 solstone-core-mcp-audit = "MCP interaction writer reached through the endpoint in produced journals; default-feature metadata intentionally omits the distribution-only feature edge"
 solstone-core-origin = "repository origin-artifact verify/mirror tooling; no shipped product path depends on it"
 solstone-core-talents = "talent-layout and run-log migration library; no shipped path calls it (talent-runtime and talent-cli are separate crates)"
+solstone-core-social-memory = "social memory: shares an activity into an atproto space on the owner's own host and keeps received ones apart; its command and sign-in are wired once the hosts it writes to support spaces"

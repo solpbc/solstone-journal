@@ -355,6 +355,11 @@
     "condition": "Path"
   },
   {
+    "path": "social/sample",
+    "pattern": "social/**",
+    "condition": "Path"
+  },
+  {
     "path": "awareness/sample",
     "pattern": "awareness/**",
     "condition": "Path"

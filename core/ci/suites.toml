@@ -1508,6 +1508,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-social-memory"
+package = "solstone-core-social-memory"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-sol-link"
 package = "solstone-core-sol-link"
 set = "component"

@@ -12,6 +12,7 @@
 //! (RFC 9449) extensions.
 
 pub mod atproto;
+pub mod atproto_client;
 pub mod callback;
 pub mod client;
 pub mod device_code;

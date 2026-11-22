@@ -1454,6 +1454,22 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         segment: None,
     },
     FilePattern {
+        // Social memory: activities other people shared with this journal,
+        // and the bookkeeping for activities it shared. A received memory is
+        // someone else's account, so no talent, agent, search or dashboard
+        // reader is offered it.
+        pattern: "social/**",
+        root: PatternRoot::Structural,
+        format: FileFormat::NotContent,
+        classification: ContentResolution::Unrecognized,
+        disposition: IndexDisposition::Excluded,
+        kind: KindAssignment::NotContent,
+        unit: ContentUnit::Record,
+        offered_to: OfferedTo::NONE,
+        condition: FileCondition::Path,
+        segment: None,
+    },
+    FilePattern {
         pattern: "awareness/**",
         root: PatternRoot::Structural,
         format: FileFormat::NotContent,

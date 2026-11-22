@@ -44,8 +44,13 @@ target = "x86_64-pc-windows-msvc"
 # Rust over ring/rustls/journal-io (only a test-only unix permission check is
 # cfg(unix)-gated); because it depends on ring, the Linux cross-check leaves it
 # to native Windows CI with ring's other dependents.
-workspace_packages = 146
-library_packages = 139
+# Re-derived on 2026-11-22 with the same metadata join:
+# solstone-core-social-memory adds one member and one library
+# (146/139 -> 147/140). It is plain cross-platform Rust over ring, jiff and
+# journal-io with no cfg(target_os) gate; because it depends on ring, the
+# Linux cross-check leaves it to native Windows CI with ring's other dependents.
+workspace_packages = 147
+library_packages = 140
 
 [[exclusions]]
 package = "ring"

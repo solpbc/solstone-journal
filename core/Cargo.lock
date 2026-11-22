@@ -6618,6 +6618,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-social-memory"
+version = "2.0.87"
+dependencies = [
+ "jiff 1.0.0",
+ "ring",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "solstone-core-facets",
+ "solstone-core-format",
+ "solstone-core-journal-config",
+ "solstone-core-journal-io",
+ "solstone-core-oauth",
+ "solstone-core-time",
+ "tempfile",
+]
+
+[[package]]
 name = "solstone-core-sol"
 version = "2.0.87"
 dependencies = [
