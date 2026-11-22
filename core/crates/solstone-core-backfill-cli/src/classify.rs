@@ -167,23 +167,10 @@ pub(crate) fn is_day_key(value: &str) -> bool {
 }
 
 pub(crate) fn identity_error(error: &SegmentIdentityError) -> String {
-    match error {
-        SegmentIdentityError::NotUtf8 { path } => copy::display(
-            "journal.cli.backfill.identity.encoding",
-            [("path", &path.display())],
-        ),
-        SegmentIdentityError::AmbiguousNamedDefault { path } => copy::display(
-            "journal.cli.backfill.identity.ambiguous",
-            [("path", &path.display())],
-        ),
-        SegmentIdentityError::DuplicateKey { stream, key } => copy::display(
-            "journal.cli.backfill.identity.duplicate",
-            [
-                ("stream", &(format!("{stream:?}"))),
-                ("key", &(format!("{key:?}"))),
-            ],
-        ),
-    }
+    solstone_core_journal_io::cli_diagnostics::segment_identity(
+        solstone_core_cli_copy::cli_locale(),
+        error,
+    )
 }
 
 pub(crate) fn refuse_ambiguous_named_default(

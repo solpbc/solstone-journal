@@ -15,6 +15,7 @@ pub mod obsidian;
 pub mod paths;
 pub mod screenshots;
 pub mod segment;
+pub mod stored_markdown;
 
 #[cfg(test)]
 pub(crate) mod test_support;

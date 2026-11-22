@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sense retry mismatch.",
+  "context": "Journal command-line text for sense retry mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9c1e89ed7baada73a691ccbe31c4db4611a733e18ee5b3e883800e66ecce4ee2",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

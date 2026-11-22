@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for plan cadence skip.",
+  "context": "Journal command-line text for plan cadence skip.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "seconds",
+      "type": "string"
+    },
+    {
+      "name": "minutes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "888b160976a558b0399c432cdc247c65882782aa5b1e64acd5927f2c8bb52133",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

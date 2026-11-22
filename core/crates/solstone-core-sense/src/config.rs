@@ -23,16 +23,41 @@ pub fn max_runtime_default(handler: &str) -> Duration {
 }
 
 pub fn read_config(journal: &Path) -> Map<String, Value> {
+    read_config_in(solstone_core_cli_copy::ENGLISH, journal)
+}
+
+pub(crate) fn read_config_in(locale: &str, journal: &Path) -> Map<String, Value> {
     match read_journal_config(journal) {
         Ok(read) => read.config.unwrap_or_default(),
         Err(error) => {
-            eprintln!("sense: journal config unavailable: {error}");
+            let solstone_core_journal_config::ConfigLoadError::Corrupt { path, .. } = error;
+            let error = solstone_core_window_catalog::strings(
+                locale,
+                "journal.window.facets.awareness.response.detail.unreadable.settings",
+                [("settings_path", &path.display().to_string())],
+            );
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.sense.config.read",
+                    [("error", &(error))]
+                )
+            );
             Map::new()
         }
     }
 }
 
 pub fn resolve_concurrency(config: &Map<String, Value>, handler: &str) -> usize {
+    resolve_concurrency_in(solstone_core_cli_copy::ENGLISH, config, handler)
+}
+
+pub(crate) fn resolve_concurrency_in(
+    locale: &str,
+    config: &Map<String, Value>,
+    handler: &str,
+) -> usize {
     let raw = config
         .get(handler)
         .and_then(Value::as_object)
@@ -45,7 +70,14 @@ pub fn resolve_concurrency(config: &Map<String, Value>, handler: &str) -> usize 
         Some(value) => value,
         None if raw.is_none() => 1,
         None => {
-            eprintln!("sense: invalid {handler}.max_concurrent; defaulting to 1");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.sense.config.concurrency",
+                    [("handler", &(handler))]
+                )
+            );
             1
         }
     }
@@ -70,6 +102,14 @@ pub fn parse_duration_seconds(raw: &Value) -> Option<Duration> {
 }
 
 pub fn resolve_max_runtime(config: &Map<String, Value>, handler: &str) -> Duration {
+    resolve_max_runtime_in(solstone_core_cli_copy::ENGLISH, config, handler)
+}
+
+pub(crate) fn resolve_max_runtime_in(
+    locale: &str,
+    config: &Map<String, Value>,
+    handler: &str,
+) -> Duration {
     let fallback = max_runtime_default(handler);
     let raw = config
         .get(handler)
@@ -80,8 +120,12 @@ pub fn resolve_max_runtime(config: &Map<String, Value>, handler: &str) -> Durati
         None if raw.is_none() => fallback,
         None => {
             eprintln!(
-                "sense: invalid {handler}.max_runtime; defaulting to {}s",
-                fallback.as_secs()
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.sense.config.runtime",
+                    [("handler", &(handler)), ("seconds", &(fallback.as_secs()))]
+                )
             );
             fallback
         }

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for plan activity type.",
+  "context": "Journal command-line text for plan activity type.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "31830df03ea8fd30e9e0b45d22b292f0b5c1d0c8568dfc358e5bb4081eb5962d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

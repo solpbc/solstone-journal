@@ -29379,6 +29379,6179 @@
       ],
       "protected_slots": [],
       "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.blocked",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e626c6f636b6564",
+      "namespace": "journal.cli.think.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.body.data",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e626f64792e64617461",
+      "namespace": "journal.cli.think.activity.body",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "provider",
+          "kind": "accepted-input",
+          "value": "Strava"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.day.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e6461792e6d697373696e67",
+      "namespace": "journal.cli.think.activity.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.fingerprint.failed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e66696e6765727072696e742e6661696c6564",
+      "namespace": "journal.cli.think.activity.fingerprint",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.malformed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e6d616c666f726d6564",
+      "namespace": "journal.cli.think.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "reactivate_flag",
+          "kind": "flag",
+          "value": "--reactivate"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e6d697373696e67",
+      "namespace": "journal.cli.think.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "reactivate_flag",
+          "kind": "flag",
+          "value": "--reactivate"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.muted.blocked",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e6d757465642e626c6f636b6564",
+      "namespace": "journal.cli.think.activity.muted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "reactivate_flag",
+          "kind": "flag",
+          "value": "--reactivate"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.muted.retry",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e6d757465642e7265747279",
+      "namespace": "journal.cli.think.activity.muted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.owner.field.held",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e6f776e65722e6669656c642e68656c64",
+      "namespace": "journal.cli.think.activity.owner.field",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.pending",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e70656e64696e67",
+      "namespace": "journal.cli.think.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.read.blocked",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e726561642e626c6f636b6564",
+      "namespace": "journal.cli.think.activity.read",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "reactivate_flag",
+          "kind": "flag",
+          "value": "--reactivate"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.read.retry",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e726561642e7265747279",
+      "namespace": "journal.cli.think.activity.read",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.record.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e7265636f72642e6d697373696e67",
+      "namespace": "journal.cli.think.activity.record",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.repair.required",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e7265706169722e7265717569726564",
+      "namespace": "journal.cli.think.activity.repair",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.replaced",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e7265706c61636564",
+      "namespace": "journal.cli.think.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.retry.identity",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e72657472792e6964656e74697479",
+      "namespace": "journal.cli.think.activity.retry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.retry.kind",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e72657472792e6b696e64",
+      "namespace": "journal.cli.think.activity.retry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.retry.muted",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e72657472792e6d75746564",
+      "namespace": "journal.cli.think.activity.retry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.routing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e726f7574696e67",
+      "namespace": "journal.cli.think.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.row.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e726f772e6d697373696e67",
+      "namespace": "journal.cli.think.activity.row",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.settled",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e736574746c6564",
+      "namespace": "journal.cli.think.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "facet",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "activity",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "provider",
+          "kind": "accepted-input",
+          "value": "Strava"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.state",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e7374617465",
+      "namespace": "journal.cli.think.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.state.segment",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e73746174652e7365676d656e74",
+      "namespace": "journal.cli.think.activity.state",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.work.malformed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e776f726b2e6d616c666f726d6564",
+      "namespace": "journal.cli.think.activity.work",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.work.pending",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e776f726b2e70656e64696e67",
+      "namespace": "journal.cli.think.activity.work",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "failures",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.work.running",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e776f726b2e72756e6e696e67",
+      "namespace": "journal.cli.think.activity.work",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.work.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e776f726b2e756e7265616461626c65",
+      "namespace": "journal.cli.think.activity.work",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.activity.work.version",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e61637469766974792e776f726b2e76657273696f6e",
+      "namespace": "journal.cli.think.activity.work",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.argument.integer",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e617267756d656e742e696e7465676572",
+      "namespace": "journal.cli.think.argument",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "option",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.argument.unknown",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e617267756d656e742e756e6b6e6f776e",
+      "namespace": "journal.cli.think.argument",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "argument",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.argument.value",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e617267756d656e742e76616c7565",
+      "namespace": "journal.cli.think.argument",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "option",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.cancelled",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e63616e63656c6c6564",
+      "namespace": "journal.cli.think",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.daily.blockers.more",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e626c6f636b6572732e6d6f7265",
+      "namespace": "journal.cli.think.daily.blockers",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "names",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.daily.incomplete",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e696e636f6d706c657465",
+      "namespace": "journal.cli.think.daily",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "units",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "blockers",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "details",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "phase",
+          "kind": "accepted-input",
+          "value": "daily_incomplete"
+        }
+      ],
+      "selector": {
+        "name": "units",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.daily.incomplete.record",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e696e636f6d706c6574652e7265636f7264",
+      "namespace": "journal.cli.think.daily.incomplete",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "units",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "blockers",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "details",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "phase",
+          "kind": "accepted-input",
+          "value": "daily_incomplete"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.daily.inputs.changed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e696e707574732e6368616e676564",
+      "namespace": "journal.cli.think.daily.inputs",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.daily.location.packet",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e6c6f636174696f6e2e7061636b6574",
+      "namespace": "journal.cli.think.daily.location",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.daily.location.read",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e6c6f636174696f6e2e72656164",
+      "namespace": "journal.cli.think.daily.location",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.daily.snapshot.changed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e736e617073686f742e6368616e676564",
+      "namespace": "journal.cli.think.daily.snapshot",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.daily.snapshot.changed.after",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e736e617073686f742e6368616e6765642e6166746572",
+      "namespace": "journal.cli.think.daily.snapshot.changed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.daily.snapshot.freeze",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e736e617073686f742e667265657a65",
+      "namespace": "journal.cli.think.daily.snapshot",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.daily.snapshot.parent",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e736e617073686f742e706172656e74",
+      "namespace": "journal.cli.think.daily.snapshot",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.daily.snapshot.removed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6461696c792e736e617073686f742e72656d6f766564",
+      "namespace": "journal.cli.think.daily.snapshot",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.error",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6572726f72",
+      "namespace": "journal.cli.think",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "message",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal think"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.error.with.log",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6572726f722e776974682e6c6f67",
+      "namespace": "journal.cli.think.error.with",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "primary",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "log",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.health.day.invalid",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6461792e696e76616c6964",
+      "namespace": "journal.cli.think.health.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "date_format",
+          "kind": "accepted-input",
+          "value": "YYYYMMDD"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.health.directory",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6469726563746f7279",
+      "namespace": "journal.cli.think.health",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.health.marker",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b6572",
+      "namespace": "journal.cli.think.health",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.health.marker.atomic",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b65722e61746f6d6963",
+      "namespace": "journal.cli.think.health.marker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.health.marker.fingerprint",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b65722e66696e6765727072696e74",
+      "namespace": "journal.cli.think.health.marker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.health.marker.io",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b65722e696f",
+      "namespace": "journal.cli.think.health.marker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.health.marker.lock",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b65722e6c6f636b",
+      "namespace": "journal.cli.think.health.marker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.health.marker.malformed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b65722e6d616c666f726d6564",
+      "namespace": "journal.cli.think.health.marker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.health.marker.stream",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d61726b65722e73747265616d",
+      "namespace": "journal.cli.think.health.marker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.health.metadata",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e6d65746164617461",
+      "namespace": "journal.cli.think.health",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.health.progress.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e70726f67726573732e756e7265616461626c65",
+      "namespace": "journal.cli.think.health.progress",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.health.read",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e72656164",
+      "namespace": "journal.cli.think.health",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.health.source",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6865616c74682e736f75726365",
+      "namespace": "journal.cli.think.health",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.help",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e68656c70",
+      "namespace": "journal.cli.think",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--reactivate] [--stream STREAM] [--flush] [--settle] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [--sense-batch] [-v] [-d]"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.host.sense.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e686f73742e73656e73652e6d697373696e67",
+      "namespace": "journal.cli.think.host.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.intent.gone",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e696e74656e742e676f6e65",
+      "namespace": "journal.cli.think.intent",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.activity.join",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e61637469766974792e6a6f696e",
+      "namespace": "journal.cli.think.log.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "think"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.activity.no.advance",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e61637469766974792e6e6f2e616476616e6365",
+      "namespace": "journal.cli.think.log.activity.no",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "think"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.activity.replay",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e61637469766974792e7265706c6179",
+      "namespace": "journal.cli.think.log.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "think"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.activity.turn",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e61637469766974792e7475726e",
+      "namespace": "journal.cli.think.log.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "stream",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.budget",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e627564676574",
+      "namespace": "journal.cli.think.log",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.cadence.read",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e636164656e63652e72656164",
+      "namespace": "journal.cli.think.log.cadence",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.cadence.set.aside",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e636164656e63652e7365742e6173696465",
+      "namespace": "journal.cli.think.log.cadence.set",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.daily.search",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6461696c792e736561726368",
+      "namespace": "journal.cli.think.log.daily",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.day.format",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6461792e666f726d6174",
+      "namespace": "journal.cli.think.log.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "date_format",
+          "kind": "accepted-input",
+          "value": "YYYYMMDD"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.day.local",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6461792e6c6f63616c",
+      "namespace": "journal.cli.think.log.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.display.metadata",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e646973706c61792e6d65746164617461",
+      "namespace": "journal.cli.think.log.display",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.failed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6661696c6564",
+      "namespace": "journal.cli.think.log",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.failure.lock",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6661696c7572652e6c6f636b",
+      "namespace": "journal.cli.think.log.failure",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.held.release",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e68656c642e72656c65617365",
+      "namespace": "journal.cli.think.log.held",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.lock",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6c6f636b",
+      "namespace": "journal.cli.think.log",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.name.answers",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e6e616d652e616e7377657273",
+      "namespace": "journal.cli.think.log.name",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "answers",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "judged",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "changed",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "waiting",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.provider",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e70726f7669646572",
+      "namespace": "journal.cli.think.log",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "left",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "left",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.log.provider.record",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e70726f76696465722e7265636f7264",
+      "namespace": "journal.cli.think.log.provider",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "left",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.reconciliation",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e7265636f6e63696c696174696f6e",
+      "namespace": "journal.cli.think.log",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.segment.turn",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e7365676d656e742e7475726e",
+      "namespace": "journal.cli.think.log.segment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.log.work.discovery",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6c6f672e776f726b2e646973636f76657279",
+      "namespace": "journal.cli.think.log.work",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "elapsed",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "inspected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "handed",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.entities",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e656e746974696573",
+      "namespace": "journal.cli.think.markdown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.entity",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e656e74697479",
+      "namespace": "journal.cli.think.markdown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "role",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "context",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.object.both",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a6563742e626f7468",
+      "namespace": "journal.cli.think.markdown.object",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "frames",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "photos",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "class",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "frames",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.markdown.object.both.maximum",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a6563742e626f74682e6d6178696d756d",
+      "namespace": "journal.cli.think.markdown.object.both",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "frames",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "photos",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "class",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "most",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "frames",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.markdown.object.frames",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a6563742e6672616d6573",
+      "namespace": "journal.cli.think.markdown.object",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "frames",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "class",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "frames",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.markdown.object.frames.maximum",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a6563742e6672616d65732e6d6178696d756d",
+      "namespace": "journal.cli.think.markdown.object.frames",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "frames",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "class",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "most",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "frames",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.markdown.object.photos",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a6563742e70686f746f73",
+      "namespace": "journal.cli.think.markdown.object",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "photos",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "class",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "photos",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.markdown.object.photos.maximum",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a6563742e70686f746f732e6d6178696d756d",
+      "namespace": "journal.cli.think.markdown.object.photos",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "photos",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "class",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "most",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "photos",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.markdown.objects",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e6f626a65637473",
+      "namespace": "journal.cli.think.markdown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.partial.counts",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e7061727469616c2e636f756e7473",
+      "namespace": "journal.cli.think.markdown.partial",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "details",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.partial.input",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e7061727469616c2e696e707574",
+      "namespace": "journal.cli.think.markdown.partial",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.partial.story",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e7061727469616c2e73746f7279",
+      "namespace": "journal.cli.think.markdown.partial",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.quotes",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e71756f746573",
+      "namespace": "journal.cli.think.markdown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.sense.entities",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e73656e73652e656e746974696573",
+      "namespace": "journal.cli.think.markdown.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.sense.facets",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e73656e73652e666163657473",
+      "namespace": "journal.cli.think.markdown.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.sense.record",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e73656e73652e7265636f7264",
+      "namespace": "journal.cli.think.markdown.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.sense.speakers",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e73656e73652e737065616b657273",
+      "namespace": "journal.cli.think.markdown.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "names",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.speaker",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e737065616b6572",
+      "namespace": "journal.cli.think.markdown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "number",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.terminal.clock",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e7465726d696e616c2e636c6f636b",
+      "namespace": "journal.cli.think.markdown.terminal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "clock",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.terminal.notice",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e7465726d696e616c2e6e6f74696365",
+      "namespace": "journal.cli.think.markdown.terminal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.markdown.topics",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6d61726b646f776e2e746f70696373",
+      "namespace": "journal.cli.think.markdown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.outcome.completed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6f7574636f6d652e636f6d706c65746564",
+      "namespace": "journal.cli.think.outcome",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal think"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.outcome.failed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e6f7574636f6d652e6661696c6564",
+      "namespace": "journal.cli.think.outcome",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal think"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.phase.daily.prerequisites",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e70686173652e6461696c792e70726572657175697369746573",
+      "namespace": "journal.cli.think.phase.daily",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.phase.exit",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e70686173652e65786974",
+      "namespace": "journal.cli.think.phase",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "code",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.phase.segment.prerequisites",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e70686173652e7365676d656e742e70726572657175697369746573",
+      "namespace": "journal.cli.think.phase.segment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.activity.count",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e61637469766974792e636f756e74",
+      "namespace": "journal.cli.think.plan.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "segments",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.activity.empty",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e61637469766974792e656d707479",
+      "namespace": "journal.cli.think.plan.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.activity.heading",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e61637469766974792e68656164696e67",
+      "namespace": "journal.cli.think.plan.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "operation",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "activity",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facet",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "activity_flag",
+          "kind": "flag",
+          "value": "--activity"
+        },
+        {
+          "name": "facet_flag",
+          "kind": "flag",
+          "value": "--facet"
+        }
+      ],
+      "selector": {
+        "name": "operation",
+        "type": "string",
+        "enum_values": [
+          "refresh",
+          "ordinary"
+        ],
+        "enum_default": "ordinary"
+      }
+    },
+    {
+      "id": "journal.cli.think.plan.activity.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e61637469766974792e6d697373696e67",
+      "namespace": "journal.cli.think.plan.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "activity",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facet",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.activity.type",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e61637469766974792e74797065",
+      "namespace": "journal.cli.think.plan.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.cadence",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e636164656e6365",
+      "namespace": "journal.cli.think.plan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.cadence.fire",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e636164656e63652e66697265",
+      "namespace": "journal.cli.think.plan.cadence",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "segments",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "activities",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "segments",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.plan.cadence.fire.record",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e636164656e63652e666972652e7265636f7264",
+      "namespace": "journal.cli.think.plan.cadence.fire",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segments",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "activities",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.cadence.idle",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e636164656e63652e69646c65",
+      "namespace": "journal.cli.think.plan.cadence",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.cadence.skip",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e636164656e63652e736b6970",
+      "namespace": "journal.cli.think.plan.cadence",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "seconds",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "minutes",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.day",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e646179",
+      "namespace": "journal.cli.think.plan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.day.refresh",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e6461792e72656672657368",
+      "namespace": "journal.cli.think.plan.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.day.segment",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e6461792e7365676d656e74",
+      "namespace": "journal.cli.think.plan.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.day.segment.refresh",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e6461792e7365676d656e742e72656672657368",
+      "namespace": "journal.cli.think.plan.day.segment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.empty.cadence",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e656d7074792e636164656e6365",
+      "namespace": "journal.cli.think.plan.empty",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "cadence",
+          "kind": "accepted-input",
+          "value": "cadence"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.empty.weekly",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e656d7074792e7765656b6c79",
+      "namespace": "journal.cli.think.plan.empty",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "weekly",
+          "kind": "accepted-input",
+          "value": "weekly"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.flush",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e666c757368",
+      "namespace": "journal.cli.think.plan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "flush_flag",
+          "kind": "flag",
+          "value": "--flush"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.flush.empty",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e666c7573682e656d707479",
+      "namespace": "journal.cli.think.plan.flush",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.flush.talent",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e666c7573682e74616c656e74",
+      "namespace": "journal.cli.think.plan.flush",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "kind",
+        "type": "string",
+        "enum_values": [
+          "generate",
+          "agent"
+        ],
+        "enum_default": "agent"
+      }
+    },
+    {
+      "id": "journal.cli.think.plan.idle",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e69646c65",
+      "namespace": "journal.cli.think.plan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "refresh_flag",
+          "kind": "flag",
+          "value": "--refresh"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.orchestrator",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e6f7263686573747261746f72",
+      "namespace": "journal.cli.think.plan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.post.indexer",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e706f73742e696e6465786572",
+      "namespace": "journal.cli.think.plan.post",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal indexer --rescan"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.post.stats",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e706f73742e7374617473",
+      "namespace": "journal.cli.think.plan.post",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal journal-stats"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.pre",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e707265",
+      "namespace": "journal.cli.think.plan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "jobs",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal sense --day"
+        },
+        {
+          "name": "jobs_flag",
+          "kind": "flag",
+          "value": "-j"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.priority",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7072696f72697479",
+      "namespace": "journal.cli.think.plan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "priority",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.reprocess",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e726570726f63657373",
+      "namespace": "journal.cli.think.plan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "count",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.plan.reprocess.record",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e726570726f636573732e7265636f7264",
+      "namespace": "journal.cli.think.plan.reprocess",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.schedule.empty",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7363686564756c652e656d707479",
+      "namespace": "journal.cli.think.plan.schedule",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "schedule",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.segment.row",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7365676d656e742e726f77",
+      "namespace": "journal.cli.think.plan.segment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "index",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "start",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "end",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "stream",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.skip",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e736b6970",
+      "namespace": "journal.cli.think.plan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facets",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.state",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7374617465",
+      "namespace": "journal.cli.think.plan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.step.entities",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e656e746974696573",
+      "namespace": "journal.cli.think.plan.step",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "presence",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "presence",
+        "type": "string",
+        "enum_values": [
+          "existing",
+          "new",
+          "plain"
+        ],
+        "enum_default": "plain"
+      }
+    },
+    {
+      "id": "journal.cli.think.plan.step.possible",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e706f737369626c65",
+      "namespace": "journal.cli.think.plan.step",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "presence",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "presence",
+        "type": "string",
+        "enum_values": [
+          "existing",
+          "new",
+          "plain"
+        ],
+        "enum_default": "plain"
+      }
+    },
+    {
+      "id": "journal.cli.think.plan.step.screen",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e73637265656e",
+      "namespace": "journal.cli.think.plan.step",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "presence",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "recommend_screen_record",
+          "kind": "accepted-input",
+          "value": "recommend.screen_record"
+        }
+      ],
+      "selector": {
+        "name": "presence",
+        "type": "string",
+        "enum_values": [
+          "existing",
+          "new",
+          "plain"
+        ],
+        "enum_default": "plain"
+      }
+    },
+    {
+      "id": "journal.cli.think.plan.step.sense",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e73656e7365",
+      "namespace": "journal.cli.think.plan.step",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "presence",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "presence",
+        "type": "string",
+        "enum_values": [
+          "existing",
+          "new",
+          "plain"
+        ],
+        "enum_default": "plain"
+      }
+    },
+    {
+      "id": "journal.cli.think.plan.step.speaker.attribution",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e737465702e737065616b65722e6174747269627574696f6e",
+      "namespace": "journal.cli.think.plan.step.speaker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "presence",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "recommend_speaker_attribution",
+          "kind": "accepted-input",
+          "value": "recommend.speaker_attribution"
+        }
+      ],
+      "selector": {
+        "name": "presence",
+        "type": "string",
+        "enum_values": [
+          "existing",
+          "new",
+          "plain"
+        ],
+        "enum_default": "plain"
+      }
+    },
+    {
+      "id": "journal.cli.think.plan.table.facet",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e6661636574",
+      "namespace": "journal.cli.think.plan.table",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "row",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facet",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "row",
+        "type": "string",
+        "enum_values": [
+          "generator_existing",
+          "generator_new",
+          "generator_plain",
+          "agent_existing",
+          "agent_new",
+          "agent_plain"
+        ],
+        "enum_default": "agent_plain"
+      }
+    },
+    {
+      "id": "journal.cli.think.plan.table.talent",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7461626c652e74616c656e74",
+      "namespace": "journal.cli.think.plan.table",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "row",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "row",
+        "type": "string",
+        "enum_values": [
+          "generator_existing",
+          "generator_new",
+          "generator_plain",
+          "agent_existing",
+          "agent_new",
+          "agent_plain"
+        ],
+        "enum_default": "agent_plain"
+      }
+    },
+    {
+      "id": "journal.cli.think.plan.total",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e746f74616c",
+      "namespace": "journal.cli.think.plan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "total",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "total",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.plan.total.record",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e746f74616c2e7265636f7264",
+      "namespace": "journal.cli.think.plan.total",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.plan.weekly",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e706c616e2e7765656b6c79",
+      "namespace": "journal.cli.think.plan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.preflight.disk",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e707265666c696768742e6469736b",
+      "namespace": "journal.cli.think.preflight",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.preflight.held",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e707265666c696768742e68656c64",
+      "namespace": "journal.cli.think.preflight",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "role",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "pid",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "started",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "generation",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "age",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "reason",
+          "kind": "accepted-input",
+          "value": "generation-lease-contended"
+        },
+        {
+          "name": "generation_key",
+          "kind": "accepted-input",
+          "value": "install_generation_id="
+        },
+        {
+          "name": "age_key",
+          "kind": "accepted-input",
+          "value": "owner_age_seconds="
+        },
+        {
+          "name": "time_key",
+          "kind": "accepted-input",
+          "value": "owner_started_at="
+        },
+        {
+          "name": "role_key",
+          "kind": "accepted-input",
+          "value": "owner_role="
+        },
+        {
+          "name": "pid_key",
+          "kind": "accepted-input",
+          "value": "owner_pid="
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.preflight.held.unavailable",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e707265666c696768742e68656c642e756e617661696c61626c65",
+      "namespace": "journal.cli.think.preflight.held",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "reason",
+          "kind": "accepted-input",
+          "value": "generation-lease-contended"
+        },
+        {
+          "name": "owner",
+          "kind": "accepted-input",
+          "value": "owner_details=unavailable"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.priority.environment",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e7072696f726974792e656e7669726f6e6d656e74",
+      "namespace": "journal.cli.think.priority",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.priority.syntax",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e7072696f726974792e73796e746178",
+      "namespace": "journal.cli.think.priority",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.repair.segment.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e7265706169722e7365676d656e742e6d697373696e67",
+      "namespace": "journal.cli.think.repair.segment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.reprocess.record",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e726570726f636573732e7265636f7264",
+      "namespace": "journal.cli.think.reprocess",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.activity.changed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e61637469766974792e6368616e676564",
+      "namespace": "journal.cli.think.retry.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.activity.released",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e61637469766974792e72656c6561736564",
+      "namespace": "journal.cli.think.retry.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.daily.changed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461696c792e6368616e676564",
+      "namespace": "journal.cli.think.retry.daily",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.daily.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461696c792e6d697373696e67",
+      "namespace": "journal.cli.think.retry.daily",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.daily.released",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461696c792e72656c6561736564",
+      "namespace": "journal.cli.think.retry.daily",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.daily.terminal.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461696c792e7465726d696e616c2e6d697373696e67",
+      "namespace": "journal.cli.think.retry.daily.terminal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.daily.unresolved",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461696c792e756e7265736f6c766564",
+      "namespace": "journal.cli.think.retry.daily",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.daily.unused",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461696c792e756e75736564",
+      "namespace": "journal.cli.think.retry.daily",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.day.mismatch",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e6461792e6d69736d61746368",
+      "namespace": "journal.cli.think.retry.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.evidence.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e65766964656e63652e6d697373696e67",
+      "namespace": "journal.cli.think.retry.evidence",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.permission.changed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7065726d697373696f6e2e6368616e676564",
+      "namespace": "journal.cli.think.retry.permission",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.coordinate.invalid",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e636f6f7264696e6174652e696e76616c6964",
+      "namespace": "journal.cli.think.retry.raw.coordinate",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.coordinate.utf8",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e636f6f7264696e6174652e75746638",
+      "namespace": "journal.cli.think.retry.raw.coordinate",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.fingerprint.invalid",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e66696e6765727072696e742e696e76616c6964",
+      "namespace": "journal.cli.think.retry.raw.fingerprint",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.handler.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e68616e646c65722e6d697373696e67",
+      "namespace": "journal.cli.think.retry.raw.handler",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.header.incomplete",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e6865616465722e696e636f6d706c657465",
+      "namespace": "journal.cli.think.retry.raw.header",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.header.kind",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e6865616465722e6b696e64",
+      "namespace": "journal.cli.think.retry.raw.header",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.kind",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e6b696e64",
+      "namespace": "journal.cli.think.retry.raw",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.parent.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e706172656e742e6d697373696e67",
+      "namespace": "journal.cli.think.retry.raw.parent",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.permission.unused",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e7065726d697373696f6e2e756e75736564",
+      "namespace": "journal.cli.think.retry.raw.permission",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.receipt.changed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e726563656970742e6368616e676564",
+      "namespace": "journal.cli.think.retry.raw.receipt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.receipt.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e726563656970742e6d697373696e67",
+      "namespace": "journal.cli.think.retry.raw.receipt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.receipt.unpublished",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e726563656970742e756e7075626c6973686564",
+      "namespace": "journal.cli.think.retry.raw.receipt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.receipt.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e726563656970742e756e7265616461626c65",
+      "namespace": "journal.cli.think.retry.raw.receipt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.record.malformed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e7265636f72642e6d616c666f726d6564",
+      "namespace": "journal.cli.think.retry.raw.record",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.released",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e72656c6561736564",
+      "namespace": "journal.cli.think.retry.raw",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.schema.unknown",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e736368656d612e756e6b6e6f776e",
+      "namespace": "journal.cli.think.retry.raw.schema",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.source.invalid",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e736f757263652e696e76616c6964",
+      "namespace": "journal.cli.think.retry.raw.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.raw.source.mismatch",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7261772e736f757263652e6d69736d61746368",
+      "namespace": "journal.cli.think.retry.raw.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.segment.changed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e7365676d656e742e6368616e676564",
+      "namespace": "journal.cli.think.retry.segment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.talent.disabled",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e74616c656e742e64697361626c6564",
+      "namespace": "journal.cli.think.retry.talent",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.talent.dispatch",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e74616c656e742e6469737061746368",
+      "namespace": "journal.cli.think.retry.talent",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.talent.segment.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e74616c656e742e7365676d656e742e6d697373696e67",
+      "namespace": "journal.cli.think.retry.talent.segment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.retry.talent.skipped",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e72657472792e74616c656e742e736b6970706564",
+      "namespace": "journal.cli.think.retry.talent",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.routing.log.malformed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e726f7574696e672e6c6f672e6d616c666f726d6564",
+      "namespace": "journal.cli.think.routing.log",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.routing.source.invalid",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e726f7574696e672e736f757263652e696e76616c6964",
+      "namespace": "journal.cli.think.routing.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.segment.ambiguous",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e7365676d656e742e616d626967756f7573",
+      "namespace": "journal.cli.think.segment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "count",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.sense.complete",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e636f6d706c657465",
+      "namespace": "journal.cli.think.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.config.concurrency",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e636f6e6669672e636f6e63757272656e6379",
+      "namespace": "journal.cli.think.sense.config",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "setting",
+          "kind": "accepted-input",
+          "value": "max_concurrent"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.config.read",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e636f6e6669672e72656164",
+      "namespace": "journal.cli.think.sense.config",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.config.runtime",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e636f6e6669672e72756e74696d65",
+      "namespace": "journal.cli.think.sense.config",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "seconds",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "setting",
+          "kind": "accepted-input",
+          "value": "max_runtime"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.conflict",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e636f6e666c696374",
+      "namespace": "journal.cli.think.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "options",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "sense_batch_flag",
+          "kind": "flag",
+          "value": "--sense-batch"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.day",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e646179",
+      "namespace": "journal.cli.think.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "sense_batch_flag",
+          "kind": "flag",
+          "value": "--sense-batch"
+        },
+        {
+          "name": "day_flag",
+          "kind": "flag",
+          "value": "--day"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.day.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6461792e6d697373696e67",
+      "namespace": "journal.cli.think.sense.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.deferred",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6465666572726564",
+      "namespace": "journal.cli.think.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "deferred",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "ran",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.sense.error.delete",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e64656c657465",
+      "namespace": "journal.cli.think.sense.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.error.deleted.dirty",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e64656c657465642e6469727479",
+      "namespace": "journal.cli.think.sense.error.deleted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.error.failed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e6661696c6564",
+      "namespace": "journal.cli.think.sense.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "failed",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "ran",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.error.held",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e68656c64",
+      "namespace": "journal.cli.think.sense.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.error.join",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e6a6f696e",
+      "namespace": "journal.cli.think.sense.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.error.lease",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e6c65617365",
+      "namespace": "journal.cli.think.sense.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.error.runtime",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e72756e74696d65",
+      "namespace": "journal.cli.think.sense.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.error.scan",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e7363616e",
+      "namespace": "journal.cli.think.sense.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.error.timeout",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e74696d656f7574",
+      "namespace": "journal.cli.think.sense.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "duration",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.files",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e66696c6573",
+      "namespace": "journal.cli.think.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "extensions",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.sense.interrupted.write",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e696e7465727275707465642e7772697465",
+      "namespace": "journal.cli.think.sense.interrupted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "event",
+          "kind": "accepted-input",
+          "value": "observe.interrupted"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.lease.skip",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6c656173652e736b6970",
+      "namespace": "journal.cli.think.sense.lease",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.nothing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6e6f7468696e67",
+      "namespace": "journal.cli.think.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.priority.encoding",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e7072696f726974792e656e636f64696e67",
+      "namespace": "journal.cli.think.sense.priority",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "variable",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.processing.day",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e70726f63657373696e672e646179",
+      "namespace": "journal.cli.think.sense.processing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "jobs",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.sense.processing.segment",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e70726f63657373696e672e7365676d656e74",
+      "namespace": "journal.cli.think.sense.processing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "jobs",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.think.sense.refused",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e72656675736564",
+      "namespace": "journal.cli.think.sense",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "reason",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.retry.changed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e72657472792e6368616e676564",
+      "namespace": "journal.cli.think.sense.retry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.retry.handler",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e72657472792e68616e646c6572",
+      "namespace": "journal.cli.think.sense.retry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.retry.kind",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e72657472792e6b696e64",
+      "namespace": "journal.cli.think.sense.retry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.retry.mismatch",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e72657472792e6d69736d61746368",
+      "namespace": "journal.cli.think.sense.retry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.authority",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e617574686f72697479",
+      "namespace": "journal.cli.think.sense.worker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.deferred",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6465666572726564",
+      "namespace": "journal.cli.think.sense.worker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "code",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.detail",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e64657461696c",
+      "namespace": "journal.cli.think.sense.worker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "stream",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "file",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.exit",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e65786974",
+      "namespace": "journal.cli.think.sense.worker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "code",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.failed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6661696c6564",
+      "namespace": "journal.cli.think.sense.worker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "code",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.launch",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6c61756e6368",
+      "namespace": "journal.cli.think.sense.worker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.launch.failed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6c61756e63682e6661696c6564",
+      "namespace": "journal.cli.think.sense.worker.launch",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.log.tail",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6c6f672e7461696c",
+      "namespace": "journal.cli.think.sense.worker.log",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "log",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "tail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.log.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6c6f672e756e7265616461626c65",
+      "namespace": "journal.cli.think.sense.worker.log",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "log",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.output.incomplete",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6f75747075742e696e636f6d706c657465",
+      "namespace": "journal.cli.think.sense.worker.output",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.output.nonregular",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6f75747075742e6e6f6e726567756c6172",
+      "namespace": "journal.cli.think.sense.worker.output",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.output.unfinished",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6f75747075742e756e66696e6973686564",
+      "namespace": "journal.cli.think.sense.worker.output",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.output.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e6f75747075742e756e7265616461626c65",
+      "namespace": "journal.cli.think.sense.worker.output",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.pool",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e706f6f6c",
+      "namespace": "journal.cli.think.sense.worker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.program.executable",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e70726f6772616d2e65786563757461626c65",
+      "namespace": "journal.cli.think.sense.worker.program",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.program.missing",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e70726f6772616d2e6d697373696e67",
+      "namespace": "journal.cli.think.sense.worker.program",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.program.nonexecutable",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e70726f6772616d2e6e6f6e65786563757461626c65",
+      "namespace": "journal.cli.think.sense.worker.program",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.program.nonregular",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e70726f6772616d2e6e6f6e726567756c6172",
+      "namespace": "journal.cli.think.sense.worker.program",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.status",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e737461747573",
+      "namespace": "journal.cli.think.sense.worker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "file",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "outcome",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "log",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.survivors",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e7375727669766f7273",
+      "namespace": "journal.cli.think.sense.worker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.termination",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e7465726d696e6174696f6e",
+      "namespace": "journal.cli.think.sense.worker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.timeout",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e74696d656f7574",
+      "namespace": "journal.cli.think.sense.worker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "handler",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "seconds",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.sense.worker.watchdog",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e776f726b65722e7761746368646f67",
+      "namespace": "journal.cli.think.sense.worker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.settle.save",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e736574746c652e73617665",
+      "namespace": "journal.cli.think.settle",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.updated.capability",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e757064617465642e6361706162696c697479",
+      "namespace": "journal.cli.think.updated",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.updated.conflict",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e757064617465642e636f6e666c696374",
+      "namespace": "journal.cli.think.updated",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "options",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "updated_flag",
+          "kind": "flag",
+          "value": "--updated"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.updated.io",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e757064617465642e696f",
+      "namespace": "journal.cli.think.updated",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.updated.marker",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e757064617465642e6d61726b6572",
+      "namespace": "journal.cli.think.updated",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.updated.path",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e757064617465642e70617468",
+      "namespace": "journal.cli.think.updated",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.updated.state",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e757064617465642e7374617465",
+      "namespace": "journal.cli.think.updated",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.usage.error",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e75736167652e6572726f72",
+      "namespace": "journal.cli.think.usage",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "message",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--reactivate] [--stream STREAM] [--flush] [--settle] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [--sense-batch] [-v] [-d]"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal think"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.activity.incompatible",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e61637469766974792e696e636f6d70617469626c65",
+      "namespace": "journal.cli.think.validation.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "activity_flag",
+          "kind": "flag",
+          "value": "--activity"
+        },
+        {
+          "name": "segment_flag",
+          "kind": "flag",
+          "value": "--segment"
+        },
+        {
+          "name": "segments_flag",
+          "kind": "flag",
+          "value": "--segments"
+        },
+        {
+          "name": "flush_flag",
+          "kind": "flag",
+          "value": "--flush"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.activity.requires.day",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e61637469766974792e72657175697265732e646179",
+      "namespace": "journal.cli.think.validation.activity.requires",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "activity_flag",
+          "kind": "flag",
+          "value": "--activity"
+        },
+        {
+          "name": "day_flag",
+          "kind": "flag",
+          "value": "--day"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.activity.requires.facet",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e61637469766974792e72657175697265732e6661636574",
+      "namespace": "journal.cli.think.validation.activity.requires",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "activity_flag",
+          "kind": "flag",
+          "value": "--activity"
+        },
+        {
+          "name": "facet_flag",
+          "kind": "flag",
+          "value": "--facet"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.cadence.incompatible",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e636164656e63652e696e636f6d70617469626c65",
+      "namespace": "journal.cli.think.validation.cadence",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "cadence_flag",
+          "kind": "flag",
+          "value": "--cadence"
+        },
+        {
+          "name": "segment_flag",
+          "kind": "flag",
+          "value": "--segment"
+        },
+        {
+          "name": "segments_flag",
+          "kind": "flag",
+          "value": "--segments"
+        },
+        {
+          "name": "activity_flag",
+          "kind": "flag",
+          "value": "--activity"
+        },
+        {
+          "name": "flush_flag",
+          "kind": "flag",
+          "value": "--flush"
+        },
+        {
+          "name": "weekly_flag",
+          "kind": "flag",
+          "value": "--weekly"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.daily.only",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e6461696c792e6f6e6c79",
+      "namespace": "journal.cli.think.validation.daily",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "daily_only_flag",
+          "kind": "flag",
+          "value": "--daily-only"
+        },
+        {
+          "name": "day_flag",
+          "kind": "flag",
+          "value": "--day"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.facet.requires.activity",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e66616365742e72657175697265732e6163746976697479",
+      "namespace": "journal.cli.think.validation.facet.requires",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "facet_flag",
+          "kind": "flag",
+          "value": "--facet"
+        },
+        {
+          "name": "activity_flag",
+          "kind": "flag",
+          "value": "--activity"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.flush.incompatible",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e666c7573682e696e636f6d70617469626c65",
+      "namespace": "journal.cli.think.validation.flush",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "flush_flag",
+          "kind": "flag",
+          "value": "--flush"
+        },
+        {
+          "name": "segments_flag",
+          "kind": "flag",
+          "value": "--segments"
+        },
+        {
+          "name": "refresh_flag",
+          "kind": "flag",
+          "value": "--refresh"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.flush.requires.segment",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e666c7573682e72657175697265732e7365676d656e74",
+      "namespace": "journal.cli.think.validation.flush.requires",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "flush_flag",
+          "kind": "flag",
+          "value": "--flush"
+        },
+        {
+          "name": "segment_flag",
+          "kind": "flag",
+          "value": "--segment"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.multi.worker.unlimited.jobs",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e6d756c74692e776f726b65722e756e6c696d697465642e6a6f6273",
+      "namespace": "journal.cli.think.validation.multi.worker.unlimited",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "jobs_flag",
+          "kind": "flag",
+          "value": "--jobs"
+        },
+        {
+          "name": "segments_flag",
+          "kind": "flag",
+          "value": "--segments"
+        },
+        {
+          "name": "segment_workers_flag",
+          "kind": "flag",
+          "value": "--segment-workers"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.no.activity.prompts.with.activity",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e6e6f2e61637469766974792e70726f6d7074732e776974682e6163746976697479",
+      "namespace": "journal.cli.think.validation.no.activity.prompts.with",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "no_activity_prompts_flag",
+          "kind": "flag",
+          "value": "--no-activity-prompts"
+        },
+        {
+          "name": "activity_flag",
+          "kind": "flag",
+          "value": "--activity"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.reactivate.incompatible.refresh",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e726561637469766174652e696e636f6d70617469626c652e72656672657368",
+      "namespace": "journal.cli.think.validation.reactivate.incompatible",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "reactivate_flag",
+          "kind": "flag",
+          "value": "--reactivate"
+        },
+        {
+          "name": "refresh_flag",
+          "kind": "flag",
+          "value": "--refresh"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.reactivate.requires.activity",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e726561637469766174652e72657175697265732e6163746976697479",
+      "namespace": "journal.cli.think.validation.reactivate.requires",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "reactivate_flag",
+          "kind": "flag",
+          "value": "--reactivate"
+        },
+        {
+          "name": "activity_flag",
+          "kind": "flag",
+          "value": "--activity"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.repair.segment",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e7265706169722e7365676d656e74",
+      "namespace": "journal.cli.think.validation.repair",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "repair_segment_flag",
+          "kind": "flag",
+          "value": "--repair-segment"
+        },
+        {
+          "name": "day_flag",
+          "kind": "flag",
+          "value": "--day"
+        },
+        {
+          "name": "segment_flag",
+          "kind": "flag",
+          "value": "--segment"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.retry.unit",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e72657472792e756e6974",
+      "namespace": "journal.cli.think.validation.retry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "retry_unit_flag",
+          "kind": "flag",
+          "value": "--retry-unit"
+        },
+        {
+          "name": "day_flag",
+          "kind": "flag",
+          "value": "--day"
+        },
+        {
+          "name": "retry_cause_flag",
+          "kind": "flag",
+          "value": "--retry-cause"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.segment.workers.range",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e7365676d656e742e776f726b6572732e72616e6765",
+      "namespace": "journal.cli.think.validation.segment.workers",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "segment_workers_flag",
+          "kind": "flag",
+          "value": "--segment-workers"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.segments.incompatible",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e7365676d656e74732e696e636f6d70617469626c65",
+      "namespace": "journal.cli.think.validation.segments",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "segments_flag",
+          "kind": "flag",
+          "value": "--segments"
+        },
+        {
+          "name": "segment_flag",
+          "kind": "flag",
+          "value": "--segment"
+        },
+        {
+          "name": "facet_flag",
+          "kind": "flag",
+          "value": "--facet"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.settle.incompatible",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e736574746c652e696e636f6d70617469626c65",
+      "namespace": "journal.cli.think.validation.settle",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "settle_flag",
+          "kind": "flag",
+          "value": "--settle"
+        },
+        {
+          "name": "segment_flag",
+          "kind": "flag",
+          "value": "--segment"
+        },
+        {
+          "name": "segments_flag",
+          "kind": "flag",
+          "value": "--segments"
+        },
+        {
+          "name": "activity_flag",
+          "kind": "flag",
+          "value": "--activity"
+        },
+        {
+          "name": "flush_flag",
+          "kind": "flag",
+          "value": "--flush"
+        },
+        {
+          "name": "refresh_flag",
+          "kind": "flag",
+          "value": "--refresh"
+        },
+        {
+          "name": "weekly_flag",
+          "kind": "flag",
+          "value": "--weekly"
+        },
+        {
+          "name": "cadence_flag",
+          "kind": "flag",
+          "value": "--cadence"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.weekly.incompatible",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e7765656b6c792e696e636f6d70617469626c65",
+      "namespace": "journal.cli.think.validation.weekly",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "weekly_flag",
+          "kind": "flag",
+          "value": "--weekly"
+        },
+        {
+          "name": "segment_flag",
+          "kind": "flag",
+          "value": "--segment"
+        },
+        {
+          "name": "segments_flag",
+          "kind": "flag",
+          "value": "--segments"
+        },
+        {
+          "name": "activity_flag",
+          "kind": "flag",
+          "value": "--activity"
+        },
+        {
+          "name": "flush_flag",
+          "kind": "flag",
+          "value": "--flush"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.validation.work.intent",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e76616c69646174696f6e2e776f726b2e696e74656e74",
+      "namespace": "journal.cli.think.validation.work",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "work_intent_flag",
+          "kind": "flag",
+          "value": "--work-intent"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.wait.cortex",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e776169742e636f72746578",
+      "namespace": "journal.cli.think.wait",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.think.wait.failed",
+      "resource": "m6a6f75726e616c2e636c692e7468696e6b2e776169742e6661696c6564",
+      "namespace": "journal.cli.think.wait",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
     }
   ]
 }

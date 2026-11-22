@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry daily changed.",
+  "context": "Journal command-line text for retry daily changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d06875f4575939e21c3d9e1dfad9d61d8c79d296bbdff4400577a696c80311b",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

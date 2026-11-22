@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense error lease.",
+  "context": "Journal command-line text for sense error lease.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "af9ee9f2ea38270fb245757d043a32da4f39e55802e85a0849bba58fa64167cd",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

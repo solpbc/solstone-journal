@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for markdown partial input.",
+  "context": "Journal command-line text for markdown partial input.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f2feb52548cc161503ffac396d00561738e35bd92447fe2a32cdcfdc4056f53",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

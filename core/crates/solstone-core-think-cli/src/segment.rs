@@ -33,9 +33,7 @@ use solstone_core_system_health::{
     newest_segment_input_ms, read_segment_data_state, read_segment_progress, resolve_predecessor,
     segment_fully_sensed, segment_thinking_is_current,
 };
-use solstone_core_talent_config::{
-    TalentConfig, TalentFilter, get_output_path, load_talent_configs,
-};
+use solstone_core_talent_config::{TalentConfig, TalentFilter, get_output_path};
 
 /// Port of `thinking.py:1382-2052`, with activity-state replay performed by
 /// [`replay_activity_state`] after the segment's Sense projection is durable.
@@ -138,8 +136,13 @@ pub(crate) fn publish_if_thought(
         return;
     }
     let published = (|| {
-        let Some(segment_dir) =
-            resolve_segment_dir(&context.journal, &context.day, segment, stream)?
+        let Some(segment_dir) = resolve_segment_dir(
+            context.locale(),
+            &context.journal,
+            &context.day,
+            segment,
+            stream,
+        )?
         else {
             return Ok(());
         };
@@ -209,7 +212,8 @@ fn think(
     skip_talents: &[String],
     current: CurrentSegment,
 ) -> Result<ModeResult, String> {
-    let configs = load_talent_configs(
+    let configs = solstone_core_talent_config::load_talent_configs_in(
+        context.locale(),
         &context.talent_root,
         &context.apps_root,
         None,
@@ -230,15 +234,21 @@ fn think(
         log_skip(log, context, "sense", segment, "no_config", stream);
         return Ok(ModeResult {
             failed: 1,
-            failed_names: vec!["sense (not_configured)".to_owned()],
+            failed_names: vec!["sense (not_configured)".to_owned().into()],
             ..ModeResult::default()
         });
     };
-    let Some(segment_dir) = resolve_segment_dir(&context.journal, &context.day, segment, stream)?
+    let Some(segment_dir) = resolve_segment_dir(
+        context.locale(),
+        &context.journal,
+        &context.day,
+        segment,
+        stream,
+    )?
     else {
         return Ok(ModeResult {
             failed: 1,
-            failed_names: vec!["sense (missing_segment)".to_owned()],
+            failed_names: vec!["sense (missing_segment)".to_owned().into()],
             ..ModeResult::default()
         });
     };
@@ -311,9 +321,13 @@ fn think(
         &FilesystemHealthLogSource::new(&context.journal),
         &context.day,
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| error.render(context.locale()))?;
     if pending.malformed_line_count != 0 {
-        return Err("cannot read routing recovery from malformed health logs".to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            context.locale(),
+            "journal.cli.think.routing.log.malformed",
+            &[],
+        ));
     }
     let key = solstone_core_system_health::SegmentIdentity {
         stream: stream.map(str::to_owned),
@@ -335,7 +349,13 @@ fn think(
         let sense = retained
             .as_object()
             .filter(|_| valid_activity_sense(&retained))
-            .ok_or("retained routing source is invalid")?;
+            .ok_or_else(|| {
+                solstone_core_cli_copy::render_for(
+                    context.locale(),
+                    "journal.cli.think.routing.source.invalid",
+                    &[],
+                )
+            })?;
         write_sense_and_change(context, log, segment, stream, &segment_dir, sense)?;
         return Ok(ModeResult::default());
     }
@@ -436,7 +456,7 @@ fn think(
             log_request_lost(log, context, "sense", segment, stream, &use_id);
             let result = ModeResult {
                 failed: 1,
-                failed_names: vec!["sense (request_lost)".to_owned()],
+                failed_names: vec!["sense (request_lost)".to_owned().into()],
                 ..ModeResult::default()
             };
             complete(log, context, segment, stream, result.clone());
@@ -446,7 +466,7 @@ fn think(
             log_skip(log, context, "sense", segment, "send_failed", stream);
             let result = ModeResult {
                 failed: 1,
-                failed_names: vec!["sense (send)".to_owned()],
+                failed_names: vec!["sense (send)".to_owned().into()],
                 ..ModeResult::default()
             };
             complete(log, context, segment, stream, result.clone());
@@ -510,7 +530,7 @@ fn think(
             if let Some(pos) = result
                 .failed_names
                 .iter()
-                .position(|n| n.starts_with(prefix) || n == "sense")
+                .position(|n| n.source.starts_with(prefix) || n.source == "sense")
             {
                 result.failed_names.remove(pos);
                 result.failed = result.failed.saturating_sub(1);
@@ -633,7 +653,9 @@ fn think(
                 log_skip(log, context, &config.key, segment, "send_failed", stream);
                 if !SEGMENT_NONGATING_TALENTS.contains(&config.key.as_str()) {
                     total.failed += 1;
-                    total.failed_names.push(format!("{} (send)", config.key));
+                    total
+                        .failed_names
+                        .push(format!("{} (send)", config.key).into());
                 }
             }
             Err(DispatchFailure::NotClaimed { use_id }) => {
@@ -644,7 +666,7 @@ fn think(
                     total.failed += 1;
                     total
                         .failed_names
-                        .push(format!("{} (request_lost)", config.key));
+                        .push(format!("{} (request_lost)", config.key).into());
                 }
             }
         }
@@ -725,8 +747,22 @@ fn segment_turn(context: &ThinkContext, segment_dir: &std::path::Path) -> Option
         Ok(turn) => Some(turn),
         Err(error) => {
             log::warn!(
-                "thinking {}/{segment} without its turn: {error}",
-                context.day
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    context.locale(),
+                    "journal.cli.think.log.segment.turn",
+                    [
+                        ("day", &context.day),
+                        ("segment", &segment),
+                        (
+                            "error",
+                            &solstone_core_journal_io::cli_diagnostics::lock_detail(
+                                context.locale(),
+                                &error
+                            )
+                        )
+                    ]
+                )
             );
             None
         }
@@ -767,7 +803,7 @@ pub(crate) fn retry_talent(
     segment: &str,
     stream: &str,
     talent: &str,
-) -> Result<ModeResult, String> {
+) -> Result<ModeResult, crate::dispatch::RunFailure> {
     // A Strava tile is body data that no talent reads. Work held on one from
     // before ends as the retry of finished work does: accepted, its hold
     // released, with no model call.
@@ -789,9 +825,15 @@ pub(crate) fn retry_talent(
             &FilesystemHealthLogSource::new(&context.journal),
             &context.day,
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| context.failure(|locale| error.render(locale)))?;
         if progress.malformed_line_count != 0 {
-            return Err("segment progress contains unreadable records".into());
+            return Err(context.failure(|locale| {
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.think.health.progress.unreadable",
+                    &[],
+                )
+            }));
         }
         let pending = solstone_core_system_health::segment_pending_talents(
             lookup_segment_progress(&progress.value, stream, segment),
@@ -819,22 +861,30 @@ pub(crate) fn retry_talent(
             false,
             &[],
             CurrentSegment::Skip,
-        );
+        )
+        .map_err(Into::into);
     }
-    let configs = load_talent_configs(
+    let configs = solstone_core_talent_config::load_talent_configs_in(
+        context.locale(),
         &context.talent_root,
         &context.apps_root,
-        solstone_core_talent_config::read_talent_overrides(&context.journal)?.as_ref(),
+        solstone_core_talent_config::read_talent_overrides_in(context.locale(), &context.journal)?
+            .as_ref(),
         TalentFilter {
             r#type: None,
             schedule: Some("segment"),
             include_disabled: false,
         },
     )?;
-    let config = configs
-        .iter()
-        .find(|c| c.key == talent)
-        .ok_or("held talent is no longer enabled")?;
+    let config = configs.iter().find(|c| c.key == talent).ok_or_else(|| {
+        context.failure(|locale| {
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.think.retry.talent.disabled",
+                &[],
+            )
+        })
+    })?;
     let runtime = crate::dispatch::runtime()?;
     let item = match dispatch_agent(
         context,
@@ -848,8 +898,24 @@ pub(crate) fn retry_talent(
         log,
     ) {
         Ok(AgentDispatch::Pending(item)) => item,
-        Ok(AgentDispatch::Skipped) => return Err("held talent could not be retried".into()),
-        Err(_) => return Err("held talent could not be dispatched".into()),
+        Ok(AgentDispatch::Skipped) => {
+            return Err(context.failure(|locale| {
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.think.retry.talent.skipped",
+                    &[],
+                )
+            }));
+        }
+        Err(_) => {
+            return Err(context.failure(|locale| {
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.think.retry.talent.dispatch",
+                    &[],
+                )
+            }));
+        }
     };
     let result = drain_with_deadline_observed(
         context,
@@ -860,7 +926,15 @@ pub(crate) fn retry_talent(
     );
     if result.failed == 0 {
         let directory = find_segment_dir(&context.journal, &context.day, segment, Some(stream))
-            .ok_or("segment no longer exists")?;
+            .ok_or_else(|| {
+                context.failure(|locale| {
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.think.retry.talent.segment.missing",
+                        &[],
+                    )
+                })
+            })?;
         publish_saved_outputs(context, &directory)?;
     }
     Ok(result)
@@ -1156,7 +1230,7 @@ fn drain_selected(
         if let Some(pos) = final_result
             .failed_names
             .iter()
-            .position(|n| n.starts_with(&prefix) || n == &failed_label)
+            .position(|n| n.source.starts_with(&prefix) || n.source == failed_label)
         {
             final_result.failed_names.remove(pos);
             final_result.failed = final_result.failed.saturating_sub(1);
@@ -1409,7 +1483,9 @@ pub(crate) fn run_repair_batch(
                             // while the remaining repairs continue.
                             let mut aggregate = aggregate.lock().expect("repair result lock");
                             aggregate.failed += 1;
-                            aggregate.failed_names.push(format!("{segment} ({error})"));
+                            aggregate
+                                .failed_names
+                                .push(format!("{segment} ({error})").into());
                         }
                     }
                 }
@@ -1419,9 +1495,44 @@ pub(crate) fn run_repair_batch(
     let left = queue.lock().expect("repair queue lock").len();
     let result = aggregate.lock().expect("repair result lock").clone();
     if result.provider_blocked && left != 0 {
-        log::warn!("thinking provider is unavailable; {left} segments wait for the next run");
+        log::warn!("{}", provider_wait_warning(context.terminal_locale, left));
     }
     Ok(result)
+}
+
+fn provider_wait_warning(terminal_locale: Option<&str>, left: usize) -> String {
+    use solstone_core_cli_copy::{ENGLISH, Value, render_for};
+
+    match terminal_locale {
+        Some(locale) => render_for(
+            locale,
+            "journal.cli.think.log.provider",
+            &[("left", Value::Cardinal(left as i64))],
+        ),
+        None => render_for(
+            ENGLISH,
+            "journal.cli.think.log.provider.record",
+            &[("left", Value::String(&left.to_string()))],
+        ),
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn provider_warning_preserves_supervised_log_grammar() {
+    use solstone_core_cli_copy::ENGLISH;
+    assert_eq!(
+        provider_wait_warning(None, 1),
+        "thinking provider is unavailable; 1 segments wait for the next run"
+    );
+    assert_eq!(
+        provider_wait_warning(Some(ENGLISH), 1),
+        "thinking provider is unavailable; 1 segment waits for the next run"
+    );
+    assert_eq!(
+        provider_wait_warning(None, 2),
+        provider_wait_warning(Some(ENGLISH), 2)
+    );
 }
 
 /// Run the maintained segment-batch operation through its activity-state tail.
@@ -1444,9 +1555,13 @@ pub(crate) fn run_repair_batch_with_activity(
 ) -> Result<ModeResult, String> {
     let mut selected = std::collections::BTreeSet::new();
     for (segment, stream) in &segments {
-        if let Some(dir) =
-            resolve_segment_dir(&context.journal, &context.day, segment, stream.as_deref())?
-        {
+        if let Some(dir) = resolve_segment_dir(
+            context.locale(),
+            &context.journal,
+            &context.day,
+            segment,
+            stream.as_deref(),
+        )? {
             selected.insert((
                 segment.clone(),
                 Some(
@@ -1811,11 +1926,19 @@ fn advance_live_activity_state(
         {
             match persist_activity_state(context, state_stream, &machine) {
                 Ok(()) => log_routing_state(context, log, segment, Some(&coordinate), false)?,
-                Err(error) => errors.push(format!("{segment}: activity state not saved: {error}")),
+                Err(error) => errors.push(solstone_core_cli_copy::display_for(
+                    context.locale(),
+                    "journal.cli.think.activity.state.segment",
+                    [("segment", &(segment)), ("error", &(error))],
+                )),
             }
             log::debug!(
-                "think: late {}/{segment} joined its open activity",
-                context.day
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    context.locale(),
+                    "journal.cli.think.log.activity.join",
+                    [("day", &context.day), ("segment", &segment)]
+                )
             );
             None
         } else {
@@ -1839,8 +1962,12 @@ fn advance_live_activity_state(
         ),
         Some(LiveStep::Late) => {
             log::debug!(
-                "think: late {}/{segment} is replayed with its stream's day",
-                context.day
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    context.locale(),
+                    "journal.cli.think.log.activity.replay",
+                    [("day", &context.day), ("segment", &segment)]
+                )
             );
             let selected =
                 std::collections::BTreeSet::from([(segment.to_owned(), Some(coordinate.clone()))]);
@@ -1981,8 +2108,12 @@ fn replay_activity_state_selected(
                 .is_some_and(|last| (context.day.as_str(), segment.as_str()) <= last)
         {
             log::debug!(
-                "think: {}/{segment} does not advance live activity state",
-                context.day
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    context.locale(),
+                    "journal.cli.think.log.activity.no.advance",
+                    [("day", &context.day), ("segment", &segment)]
+                )
             );
             continue;
         }
@@ -2047,7 +2178,11 @@ fn replay_activity_state_selected(
         if hydrate_existing
             && let Err(error) = persist_activity_state(context, state_stream, machine)
         {
-            errors.push(format!("{segment}: activity state not saved: {error}"));
+            errors.push(solstone_core_cli_copy::display_for(
+                context.locale(),
+                "journal.cli.think.activity.state.segment",
+                [("segment", &(segment)), ("error", &(error))],
+            ));
         }
         if let Err(error) = published {
             errors.push(error);
@@ -2299,7 +2434,13 @@ pub(crate) fn close_idle_activities(
     max_concurrency: i64,
     skip_activity_prompts: bool,
 ) -> Result<(), String> {
-    let Some(segment_dir) = resolve_segment_dir(&context.journal, &context.day, segment, stream)?
+    let Some(segment_dir) = resolve_segment_dir(
+        context.locale(),
+        &context.journal,
+        &context.day,
+        segment,
+        stream,
+    )?
     else {
         return Ok(());
     };
@@ -2377,7 +2518,11 @@ pub(crate) fn close_idle_activities(
         #[cfg(test)]
         state_probe::at(&context.journal, "published");
         if let Err(error) = persist_activity_state(context, stream, &machine) {
-            errors.push(format!("activity state not saved: {error}"));
+            errors.push(solstone_core_cli_copy::display_for(
+                context.locale(),
+                "journal.cli.think.activity.state",
+                [("error", &(error))],
+            ));
         }
     }
     if let Err(error) = run_activity_talents(context, log, talents, false, max_concurrency) {
@@ -2431,8 +2576,21 @@ fn state_turn(context: &ThinkContext, stream: Option<&str>) -> Option<FileLock> 
             #[cfg(test)]
             state_probe::at(&context.journal, "unguarded");
             log::warn!(
-                "advancing {} activity state without its turn: {error}",
-                stream.unwrap_or(DEFAULT_STREAM)
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    context.locale(),
+                    "journal.cli.think.log.activity.turn",
+                    [
+                        ("stream", &stream.unwrap_or(DEFAULT_STREAM)),
+                        (
+                            "error",
+                            &solstone_core_journal_io::cli_diagnostics::lock_detail(
+                                context.locale(),
+                                &error
+                            )
+                        )
+                    ]
+                )
             );
             None
         }
@@ -2606,7 +2764,11 @@ fn publish_ended_activities(
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(format!("activity work pending: {}", failures.join(", ")))
+        Err(solstone_core_cli_copy::display_for(
+            context.locale(),
+            "journal.cli.think.activity.work.pending",
+            [("failures", &(failures.join(", ")))],
+        ))
     }
 }
 
@@ -2857,7 +3019,12 @@ pub(crate) fn run_activity_talents(
                     &id,
                 ) {
                     Ok(true) => {}
-                    Ok(false) => failures.extend(result.failed_names),
+                    Ok(false) => failures.extend(
+                        result
+                            .failed_names
+                            .into_iter()
+                            .map(|line| line.terminal.unwrap_or(line.source)),
+                    ),
                     Err(error) => failures.push(format!("{facet}/{id}: {error}")),
                 }
             }
@@ -2868,7 +3035,11 @@ pub(crate) fn run_activity_talents(
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(format!("activity work pending: {}", failures.join(", ")))
+        Err(solstone_core_cli_copy::display_for(
+            context.locale(),
+            "journal.cli.think.activity.work.pending",
+            [("failures", &(failures.join(", ")))],
+        ))
     }
 }
 
@@ -3018,10 +3189,21 @@ fn log_use_terminal(
             )
         {
             log::warn!(
-                "could not release held {} for {segment}: {error}",
-                item.name
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    context.locale(),
+                    "journal.cli.think.log.held.release",
+                    [
+                        ("name", &item.name),
+                        ("segment", &segment),
+                        ("error", &error)
+                    ]
+                )
             );
-            log.remember_error(format!("retry reconciliation failed: {error}"));
+            log.remember_diagnostic(solstone_core_cli_copy::Diagnostic::new(
+                "journal.cli.think.log.reconciliation",
+                [("error", &(error))],
+            ));
             return;
         }
     }
@@ -3168,15 +3350,17 @@ pub(crate) fn write_sense_and_change<W: std::io::Write>(
     let mut assignment_published = false;
     let result: Result<Value, String> = (|| {
         let activity_path = talents.join("activity.md");
-        replace_text_checked(
+        replace_document_checked(
             context,
             &activity_path,
-            &solstone_core_format::content::with_partial_input_notice(
-                sense
-                    .get("activity_summary")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_owned(),
+            &solstone_core_format::content::partial_input_document(
+                solstone_core_format::stored_markdown::Document::plain(
+                    sense
+                        .get("activity_summary")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
+                ),
                 sense,
             ),
         )?;
@@ -3225,47 +3409,40 @@ pub(crate) fn write_sense_and_change<W: std::io::Write>(
             .and_then(Value::as_array)
             .is_some_and(|entities| !entities.is_empty())
         {
-            let lines = sense
-                .get("entities")
-                .and_then(Value::as_array)
+            use solstone_core_format::stored_markdown::{Document, Message};
+            let mut document = Document::default();
+            document.push_str("# ");
+            document.push_message(Message::Entities);
+            let mut has_entities = false;
+            for entity in sense["entities"]
+                .as_array()
                 .into_iter()
                 .flatten()
                 .filter_map(Value::as_object)
-                .map(|entity| {
-                    format!(
-                        "- {} — {} (role={}, source={}) — {}",
-                        entity
-                            .get("type")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default(),
-                        entity
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default(),
-                        entity
-                            .get("role")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default(),
-                        entity
-                            .get("source")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default(),
-                        entity
-                            .get("context")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default(),
-                    )
-                })
-                .collect::<Vec<_>>();
-            if !lines.is_empty() {
+            {
+                document.push_str(if has_entities { "\n- " } else { "\n\n- " });
+                let field = |key: &str| {
+                    entity
+                        .get(key)
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned()
+                };
+                document.push_message(Message::Entity {
+                    kind: field("type"),
+                    name: field("name"),
+                    role: field("role"),
+                    source: field("source"),
+                    context: field("context"),
+                });
+                has_entities = true;
+            }
+            if has_entities {
                 let sense_md_path = talents.join("sense.md");
-                replace_text_checked(
+                replace_document_checked(
                     context,
                     &sense_md_path,
-                    &solstone_core_format::content::with_partial_input_notice(
-                        format!("# Sense Entities\n\n{}", lines.join("\n")),
-                        sense,
-                    ),
+                    &solstone_core_format::content::partial_input_document(document, sense),
                 )?;
                 published.insert(sense_md_path.clone());
             }
@@ -3475,16 +3652,16 @@ fn publish_segment_topics<W: std::io::Write>(
     );
 
     let topics_path = segment_dir.join("talents").join("topics.md");
-    let markdown = eval.markdown.as_deref();
+    let markdown = eval.markdown;
     let file_exists = topics_path.exists();
 
     if markdown.is_some() || file_exists || sense.get("partial_input").is_some_and(Value::is_object)
     {
-        let bytes = solstone_core_format::content::with_partial_input_notice(
-            markdown.unwrap_or("").to_owned(),
+        let bytes = solstone_core_format::content::partial_input_document(
+            markdown.unwrap_or_default(),
             sense,
         );
-        match replace_text_checked(context, &topics_path, &bytes) {
+        match replace_document_checked(context, &topics_path, &bytes) {
             Ok(()) => {
                 published.insert(topics_path);
             }
@@ -3528,7 +3705,7 @@ fn publish_segment_objects<W: std::io::Write>(
     if markdown.is_none() && !objects_path.exists() {
         return;
     }
-    match replace_text_checked(context, &objects_path, markdown.as_deref().unwrap_or("")) {
+    match replace_document_checked(context, &objects_path, &markdown.unwrap_or_default()) {
         Ok(()) => {
             published.insert(objects_path);
         }
@@ -3571,7 +3748,7 @@ fn publish_terminal_screen_text<W: std::io::Write>(
     if markdown.is_none() && !path.exists() {
         return;
     }
-    match replace_text_checked(context, &path, markdown.as_deref().unwrap_or("")) {
+    match replace_document_checked(context, &path, &markdown.unwrap_or_default()) {
         Ok(()) => {
             published.insert(path);
         }
@@ -3636,6 +3813,7 @@ fn log_index_enqueue<W: std::io::Write>(
 /// basename is a refusal, not a guess. A body window is never one of them: a
 /// request that names no stream means the owner's capture.
 fn resolve_segment_dir(
+    locale: &str,
     journal: &std::path::Path,
     day: &str,
     segment: &str,
@@ -3656,9 +3834,17 @@ fn resolve_segment_dir(
     match matches.as_slice() {
         [] => Ok(None),
         [only] => Ok(Some(only.clone())),
-        _ => Err(format!(
-            "ambiguous segment {day}/{segment}: {} streams share this name",
-            matches.len()
+        _ => Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.segment.ambiguous",
+            &[
+                ("day", solstone_core_cli_copy::Value::String(day)),
+                ("segment", solstone_core_cli_copy::Value::String(segment)),
+                (
+                    "count",
+                    solstone_core_cli_copy::Value::Cardinal(matches.len() as i64),
+                ),
+            ],
         )),
     }
 }
@@ -3668,6 +3854,45 @@ fn resolve_segment_dir(
 pub(crate) fn named_stream<'a>(segment_dir: &'a std::path::Path, day: &str) -> Option<&'a str> {
     let parent = segment_dir.parent()?.file_name()?.to_str()?;
     (parent != day).then_some(parent)
+}
+
+fn replace_document_checked(
+    context: &ThinkContext,
+    path: &std::path::Path,
+    document: &solstone_core_format::stored_markdown::Document,
+) -> Result<(), String> {
+    let checkpoint = || context.checkpoint();
+    let companion = path.with_extension("md.display");
+    let _publication = solstone_core_journal_io::hold_lock_checked(
+        &companion,
+        LockOptions::default(),
+        &checkpoint,
+    )
+    .map_err(|e| e.to_string())?;
+    // Equal English can have different origins (a literal name and a numbered
+    // speaker can both say "Speaker 2"). Retire the old identity before writing.
+    // A non-file at the optional companion path is never a readable receipt.
+    // Preserve it and still publish the primary Markdown.
+    if std::fs::symlink_metadata(&companion).is_ok_and(|entry| !entry.file_type().is_file()) {
+        return replace_text_checked(context, path, document);
+    }
+    match std::fs::remove_file(&companion) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.to_string()),
+    }
+    replace_text_checked(context, path, document)?;
+    if let Err(error) = document.save_display_receipt(path) {
+        log::warn!(
+            "{}",
+            solstone_core_cli_copy::display_for(
+                context.locale(),
+                "journal.cli.think.log.display.metadata",
+                [("path", &path.display()), ("error", &error)]
+            )
+        );
+    }
+    Ok(())
 }
 
 fn replace_text_checked(
@@ -3821,7 +4046,13 @@ fn complete(
             ("failed".to_owned(), Value::from(result.failed)),
             (
                 "failed_names".to_owned(),
-                Value::Array(result.failed_names.into_iter().map(Value::String).collect()),
+                Value::Array(
+                    result
+                        .failed_names
+                        .into_iter()
+                        .map(|line| Value::String(line.source))
+                        .collect(),
+                ),
             ),
         ]),
     );
@@ -3889,10 +4120,11 @@ pub(crate) fn filter_declared_facets<W: std::io::Write>(
                         ("reason_code".to_owned(), Value::String(reason.to_owned())),
                         (
                             "next_action".to_owned(),
-                            Value::String(
-                                "correct the declaration, then reprocess this source segment."
-                                    .to_owned(),
-                            ),
+                            Value::String(solstone_core_cli_copy::render_for(
+                                solstone_core_cli_copy::ENGLISH,
+                                "journal.cli.think.activity.routing",
+                                &[],
+                            )),
                         ),
                     ]),
                 ),
@@ -3978,7 +4210,7 @@ fn log_routing_state<W: std::io::Write>(
 fn failed(name: &str) -> ModeResult {
     ModeResult {
         failed: 1,
-        failed_names: vec![name.to_owned()],
+        failed_names: vec![name.to_owned().into()],
         ..ModeResult::default()
     }
 }
@@ -4119,7 +4351,13 @@ fn a_body_window_never_answers_a_segment_with_no_stream() {
     ] {
         let root = tempfile::tempdir().unwrap();
         let twins = lay(root.path(), "20261010", "090000_300", &[], beside);
-        let found = resolve_segment_dir(root.path(), "20261010", "090000_300", None);
+        let found = resolve_segment_dir(
+            solstone_core_cli_copy::ENGLISH,
+            root.path(),
+            "20261010",
+            "090000_300",
+            None,
+        );
         if beside == Beside::RetiredCard {
             // An older card isn't a body window: HEAD's answer, a refusal.
             assert!(found.is_err(), "{beside:?}: {found:?}");
@@ -4130,7 +4368,13 @@ fn a_body_window_never_answers_a_segment_with_no_stream() {
         std::fs::remove_dir_all(twins.capture.parent().unwrap()).unwrap();
         let direct = root.path().join("chronicle/20261010/090000_300");
         std::fs::create_dir_all(&direct).unwrap();
-        let found = resolve_segment_dir(root.path(), "20261010", "090000_300", None);
+        let found = resolve_segment_dir(
+            solstone_core_cli_copy::ENGLISH,
+            root.path(),
+            "20261010",
+            "090000_300",
+            None,
+        );
         if beside == Beside::RetiredCard {
             assert!(found.is_err(), "{beside:?}: {found:?}");
         } else {
@@ -4138,13 +4382,25 @@ fn a_body_window_never_answers_a_segment_with_no_stream() {
         }
         // With no capture at all, a body window doesn't stand in.
         std::fs::remove_dir_all(&direct).unwrap();
-        let found = resolve_segment_dir(root.path(), "20261010", "090000_300", None);
+        let found = resolve_segment_dir(
+            solstone_core_cli_copy::ENGLISH,
+            root.path(),
+            "20261010",
+            "090000_300",
+            None,
+        );
         match beside {
             Beside::RetiredCard => assert_eq!(found, Ok(twins.neighbour.clone()), "{beside:?}"),
             _ => assert_eq!(found, Ok(None), "{beside:?}"),
         }
         // Naming the body stream still reaches it.
-        let named = resolve_segment_dir(root.path(), "20261010", "090000_300", Some(BODY_STREAM));
+        let named = resolve_segment_dir(
+            solstone_core_cli_copy::ENGLISH,
+            root.path(),
+            "20261010",
+            "090000_300",
+            Some(BODY_STREAM),
+        );
         assert_eq!(named, Ok(twins.neighbour.clone()), "{beside:?}");
     }
 }

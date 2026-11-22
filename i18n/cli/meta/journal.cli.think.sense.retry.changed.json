@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sense retry changed.",
+  "context": "Journal command-line text for sense retry changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eca6002559bc7d4455dc36d398e07f61ed667d0f1ef7e2072225870cf239923e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

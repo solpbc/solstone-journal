@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for activity muted blocked.",
+  "context": "Journal command-line text for activity muted blocked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "675824d67ce2f411ff22f46d9fd2c10400e905f77a062df76bb7f42c04b8a778",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reactivate_flag",
+      "kind": "flag",
+      "value": "--reactivate"
+    }
+  ]
+}

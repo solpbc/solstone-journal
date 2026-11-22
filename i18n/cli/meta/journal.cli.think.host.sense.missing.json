@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for host sense missing.",
+  "context": "Journal command-line text for host sense missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3bbb56f66cbeadf3fc85e69b074da2c97eb1488ddc074cb17cb4286e922359d1",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

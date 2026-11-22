@@ -14,7 +14,7 @@ use solstone_core_system_health::{
     FilesystemHealthLogSource, FilesystemSegmentSource, read_completed_since, scan_day,
 };
 use solstone_core_talent_config::{
-    TalentConfig, TalentFilter, get_output_path, load_talent_configs,
+    TalentConfig, TalentFilter, get_output_path, load_talent_configs_in,
 };
 
 use crate::args::ThinkArgs;
@@ -42,9 +42,23 @@ pub(crate) fn run(
     }
     if args.weekly {
         let configs = configs(context, "weekly")?;
-        let mut out = format!("Day {} — weekly agents\n\n", display_day(&context.day));
+        let mut out = format!(
+            "{}\n\n",
+            solstone_core_cli_copy::display_for(
+                context.locale(),
+                "journal.cli.think.plan.weekly",
+                [("day", &(display_day(&context.day)))]
+            )
+        );
         if configs.is_empty() {
-            out.push_str("No prompts for schedule: weekly\n");
+            out.push_str(&format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    context.locale(),
+                    "journal.cli.think.plan.empty.weekly",
+                    &[]
+                )
+            ));
         } else {
             print_prompt_table(
                 &mut out,
@@ -68,25 +82,63 @@ pub(crate) fn run(
             &context.day,
             jiff::Timestamp::now(),
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.render(context.locale()))?;
         if segments.is_empty() {
-            return Ok(format!("No segments found for {}\n", context.day));
+            return Ok(format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    context.locale(),
+                    "journal.cli.segment.day.empty",
+                    [("day", &(context.day))]
+                )
+            ));
         }
         let mut out = format!(
-            "Day {} — re-process {} segments\n\n",
-            display_day(&context.day),
-            segments.len()
+            "{}\n\n",
+            if context.terminal_locale.is_none() {
+                solstone_core_cli_copy::display_for(
+                    solstone_core_cli_copy::ENGLISH,
+                    "journal.cli.think.plan.reprocess.record",
+                    [
+                        ("day", &(display_day(&context.day))),
+                        ("count", &(segments.len())),
+                    ],
+                )
+            } else {
+                solstone_core_cli_copy::render_for(
+                    context.locale(),
+                    "journal.cli.think.plan.reprocess",
+                    &[
+                        (
+                            "count",
+                            solstone_core_cli_copy::Value::Cardinal((segments.len()) as i64),
+                        ),
+                        (
+                            "day",
+                            solstone_core_cli_copy::Value::String(
+                                &(display_day(&context.day)).to_string(),
+                            ),
+                        ),
+                    ],
+                )
+            }
         );
         for (index, segment) in segments.iter().enumerate() {
             writeln!(
                 out,
-                "  [{}/{}] {} ({}-{}) stream={}",
-                index + 1,
-                segments.len(),
-                segment.key,
-                segment.start,
-                segment.end,
-                segment.stream,
+                "  {}",
+                solstone_core_cli_copy::display_for(
+                    context.locale(),
+                    "journal.cli.think.plan.segment.row",
+                    [
+                        ("index", &(index + 1)),
+                        ("total", &(segments.len())),
+                        ("segment", &(segment.key)),
+                        ("start", &(segment.start)),
+                        ("end", &(segment.end)),
+                        ("stream", &(segment.stream))
+                    ]
+                )
             )
             .expect("write string");
         }
@@ -110,24 +162,58 @@ pub(crate) fn run(
         "daily"
     };
     let configs = configs(context, target)?;
-    let mut out = format!("Day {}", display_day(&context.day));
-    if let Some(segment) = args.segment.as_deref() {
-        write!(out, " segment {segment}").expect("write string");
-    }
-    if args.refresh {
-        out.push_str(" (refresh)");
-    }
-    out.push_str("\n\n");
+    let heading = match (args.segment.as_deref(), args.refresh) {
+        (None, false) => solstone_core_cli_copy::display_for(
+            context.locale(),
+            "journal.cli.think.plan.day",
+            [("day", &(display_day(&context.day)))],
+        ),
+        (None, true) => solstone_core_cli_copy::display_for(
+            context.locale(),
+            "journal.cli.think.plan.day.refresh",
+            [("day", &(display_day(&context.day)))],
+        ),
+        (Some(segment), false) => solstone_core_cli_copy::display_for(
+            context.locale(),
+            "journal.cli.think.plan.day.segment",
+            [
+                ("day", &(display_day(&context.day))),
+                ("segment", &(segment)),
+            ],
+        ),
+        (Some(segment), true) => solstone_core_cli_copy::display_for(
+            context.locale(),
+            "journal.cli.think.plan.day.segment.refresh",
+            [
+                ("day", &(display_day(&context.day))),
+                ("segment", &(segment)),
+            ],
+        ),
+    };
+    let mut out = format!("{heading}\n\n");
     if args.segment.is_none() {
         writeln!(
             out,
-            "Pre-phase:  solstone journal sense --day {} -j {default_describe_jobs}",
-            context.day
+            "{}",
+            solstone_core_cli_copy::display_for(
+                context.locale(),
+                "journal.cli.think.plan.pre",
+                [("day", &(context.day)), ("jobs", &(default_describe_jobs))]
+            )
         )
         .expect("write string");
     }
     if configs.is_empty() {
-        writeln!(out, "No prompts for schedule: {target}").expect("write string");
+        writeln!(
+            out,
+            "{}",
+            solstone_core_cli_copy::display_for(
+                context.locale(),
+                "journal.cli.think.plan.schedule.empty",
+                [("schedule", &(target))]
+            )
+        )
+        .expect("write string");
     } else if let Some(segment) = args.segment.as_deref() {
         print_segment_orchestrator(&mut out, context, &configs, segment, args.stream.as_deref())?;
     } else {
@@ -141,13 +227,29 @@ pub(crate) fn run(
         )?;
     }
     if args.segment.is_none() {
-        out.push_str("Post-phase: solstone journal indexer --rescan\nPost-phase: solstone journal journal-stats\n");
+        out.push_str(&format!(
+            "{}\n",
+            solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.plan.post.indexer",
+                &[]
+            )
+        ));
+        out.push_str(&format!(
+            "{}\n",
+            solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.plan.post.stats",
+                &[]
+            )
+        ));
     }
     Ok(out)
 }
 
 fn configs(context: &ThinkContext, schedule: &str) -> Result<Vec<TalentConfig>, String> {
-    load_talent_configs(
+    load_talent_configs_in(
+        context.locale(),
         &context.talent_root,
         &context.apps_root,
         None,
@@ -168,7 +270,16 @@ fn print_segment_orchestrator(
     target_segment: &str,
     stream: Option<&str>,
 ) -> Result<(), String> {
-    writeln!(out, "Sense orchestrator (linear):").expect("write string");
+    writeln!(
+        out,
+        "{}",
+        solstone_core_cli_copy::render_for(
+            context.locale(),
+            "journal.cli.think.plan.orchestrator",
+            &[]
+        )
+    )
+    .expect("write string");
     let mut by_name = configs
         .iter()
         .map(|config| (config.key.as_str(), config))
@@ -203,24 +314,90 @@ fn print_segment_orchestrator(
             None,
             stream,
         );
-        let label = match name {
-            "sense" => "mandatory",
-            "entities" => "always for non-idle",
-            "screen" => "if recommend.screen_record",
-            "speaker_attribution" => {
-                "if audio embeddings (the model layer only if recommend.speaker_attribution)"
-            }
-            _ => "if a speech transcript (never gates the segment)",
-        };
         let type_label = if is_gen { "gen" } else { "cog" };
-        writeln!(
-            out,
-            "  {step}. {name} ({type_label}/{format}){status} — {label}"
-        )
-        .expect("write string");
+        let row = match name {
+            "sense" => solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.plan.step.sense",
+                &[
+                    ("presence", solstone_core_cli_copy::Value::String(status)),
+                    (
+                        "step",
+                        solstone_core_cli_copy::Value::String(&(step).to_string()),
+                    ),
+                    ("name", solstone_core_cli_copy::Value::String(name)),
+                    ("kind", solstone_core_cli_copy::Value::String(type_label)),
+                    ("format", solstone_core_cli_copy::Value::String(format)),
+                ],
+            ),
+            "entities" => solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.plan.step.entities",
+                &[
+                    ("presence", solstone_core_cli_copy::Value::String(status)),
+                    (
+                        "step",
+                        solstone_core_cli_copy::Value::String(&(step).to_string()),
+                    ),
+                    ("name", solstone_core_cli_copy::Value::String(name)),
+                    ("kind", solstone_core_cli_copy::Value::String(type_label)),
+                    ("format", solstone_core_cli_copy::Value::String(format)),
+                ],
+            ),
+            "screen" => solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.plan.step.screen",
+                &[
+                    ("presence", solstone_core_cli_copy::Value::String(status)),
+                    (
+                        "step",
+                        solstone_core_cli_copy::Value::String(&(step).to_string()),
+                    ),
+                    ("name", solstone_core_cli_copy::Value::String(name)),
+                    ("kind", solstone_core_cli_copy::Value::String(type_label)),
+                    ("format", solstone_core_cli_copy::Value::String(format)),
+                ],
+            ),
+            "speaker_attribution" => solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.plan.step.speaker.attribution",
+                &[
+                    ("presence", solstone_core_cli_copy::Value::String(status)),
+                    (
+                        "step",
+                        solstone_core_cli_copy::Value::String(&(step).to_string()),
+                    ),
+                    ("name", solstone_core_cli_copy::Value::String(name)),
+                    ("kind", solstone_core_cli_copy::Value::String(type_label)),
+                    ("format", solstone_core_cli_copy::Value::String(format)),
+                ],
+            ),
+            _ => solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.plan.step.possible",
+                &[
+                    ("presence", solstone_core_cli_copy::Value::String(status)),
+                    (
+                        "step",
+                        solstone_core_cli_copy::Value::String(&(step).to_string()),
+                    ),
+                    ("name", solstone_core_cli_copy::Value::String(name)),
+                    ("kind", solstone_core_cli_copy::Value::String(type_label)),
+                    ("format", solstone_core_cli_copy::Value::String(format)),
+                ],
+            ),
+        };
+        writeln!(out, "  {row}").expect("write string");
         step += 1;
     }
-    out.push_str("\n  idle segments: write stubs only (unless --refresh)\n  activity state machine: updates per segment\n");
+    out.push_str(&format!(
+        "\n  {}\n",
+        solstone_core_cli_copy::render_for(context.locale(), "journal.cli.think.plan.idle", &[])
+    ));
+    out.push_str(&format!(
+        "  {}\n",
+        solstone_core_cli_copy::render_for(context.locale(), "journal.cli.think.plan.state", &[])
+    ));
     Ok(())
 }
 
@@ -233,16 +410,26 @@ fn print_prompt_table(
     _refresh: bool,
     stream: Option<&str>,
 ) -> Result<(), String> {
-    let enabled = solstone_core_facets::list_declared_facet_names(&context.journal)
-        .map_err(|error| error.to_string())?;
+    let enabled =
+        solstone_core_facets::list_declared_facet_names(&context.journal).map_err(|error| {
+            solstone_core_talent_cli::preview::facet_detail(context.locale(), &error)
+        })?;
     let active =
         solstone_core_system::activity_state::active_facets(&context.journal, &context.day);
     let mut total = 0;
     for (priority, items) in grouped(configs) {
-        writeln!(out, "Priority {priority}:").expect("write string");
+        writeln!(
+            out,
+            "{}",
+            solstone_core_cli_copy::display_for(
+                context.locale(),
+                "journal.cli.think.plan.priority",
+                [("priority", &(priority))]
+            )
+        )
+        .expect("write string");
         for config in items {
             let is_gen = is_generate(&config);
-            let kind = if is_gen { "gen" } else { "agent" };
             let format = config
                 .metadata
                 .get("output")
@@ -268,10 +455,40 @@ fn print_prompt_table(
                             stream,
                         )
                     } else {
-                        String::new()
+                        "plain"
                     };
-                    writeln!(out, "  {kind}  {}/{facet}{status}", config.key)
-                        .expect("write string");
+                    writeln!(
+                        out,
+                        "  {}",
+                        solstone_core_cli_copy::render_for(
+                            context.locale(),
+                            "journal.cli.think.plan.table.facet",
+                            &[
+                                (
+                                    "row",
+                                    solstone_core_cli_copy::Value::String(
+                                        &(format!(
+                                            "{}_{}",
+                                            if is_gen { "generator" } else { "agent" },
+                                            status
+                                        ))
+                                        .to_string()
+                                    )
+                                ),
+                                (
+                                    "name",
+                                    solstone_core_cli_copy::Value::String(
+                                        &(config.key).to_string()
+                                    )
+                                ),
+                                (
+                                    "facet",
+                                    solstone_core_cli_copy::Value::String(&(facet).to_string())
+                                )
+                            ]
+                        )
+                    )
+                    .expect("write string");
                     total += 1;
                 }
                 let skipped = enabled
@@ -282,9 +499,12 @@ fn print_prompt_table(
                 if !skipped.is_empty() {
                     writeln!(
                         out,
-                        "  skip {} — no activity: {}",
-                        config.key,
-                        skipped.join(", ")
+                        "  {}",
+                        solstone_core_cli_copy::display_for(
+                            context.locale(),
+                            "journal.cli.think.plan.skip",
+                            [("name", &(config.key)), ("facets", &(skipped.join(", ")))]
+                        )
                     )
                     .expect("write string");
                 }
@@ -292,15 +512,40 @@ fn print_prompt_table(
                 let status = if is_gen {
                     output_status(context, &config.key, segment, Some(format), None, stream)
                 } else {
-                    String::new()
+                    "plain"
                 };
-                writeln!(out, "  {kind}  {}{status}", config.key).expect("write string");
+                writeln!(
+                    out,
+                    "  {}",
+                    solstone_core_cli_copy::render_for(
+                        context.locale(),
+                        "journal.cli.think.plan.table.talent",
+                        &[
+                            (
+                                "row",
+                                solstone_core_cli_copy::Value::String(
+                                    &(format!(
+                                        "{}_{}",
+                                        if is_gen { "generator" } else { "agent" },
+                                        status
+                                    ))
+                                    .to_string()
+                                )
+                            ),
+                            (
+                                "name",
+                                solstone_core_cli_copy::Value::String(&(config.key).to_string())
+                            )
+                        ]
+                    )
+                )
+                .expect("write string");
                 total += 1;
             }
         }
         out.push('\n');
     }
-    writeln!(out, "Total: {total} agents").expect("write string");
+    writeln!(out, "{}", plan_total(context, total)).expect("write string");
     Ok(())
 }
 
@@ -312,14 +557,14 @@ fn output_status(
     format: Option<&str>,
     facet: Option<&str>,
     stream: Option<&str>,
-) -> String {
+) -> &'static str {
     if segment == Some("<each>") {
-        return String::new();
+        return "plain";
     }
     let path = if name == solstone_core_talent_runtime::possible_names::TALENT {
         // Its output is the possible-names sidecar, not a talent output file.
         let Some(segment) = segment else {
-            return String::new();
+            return "plain";
         };
         get_output_path(&context.day_dir, name, Some(segment), format, facet, stream)
             .with_file_name("possible_names.json")
@@ -333,11 +578,7 @@ fn output_status(
     } else {
         get_output_path(&context.day_dir, name, segment, format, facet, stream)
     };
-    if path.exists() {
-        " (exists)".to_owned()
-    } else {
-        " (new)".to_owned()
-    }
+    if path.exists() { "existing" } else { "new" }
 }
 
 /// Port of `_dry_run_activity` at `thinking.py:3966-4022`.
@@ -349,11 +590,19 @@ fn dry_run_activity(
 ) -> Result<String, String> {
     let Some(record) =
         solstone_core_facets::get_activity_record(&context.journal, facet, &context.day, activity)
-            .map_err(|error| error.to_string())?
+            .map_err(|error| crate::activity::record_detail(context.locale(), &error))?
     else {
         return Ok(format!(
-            "Activity not found: {activity} in facet '{facet}' on {}\n",
-            context.day
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                context.locale(),
+                "journal.cli.think.plan.activity.missing",
+                [
+                    ("activity", &(activity)),
+                    ("facet", &(facet)),
+                    ("day", &(context.day))
+                ]
+            )
         ));
     };
     let kind = record
@@ -365,10 +614,48 @@ fn dry_run_activity(
         .and_then(Value::as_array)
         .map_or(0, Vec::len);
     let mut out = format!(
-        "Day {} --activity {activity} --facet {facet}{}\n\n  type:     {kind}\n  segments: {segments}\n",
-        display_day(&context.day),
-        if refresh { " (refresh)" } else { "" }
+        "{}\n\n",
+        solstone_core_cli_copy::render_for(
+            context.locale(),
+            "journal.cli.think.plan.activity.heading",
+            &[
+                (
+                    "operation",
+                    solstone_core_cli_copy::Value::String(if refresh {
+                        "refresh"
+                    } else {
+                        "ordinary"
+                    })
+                ),
+                (
+                    "day",
+                    solstone_core_cli_copy::Value::String(&(display_day(&context.day)).to_string())
+                ),
+                ("activity", solstone_core_cli_copy::Value::String(activity)),
+                ("facet", solstone_core_cli_copy::Value::String(facet))
+            ]
+        )
     );
+    writeln!(
+        out,
+        "  {}",
+        solstone_core_cli_copy::display_for(
+            context.locale(),
+            "journal.cli.think.plan.activity.type",
+            [("kind", &(kind))]
+        )
+    )
+    .expect("write string");
+    writeln!(
+        out,
+        "  {}",
+        solstone_core_cli_copy::display_for(
+            context.locale(),
+            "journal.cli.think.plan.activity.count",
+            [("segments", &(segments))]
+        )
+    )
+    .expect("write string");
     let matching = configs(context, "activity")?
         .into_iter()
         .filter(|config| {
@@ -385,16 +672,33 @@ fn dry_run_activity(
         })
         .collect::<Vec<_>>();
     if matching.is_empty() {
-        writeln!(out, "\n  No agents match activity type '{kind}'").expect("write string");
+        writeln!(
+            out,
+            "\n  {}",
+            solstone_core_cli_copy::display_for(
+                context.locale(),
+                "journal.cli.think.plan.activity.empty",
+                [("kind", &(kind))]
+            )
+        )
+        .expect("write string");
         return Ok(out);
     }
     out.push('\n');
     let mut total = 0;
     for (priority, values) in grouped(matching) {
-        writeln!(out, "Priority {priority}:").expect("write string");
+        writeln!(
+            out,
+            "{}",
+            solstone_core_cli_copy::display_for(
+                context.locale(),
+                "journal.cli.think.plan.priority",
+                [("priority", &(priority))]
+            )
+        )
+        .expect("write string");
         for config in values {
             let is_gen = is_generate(&config);
-            let kind_label = if is_gen { "gen" } else { "agent" };
             let status = if is_gen {
                 let format = config
                     .metadata
@@ -415,16 +719,41 @@ fn dry_run_activity(
                     .join(&context.day)
                     .join(activity)
                     .join(filename);
-                if path.exists() { " (exists)" } else { " (new)" }
+                if path.exists() { "existing" } else { "new" }
             } else {
-                ""
+                "plain"
             };
-            writeln!(out, "  {kind_label}  {}{status}", config.key).expect("write string");
+            writeln!(
+                out,
+                "  {}",
+                solstone_core_cli_copy::render_for(
+                    context.locale(),
+                    "journal.cli.think.plan.table.talent",
+                    &[
+                        (
+                            "row",
+                            solstone_core_cli_copy::Value::String(
+                                &(format!(
+                                    "{}_{}",
+                                    if is_gen { "generator" } else { "agent" },
+                                    status
+                                ))
+                                .to_string()
+                            )
+                        ),
+                        (
+                            "name",
+                            solstone_core_cli_copy::Value::String(&(config.key).to_string())
+                        )
+                    ]
+                )
+            )
+            .expect("write string");
             total += 1;
         }
         out.push('\n');
     }
-    writeln!(out, "Total: {total} agents").expect("write string");
+    writeln!(out, "{}", plan_total(context, total)).expect("write string");
     Ok(out)
 }
 
@@ -443,11 +772,25 @@ fn dry_run_flush(context: &ThinkContext, segment: &str) -> Result<String, String
         })
         .collect::<Vec<_>>();
     let mut out = format!(
-        "Day {} --flush segment {segment}\n\n",
-        display_day(&context.day)
+        "{}\n\n",
+        solstone_core_cli_copy::display_for(
+            context.locale(),
+            "journal.cli.think.plan.flush",
+            [
+                ("day", &(display_day(&context.day))),
+                ("segment", &(segment))
+            ]
+        )
     );
     if configs.is_empty() {
-        out.push_str("  No flush-eligible agents\n");
+        out.push_str(&format!(
+            "  {}\n",
+            solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.plan.flush.empty",
+                &[]
+            )
+        ));
         return Ok(out);
     }
     // Source-derived, not measured: the oracle captures only the no-eligible
@@ -455,13 +798,30 @@ fn dry_run_flush(context: &ThinkContext, segment: &str) -> Result<String, String
     for config in &configs {
         writeln!(
             out,
-            "  {}  {}",
-            if is_generate(config) { "gen" } else { "agent" },
-            config.key
+            "  {}",
+            solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.plan.flush.talent",
+                &[
+                    (
+                        "kind",
+                        solstone_core_cli_copy::Value::String(if is_generate(config) {
+                            "generate"
+                        } else {
+                            "agent"
+                        })
+                    ),
+                    (
+                        "name",
+                        solstone_core_cli_copy::Value::String(&(config.key).to_string())
+                    )
+                ]
+            )
         )
         .expect("write string");
     }
-    writeln!(out, "\nTotal: {} agents", configs.len()).expect("write string");
+    let total = configs.len();
+    writeln!(out, "\n{}", plan_total(context, total)).expect("write string");
     Ok(out)
 }
 
@@ -469,12 +829,26 @@ fn dry_run_flush(context: &ThinkContext, segment: &str) -> Result<String, String
 /// the prompt table it has fixed labels, no priority headings, and no total.
 fn dry_run_cadence(context: &ThinkContext) -> Result<String, String> {
     let configs = configs(context, "cadence")?;
-    let mut out = format!("Day {} — cadence agents\n\n", display_day(&context.day));
+    let mut out = format!(
+        "{}\n\n",
+        solstone_core_cli_copy::display_for(
+            context.locale(),
+            "journal.cli.think.plan.cadence",
+            [("day", &(display_day(&context.day)))]
+        )
+    );
     if configs.is_empty() {
-        out.push_str("No prompts for schedule: cadence\n");
+        out.push_str(&format!(
+            "{}\n",
+            solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.plan.empty.cadence",
+                &[]
+            )
+        ));
         return Ok(out);
     }
-    let state = CadenceState::load(&context.journal);
+    let state = CadenceState::load(context.locale(), &context.journal);
     let source = FilesystemHealthLogSource::new(&context.journal);
     let mut configs = configs;
     configs.sort_by_key(|config| {
@@ -497,21 +871,32 @@ fn dry_run_cadence(context: &ThinkContext) -> Result<String, String> {
         if let Some(last) = last.filter(|last| context.now_ms - *last < minutes * 60_000) {
             writeln!(
                 out,
-                "  skip  {} — interval not elapsed ({}s < {minutes}m)",
-                config.key,
-                (context.now_ms - last) / 1_000
+                "  {}",
+                solstone_core_cli_copy::display_for(
+                    context.locale(),
+                    "journal.cli.think.plan.cadence.skip",
+                    [
+                        ("name", &(config.key)),
+                        ("seconds", &((context.now_ms - last) / 1000)),
+                        ("minutes", &(minutes))
+                    ]
+                )
             )
             .expect("write string");
             continue;
         }
         let completed = read_completed_since(&source, &context.day, last.unwrap_or(0))
-            .map_err(|error| error.to_string())?
+            .map_err(|error| error.render(context.locale()))?
             .value;
         if completed.segments.is_empty() && completed.activities.is_empty() {
             writeln!(
                 out,
-                "  no-op {} — no new work since last cadence run",
-                config.key
+                "  {}",
+                solstone_core_cli_copy::display_for(
+                    context.locale(),
+                    "journal.cli.think.plan.cadence.idle",
+                    [("name", &(config.key))]
+                )
             )
             .expect("write string");
         } else {
@@ -520,10 +905,41 @@ fn dry_run_cadence(context: &ThinkContext) -> Result<String, String> {
             // thinking.py:3808-3811 rather than replayed evidence.
             writeln!(
                 out,
-                "  fire  {} — window: {} segment(s), {} activity(ies)",
-                config.key,
-                completed.segments.len(),
-                completed.activities.len()
+                "  {}",
+                if context.terminal_locale.is_none() {
+                    solstone_core_cli_copy::display_for(
+                        solstone_core_cli_copy::ENGLISH,
+                        "journal.cli.think.plan.cadence.fire.record",
+                        [
+                            ("name", &(config.key)),
+                            ("segments", &(completed.segments.len())),
+                            ("activities", &(completed.activities.len())),
+                        ],
+                    )
+                } else {
+                    solstone_core_cli_copy::render_for(
+                        context.locale(),
+                        "journal.cli.think.plan.cadence.fire",
+                        &[
+                            (
+                                "segments",
+                                solstone_core_cli_copy::Value::Cardinal(
+                                    (completed.segments.len()) as i64,
+                                ),
+                            ),
+                            (
+                                "name",
+                                solstone_core_cli_copy::Value::String(&(config.key).to_string()),
+                            ),
+                            (
+                                "activities",
+                                solstone_core_cli_copy::Value::Cardinal(
+                                    (completed.activities.len()) as i64,
+                                ),
+                            ),
+                        ],
+                    )
+                }
             )
             .expect("write string");
         }
@@ -539,4 +955,23 @@ fn display_day(day: &str) -> String {
     solstone_core_time::parse_day(day)
         .map(|value| value.strftime("%Y-%m-%d").to_string())
         .unwrap_or_else(|| day.to_owned())
+}
+
+fn plan_total(context: &ThinkContext, total: usize) -> String {
+    if context.terminal_locale.is_none() {
+        solstone_core_cli_copy::display_for(
+            solstone_core_cli_copy::ENGLISH,
+            "journal.cli.think.plan.total.record",
+            [("total", &(total))],
+        )
+    } else {
+        solstone_core_cli_copy::render_for(
+            context.locale(),
+            "journal.cli.think.plan.total",
+            &[(
+                "total",
+                solstone_core_cli_copy::Value::Cardinal((total) as i64),
+            )],
+        )
+    }
 }

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for plan schedule empty.",
+  "context": "Journal command-line text for plan schedule empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "schedule",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0250b0db02cff966b46aa34d098881e8906ff5e7af7c02d41571c8a7a584e328",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

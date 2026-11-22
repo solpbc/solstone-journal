@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for plan cadence fire record.",
+  "context": "Journal command-line text for plan cadence fire record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "segments",
+      "type": "string"
+    },
+    {
+      "name": "activities",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6dcf55417b2d4fc62b9ec649876eef36dfafeb9481ef15d9fced41ab84b6f2e3",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

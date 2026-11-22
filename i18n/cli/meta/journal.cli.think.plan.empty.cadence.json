@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for plan empty cadence.",
+  "context": "Journal command-line text for plan empty cadence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a768a1a6f2ae6edfd5f65778b0396858c9ea2d5fee37c4df45fbce5bc400084a",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "cadence",
+      "kind": "accepted-input",
+      "value": "cadence"
+    }
+  ]
+}

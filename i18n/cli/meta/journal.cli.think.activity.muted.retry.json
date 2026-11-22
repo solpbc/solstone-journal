@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for activity muted retry.",
+  "context": "Journal command-line text for activity muted retry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "df664d85e357c715596d4cb9802978e8677d8cf9166794c043032b52fd8e7274",
+  "max_length": 115,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

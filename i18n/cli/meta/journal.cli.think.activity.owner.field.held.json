@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for activity owner field held.",
+  "context": "Journal command-line text for activity owner field held.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d6595217944ae929077743c7438542a6641604b3da20d605a364f5cdfb95de66",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

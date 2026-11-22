@@ -13,12 +13,26 @@ pub(crate) fn run(
     id: &str,
     cause: &str,
     environment: &solstone_core_system::process::ChildLaunchContext,
-) -> Result<ModeResult, String> {
-    let record = work_retry::read(&context.journal, id)?.ok_or("retry evidence is missing")?;
+) -> Result<ModeResult, crate::dispatch::RunFailure> {
+    let read = || {
+        work_retry::read_typed(&context.journal, id)
+            .map_err(|error| context.failure(|locale| error.render(locale)))
+    };
+    let record = read()?.ok_or_else(|| {
+        context.failure(|locale| {
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.think.retry.evidence.missing",
+                &[],
+            )
+        })
+    })?;
     if record.unit.day() != context.day
         && !matches!(&record.unit, Unit::Daily { talent, .. } if talent == "daily_schedule")
     {
-        return Err("retry day does not match".into());
+        return Err(context.failure(|locale| {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.think.retry.day.mismatch", &[])
+        }));
     }
     match &record.unit {
         Unit::Raw { output, .. } => {
@@ -26,13 +40,32 @@ pub(crate) fn run(
                 .unit
                 .segment_directory(&context.journal)?
                 .join(output);
-            let evidence = work_retry::raw::inspect_output(&context.journal, &output)?
-                .ok_or("native output is no longer held")?;
+            let evidence =
+                work_retry::raw::inspect_output_typed(&context.journal, &output, &|| Ok(()))
+                    .map_err(|error| context.failure(|locale| error.render(locale)))?
+                    .ok_or_else(|| {
+                        context.failure(|locale| {
+                            solstone_core_cli_copy::render_for(
+                                locale,
+                                "journal.cli.think.retry.raw.released",
+                                &[],
+                            )
+                        })
+                    })?;
             let attempt = record
                 .permission(&evidence.input, work_retry::DECLARED_FIXES)
                 .filter(|a| a.cause == cause && a.reason == evidence.reason)
-                .ok_or("retry permission changed")?;
-            let execution = solstone_core_sense::batch::retry_file(
+                .ok_or_else(|| {
+                    context.failure(|locale| {
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.think.retry.permission.changed",
+                            &[],
+                        )
+                    })
+                })?;
+            let execution = solstone_core_sense::batch::retry_file_in(
+                context.terminal_locale,
                 &context.journal,
                 &record.unit,
                 &attempt,
@@ -40,8 +73,8 @@ pub(crate) fn run(
                 Duration::from_secs(1800),
                 context.sense_executor.clone(),
             )
-            .map_err(|e| e.to_string());
-            let terminal = work_retry::raw::finish_output_checked(
+            .map_err(|e| context.failure(|locale| e.render(locale)));
+            let terminal = work_retry::raw::finish_output_typed(
                 &context.journal,
                 &record.unit,
                 &attempt,
@@ -54,7 +87,7 @@ pub(crate) fn run(
                 },
             );
             execution?;
-            terminal?;
+            terminal.map_err(|error| context.failure(|locale| error.render(locale)))?;
             Ok(ModeResult::default())
         }
         Unit::Daily { .. } => {
@@ -65,28 +98,79 @@ pub(crate) fn run(
                 &context.apps_root,
                 &|| context.checkpoint(),
             )?
-            .ok_or("daily unit is no longer held")?;
-            let attempt = work_retry::read(&context.journal, id)?
-                .ok_or("missing daily permission")?
+            .ok_or_else(|| {
+                context.failure(|locale| {
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.think.retry.daily.released",
+                        &[],
+                    )
+                })
+            })?;
+            let attempt = read()?
+                .ok_or_else(|| {
+                    context.failure(|locale| {
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.think.retry.daily.missing",
+                            &[],
+                        )
+                    })
+                })?
                 .permission(&input, work_retry::DECLARED_FIXES)
                 .filter(|a| a.cause == cause)
-                .ok_or("daily retry permission changed")?;
+                .ok_or_else(|| {
+                    context.failure(|locale| {
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.think.retry.daily.changed",
+                            &[],
+                        )
+                    })
+                })?;
             let mut retry_context = context.clone();
             retry_context.retry = Some((record.unit.clone(), attempt.clone()));
             let result = crate::daily::run(&retry_context, log, None, false, 1)?;
-            let current =
-                work_retry::read(&context.journal, id)?.ok_or("missing daily permission")?;
+            let current = read()?.ok_or_else(|| {
+                context.failure(|locale| {
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.think.retry.daily.missing",
+                        &[],
+                    )
+                })
+            })?;
             if current.attempt.as_ref() != Some(&attempt) && current.held {
-                return Err("daily writer did not consume retry permission".into());
+                return Err(context.failure(|locale| {
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.think.retry.daily.unused",
+                        &[],
+                    )
+                }));
             }
             let daily = solstone_core_journal_io::load_daily_unit_record(
                 &context.journal,
                 &work_retry::daily::identity(&record.unit)?,
             )
             .map_err(|e| e.to_string())?
-            .ok_or("missing daily terminal record")?;
+            .ok_or_else(|| {
+                context.failure(|locale| {
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.think.retry.daily.terminal.missing",
+                        &[],
+                    )
+                })
+            })?;
             if daily.status == solstone_core_journal_io::DailyUnitStatus::Unfinished {
-                return Err("daily retry is still unresolved".into());
+                return Err(context.failure(|locale| {
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.think.retry.daily.unresolved",
+                        &[],
+                    )
+                }));
             }
             let remaining = (!daily.status.is_terminal_success())
                 .then(|| daily.reason_code.as_deref().unwrap_or("daily_failed"));
@@ -102,15 +186,36 @@ pub(crate) fn run(
         Unit::Activity {
             facet, activity, ..
         } => {
-            let input = crate::activity_work::activity_held_input(&context.journal, &record.unit)?
-                .ok_or("activity is no longer set aside")?;
+            let input = crate::activity_work::held_input_in(
+                context.terminal_locale,
+                &context.journal,
+                &record.unit,
+            )?
+            .ok_or_else(|| {
+                context.failure(|locale| {
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.think.retry.activity.released",
+                        &[],
+                    )
+                })
+            })?;
             let attempt = record
                 .permission(&input, work_retry::DECLARED_FIXES)
                 .filter(|a| a.cause == cause)
-                .ok_or("activity retry permission changed")?;
+                .ok_or_else(|| {
+                    context.failure(|locale| {
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.think.retry.activity.changed",
+                            &[],
+                        )
+                    })
+                })?;
             let mut retry_context = context.clone();
             retry_context.retry = Some((record.unit.clone(), attempt));
             crate::activity::run(&retry_context, log, activity, facet, false, false, 1)
+                .map_err(Into::into)
         }
         Unit::Segment {
             segment,
@@ -122,7 +227,15 @@ pub(crate) fn run(
             let attempt = record
                 .permission(&input, work_retry::DECLARED_FIXES)
                 .filter(|a| a.cause == cause)
-                .ok_or("segment retry permission changed")?;
+                .ok_or_else(|| {
+                    context.failure(|locale| {
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.think.retry.segment.changed",
+                            &[],
+                        )
+                    })
+                })?;
             let mut retry_context = context.clone();
             retry_context.retry = Some((record.unit.clone(), attempt));
             crate::segment::retry_talent(&retry_context, log, segment, stream, talent)

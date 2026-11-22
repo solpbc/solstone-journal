@@ -1,0 +1,34 @@
+{
+  "description": "Journal command-line text for markdown object frames maximum.",
+  "context": "Journal command-line text for markdown object frames maximum.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "frames",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "class",
+      "type": "string"
+    },
+    {
+      "name": "most",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "aa908eae4239f5f12c4309be9876cc297909445e4cff809854572900e1f6f887",
+  "max_length": 190,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "frames",
+    "type": "cardinal"
+  }
+}

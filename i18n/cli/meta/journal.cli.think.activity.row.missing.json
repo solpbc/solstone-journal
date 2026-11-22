@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for activity row missing.",
+  "context": "Journal command-line text for activity row missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b00de5f163f12da25e21ddd0c0c214afe1f5e2f32bd64481daaf497e28766bf1",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

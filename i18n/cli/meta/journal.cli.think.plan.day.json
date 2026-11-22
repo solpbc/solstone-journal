@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for plan day.",
+  "context": "Journal command-line text for plan day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5df88bc3f31141b46b7cfb2723bb8aea6b15807d188b0c1b2111d69e43e1c100",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

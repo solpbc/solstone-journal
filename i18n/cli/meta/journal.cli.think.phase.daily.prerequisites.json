@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for phase daily prerequisites.",
+  "context": "Journal command-line text for phase daily prerequisites.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81cd3d34c2c6205e7dbe62b5aa4e81b8ff3aae05e1295f50a61785dc912045f3",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

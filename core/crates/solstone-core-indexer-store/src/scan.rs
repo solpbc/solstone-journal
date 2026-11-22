@@ -2914,6 +2914,7 @@ fn ensure_file_current(
             (
                 FileOutcome {
                     warnings,
+                    display_stamp: None,
                     undecidable: None,
                 },
                 relisted,
@@ -2940,6 +2941,12 @@ fn ensure_file_current(
         "REPLACE INTO files(path, mtime) VALUES (?, ?)",
         params![rel, stored],
     )?;
+    if let Some(stamp) = &outcome.display_stamp {
+        conn.execute(
+            "UPDATE files SET display_stamp=? WHERE path=?",
+            params![stamp, rel],
+        )?;
+    }
     // After this file's own row, so a file left to index again stays marked.
     if let Some(relisted) = relisted {
         relisted.mark_for_reindex(conn)?;
@@ -2954,6 +2961,7 @@ const UNDECIDED_MTIME: i64 = -1;
 /// What making one file current did.
 #[derive(Debug, Default)]
 struct FileOutcome {
+    display_stamp: Option<String>,
     warnings: Vec<String>,
     /// The file was left not current, with no rows or only the rows a hide
     /// could decide, because what hides part of it couldn't be read. Says what
@@ -2974,6 +2982,7 @@ fn index_file(
     if let FileHide::Undecidable(cause) = hide {
         return Ok(FileOutcome {
             warnings: Vec::new(),
+            display_stamp: None,
             undecidable: Some(format!("{rel} is left out of search for now: {cause}")),
         });
     }
@@ -3091,6 +3100,7 @@ fn index_file(
         .filter(|_| held_back)
         .map(|cause| format!("{rel} is partly left out of search for now: {cause}"));
     Ok(FileOutcome {
+        display_stamp: solstone_core_format::stored_markdown::index_stamp(journal, path, &text),
         warnings,
         undecidable,
     })

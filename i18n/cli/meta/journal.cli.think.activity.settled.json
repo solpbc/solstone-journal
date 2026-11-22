@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for activity settled.",
+  "context": "Journal command-line text for activity settled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "activity",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c775fcd8c30afd6846b9e851125fb84f39b933ac779302d38b737deb34f6c7b9",
+  "max_length": 163,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Strava"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for sense error deleted dirty.",
+  "context": "Journal command-line text for sense error deleted dirty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f1084fc3997153620bf1b86a944ad670507e9a77542ef4da3e015cfc9edbda00",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

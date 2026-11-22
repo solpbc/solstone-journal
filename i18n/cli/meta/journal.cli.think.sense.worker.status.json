@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for sense worker status.",
+  "context": "Journal command-line text for sense worker status.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    },
+    {
+      "name": "file",
+      "type": "string"
+    },
+    {
+      "name": "outcome",
+      "type": "string"
+    },
+    {
+      "name": "log",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ddea532a598130b360d3c42005a778bd52c2a3c1cf96cec8932e38ac99852e8",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

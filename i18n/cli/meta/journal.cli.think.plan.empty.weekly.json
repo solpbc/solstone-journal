@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for plan empty weekly.",
+  "context": "Journal command-line text for plan empty weekly.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cf1c4ccf8dc9c41774ed93c3c7e9aad5a4b0ce3f0d29ba1ee63561ebca49fbbe",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "weekly",
+      "kind": "accepted-input",
+      "value": "weekly"
+    }
+  ]
+}

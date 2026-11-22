@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry talent dispatch.",
+  "context": "Journal command-line text for retry talent dispatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b61c5cb2a74fce47b1f56f8ab13006ba656b3435c0a5f30be4686c6a3a76309",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

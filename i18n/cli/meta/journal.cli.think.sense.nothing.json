@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense nothing.",
+  "context": "Journal command-line text for sense nothing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "35833ed677dc99ed5d837cdbe02ae970d2f3fe66a4909b0d840bc76189fbecca",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

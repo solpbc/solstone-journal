@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense worker authority.",
+  "context": "Journal command-line text for sense worker authority.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f3b789616c08e67079e2ccc1c8722e5d9ecbd641b8772bfc341dc92c1763362e",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

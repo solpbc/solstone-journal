@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sense worker timeout.",
+  "context": "Journal command-line text for sense worker timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    },
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7e38e02962c8a898fe9848fb2f0977d5efb40bc89c800932e08ddc02946ff534",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry talent disabled.",
+  "context": "Journal command-line text for retry talent disabled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "019eace9524a133591d03f7f96566727c2e0cd10a104be52f9f282886ba1e89c",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

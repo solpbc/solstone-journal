@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for markdown quotes.",
+  "context": "Journal command-line text for markdown quotes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "31fbcd4e2943f74cbae867d53c7f4a9673f4cf6de4218945e05dedee489343fe",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

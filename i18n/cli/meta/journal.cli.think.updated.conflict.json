@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for updated conflict.",
+  "context": "Journal command-line text for updated conflict.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "options",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9949b0a85c680e47cb29395a0392f65dd504cf5ec4860ba78e019ef2b84b6047",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "updated_flag",
+      "kind": "flag",
+      "value": "--updated"
+    }
+  ]
+}

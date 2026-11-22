@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for outcome failed.",
+  "context": "Journal command-line text for outcome failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "94f9efca8dfbf5d2b68a1d859ee5bbfd7c6a80f7756a2e9bf5218b12f8c2b3a6",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal think"
+    }
+  ]
+}

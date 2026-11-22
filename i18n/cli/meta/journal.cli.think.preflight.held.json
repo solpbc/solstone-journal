@@ -1,0 +1,69 @@
+{
+  "description": "Journal command-line text for preflight held.",
+  "context": "Journal command-line text for preflight held.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "role",
+      "type": "string"
+    },
+    {
+      "name": "pid",
+      "type": "string"
+    },
+    {
+      "name": "started",
+      "type": "string"
+    },
+    {
+      "name": "generation",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "30accdb97cb95adf22c35907c5652a1c1f6a100cb4f2080e56c5260561cb10f5",
+  "max_length": 224,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reason",
+      "kind": "accepted-input",
+      "value": "generation-lease-contended"
+    },
+    {
+      "name": "generation_key",
+      "kind": "accepted-input",
+      "value": "install_generation_id="
+    },
+    {
+      "name": "age_key",
+      "kind": "accepted-input",
+      "value": "owner_age_seconds="
+    },
+    {
+      "name": "time_key",
+      "kind": "accepted-input",
+      "value": "owner_started_at="
+    },
+    {
+      "name": "role_key",
+      "kind": "accepted-input",
+      "value": "owner_role="
+    },
+    {
+      "name": "pid_key",
+      "kind": "accepted-input",
+      "value": "owner_pid="
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for activity blocked.",
+  "context": "Journal command-line text for activity blocked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c791d5cf6a84c1f8172d69c209b96fb234ee4ced71249540dab87aaae0827ddd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

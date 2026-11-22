@@ -154,7 +154,11 @@ fn run_owned_process(
             reference,
             day: Some(day.to_owned()),
             sink: None,
-            environment: BTreeMap::new(),
+            // Phase output is persisted in the operational log.
+            environment: BTreeMap::from([(
+                "SOLSTONE_LOCALE".into(),
+                solstone_core_cli_copy::ENGLISH.into(),
+            )]),
         },
     ) {
         Ok(process) => process,

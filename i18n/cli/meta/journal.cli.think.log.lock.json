@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for log lock.",
+  "context": "Journal command-line text for log lock.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "440d2142094db6b07b9074502cf3f2de73d0fa7412f35ecc12daf7bdcb31afb2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

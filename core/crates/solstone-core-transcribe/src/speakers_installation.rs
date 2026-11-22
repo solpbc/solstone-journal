@@ -844,7 +844,7 @@ fn process_started_at(instance: &ProcessInstance) -> Option<String> {
 pub(crate) const GENERATION_CONTENDED: &str = "generation-lease-contended";
 
 fn generation_contention_error(journal: &Path) -> CliError {
-    let message = match read_speakers_analyze_owner(journal) {
+    let diagnostic = match read_speakers_analyze_owner(journal) {
         SpeakersAnalyzeOwnerView::Available {
             role,
             pid,
@@ -859,16 +859,26 @@ fn generation_contention_error(journal: &Path) -> CliError {
             }
             .age(Timestamp::now())
             .map_or_else(|| "unavailable".to_owned(), |age| age.as_secs().to_string());
-            format!(
-                "{GENERATION_CONTENDED}: owner_role={} owner_pid={pid} owner_started_at={started_at} install_generation_id={install_generation_id} owner_age_seconds={age}; use the supervised path or stop that process cleanly",
-                role.as_str()
+            solstone_core_cli_copy::Diagnostic::new(
+                "journal.cli.think.preflight.held",
+                [
+                    ("role", &(role.as_str())),
+                    ("pid", &(pid)),
+                    ("started", &(started_at)),
+                    ("generation", &(install_generation_id)),
+                    ("age", &(age)),
+                ],
             )
         }
-        SpeakersAnalyzeOwnerView::Unavailable => format!(
-            "{GENERATION_CONTENDED}: owner_details=unavailable; use the supervised path or stop the current process cleanly"
+        SpeakersAnalyzeOwnerView::Unavailable => solstone_core_cli_copy::Diagnostic::new(
+            "journal.cli.think.preflight.held.unavailable",
+            [],
         ),
     };
-    CliError::SpeakersInstallation { message }
+    CliError::SpeakersGenerationHeld {
+        message: diagnostic.render(solstone_core_cli_copy::ENGLISH),
+        diagnostic,
+    }
 }
 
 fn generation_lock_is_held(journal: &Path) -> bool {

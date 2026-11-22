@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for preflight disk.",
+  "context": "Journal command-line text for preflight disk.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1e445d897f6d86758c1f0a77d7cda243ae67fc1c5f0a76cfe48cddb8601295bc",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

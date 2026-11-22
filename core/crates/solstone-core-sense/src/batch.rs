@@ -22,11 +22,12 @@ use solstone_core_processing_record::{
 };
 use thiserror::Error;
 
-use crate::config::{read_config, resolve_concurrency};
+#[cfg(test)]
+use crate::config::resolve_concurrency;
+use crate::config::{read_config_in, resolve_concurrency_in};
 use crate::dispatch::{
     BatchMarkerPolicy, Outbound, SenseDispatcher, SenseExecutor, SenseJobResult,
 };
-use crate::log;
 
 /// Existing output classes that can be deleted before a batch reprocess.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -104,14 +105,81 @@ pub enum BatchError {
     LeaseContended { day: String },
     #[error("{failed} failed of {ran} ran")]
     Failed { failed: usize, ran: usize },
+    #[error("sense batch refused: {0}")]
+    Identity(#[from] SegmentIdentityError),
+    #[error("sense batch refused: {}", .0.render(solstone_core_cli_copy::ENGLISH))]
+    Refusal(solstone_core_cli_copy::Diagnostic),
     #[error("sense batch refused: {reason}")]
     Unrepresentable { reason: String },
 }
 
-impl From<SegmentIdentityError> for BatchError {
-    fn from(error: SegmentIdentityError) -> Self {
-        Self::Unrepresentable {
-            reason: error.to_string(),
+impl BatchError {
+    pub fn render(&self, locale: &str) -> String {
+        let refused = |reason: &str| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.sense.refused",
+                [("reason", &(reason))],
+            )
+        };
+        match self {
+            Self::Paths(error) => {
+                solstone_core_journal_io::cli_diagnostics::path_detail(locale, error)
+            }
+            Self::Unrepresentable { reason } => refused(reason),
+            Self::Refusal(diagnostic) => refused(&diagnostic.render(locale)),
+            Self::Identity(error) => {
+                refused(&solstone_core_journal_io::cli_diagnostics::segment_identity(locale, error))
+            }
+            Self::Scan { path, source } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.sense.error.scan",
+                [("path", &(path.display())), ("error", &(source))],
+            ),
+            Self::Delete { path, source } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.sense.error.delete",
+                [("path", &(path.display())), ("error", &(source))],
+            ),
+            Self::PostDelete { path, day, detail } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.sense.error.deleted.dirty",
+                [
+                    ("path", &(path.display())),
+                    ("day", &(day)),
+                    ("detail", &(detail)),
+                ],
+            ),
+            Self::Runtime => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.think.sense.error.runtime",
+                &[],
+            ),
+            Self::TimedOut { timeout } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.sense.error.timeout",
+                [("duration", &(format!("{timeout:?}")))],
+            ),
+            Self::WorkerJoin => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.think.sense.error.join",
+                &[],
+            ),
+            Self::Lease(error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.sense.error.lease",
+                [("error", &(error))],
+            ),
+            Self::LeaseContended { day } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.sense.error.held",
+                [("day", &(day))],
+            ),
+            Self::Failed { failed, ran } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.sense.error.failed",
+                [("failed", &(failed)), ("ran", &(ran))],
+            ),
         }
     }
 }
@@ -155,7 +223,8 @@ pub fn run_batch_with_environment_and_timeout(
     child_environment: &solstone_core_system::process::ChildLaunchContext,
     timeout: Option<Duration>,
 ) -> Result<(), BatchError> {
-    run_batch_with_environment_and_timeout_with_marker_policy(
+    run_batch_in(
+        None,
         journal,
         request,
         child_environment,
@@ -172,7 +241,8 @@ pub fn run_batch_for_whole_day_with_environment_and_timeout(
     child_environment: &solstone_core_system::process::ChildLaunchContext,
     timeout: Option<Duration>,
 ) -> Result<(), BatchError> {
-    run_batch_with_environment_and_timeout_with_marker_policy(
+    run_batch_in(
+        None,
         journal,
         request,
         child_environment,
@@ -181,7 +251,8 @@ pub fn run_batch_for_whole_day_with_environment_and_timeout(
     )
 }
 
-fn run_batch_with_environment_and_timeout_with_marker_policy(
+pub fn run_batch_in(
+    terminal_locale: Option<&str>,
     journal: &Path,
     request: &BatchRequest,
     child_environment: &solstone_core_system::process::ChildLaunchContext,
@@ -192,7 +263,14 @@ fn run_batch_with_environment_and_timeout_with_marker_policy(
     check_deadline(deadline)?;
     let day_dir = journal.join("chronicle").join(&request.day);
     if !day_dir.exists() {
-        println!("Day directory not found: {}", day_dir.display());
+        println!(
+            "{}",
+            solstone_core_cli_copy::display_for(
+                terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH),
+                "journal.cli.think.sense.day.missing",
+                [("path", &(day_dir.display()))]
+            )
+        );
         return Ok(());
     }
 
@@ -200,9 +278,13 @@ fn run_batch_with_environment_and_timeout_with_marker_policy(
         Some(lease) => lease,
         None => match marker_policy {
             BatchMarkerPolicy::EnclosedWholeDay => {
-                log::warn!(
-                    "Sense batch lease for day {} is held; skipping batch walk",
-                    request.day
+                eprintln!(
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH),
+                        "journal.cli.think.sense.lease.skip",
+                        [("day", &request.day)]
+                    )
                 );
                 return Ok(());
             }
@@ -279,16 +361,56 @@ fn run_batch_with_environment_and_timeout_with_marker_policy(
         return Ok(());
     }
 
-    let segment_message = request
-        .segment
-        .as_deref()
-        .map(|segment| format!(" (segment: {segment})"))
-        .unwrap_or_default();
-    println!(
-        "Processing files from day {}{} with {} concurrent jobs",
-        request.day, segment_message, request.jobs
-    );
+    let message = match request.segment.as_deref() {
+        Some(segment) => solstone_core_cli_copy::render_for(
+            terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH),
+            "journal.cli.think.sense.processing.segment",
+            &[
+                (
+                    "quantity",
+                    solstone_core_cli_copy::Value::Cardinal(if terminal_locale.is_some() {
+                        request.jobs
+                    } else {
+                        0
+                    }),
+                ),
+                (
+                    "day",
+                    solstone_core_cli_copy::Value::String(&(request.day).to_string()),
+                ),
+                ("segment", solstone_core_cli_copy::Value::String(segment)),
+                (
+                    "jobs",
+                    solstone_core_cli_copy::Value::String(&(request.jobs).to_string()),
+                ),
+            ],
+        ),
+        None => solstone_core_cli_copy::render_for(
+            terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH),
+            "journal.cli.think.sense.processing.day",
+            &[
+                (
+                    "quantity",
+                    solstone_core_cli_copy::Value::Cardinal(if terminal_locale.is_some() {
+                        request.jobs
+                    } else {
+                        0
+                    }),
+                ),
+                (
+                    "day",
+                    solstone_core_cli_copy::Value::String(&(request.day).to_string()),
+                ),
+                (
+                    "jobs",
+                    solstone_core_cli_copy::Value::String(&(request.jobs).to_string()),
+                ),
+            ],
+        ),
+    };
+    println!("{message}");
     process_day_with_environment(
+        terminal_locale,
         journal,
         request,
         modality,
@@ -637,6 +759,7 @@ pub fn process_day(
     modality_filter: Option<ReprocessKind>,
 ) -> Result<(), BatchError> {
     process_day_with_environment(
+        None,
         journal,
         request,
         modality_filter,
@@ -647,6 +770,7 @@ pub fn process_day(
 }
 
 fn process_day_with_environment(
+    terminal_locale: Option<&str>,
     journal: &Path,
     request: &BatchRequest,
     modality_filter: Option<ReprocessKind>,
@@ -655,11 +779,13 @@ fn process_day_with_environment(
     marker_policy: BatchMarkerPolicy,
 ) -> Result<(), BatchError> {
     process_day_with_dispatcher(
+        terminal_locale,
         journal,
         request,
         modality_filter,
         |outbound, describe_workers| {
             SenseDispatcher::new_batch_with_environment(
+                terminal_locale,
                 journal.to_path_buf(),
                 request.verbose,
                 request.debug,
@@ -696,6 +822,7 @@ pub fn process_day_with_fixture_program_and_timeout(
 ) -> Result<(), BatchError> {
     let deadline = timeout.map(BatchDeadline::new);
     process_day_with_dispatcher(
+        None,
         journal,
         request,
         modality_filter,
@@ -715,6 +842,7 @@ pub fn process_day_with_fixture_program_and_timeout(
 }
 
 fn process_day_with_dispatcher<F>(
+    terminal_locale: Option<&str>,
     journal: &Path,
     request: &BatchRequest,
     modality_filter: Option<ReprocessKind>,
@@ -733,10 +861,18 @@ where
         request.stream.as_deref(),
         modality_filter,
     )?;
-    process_work_with_dispatcher(journal, request, work, make_dispatcher, deadline)
+    process_work_with_dispatcher(
+        terminal_locale,
+        journal,
+        request,
+        work,
+        make_dispatcher,
+        deadline,
+    )
 }
 
 fn process_work_with_dispatcher<F>(
+    terminal_locale: Option<&str>,
     journal: &Path,
     request: &BatchRequest,
     work: Vec<BatchWork>,
@@ -749,15 +885,23 @@ where
     check_deadline(deadline)?;
     if work.is_empty() {
         println!(
-            "No unprocessed files found in {}",
-            journal.join("chronicle").join(&request.day).display()
+            "{}",
+            solstone_core_cli_copy::display_for(
+                terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH),
+                "journal.cli.think.sense.nothing",
+                [(
+                    "path",
+                    &(journal.join("chronicle").join(&request.day).display())
+                )]
+            )
         );
         return Ok(());
     }
-    print_processing_summary(&work);
+    print_processing_summary(terminal_locale, &work);
 
-    let config = read_config(journal);
-    let describe_workers = batch_describe_workers(&config, request.jobs);
+    let locale = terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
+    let config = read_config_in(locale, journal);
+    let describe_workers = batch_describe_workers(locale, &config, request.jobs);
 
     let (outbound, receiver) = mpsc::channel::<Outbound>();
     let dispatcher = Arc::new(make_dispatcher(outbound, describe_workers));
@@ -798,10 +942,37 @@ where
     let deferred = dispatcher.tally.deferred();
     if deferred > 0 {
         println!(
-            "Batch processing deferred: {deferred} of {ran} handlers waiting; unfinished files will retry"
+            "{}",
+            solstone_core_cli_copy::render_for(
+                terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH),
+                "journal.cli.think.sense.deferred",
+                &[
+                    (
+                        "quantity",
+                        solstone_core_cli_copy::Value::Cardinal(
+                            (if terminal_locale.is_some() { ran } else { 0 }) as i64
+                        )
+                    ),
+                    (
+                        "deferred",
+                        solstone_core_cli_copy::Value::String(&(deferred).to_string())
+                    ),
+                    (
+                        "ran",
+                        solstone_core_cli_copy::Value::String(&(ran).to_string())
+                    )
+                ]
+            )
         );
     } else {
-        println!("Batch processing complete");
+        println!(
+            "{}",
+            solstone_core_cli_copy::render_for(
+                terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH),
+                "journal.cli.think.sense.complete",
+                &[]
+            )
+        );
     }
     Ok(())
 }
@@ -830,6 +1001,7 @@ pub fn run_batch_with_executor(
             }
         })?;
     process_day_with_dispatcher(
+        None,
         journal,
         request,
         None,
@@ -859,6 +1031,26 @@ pub fn retry_file(
     timeout: Duration,
     executor: Option<Arc<dyn SenseExecutor>>,
 ) -> Result<(), BatchError> {
+    retry_file_in(
+        None,
+        journal,
+        unit,
+        attempt,
+        child_environment,
+        timeout,
+        executor,
+    )
+}
+
+pub fn retry_file_in(
+    terminal_locale: Option<&str>,
+    journal: &Path,
+    unit: &solstone_core_system::work_retry::Unit,
+    attempt: &solstone_core_system::work_retry::Attempt,
+    child_environment: &solstone_core_system::process::ChildLaunchContext,
+    timeout: Duration,
+    executor: Option<Arc<dyn SenseExecutor>>,
+) -> Result<(), BatchError> {
     use solstone_core_system::work_retry::{Unit, raw};
     let refuse = |reason| BatchError::Unrepresentable { reason };
     let Unit::Raw {
@@ -870,7 +1062,9 @@ pub fn retry_file(
         ..
     } = unit
     else {
-        return Err(refuse("retry is not native analysis".into()));
+        return Err(BatchError::Refusal(
+            solstone_core_cli_copy::Diagnostic::new("journal.cli.think.sense.retry.kind", []),
+        ));
     };
     let output = unit
         .segment_directory(journal)
@@ -878,18 +1072,32 @@ pub fn retry_file(
         .join(output);
     let evidence = raw::inspect_output(journal, &output)
         .map_err(refuse)?
-        .ok_or_else(|| refuse("native output is no longer held".into()))?;
+        .ok_or_else(|| {
+            BatchError::Refusal(solstone_core_cli_copy::Diagnostic::new(
+                "journal.cli.think.retry.raw.released",
+                [],
+            ))
+        })?;
     if &evidence.unit != unit
         || evidence.input != attempt.input
         || evidence.reason != attempt.reason
     {
-        return Err(refuse("native retry inputs changed".into()));
+        return Err(BatchError::Refusal(
+            solstone_core_cli_copy::Diagnostic::new("journal.cli.think.sense.retry.changed", []),
+        ));
     }
     let handler = match handler.as_str() {
         "describe" => "describe",
         "depict" => "depict",
         "transcribe" => "transcribe",
-        _ => return Err(refuse("unknown native retry handler".into())),
+        _ => {
+            return Err(BatchError::Refusal(
+                solstone_core_cli_copy::Diagnostic::new(
+                    "journal.cli.think.sense.retry.handler",
+                    [],
+                ),
+            ));
+        }
     };
     if crate::registry::match_handler(
         journal,
@@ -898,8 +1106,8 @@ pub fn retry_file(
     )
     .is_none_or(|spec| spec.name != handler)
     {
-        return Err(refuse(
-            "native failure handler does not match its source".into(),
+        return Err(BatchError::Refusal(
+            solstone_core_cli_copy::Diagnostic::new("journal.cli.think.sense.retry.mismatch", []),
         ));
     }
     if let Some(executor) = executor {
@@ -959,6 +1167,7 @@ pub fn retry_file(
         debug: false,
     };
     process_work_with_dispatcher(
+        terminal_locale,
         journal,
         &request,
         vec![BatchWork {
@@ -969,6 +1178,7 @@ pub fn retry_file(
         }],
         |outbound, workers| {
             SenseDispatcher::new_batch_with_environment(
+                terminal_locale,
                 journal.to_path_buf(),
                 false,
                 false,
@@ -1111,11 +1321,33 @@ fn print_dry_run(journal: &Path, work: &[BatchWork]) {
     }
 }
 
-fn print_processing_summary(work: &[BatchWork]) {
+fn print_processing_summary(terminal_locale: Option<&str>, work: &[BatchWork]) {
     println!(
-        "Found {} unprocessed files to process ({})",
-        work.len(),
-        extension_breakdown(work)
+        "{}",
+        solstone_core_cli_copy::render_for(
+            terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH),
+            "journal.cli.think.sense.files",
+            &[
+                (
+                    "quantity",
+                    solstone_core_cli_copy::Value::Cardinal(
+                        (if terminal_locale.is_some() {
+                            work.len()
+                        } else {
+                            0
+                        }) as i64
+                    )
+                ),
+                (
+                    "extensions",
+                    solstone_core_cli_copy::Value::String(&(extension_breakdown(work)).to_string())
+                ),
+                (
+                    "count",
+                    solstone_core_cli_copy::Value::String(&(work.len()).to_string())
+                )
+            ]
+        )
     );
 }
 
@@ -1218,8 +1450,8 @@ fn audio_output_name(path: &Path) -> bool {
     stem.ends_with("_audio") || stem == "audio"
 }
 
-fn batch_describe_workers(config: &Map<String, Value>, jobs: i64) -> usize {
-    let configured = resolve_concurrency(config, "describe");
+fn batch_describe_workers(locale: &str, config: &Map<String, Value>, jobs: i64) -> usize {
+    let configured = resolve_concurrency_in(locale, config, "describe");
     usize::try_from(jobs).unwrap_or(1).max(1).max(configured)
 }
 
@@ -1887,8 +2119,14 @@ mod tests {
             "depict": {"max_concurrent": 5},
         });
         let config = config.as_object().expect("config");
-        assert_eq!(batch_describe_workers(config, 9), 9);
-        assert_eq!(batch_describe_workers(config, -1), 2);
+        assert_eq!(
+            batch_describe_workers(solstone_core_cli_copy::ENGLISH, config, 9),
+            9
+        );
+        assert_eq!(
+            batch_describe_workers(solstone_core_cli_copy::ENGLISH, config, -1),
+            2
+        );
         assert_eq!(resolve_concurrency(config, "transcribe"), 7);
         assert_eq!(resolve_concurrency(config, "depict"), 5);
     }

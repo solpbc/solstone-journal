@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry permission changed.",
+  "context": "Journal command-line text for retry permission changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a341371f1f8395080fc436910f90e8413883d5014a53d707bda693295a1f92a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

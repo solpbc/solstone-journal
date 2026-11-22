@@ -751,7 +751,12 @@ fn main() -> ExitCode {
                 Err(error) => {
                     return (
                         String::new(),
-                        error.message().unwrap_or_default().to_owned(),
+                        solstone_core_transcribe::speakers_installation_detail_in(
+                            &error,
+                            solstone_core_think_cli::terminal_locale()
+                                .unwrap_or(solstone_core_cli_copy::ENGLISH),
+                        )
+                        .unwrap_or_default(),
                         error.exit_code(),
                     );
                 }

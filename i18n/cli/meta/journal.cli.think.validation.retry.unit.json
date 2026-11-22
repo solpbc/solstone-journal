@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for validation retry unit.",
+  "context": "Journal command-line text for validation retry unit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "100daa0525745e46d5849d938a077adbb7b7be40afbf195d84927254234f6a01",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "retry_unit_flag",
+      "kind": "flag",
+      "value": "--retry-unit"
+    },
+    {
+      "name": "day_flag",
+      "kind": "flag",
+      "value": "--day"
+    },
+    {
+      "name": "retry_cause_flag",
+      "kind": "flag",
+      "value": "--retry-cause"
+    }
+  ]
+}

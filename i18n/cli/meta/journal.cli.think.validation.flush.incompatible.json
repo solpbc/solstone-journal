@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for validation flush incompatible.",
+  "context": "Journal command-line text for validation flush incompatible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f3718db9554a25f09934ccc433706b71a05a24009d0694812dcf4a0301d28394",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flush_flag",
+      "kind": "flag",
+      "value": "--flush"
+    },
+    {
+      "name": "segments_flag",
+      "kind": "flag",
+      "value": "--segments"
+    },
+    {
+      "name": "refresh_flag",
+      "kind": "flag",
+      "value": "--refresh"
+    }
+  ]
+}

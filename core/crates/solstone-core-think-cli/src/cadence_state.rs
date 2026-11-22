@@ -12,22 +12,43 @@ pub(crate) struct CadenceState {
 }
 
 impl CadenceState {
-    pub(crate) fn load(journal: &Path) -> Self {
+    pub(crate) fn load(locale: &str, journal: &Path) -> Self {
         use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
         let path = path(journal);
         let value = match read_json_durable::<Value>(ArtifactId::Cadence, &path) {
             Ok(DurableRead::Present(value)) => value,
             Ok(DurableRead::Absent) => return Self::default(),
             Ok(DurableRead::SetAside(_)) => {
-                log::warn!("Failed to load cadence state: corrupt artifact set aside");
+                log::warn!(
+                    "{}",
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.think.log.cadence.set.aside",
+                        &[]
+                    )
+                );
                 return Self::default();
             }
             Ok(DurableRead::Unreadable { error, .. }) => {
-                log::warn!("Failed to load cadence state: {error}");
+                log::warn!(
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.think.log.cadence.read",
+                        [("error", &error)]
+                    )
+                );
                 return Self::default();
             }
             Err(error) => {
-                log::warn!("Failed to load cadence state: {error}");
+                log::warn!(
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.think.log.cadence.read",
+                        [("error", &error)]
+                    )
+                );
                 return Self::default();
             }
         };

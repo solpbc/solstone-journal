@@ -27,7 +27,8 @@ fn render_count(locale: &str, id: &str, count: u64) -> String {
 
 mod work_readiness;
 pub use work_readiness::{
-    SET_ASIDE_CLOSE_SHARE, SegmentReadiness, day_segments_ready, day_unpublished_segments,
+    ReadinessError, SET_ASIDE_CLOSE_SHARE, SegmentReadiness, day_segments_ready,
+    day_segments_ready_typed, day_unpublished_segments, day_unpublished_segments_typed,
     segment_readiness, segment_seconds, segment_thinking_set_aside, segment_work_ready,
 };
 

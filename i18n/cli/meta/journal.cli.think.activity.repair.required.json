@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for activity repair required.",
+  "context": "Journal command-line text for activity repair required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "26c55bcb9b84ff0dc04041bf7955125ad22a05a54ec097e9567eed81207e8a32",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

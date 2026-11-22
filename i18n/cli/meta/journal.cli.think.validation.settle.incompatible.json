@@ -1,0 +1,58 @@
+{
+  "description": "Journal command-line text for validation settle incompatible.",
+  "context": "Journal command-line text for validation settle incompatible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "703867d29c04873396b49c87b33e8d180b0e1095807330a8a3e005985ca05d27",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "settle_flag",
+      "kind": "flag",
+      "value": "--settle"
+    },
+    {
+      "name": "segment_flag",
+      "kind": "flag",
+      "value": "--segment"
+    },
+    {
+      "name": "segments_flag",
+      "kind": "flag",
+      "value": "--segments"
+    },
+    {
+      "name": "activity_flag",
+      "kind": "flag",
+      "value": "--activity"
+    },
+    {
+      "name": "flush_flag",
+      "kind": "flag",
+      "value": "--flush"
+    },
+    {
+      "name": "refresh_flag",
+      "kind": "flag",
+      "value": "--refresh"
+    },
+    {
+      "name": "weekly_flag",
+      "kind": "flag",
+      "value": "--weekly"
+    },
+    {
+      "name": "cadence_flag",
+      "kind": "flag",
+      "value": "--cadence"
+    }
+  ]
+}

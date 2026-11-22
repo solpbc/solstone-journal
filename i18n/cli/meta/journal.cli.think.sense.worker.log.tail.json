@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sense worker log tail.",
+  "context": "Journal command-line text for sense worker log tail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "log",
+      "type": "string"
+    },
+    {
+      "name": "tail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fb42629f9cae1f3ef2d2a850b70ea7bd095bf5ab100a8670771a8610f9a141a6",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

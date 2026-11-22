@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for activity read blocked.",
+  "context": "Journal command-line text for activity read blocked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e1e008cabc8385376f026858c014987a864634bf3c957b7db2bc56a13d2ea9f4",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reactivate_flag",
+      "kind": "flag",
+      "value": "--reactivate"
+    }
+  ]
+}

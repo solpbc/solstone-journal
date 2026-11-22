@@ -1,0 +1,54 @@
+{
+  "description": "Journal command-line text for plan step speaker attribution.",
+  "context": "Journal command-line text for plan step speaker attribution.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "presence",
+      "type": "string"
+    },
+    {
+      "name": "step",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "format",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "e7fa1b4f8da87d1657c61e08e9c07a53edbb15f5d9a4e54f22709ce496a04bcb",
+  "max_length": 489,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "recommend_speaker_attribution",
+      "kind": "accepted-input",
+      "value": "recommend.speaker_attribution"
+    }
+  ],
+  "selector": {
+    "name": "presence",
+    "type": "string",
+    "enum_values": [
+      "existing",
+      "new",
+      "plain"
+    ],
+    "enum_default": "plain"
+  }
+}

@@ -23,7 +23,8 @@ use solstone_core_format::audio_archive::{
     AUDIO_ARCHIVE_PLACEMENT_FILENAME, AudioArchivePlacement,
 };
 use solstone_core_format::content::{
-    Family, RawPerceptFamily, produce_chunks, produce_raw_percept_chunks, talent_projection_map,
+    Family, RawPerceptFamily, iter_talent_text_projections, produce_chunks,
+    produce_raw_percept_chunks,
 };
 use solstone_core_format::content::{
     FileFacts, FileFormat, FormatterView, SegmentReader, format_file, segment_file_offers,
@@ -595,22 +596,74 @@ fn prepare_segment_localized(
         data_state.insert("browser".into(), DataState::Analyzed.as_str().into());
     }
     screenshot_entry(&mut chunks, &mut media, &context, &files, &data_state);
-    let mut md_files = talent_projection_map(&dir.join("talents"), "").unwrap_or_default();
+    let talents_dir = dir.join("talents");
+    let mut sense_display = None;
+    let mut md_files: std::collections::BTreeMap<_, _> =
+        iter_talent_text_projections(&talents_dir, "", None)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|entry| {
+                if entry.key == "sense"
+                    && entry.source_suffix == ".json"
+                    && let Some((full, owner)) =
+                        solstone_core_format::stored_markdown::project_sense_record(
+                            root,
+                            &talents_dir.join(&entry.relative_path),
+                            &entry.text,
+                            locale,
+                        )
+                {
+                    sense_display = owner;
+                    return (entry.key, full);
+                }
+                if entry.key == "sense" {
+                    if entry.source_suffix == ".md" {
+                        sense_display = solstone_core_format::stored_markdown::project_sense_file(
+                            root,
+                            &talents_dir.join(&entry.relative_path),
+                            &entry.text,
+                            locale,
+                        );
+                    }
+                    if sense_display.is_none() {
+                        sense_display = solstone_core_format::content::owner_sense_text(&entry.text)
+                    }
+                }
+                let screen = entry.key == "screen_text";
+                let projected = if entry.source_suffix == ".md"
+                    && matches!(
+                        entry.key.as_str(),
+                        "objects" | "topics" | "activity" | "screen_text" | "sense"
+                    ) {
+                    solstone_core_format::stored_markdown::project_file(
+                        root,
+                        &talents_dir.join(&entry.relative_path),
+                        &entry.text,
+                        locale,
+                        screen.then_some(key),
+                    )
+                } else {
+                    None
+                };
+                let text = match projected {
+                    Some(text) => text,
+                    None if screen => {
+                        solstone_core_format::content::screen_text::screen_text_with_clock(
+                            &entry.text,
+                            key,
+                        )
+                        .into_owned()
+                    }
+                    None => entry.text,
+                };
+                (entry.key, text)
+            })
+            .collect();
     if data_state.contains_key("audio") {
         md_files.remove("audio");
     }
     if data_state.contains_key("screen") {
         md_files.remove("screen");
-    }
-    let sense_display = md_files
-        .get("sense")
-        .and_then(|text| solstone_core_format::content::owner_sense_text(text));
-    // Screen text names the clock time each group was seen, not its offset.
-    if let Some(text) = md_files.get_mut("screen_text") {
-        let clocked = solstone_core_format::content::screen_text::screen_text_with_clock(text, key);
-        if let std::borrow::Cow::Owned(clocked) = clocked {
-            *text = clocked;
-        }
     }
     let reason_code = extract_modality_reason_codes(&records);
     let mut payload = json!({

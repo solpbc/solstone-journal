@@ -33,12 +33,49 @@ pub enum SegmentReadiness {
     Owed,
 }
 
+#[derive(Debug)]
+pub enum ReadinessError {
+    Health(crate::HealthError),
+    Retry(solstone_core_system::work_retry::ReadFailure),
+    UnreadableProgress,
+    Source(String),
+}
+impl From<String> for ReadinessError {
+    fn from(detail: String) -> Self {
+        Self::Source(detail)
+    }
+}
+impl ReadinessError {
+    pub fn render(&self, locale: &str) -> String {
+        match self {
+            Self::Health(error) => error.render(locale),
+            Self::Retry(error) => error.render(locale),
+            Self::UnreadableProgress => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.think.health.progress.unreadable",
+                &[],
+            ),
+            Self::Source(detail) => detail.clone(),
+        }
+    }
+}
+
 pub fn segment_readiness(
     journal: &Path,
     day: &str,
     segment: &DaySegment,
     progress: &BTreeMap<SegmentIdentity, SegmentProgress>,
 ) -> Result<SegmentReadiness, String> {
+    segment_readiness_typed(journal, day, segment, progress)
+        .map_err(|e| e.render(solstone_core_cli_copy::ENGLISH))
+}
+
+fn segment_readiness_typed(
+    journal: &Path,
+    day: &str,
+    segment: &DaySegment,
+    progress: &BTreeMap<SegmentIdentity, SegmentProgress>,
+) -> Result<SegmentReadiness, ReadinessError> {
     if segment.stream == "mcp.agent" {
         return Ok(SegmentReadiness::Ready);
     }
@@ -46,7 +83,7 @@ pub fn segment_readiness(
         return Ok(SegmentReadiness::Ready);
     }
     let directory = directory(journal, day, segment);
-    let newest = crate::newest_segment_input_ms(&directory).map_err(|error| error.to_string())?;
+    let newest = crate::newest_segment_input_ms(&directory).map_err(ReadinessError::Health)?;
     if !crate::segment_fully_sensed(&segment.data_state)
         || !crate::segment_thinking_is_current(
             crate::lookup_segment_progress(progress, &segment.stream, &segment.key),
@@ -98,6 +135,16 @@ pub fn segment_thinking_set_aside(
     segment: &DaySegment,
     progress: &BTreeMap<SegmentIdentity, SegmentProgress>,
 ) -> Result<bool, String> {
+    segment_thinking_set_aside_typed(journal, day, segment, progress)
+        .map_err(|e| e.render(solstone_core_cli_copy::ENGLISH))
+}
+
+fn segment_thinking_set_aside_typed(
+    journal: &Path,
+    day: &str,
+    segment: &DaySegment,
+    progress: &BTreeMap<SegmentIdentity, SegmentProgress>,
+) -> Result<bool, ReadinessError> {
     use solstone_core_system::work_retry::{self, Unit};
     if !crate::segment_fully_sensed(&segment.data_state) {
         return Ok(false);
@@ -112,7 +159,7 @@ pub fn segment_thinking_set_aside(
         return Ok(false);
     }
     let newest = crate::newest_segment_input_ms(&directory(journal, day, segment))
-        .map_err(|error| error.to_string())?;
+        .map_err(ReadinessError::Health)?;
     let read_current = thought
         .and_then(|progress| progress.sense_input_ms)
         .is_some_and(|read| newest.is_none_or(|newest| newest < read));
@@ -131,7 +178,9 @@ pub fn segment_thinking_set_aside(
             talent: name,
             direct,
         };
-        let Some(record) = work_retry::read(journal, &unit.id()?)?.filter(|record| record.held)
+        let Some(record) = work_retry::read_typed(journal, &unit.id()?)
+            .map_err(ReadinessError::Retry)?
+            .filter(|record| record.held)
         else {
             return Ok(false);
         };
@@ -153,18 +202,26 @@ pub fn segment_thinking_set_aside(
 /// apart from a set-aside gap within `SET_ASIDE_CLOSE_SHARE`. Daily work
 /// publishes these itself rather than waiting for them.
 pub fn day_unpublished_segments(journal: &Path, day: &str) -> Result<Option<Vec<PathBuf>>, String> {
+    day_unpublished_segments_typed(journal, day)
+        .map_err(|e| e.render(solstone_core_cli_copy::ENGLISH))
+}
+
+pub fn day_unpublished_segments_typed(
+    journal: &Path,
+    day: &str,
+) -> Result<Option<Vec<PathBuf>>, ReadinessError> {
     let (_, _, segments) = crate::scan_day(
         &crate::FilesystemSegmentSource,
         journal,
         day,
         jiff::Timestamp::now(),
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(ReadinessError::Health)?;
     let progress =
         crate::read_segment_progress(&crate::FilesystemHealthLogSource::new(journal), day)
-            .map_err(|error| error.to_string())?;
+            .map_err(ReadinessError::Health)?;
     if progress.malformed_line_count != 0 {
-        return Err("segment progress contains unreadable records".into());
+        return Err(ReadinessError::UnreadableProgress);
     }
     let mut unpublished = Vec::new();
     let mut recorded_seconds = 0_u64;
@@ -176,11 +233,11 @@ pub fn day_unpublished_segments(journal: &Path, day: &str) -> Result<Option<Vec<
             segment_seconds(&segment.key)
         };
         recorded_seconds += seconds;
-        match segment_readiness(journal, day, &segment, &progress.value)? {
+        match segment_readiness_typed(journal, day, &segment, &progress.value)? {
             SegmentReadiness::Ready => {}
             SegmentReadiness::Unpublished => unpublished.push(directory(journal, day, &segment)),
             SegmentReadiness::Owed
-                if segment_thinking_set_aside(journal, day, &segment, &progress.value)? =>
+                if segment_thinking_set_aside_typed(journal, day, &segment, &progress.value)? =>
             {
                 set_aside_seconds += seconds;
             }
@@ -194,5 +251,9 @@ pub fn day_unpublished_segments(journal: &Path, day: &str) -> Result<Option<Vec<
 }
 
 pub fn day_segments_ready(journal: &Path, day: &str) -> Result<bool, String> {
-    Ok(day_unpublished_segments(journal, day)?.is_some_and(|unpublished| unpublished.is_empty()))
+    day_segments_ready_typed(journal, day).map_err(|e| e.render(solstone_core_cli_copy::ENGLISH))
+}
+pub fn day_segments_ready_typed(journal: &Path, day: &str) -> Result<bool, ReadinessError> {
+    Ok(day_unpublished_segments_typed(journal, day)?
+        .is_some_and(|unpublished| unpublished.is_empty()))
 }

@@ -14,13 +14,13 @@ use std::fs;
 use std::path::Path;
 
 use serde_json::Value;
-use solstone_core_format::content::screen_text::{
-    append_screen_text_line, safe_lines_with_state, screen_text_minute,
-};
+use solstone_core_format::content::screen_text::safe_lines_with_state;
+use solstone_core_format::stored_markdown::{Document, Message};
 
 /// Largest capture file read; a larger one leaves the segment as it is.
 const MAX_CAPTURE_BYTES: u64 = 32 * 1024 * 1024;
 
+#[cfg(test)]
 const PROVENANCE: &str = "text shown in your terminal. this says what was visible, not what you read, typed or did. masking passwords and other secrets is best effort; your redaction rules do not apply.\n";
 
 #[derive(Debug, PartialEq, Eq)]
@@ -30,7 +30,7 @@ pub(crate) enum TerminalScreenText {
     NotTerminal,
     /// The record a terminal-only segment should hold; `None` when its panes
     /// showed nothing.
-    Record(Option<String>),
+    Record(Option<Document>),
 }
 
 fn is_screen_capture(name: &str) -> bool {
@@ -91,13 +91,14 @@ pub(crate) fn segment_terminal_screen_text(segment_dir: &Path) -> TerminalScreen
     TerminalScreenText::Record(record_text(&shown))
 }
 
-fn record_text(shown: &[solstone_core_talent_runtime::ShownLines]) -> Option<String> {
-    let mut record = String::from(PROVENANCE);
+fn record_text(shown: &[solstone_core_talent_runtime::ShownLines]) -> Option<Document> {
+    let mut record = Document::default();
+    record.push_message(Message::TerminalNotice);
+    record.push_str("\n");
     let mut previous = None;
     let mut any = false;
     for item in shown {
-        let clock = screen_text_minute(item.offset_ms);
-        if clock.is_empty() {
+        if item.offset_ms < 0 {
             continue;
         }
         let mut redact_following = false;
@@ -111,11 +112,15 @@ fn record_text(shown: &[solstone_core_talent_runtime::ShownLines]) -> Option<Str
         }
         let group = (item.offset_ms / 1_000, item.pane);
         if previous != Some(group) {
-            record.push_str(&format!("\n## {clock} · terminal\n"));
+            record.push_str("\n## ");
+            record.push_message(Message::TerminalClock {
+                offset_ms: item.offset_ms,
+            });
+            record.push_str("\n");
             previous = Some(group);
         }
         for line in lines {
-            append_screen_text_line(&mut record, &line);
+            record.push_screen_line(&line);
         }
         any = true;
     }
@@ -126,6 +131,7 @@ fn record_text(shown: &[solstone_core_talent_runtime::ShownLines]) -> Option<Str
 mod tests {
     use super::*;
     use serde_json::json;
+    use solstone_core_format::content::screen_text::append_screen_text_line;
 
     fn frame(time: f64, session: &str, content: &str) -> String {
         json!({"timestamp": time, "content": {"tmux": {

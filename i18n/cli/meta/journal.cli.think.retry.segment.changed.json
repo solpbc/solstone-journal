@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry segment changed.",
+  "context": "Journal command-line text for retry segment changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ddd344946cbfd95fc002d395dbdbbcaadce14f4efc8a261a1f9ac1178a8387b",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

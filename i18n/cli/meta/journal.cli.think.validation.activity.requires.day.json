@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for validation activity requires day.",
+  "context": "Journal command-line text for validation activity requires day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d17405e4c814d79cd2e22f627e1ddd1aa7742c67bdd3f23506e671cc7982f511",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "activity_flag",
+      "kind": "flag",
+      "value": "--activity"
+    },
+    {
+      "name": "day_flag",
+      "kind": "flag",
+      "value": "--day"
+    }
+  ]
+}

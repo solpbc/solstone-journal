@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for daily inputs changed.",
+  "context": "Journal command-line text for daily inputs changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "41705e79e23cd6b2d6f2dbbf5244ea0df48a4abd399c37162e63d802ffb247fc",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

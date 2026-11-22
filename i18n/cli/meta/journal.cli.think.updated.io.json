@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for updated io.",
+  "context": "Journal command-line text for updated io.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "742c028479ee0158a3d20355f73c06f9c4fef80bb3fc4ced723ef200b540bf47",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

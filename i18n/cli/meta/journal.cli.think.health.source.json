@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for health source.",
+  "context": "Journal command-line text for health source.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b16649ee1514eb3f4e6017ab8604042fe4a0b973c9611a477d04e418bd6c6817",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for reprocess record.",
+  "context": "Journal command-line text for reprocess record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "75a0acfb0c01177bd75f617b4bceb3f63e9c1949daa735accea5dd05a03bedb8",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

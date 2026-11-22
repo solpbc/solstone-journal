@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense config read.",
+  "context": "Journal command-line text for sense config read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8cacdc589a0ef46be00aaf150bd948e1d1efb7b0d2973451f492eb66bf490b39",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

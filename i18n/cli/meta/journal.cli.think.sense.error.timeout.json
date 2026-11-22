@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense error timeout.",
+  "context": "Journal command-line text for sense error timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "duration",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2eab6cdf49aaaf596e875230d0165824f49af0ae5b3e84370e9f43c24adfdb28",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for markdown objects.",
+  "context": "Journal command-line text for markdown objects.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "09b9dd4f10b2ebb09697e9591ac1a6c7358cf4684cd2d0c7bd7a8622b389be0e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

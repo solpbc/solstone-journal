@@ -8,9 +8,7 @@ use solstone_core_cortex_client::{
 };
 use solstone_core_facets::get_activity_record;
 use solstone_core_journal_io::FileLock;
-use solstone_core_talent_config::{
-    TalentConfig, TalentFilter, get_output_name, load_talent_configs,
-};
+use solstone_core_talent_config::{TalentConfig, TalentFilter, get_output_name};
 use solstone_core_talent_runtime::activity_contract;
 
 use crate::context::{DispatchFailure, ThinkContext};
@@ -115,7 +113,13 @@ fn selected_work(
         return Ok(None);
     };
     let input_hash = crate::segment::compute_activity_input_hash(context, &context.day, record)
-        .ok_or_else(|| "cannot fingerprint activity inputs".to_owned())?;
+        .ok_or_else(|| {
+            solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.activity.fingerprint.failed",
+                &[],
+            )
+        })?;
     Ok(Some((configs, input_hash)))
 }
 
@@ -134,7 +138,8 @@ fn selected_configs(
         .get("activity")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let configs = load_talent_configs(
+    let configs = solstone_core_talent_config::load_talent_configs_in(
+        context.locale(),
         &context.talent_root,
         &context.apps_root,
         None,
@@ -243,6 +248,17 @@ pub(crate) fn run(
         max_concurrency,
         None,
     )
+    .map_err(|error| {
+        if error == crate::activity_work::STILL_RUNNING {
+            solstone_core_cli_copy::render_for(
+                context.locale(),
+                "journal.cli.think.activity.work.running",
+                &[],
+            )
+        } else {
+            error
+        }
+    })
 }
 
 /// [`run`] with the claim [`enqueue`] took for this activity, if any.
@@ -265,11 +281,12 @@ pub(crate) fn run_held(
         solstone_core_facets::adopt_moved_activity_rows(&context.journal, facet, &context.day)
             .unwrap_or(0);
     let record = get_activity_record(&context.journal, facet, &context.day, activity_id)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| record_detail(context.locale(), &error))?;
     let Some(record) = record else {
-        let message = "no activity record exists for this classification. after correcting the declaration, reprocess the source segment.";
+        let message = ActivityAction::RecordMissing;
         if let Some(mut work) = ActivityWork::open_existing(context, facet, activity_id)? {
-            let configs = load_talent_configs(
+            let configs = solstone_core_talent_config::load_talent_configs_in(
+                context.locale(),
                 &context.talent_root,
                 &context.apps_root,
                 None,
@@ -296,7 +313,7 @@ pub(crate) fn run_held(
             );
         }
         log_disposition(context, log, activity_id, facet, "projection_only", message);
-        return Ok(failed(message));
+        return Ok(message.failure(context));
     };
     if crate::activity_work::is_body_data_activity(&record) {
         return settle_body_data(context, log, activity_id, facet, held);
@@ -335,7 +352,7 @@ fn settle_body_data(
     if let Some(work) = ActivityWork::open_existing(context, facet, activity_id)? {
         work.settle(context)?;
     }
-    let message = "this activity comes from a Strava workout, which is body data; nothing further runs on it.";
+    let message = ActivityAction::BodyData;
     log_disposition(
         context,
         log,
@@ -345,7 +362,11 @@ fn settle_body_data(
         message,
     );
     Ok(ModeResult {
-        success_names: vec![format!("{facet}/{activity_id} settled: {message}")],
+        success_names: vec![solstone_core_cli_copy::display_for(
+            context.locale(),
+            "journal.cli.think.activity.settled",
+            [("facet", &(facet)), ("activity", &(activity_id))],
+        )],
         ..ModeResult::default()
     })
 }
@@ -396,7 +417,7 @@ fn run_selected(
             activity_id,
             facet,
             "owner_field_held",
-            "activity output is held by owner",
+            ActivityAction::OwnerFieldHeld,
         );
     }
 
@@ -419,7 +440,7 @@ fn run_selected(
                 activity_id,
                 facet,
                 "destination_missing",
-                "the destination facet is missing. after restoring its declaration, retry with --reactivate; otherwise reclassify the source segment.",
+                ActivityAction::Missing,
             );
         }
         DestinationObservation::Malformed(_) | DestinationObservation::InvalidId { .. } => {
@@ -430,7 +451,7 @@ fn run_selected(
                 activity_id,
                 facet,
                 "declaration_malformed",
-                "the facet declaration is malformed. correct it, then retry with --reactivate.",
+                ActivityAction::Malformed,
             );
         }
         DestinationObservation::Unreadable(_) => {
@@ -441,9 +462,9 @@ fn run_selected(
                 work.start_attempt(context.event_now_ms())?;
             }
             let message = if work.is_blocked() {
-                "the facet declaration could not be read. after restoring access, retry the blocked activity with --reactivate."
+                ActivityAction::ReadBlocked
             } else {
-                "the facet declaration could not be read. the unfinished activity will retry automatically."
+                ActivityAction::ReadRetry
             };
             log_disposition(
                 context,
@@ -453,7 +474,7 @@ fn run_selected(
                 "declaration_unreadable",
                 message,
             );
-            return Ok(failed(message));
+            return Ok(message.failure(context));
         }
         DestinationObservation::LegacyWithoutId { muted } => {
             if stored_id.is_some() {
@@ -464,7 +485,7 @@ fn run_selected(
                     activity_id,
                     facet,
                     "destination_replaced",
-                    "the destination facet was replaced. reclassify the source segment; an old result cannot be applied to the replacement.",
+                    ActivityAction::Replaced,
                 );
             }
             let id = solstone_core_facets::admit_activity_destination(&context.journal, facet)
@@ -481,7 +502,7 @@ fn run_selected(
             activity_id,
             facet,
             "destination_replaced",
-            "the destination facet was replaced. reclassify the source segment; an old result cannot be applied to the replacement.",
+            ActivityAction::Replaced,
         );
     }
     if work.destination_id().is_none() {
@@ -490,9 +511,9 @@ fn run_selected(
     if is_muted {
         work.set_muted_pause(true)?;
         let message = if work.is_blocked() {
-            "the destination facet is muted. unmute it, then retry the blocked activity with --reactivate."
+            ActivityAction::MutedBlocked
         } else {
-            "the destination facet is muted. unmute it to resume unfinished activity processing."
+            ActivityAction::MutedRetry
         };
         log_disposition(
             context,
@@ -502,7 +523,7 @@ fn run_selected(
             "destination_muted",
             message,
         );
-        return Ok(failed(message));
+        return Ok(message.failure(context));
     }
     // An earlier version blocked this work because the row still named the
     // facet merged into this one. The row now names this facet, so that
@@ -518,16 +539,15 @@ fn run_selected(
             work.set_muted_pause(false)?;
         }
         if work.is_blocked() {
-            return Ok(failed(
-                work.blocked_disposition()
-                    .map(|d| d.message.as_str())
-                    .unwrap_or("activity blocked"),
-            ));
+            return Ok(match work.blocked_disposition() {
+                Some(blocked) => failed(blocked.failure(context.terminal_locale)),
+                None => ActivityAction::Blocked.failure(context),
+            });
         }
     }
 
     if context.retry.is_none() && !work.due(context.event_now_ms()) {
-        return Ok(failed("activity retry pending"));
+        return Ok(ActivityAction::Pending.failure(context));
     }
     work.start_attempt(context.event_now_ms())?;
     let refresh = refresh || work.refreshes();
@@ -574,9 +594,13 @@ fn run_selected(
                 solstone_core_system::work_retry::Unit::Activity { talent, .. } if talent == &config.key)) { continue; }
             if work.parked(&config.key) && context.retry.is_none() {
                 group.failed += 1;
-                group
-                    .failed_names
-                    .push(format!("{} (requires repair)", config.key));
+                group.failed_names.push(
+                    crate::dispatch::RunFailure::message(
+                        context.terminal_locale,
+                        "journal.cli.think.activity.repair.required",
+                    )
+                    .named(&config.key),
+                );
                 continue;
             }
             // Reattach an accepted use after a caller crash or lost wait; never
@@ -626,7 +650,7 @@ fn run_selected(
                     group.failed += 1;
                     group
                         .failed_names
-                        .push(format!("{} (request_lost)", config.key));
+                        .push(format!("{} (request_lost)", config.key).into());
                     log_fail(
                         log,
                         context,
@@ -640,7 +664,9 @@ fn run_selected(
                 }
                 Err(DispatchFailure::Unavailable) => {
                     group.failed += 1;
-                    group.failed_names.push(format!("{} (send)", config.key));
+                    group
+                        .failed_names
+                        .push(format!("{} (send)", config.key).into());
                     log_fail(
                         log,
                         context,
@@ -763,13 +789,122 @@ fn reconcile_finished(
     Ok(result)
 }
 
+#[derive(Clone, Copy)]
+enum ActivityAction {
+    RecordMissing,
+    BodyData,
+    OwnerFieldHeld,
+    Missing,
+    Malformed,
+    Replaced,
+    ReadBlocked,
+    ReadRetry,
+    MutedBlocked,
+    MutedRetry,
+    Blocked,
+    Pending,
+}
+
+impl ActivityAction {
+    fn id(self) -> &'static str {
+        match self {
+            Self::RecordMissing => "journal.cli.think.activity.record.missing",
+            Self::BodyData => "journal.cli.think.activity.body.data",
+            Self::OwnerFieldHeld => "journal.cli.think.activity.owner.field.held",
+            Self::Missing => "journal.cli.think.activity.missing",
+            Self::Malformed => "journal.cli.think.activity.malformed",
+            Self::Replaced => "journal.cli.think.activity.replaced",
+            Self::ReadBlocked => "journal.cli.think.activity.read.blocked",
+            Self::ReadRetry => "journal.cli.think.activity.read.retry",
+            Self::MutedBlocked => "journal.cli.think.activity.muted.blocked",
+            Self::MutedRetry => "journal.cli.think.activity.muted.retry",
+            Self::Blocked => "journal.cli.think.activity.blocked",
+            Self::Pending => "journal.cli.think.activity.pending",
+        }
+    }
+
+    fn from_id(value: &str) -> Option<Self> {
+        [
+            Self::RecordMissing,
+            Self::BodyData,
+            Self::OwnerFieldHeld,
+            Self::Missing,
+            Self::Malformed,
+            Self::Replaced,
+            Self::ReadBlocked,
+            Self::ReadRetry,
+            Self::MutedBlocked,
+            Self::MutedRetry,
+            Self::Blocked,
+            Self::Pending,
+        ]
+        .into_iter()
+        .find(|action| action.id() == value)
+    }
+
+    fn text(self, locale: &str) -> String {
+        solstone_core_cli_copy::render_for(locale, self.id(), &[])
+    }
+
+    fn failure(self, context: &ThinkContext) -> ModeResult {
+        failed(crate::dispatch::RunFailure::projected(
+            self.text(solstone_core_cli_copy::ENGLISH),
+            context.terminal_locale.map(|locale| self.text(locale)),
+        ))
+    }
+}
+
+pub(crate) fn record_detail(
+    locale: &str,
+    error: &solstone_core_facets::ActivityRecordStoreError,
+) -> String {
+    use solstone_core_facets::ActivityRecordStoreError as E;
+    use solstone_core_journal_io::cli_diagnostics::{lock_detail, path_detail, read_detail};
+    match error {
+        E::MissingDayFile { path } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.think.activity.day.missing",
+            [("path", &(path.display()))],
+        ),
+        E::MissingRecord {
+            facet,
+            day,
+            record_id,
+        } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.think.activity.row.missing",
+            [("path", &(format!("{facet}/{day}/{record_id}")))],
+        ),
+        E::Path(error) => path_detail(locale, error),
+        E::Read(error) => read_detail(locale, error),
+        E::Lock(error) => lock_detail(locale, error),
+        E::Facet(error) => solstone_core_talent_cli::preview::facet_detail(locale, error),
+        _ => error.to_string(),
+    }
+}
+
+impl crate::activity_work::BlockedDisposition {
+    pub(crate) fn failure(&self, locale: Option<&str>) -> crate::dispatch::RunFailure {
+        let terminal = locale
+            .filter(|locale| *locale != solstone_core_cli_copy::ENGLISH)
+            .and_then(|locale| {
+                self.message_key
+                    .as_deref()
+                    .and_then(ActivityAction::from_id)
+                    .filter(|action| action.text(solstone_core_cli_copy::ENGLISH) == self.message)
+                    .map(|action| action.text(locale))
+            });
+        crate::dispatch::RunFailure::projected(self.message.clone(), terminal)
+    }
+}
+
 fn log_disposition(
     context: &ThinkContext,
     log: &mut RunLogWriter,
     activity: &str,
     facet: &str,
     reason: &str,
-    message: &str,
+    message: ActivityAction,
 ) {
     log.log(
         "activity.destination",
@@ -780,7 +915,10 @@ fn log_disposition(
             facet,
             Map::from_iter([
                 ("reason_code".to_owned(), Value::String(reason.to_owned())),
-                ("next_action".to_owned(), Value::String(message.to_owned())),
+                (
+                    "next_action".to_owned(),
+                    Value::String(message.text(solstone_core_cli_copy::ENGLISH)),
+                ),
             ]),
         ),
     );
@@ -793,12 +931,16 @@ fn block_destination(
     activity: &str,
     facet: &str,
     reason: &str,
-    message: &str,
+    message: ActivityAction,
 ) -> Result<ModeResult, String> {
-    work.block(reason, message)?;
+    work.block(
+        reason,
+        &message.text(solstone_core_cli_copy::ENGLISH),
+        Some(message.id()),
+    )?;
     log_disposition(context, log, activity, facet, reason, message);
     log.finish()?;
-    Ok(failed(message))
+    Ok(message.failure(context))
 }
 
 #[allow(
@@ -1106,10 +1248,10 @@ fn log_fail(
 fn merge(into: &mut ModeResult, from: ModeResult) {
     merge_mode_result(into, from);
 }
-fn failed(name: &str) -> ModeResult {
+fn failed(name: crate::dispatch::RunFailure) -> ModeResult {
     ModeResult {
         failed: 1,
-        failed_names: vec![name.to_owned()],
+        failed_names: vec![name],
         ..ModeResult::default()
     }
 }

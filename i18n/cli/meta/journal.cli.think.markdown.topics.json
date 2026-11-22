@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for markdown topics.",
+  "context": "Journal command-line text for markdown topics.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c0f509f35593548ed2e7d23fabe86901e8fecf3e8f6768ddfff760d33901e8aa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

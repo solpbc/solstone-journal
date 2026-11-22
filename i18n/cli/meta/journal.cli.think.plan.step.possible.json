@@ -1,0 +1,47 @@
+{
+  "description": "Journal command-line text for plan step possible.",
+  "context": "Journal command-line text for plan step possible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "presence",
+      "type": "string"
+    },
+    {
+      "name": "step",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "format",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "2cf317865d163108fd4e2f88785f20abb1851473fcff3da29a83a3c2007aa6e7",
+  "max_length": 393,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "presence",
+    "type": "string",
+    "enum_values": [
+      "existing",
+      "new",
+      "plain"
+    ],
+    "enum_default": "plain"
+  }
+}

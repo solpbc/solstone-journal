@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Map, Value};
-use solstone_core_talent_config::{TalentConfig, TalentFilter, load_talent_configs};
+use solstone_core_talent_config::{TalentConfig, TalentFilter};
 
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
@@ -26,7 +26,8 @@ pub(crate) fn run(
         log_skip(log, context, "weekly", "no_thinking_engine", None);
         return Ok(ModeResult::default());
     }
-    let configs = load_talent_configs(
+    let configs = solstone_core_talent_config::load_talent_configs_in(
+        context.locale(),
         &context.talent_root,
         &context.apps_root,
         None,
@@ -203,11 +204,13 @@ fn queue(
             result.failed += 1;
             result
                 .failed_names
-                .push(label(&config.key, facet, "request_lost"));
+                .push(label(&config.key, facet, "request_lost").into());
         }
         Err(DispatchFailure::Unavailable) => {
             result.failed += 1;
-            result.failed_names.push(label(&config.key, facet, "send"));
+            result
+                .failed_names
+                .push(label(&config.key, facet, "send").into());
         }
     }
 }

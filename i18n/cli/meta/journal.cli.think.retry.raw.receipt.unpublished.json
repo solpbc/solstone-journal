@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry raw receipt unpublished.",
+  "context": "Journal command-line text for retry raw receipt unpublished.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "67fbd5c3cd4087d2854aa5b17ba333f879a469cf25b571ec269e2c2358476056",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

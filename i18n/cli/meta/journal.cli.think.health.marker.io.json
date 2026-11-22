@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for health marker io.",
+  "context": "Journal command-line text for health marker io.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3cd3d469737292510dc8b5f9635de0652b2a235c791a232112413d263cced7df",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

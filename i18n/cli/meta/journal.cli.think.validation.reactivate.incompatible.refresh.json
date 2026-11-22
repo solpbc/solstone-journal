@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for validation reactivate incompatible refresh.",
+  "context": "Journal command-line text for validation reactivate incompatible refresh.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9eea8973fd7dff3257bbf56eece3ce722af7fb0e7e92bf38b1b4a9b1ef14a7a5",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reactivate_flag",
+      "kind": "flag",
+      "value": "--reactivate"
+    },
+    {
+      "name": "refresh_flag",
+      "kind": "flag",
+      "value": "--refresh"
+    }
+  ]
+}

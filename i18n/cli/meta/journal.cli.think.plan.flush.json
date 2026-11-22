@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for plan flush.",
+  "context": "Journal command-line text for plan flush.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f2d160f5efe3a0730b4f057165ed1c1b751e73fcba233c7509f2a50f96533d38",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flush_flag",
+      "kind": "flag",
+      "value": "--flush"
+    }
+  ]
+}

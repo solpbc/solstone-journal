@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for log budget.",
+  "context": "Journal command-line text for log budget.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e4c4cc605e59200dd13d51867b7889b5c5174b34ff7d5ac00cfeac7a7b0e589a",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

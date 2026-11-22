@@ -59,7 +59,7 @@ pub fn display_for<const N: usize>(
 }
 
 /// Keep diagnostic facts available when a probe result outlives its caller.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
     id: &'static str,
     values: Vec<(&'static str, String)>,

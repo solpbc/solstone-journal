@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for validation daily only.",
+  "context": "Journal command-line text for validation daily only.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f93998046e9b60b8fb23a9ab899b6dabe6be097bc3155f699ee6b35f2d4e13ec",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "daily_only_flag",
+      "kind": "flag",
+      "value": "--daily-only"
+    },
+    {
+      "name": "day_flag",
+      "kind": "flag",
+      "value": "--day"
+    }
+  ]
+}

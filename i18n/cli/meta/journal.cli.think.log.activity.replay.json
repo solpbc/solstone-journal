@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for log activity replay.",
+  "context": "Journal command-line text for log activity replay.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8459e7fb72f691776b71a55e460cbe64aebf9e4b345dff39d72e2f27b8de6d02",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "think"
+    }
+  ]
+}

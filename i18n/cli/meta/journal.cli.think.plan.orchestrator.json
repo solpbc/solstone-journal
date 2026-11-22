@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for plan orchestrator.",
+  "context": "Journal command-line text for plan orchestrator.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e08c337a8d78cb64c003179942551841238f529efbcfcb08f0f127f20852edc9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

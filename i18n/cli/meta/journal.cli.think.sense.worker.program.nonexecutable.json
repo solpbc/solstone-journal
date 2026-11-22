@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sense worker program nonexecutable.",
+  "context": "Journal command-line text for sense worker program nonexecutable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7920b0bbb7eab517abd0b52eb2f2861011b1c5fbe7ac12e9091f7786106ac199",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

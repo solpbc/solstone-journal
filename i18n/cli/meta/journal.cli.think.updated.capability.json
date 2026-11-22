@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for updated capability.",
+  "context": "Journal command-line text for updated capability.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c5e8f106e173470f6aead2583a0c2e56480f138c0345a108f4bfc9f4314a323",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for plan total record.",
+  "context": "Journal command-line text for plan total record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8932000c74b6a0513f4f86a8e97b43966eca04acdabcc93369f8833da980d672",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

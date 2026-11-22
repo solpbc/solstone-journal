@@ -1,0 +1,30 @@
+{
+  "description": "Journal command-line text for plan reprocess.",
+  "context": "Journal command-line text for plan reprocess.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "def5a2068b3f812efab51dacec5f422e5dbdc779dd3502da535a8b0bdc3f2e85",
+  "max_length": 163,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "count",
+    "type": "cardinal"
+  }
+}

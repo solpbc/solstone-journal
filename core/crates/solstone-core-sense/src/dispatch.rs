@@ -10,6 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{Map, Value, json};
+use solstone_core_cli_copy::{Diagnostic, ENGLISH};
 use solstone_core_journal_config::work_priority::{WORK_PRIORITY_ENV, WorkBand, WorkPriority};
 use solstone_core_system::lifecycle::HostedServiceParentRuntime;
 use solstone_core_system::process::{
@@ -20,11 +21,10 @@ use solstone_core_system::process::{
 
 use crate::beacon::Health;
 use crate::config::{
-    HANDLERS, no_thinking_engine, processing_deferred, read_config, resolve_concurrency,
-    resolve_max_runtime,
+    HANDLERS, no_thinking_engine, processing_deferred, read_config_in, resolve_concurrency_in,
+    resolve_max_runtime_in,
 };
 use crate::events;
-use crate::log;
 use crate::memory::{Admission, SystemMemoryProbe};
 use crate::registry::{
     DispatcherResolveError, HandlerSpec, command_for, default_registry, match_handler,
@@ -88,6 +88,7 @@ struct Job {
     priority: WorkPriority,
 }
 struct State {
+    locale: &'static str,
     segments: HashMap<SegmentKey, SegmentState>,
     pending_files: HashSet<(String, PathBuf)>,
     health: Health,
@@ -121,6 +122,7 @@ pub enum BatchMarkerPolicy {
 /// Batch-only settings shared by dispatcher construction and native children.
 #[derive(Clone, Default)]
 struct BatchContext {
+    terminal_locale: Option<&'static str>,
     describe_workers: Option<usize>,
     child_environment: solstone_core_system::process::ChildLaunchContext,
     marker_policy: BatchMarkerPolicy,
@@ -358,7 +360,9 @@ impl SenseDispatcher {
 
     /// Construct a batch dispatcher whose native children receive scoped
     /// process environment supplied by the batch owner.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new_batch_with_environment(
+        terminal_locale: Option<&str>,
         journal: PathBuf,
         verbose: bool,
         debug: bool,
@@ -373,6 +377,8 @@ impl SenseDispatcher {
             debug,
             outbound,
             BatchContext {
+                terminal_locale: terminal_locale
+                    .map(|value| solstone_core_window_catalog::packaged_locale(Some(value))),
                 describe_workers: Some(describe_workers),
                 child_environment,
                 marker_policy,
@@ -400,6 +406,7 @@ impl SenseDispatcher {
             Admission::new(Arc::new(SystemMemoryProbe)),
             resolve_program_from_current_exe(),
             BatchContext {
+                terminal_locale: None,
                 describe_workers: Some(describe_workers),
                 child_environment,
                 marker_policy,
@@ -426,6 +433,7 @@ impl SenseDispatcher {
             debug,
             outbound,
             BatchContext {
+                terminal_locale: None,
                 describe_workers: Some(describe_workers),
                 child_environment: solstone_core_system::process::ChildLaunchContext::default(),
                 marker_policy,
@@ -468,6 +476,7 @@ impl SenseDispatcher {
         executor: Option<Arc<dyn SenseExecutor>>,
     ) -> Self {
         let state = Arc::new(Mutex::new(State {
+            locale: batch.terminal_locale.unwrap_or(ENGLISH),
             segments: HashMap::new(),
             pending_files: HashSet::new(),
             health: Health::default(),
@@ -479,13 +488,14 @@ impl SenseDispatcher {
         let cleanups = Arc::new(Mutex::new(Vec::new()));
         let mut queues = HashMap::new();
         let mut worker_handles = Vec::new();
+        let locale = batch.terminal_locale.unwrap_or(ENGLISH);
         for handler in HANDLERS {
             let workers = if handler == "describe" {
-                batch
-                    .describe_workers
-                    .unwrap_or_else(|| resolve_concurrency(&read_config(&journal), handler))
+                batch.describe_workers.unwrap_or_else(|| {
+                    resolve_concurrency_in(locale, &read_config_in(locale, &journal), handler)
+                })
             } else {
-                resolve_concurrency(&read_config(&journal), handler)
+                resolve_concurrency_in(locale, &read_config_in(locale, &journal), handler)
             };
             let queue = Arc::new(Mutex::new(HandlerQueue::new(workers)));
             queues.insert(handler, Arc::clone(&queue));
@@ -680,7 +690,8 @@ impl SenseDispatcher {
     /// again from [`Self::retry_lease_deferred`] once a deferred admission
     /// finally acquires it.
     fn admit_after_lease(&self, context: SegmentContext, paths: Vec<PathBuf>) {
-        let config = read_config(&self.journal);
+        let locale = self.batch.terminal_locale.unwrap_or(ENGLISH);
+        let config = read_config_in(locale, &self.journal);
         let deferred = !context.batch && processing_deferred(&config);
         // With no thinking engine chosen, a live segment still gets the work
         // that needs none (transcription); describe and depict ask the engine
@@ -690,7 +701,7 @@ impl SenseDispatcher {
         let describe_workers = self
             .batch
             .describe_workers
-            .unwrap_or_else(|| resolve_concurrency(&config, "describe"));
+            .unwrap_or_else(|| resolve_concurrency_in(locale, &config, "describe"));
         let registry = default_registry(crate::config::describe_per_proc_jobs(
             &config,
             describe_workers,
@@ -753,7 +764,13 @@ impl SenseDispatcher {
                         &self.journal,
                         &context.key,
                         Some(&path),
-                        Some(error),
+                        Some(
+                            Diagnostic::new(
+                                "journal.cli.think.sense.priority.encoding",
+                                [("variable", &(WORK_PRIORITY_ENV))],
+                            )
+                            .into(),
+                        ),
                         None,
                         self.batch.marker_policy,
                     );
@@ -780,7 +797,7 @@ impl SenseDispatcher {
                         &self.journal,
                         &context.key,
                         Some(&path),
-                        Some(error),
+                        Some(Diagnostic::new("journal.cli.think.priority.syntax", []).into()),
                         None,
                         self.batch.marker_policy,
                     );
@@ -806,19 +823,22 @@ impl SenseDispatcher {
             };
             if !queued {
                 self.tally.failure();
-                let reason = format!("{handler} pool unavailable");
+                let reason = Diagnostic::new(
+                    "journal.cli.think.sense.worker.pool",
+                    [("handler", &(handler))],
+                );
                 self.state
                     .lock()
                     .expect("sense state")
                     .health
-                    .failure(&reason);
+                    .failure(&reason.render(ENGLISH));
                 complete(
                     &self.state,
                     &self.outbound,
                     &self.journal,
                     &context.key,
                     Some(&path),
-                    Some(reason),
+                    Some(reason.into()),
                     None,
                     self.batch.marker_policy,
                 );
@@ -1031,9 +1051,13 @@ impl SenseDispatcher {
                         }
                     },
                 ) {
-                    log::warn!(
-                        "failed to record observe.interrupted event to {}: {error}",
-                        dir.display()
+                    eprintln!(
+                        "{}",
+                        solstone_core_cli_copy::display_for(
+                            self.batch.terminal_locale.unwrap_or(ENGLISH),
+                            "journal.cli.think.sense.interrupted.write",
+                            [("path", &dir.display()), ("error", &error)]
+                        )
                     );
                 }
             }
@@ -1263,6 +1287,7 @@ fn run_job(
     worker_context: &WorkerContext,
     scope: Option<&dyn SenseWorkerScope>,
 ) {
+    let locale = worker_context.batch.terminal_locale.unwrap_or(ENGLISH);
     let admission_stopping = || {
         let state = state.lock().expect("sense state");
         state.stopping
@@ -1356,14 +1381,17 @@ fn run_job(
                         .failure(&format!("{} exit {code}", job.item.handler));
                 }
                 worker_context.tally.failure();
-                let outcome = format!("{} exit {code}", job.item.handler);
+                let outcome = Diagnostic::new(
+                    "journal.cli.think.sense.worker.exit",
+                    [("handler", &(job.item.handler)), ("code", &(code))],
+                );
                 complete_checked(
                     state,
                     outbound,
                     &worker_context.journal,
                     &key,
                     Some(&file),
-                    Some(outcome),
+                    Some(outcome.into()),
                     None,
                     worker_context.batch.marker_policy,
                     &|| executor.cancelled(),
@@ -1407,7 +1435,36 @@ fn run_job(
                 &worker_context.journal,
                 &key,
                 Some(&file),
-                Some(format!("{} {error}", job.item.handler)),
+                Some(
+                    match error {
+                        DispatcherResolveError::Missing { path } => Diagnostic::new(
+                            "journal.cli.think.sense.worker.program.missing",
+                            [
+                                ("handler", &(job.item.handler)),
+                                ("path", &(path.display())),
+                            ],
+                        ),
+                        DispatcherResolveError::NonRegular { path } => Diagnostic::new(
+                            "journal.cli.think.sense.worker.program.nonregular",
+                            [
+                                ("handler", &(job.item.handler)),
+                                ("path", &(path.display())),
+                            ],
+                        ),
+                        DispatcherResolveError::NonExecutable { path } => Diagnostic::new(
+                            "journal.cli.think.sense.worker.program.nonexecutable",
+                            [
+                                ("handler", &(job.item.handler)),
+                                ("path", &(path.display())),
+                            ],
+                        ),
+                        DispatcherResolveError::CurrentExe { message } => Diagnostic::new(
+                            "journal.cli.think.sense.worker.program.executable",
+                            [("handler", &(job.item.handler)), ("error", &(message))],
+                        ),
+                    }
+                    .into(),
+                ),
                 None,
                 worker_context.batch.marker_policy,
             );
@@ -1526,7 +1583,14 @@ fn run_job(
     let authority = match launched {
         Ok(authority) => authority,
         Err(error) => {
-            log::warn!("sense: {} launch failed: {error}", job.item.handler);
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.sense.worker.launch.failed",
+                    [("handler", &job.item.handler), ("error", &error)]
+                )
+            );
             worker_context.tally.failure();
             complete(
                 state,
@@ -1534,7 +1598,13 @@ fn run_job(
                 &worker_context.journal,
                 &key,
                 Some(&file),
-                Some(format!("{} spawn failed", job.item.handler)),
+                Some(
+                    Diagnostic::new(
+                        "journal.cli.think.sense.worker.launch",
+                        [("handler", &(job.item.handler))],
+                    )
+                    .into(),
+                ),
                 None,
                 worker_context.batch.marker_policy,
             );
@@ -1549,16 +1619,19 @@ fn run_job(
             &worker_context.journal,
             &key,
             Some(&file),
-            Some(format!(
-                "{} launch authority was not managed",
-                job.item.handler
-            )),
+            Some(
+                Diagnostic::new(
+                    "journal.cli.think.sense.worker.authority",
+                    [("handler", &(job.item.handler))],
+                )
+                .into(),
+            ),
             None,
             worker_context.batch.marker_policy,
         );
         return;
     };
-    let cap = resolve_max_runtime(&job.config, &job.item.handler);
+    let cap = resolve_max_runtime_in(locale, &job.config, &job.item.handler);
     let deadline = std::time::Instant::now() + cap;
     let exit = loop {
         match process.poll() {
@@ -1571,41 +1644,64 @@ fn run_job(
         }
         if state.lock().expect("sense state").stopping {
             if let Err(error) = process.terminate(Duration::from_secs(2)) {
-                let _ = termination_detail(&job.item.handler, error);
+                let _ = termination_detail(locale, &job.item.handler, error);
             }
             break process.poll().ok().flatten().or(Some(-15));
         }
         thread::sleep(Duration::from_millis(50));
     };
     if exit == Some(0)
-        && let Some(reason) = unfinished_output(&file, &job.item.handler)
+        && let Some(reason) = unfinished_output_detail(&file, &job.item.handler)
     {
         worker_context.tally.failure();
-        state.lock().expect("sense state").health.failure(&reason);
+        state
+            .lock()
+            .expect("sense state")
+            .health
+            .failure(&reason.render(ENGLISH));
         complete(
             state,
             outbound,
             &worker_context.journal,
             &key,
             Some(&file),
-            Some(reason),
+            Some(reason.into()),
             None,
             worker_context.batch.marker_policy,
         );
-        cleanup_async(process, &worker_context.cleanups, true);
+        cleanup_async(locale, process, &worker_context.cleanups, true);
         return;
     }
     if exit != Some(0) {
+        let outcome = match exit {
+            Some(PROVIDER_BLOCKED) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.sense.worker.deferred",
+                [("code", &(PROVIDER_BLOCKED))],
+            ),
+            Some(code) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.sense.worker.failed",
+                [("code", &(code))],
+            ),
+            None => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.sense.worker.watchdog",
+                [],
+            ),
+        };
         eprintln!(
-            "sense: handler={} file={} outcome={} log={}",
-            job.item.handler,
-            file.display(),
-            match exit {
-                Some(PROVIDER_BLOCKED) => "deferred (exit 69)".to_owned(),
-                Some(code) => format!("failed (exit {code})"),
-                None => "watchdog or process wait failed".to_owned(),
-            },
-            process.log_path().display(),
+            "{}",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.sense.worker.status",
+                [
+                    ("handler", &(job.item.handler)),
+                    ("file", &(file.display())),
+                    ("outcome", &(outcome)),
+                    ("log", &(process.log_path().display()))
+                ]
+            )
         );
     }
     let outcome = match exit {
@@ -1628,7 +1724,7 @@ fn run_job(
             } else {
                 worker_context.tally.failure();
             }
-            cleanup_async(process, &worker_context.cleanups, true);
+            cleanup_async(locale, process, &worker_context.cleanups, true);
             return;
         }
         Some(0) => {
@@ -1648,7 +1744,7 @@ fn run_job(
             } else {
                 worker_context.tally.failure();
             }
-            cleanup_async(process, &worker_context.cleanups, false);
+            cleanup_async(locale, process, &worker_context.cleanups, false);
             return;
         }
         Some(code) => {
@@ -1661,21 +1757,29 @@ fn run_job(
                     .failure(&format!("{} exit {code}", job.item.handler));
             }
             worker_context.tally.failure();
-            format!("{} exit {code}", job.item.handler)
+            JobFailure::from(Diagnostic::new(
+                "journal.cli.think.sense.worker.exit",
+                [("handler", &(job.item.handler)), ("code", &(code))],
+            ))
         }
         None => {
             let termination = process.terminate(Duration::from_secs(2));
-            let mut reason = format!(
-                "{} watchdog_timeout after {}s",
-                job.item.handler,
-                cap.as_secs()
+            let diagnostic = Diagnostic::new(
+                "journal.cli.think.sense.worker.timeout",
+                [
+                    ("handler", &(job.item.handler)),
+                    ("seconds", &(cap.as_secs())),
+                ],
             );
-            if let Err(error) = termination
-                && let Some(detail) = termination_detail(&job.item.handler, error)
-            {
-                reason = format!("{reason}; {detail}");
-            }
-            state.lock().expect("sense state").health.failure(&reason);
+            let suffix = termination
+                .err()
+                .and_then(|error| termination_detail(locale, &job.item.handler, error));
+            let reason = JobFailure { diagnostic, suffix };
+            state
+                .lock()
+                .expect("sense state")
+                .health
+                .failure(&reason.render(ENGLISH));
             worker_context.tally.failure();
             reason
         }
@@ -1690,11 +1794,14 @@ fn run_job(
         None,
         worker_context.batch.marker_policy,
     );
-    cleanup_async(process, &worker_context.cleanups, true);
+    cleanup_async(locale, process, &worker_context.cleanups, true);
 }
 
 /// Exit zero cannot finish a file that the ordinary scanner would admit again.
 pub fn unfinished_output(file: &Path, handler: &str) -> Option<String> {
+    unfinished_output_detail(file, handler).map(|error| error.render(ENGLISH))
+}
+fn unfinished_output_detail(file: &Path, handler: &str) -> Option<Diagnostic> {
     use solstone_core_processing_record::{
         read_processing_record_header, should_reenter_analysis_output,
     };
@@ -1702,15 +1809,19 @@ pub fn unfinished_output(file: &Path, handler: &str) -> Option<String> {
     match std::fs::metadata(&output) {
         Ok(metadata) if metadata.is_file() => {}
         Ok(_) => {
-            return Some(format!(
-                "{handler} exited 0 without a regular output: {}",
-                output.display()
+            return Some(Diagnostic::new(
+                "journal.cli.think.sense.worker.output.nonregular",
+                [("handler", &(handler)), ("path", &(output.display()))],
             ));
         }
         Err(error) => {
-            return Some(format!(
-                "{handler} exited 0 without readable output {}: {error}",
-                output.display()
+            return Some(Diagnostic::new(
+                "journal.cli.think.sense.worker.output.unreadable",
+                [
+                    ("handler", &(handler)),
+                    ("path", &(output.display())),
+                    ("error", &(error)),
+                ],
             ));
         }
     }
@@ -1725,17 +1836,27 @@ pub fn unfinished_output(file: &Path, handler: &str) -> Option<String> {
         let reason = record
             .as_ref()
             .and_then(|value| value.get("reason_code"))
-            .and_then(Value::as_str)
-            .unwrap_or("analysis output incomplete");
-        return Some(format!(
-            "{handler} exited 0 with unfinished output ({reason}): {}",
-            output.display()
-        ));
+            .and_then(Value::as_str);
+        return Some(match reason {
+            Some(reason) => Diagnostic::new(
+                "journal.cli.think.sense.worker.output.unfinished",
+                [
+                    ("handler", &(handler)),
+                    ("path", &(output.display())),
+                    ("reason", &(reason)),
+                ],
+            ),
+            None => Diagnostic::new(
+                "journal.cli.think.sense.worker.output.incomplete",
+                [("handler", &(handler)), ("path", &(output.display()))],
+            ),
+        });
     }
     None
 }
 
 fn cleanup_async(
+    locale: &'static str,
     process: ManagedProcess,
     cleanups: &Arc<Mutex<Vec<thread::JoinHandle<()>>>>,
     diagnostic: bool,
@@ -1748,7 +1869,7 @@ fn cleanup_async(
             if let Some(mut process) = cleanup_handoff.lock().expect("cleanup handoff").take() {
                 process.cleanup();
                 if diagnostic {
-                    report_diagnostic_tail(&process.log_path());
+                    report_diagnostic_tail(locale, &process.log_path());
                 }
             }
         });
@@ -1782,12 +1903,12 @@ fn cleanup_async(
         let _ = process.terminate(SERVICE_SHUTDOWN_TIMEOUT);
         process.cleanup();
         if diagnostic {
-            report_diagnostic_tail(&process.log_path());
+            report_diagnostic_tail(locale, &process.log_path());
         }
     }
 }
 
-fn report_diagnostic_tail(path: &Path) {
+fn report_diagnostic_tail(locale: &str, path: &Path) {
     use std::io::{Read, Seek, SeekFrom};
     let tail = (|| -> std::io::Result<String> {
         let mut file = std::fs::File::open(path)?;
@@ -1798,23 +1919,43 @@ fn report_diagnostic_tail(path: &Path) {
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     })();
     match tail {
-        Ok(tail) => eprintln!(
-            "sense: handler diagnostic log={} tail={tail:?}",
-            path.display()
-        ),
-        Err(error) => eprintln!(
-            "sense: handler diagnostic log={} unreadable: {error}",
-            path.display()
-        ),
+        Ok(tail) => {
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.sense.worker.log.tail",
+                    [("log", &(path.display())), ("tail", &(format!("{tail:?}")))]
+                )
+            );
+        }
+        Err(error) => {
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.sense.worker.log.unreadable",
+                    [("log", &(path.display())), ("error", &(error))]
+                )
+            );
+        }
     }
 }
 
-fn termination_detail(handler: &str, error: TerminationError) -> Option<String> {
+fn termination_detail(locale: &str, handler: &str, error: TerminationError) -> Option<String> {
     match error {
         TerminationError::ProcessTreeNotReaped { reason, survivors } => {
             eprintln!(
-                "sense: process-tree-not-reaped handler={handler} reason={reason} survivors={}",
-                survivors.len()
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.sense.worker.survivors",
+                    [
+                        ("handler", &(handler)),
+                        ("reason", &(reason)),
+                        ("count", &(survivors.len()))
+                    ]
+                )
             );
             Some(format!(
                 "process_tree_not_reaped reason={reason} survivors={}",
@@ -1822,9 +1963,42 @@ fn termination_detail(handler: &str, error: TerminationError) -> Option<String> 
             ))
         }
         error => {
-            eprintln!("sense: managed termination failed handler={handler}: {error}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.sense.worker.termination",
+                    [("handler", &(handler)), ("error", &(error))]
+                )
+            );
             None
         }
+    }
+}
+
+struct JobFailure {
+    diagnostic: Diagnostic,
+    /// The process-tree disposition is a machine record even in the terminal.
+    suffix: Option<String>,
+}
+
+impl From<Diagnostic> for JobFailure {
+    fn from(diagnostic: Diagnostic) -> Self {
+        Self {
+            diagnostic,
+            suffix: None,
+        }
+    }
+}
+
+impl JobFailure {
+    fn render(&self, locale: &str) -> String {
+        let mut message = self.diagnostic.render(locale);
+        if let Some(detail) = &self.suffix {
+            message.push_str("; ");
+            message.push_str(detail);
+        }
+        message
     }
 }
 
@@ -1842,7 +2016,7 @@ fn complete(
     journal: &Path,
     key: &SegmentKey,
     file: Option<&Path>,
-    error: Option<String>,
+    error: Option<JobFailure>,
     note: Option<&str>,
     marker_policy: BatchMarkerPolicy,
 ) -> bool {
@@ -1866,7 +2040,7 @@ fn complete_checked(
     journal: &Path,
     key: &SegmentKey,
     file: Option<&Path>,
-    error: Option<String>,
+    error: Option<JobFailure>,
     note: Option<&str>,
     marker_policy: BatchMarkerPolicy,
     cancelled: &dyn Fn() -> bool,
@@ -1882,19 +2056,31 @@ fn complete_checked(
                 .retain(|(_, candidate)| candidate != file);
         }
         let empty = {
+            let locale = state.locale;
             let Some(segment) = state.segments.get_mut(key) else {
                 return true;
             };
             if let Some(error) = error {
                 eprintln!(
-                    "sense: day={} stream={} segment={} file={} error={error}",
-                    key.day,
-                    key.stream.as_deref().unwrap_or("default"),
-                    key.segment,
-                    file.map(|path| path.display().to_string())
-                        .unwrap_or_default()
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.think.sense.worker.detail",
+                        [
+                            ("day", &(key.day)),
+                            ("stream", &(key.stream.as_deref().unwrap_or("default"))),
+                            ("segment", &(key.segment)),
+                            (
+                                "file",
+                                &(file
+                                    .map(|path| path.display().to_string())
+                                    .unwrap_or_default())
+                            ),
+                            ("error", &(error.render(locale)))
+                        ]
+                    )
                 );
-                segment.errors.push(error);
+                segment.errors.push(error.render(ENGLISH));
             }
             if let Some(file) = file {
                 segment.pending.remove(file);
@@ -2516,7 +2702,9 @@ mod tests {
         std::fs::create_dir_all(&segment).expect("segment");
         std::fs::write(segment.join("audio.flac"), b"audio").expect("audio");
         std::fs::write(segment.join("screen.webm"), b"screen").expect("screen");
-        assert!(crate::config::no_thinking_engine(&read_config(temp.path())));
+        assert!(crate::config::no_thinking_engine(
+            &crate::config::read_config(temp.path())
+        ));
         let fixture = temp.path().join("transcribe-fixture");
         std::fs::write(&fixture, "#!/bin/sh\nprintf '{}\\n' > \"${2%.*}.jsonl\"\n").unwrap();
         use std::os::unix::fs::PermissionsExt;
@@ -2606,6 +2794,7 @@ mod tests {
     #[test]
     fn process_tree_not_reaped_becomes_a_path_free_segment_error_detail() {
         let detail = termination_detail(
+            ENGLISH,
             "describe",
             TerminationError::ProcessTreeNotReaped {
                 reason: "survived_sigkill",
@@ -2630,6 +2819,7 @@ mod tests {
         let temp = tempfile::tempdir().expect("journal");
         let (outbound, receiver) = mpsc::channel();
         let state = Arc::new(Mutex::new(State {
+            locale: solstone_core_window_catalog::packaged_locale(Some("en-XA")),
             segments: HashMap::new(),
             pending_files: HashSet::new(),
             health: Health::default(),
@@ -2658,7 +2848,13 @@ mod tests {
             temp.path(),
             &key,
             None,
-            Some("describe watchdog_timeout; process_tree_not_reaped reason=survived_sigkill survivors=1".into()),
+            Some(JobFailure {
+                diagnostic: Diagnostic::new(
+                    "journal.cli.think.sense.worker.timeout",
+                    [("handler", &("describe")), ("seconds", &(1))],
+                ),
+                suffix: Some("process_tree_not_reaped reason=survived_sigkill survivors=1".into()),
+            }),
             None,
             BatchMarkerPolicy::AdvanceStream,
         );
@@ -2667,11 +2863,9 @@ mod tests {
             .find(|event| event.event == "observed")
             .expect("observed");
         assert_eq!(observed.fields["error"], true);
-        assert!(
-            observed.fields["errors"][0]
-                .as_str()
-                .expect("error")
-                .contains("process_tree_not_reaped")
+        assert_eq!(
+            observed.fields["errors"][0],
+            "describe watchdog_timeout after 1s; process_tree_not_reaped reason=survived_sigkill survivors=1"
         );
     }
 
@@ -2721,6 +2915,7 @@ mod tests {
         let temp = tempfile::tempdir().expect("journal");
         let (outbound, _receiver) = mpsc::channel();
         let state = Arc::new(Mutex::new(State {
+            locale: ENGLISH,
             segments: HashMap::new(),
             pending_files: HashSet::new(),
             health: Health::default(),
@@ -2820,6 +3015,7 @@ mod tests {
         );
         let (outbound, _receiver) = mpsc::channel();
         let state = Arc::new(Mutex::new(State {
+            locale: ENGLISH,
             segments: HashMap::new(),
             pending_files: HashSet::new(),
             health: Health::default(),
@@ -2869,6 +3065,7 @@ mod tests {
         std::fs::write(&health, b"not a directory").expect("blocked health path");
         let (outbound, receiver) = mpsc::channel();
         let state = Arc::new(Mutex::new(State {
+            locale: ENGLISH,
             segments: HashMap::new(),
             pending_files: HashSet::new(),
             health: Health::default(),
@@ -3413,6 +3610,7 @@ mod tests {
         }
         for unwind in [false, true] {
             let state = Arc::new(Mutex::new(State {
+                locale: ENGLISH,
                 segments: HashMap::new(),
                 pending_files: HashSet::new(),
                 health: Health::default(),
@@ -3474,6 +3672,7 @@ mod tests {
             let mut segment = SegmentState::new(context);
             segment.pending.insert(job.item.file_path.clone());
             let state = Arc::new(Mutex::new(State {
+                locale: ENGLISH,
                 segments: HashMap::from([(key.clone(), segment)]),
                 pending_files: HashSet::new(),
                 health: Health::default(),
@@ -3605,6 +3804,7 @@ mod tests {
         let mut pending_files = HashSet::new();
         pending_files.insert(("describe".to_string(), file.clone()));
         let state = Arc::new(Mutex::new(State {
+            locale: ENGLISH,
             segments: HashMap::from([(key.clone(), segment_state)]),
             pending_files,
             health: Health::default(),
@@ -3677,6 +3877,7 @@ mod tests {
         let mut pending_files = HashSet::new();
         pending_files.insert(("depict".to_string(), file.clone()));
         let state = Arc::new(Mutex::new(State {
+            locale: ENGLISH,
             segments: HashMap::from([(key.clone(), segment_state)]),
             pending_files,
             health: Health::default(),

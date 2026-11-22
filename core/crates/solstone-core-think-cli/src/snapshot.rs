@@ -46,7 +46,7 @@ pub(crate) fn prepare_daily_packet(
     config: &TalentConfig,
     facet: Option<&str>,
     extra: &Map<String, Value>,
-) -> Result<Value, String> {
+) -> Result<Value, crate::dispatch::RunFailure> {
     use solstone_core_talent_runtime::{
         ExecutionContext,
         prepare::{PrepareMode, RuntimePaths},
@@ -59,7 +59,10 @@ pub(crate) fn prepare_daily_packet(
     if extra.get("evidence_revision").and_then(Value::as_str) != Some(&before.0)
         || extra.get("contract_digest").and_then(Value::as_str) != Some(&before.1)
     {
-        return Err("daily evidence changed before preparation".to_owned());
+        return Err(crate::dispatch::RunFailure::message(
+            context.terminal_locale,
+            "journal.cli.think.daily.snapshot.changed",
+        ));
     }
     let mut request = Map::from_iter([
         ("name".to_owned(), Value::String(config.key.clone())),
@@ -76,7 +79,12 @@ pub(crate) fn prepare_daily_packet(
         templates_dir: context
             .talent_root
             .parent()
-            .ok_or("talent root has no parent")?
+            .ok_or_else(|| {
+                crate::dispatch::RunFailure::message(
+                    context.terminal_locale,
+                    "journal.cli.think.daily.snapshot.parent",
+                )
+            })?
             .join("think/templates"),
     };
     let execution = ExecutionContext {
@@ -90,7 +98,15 @@ pub(crate) fn prepare_daily_packet(
     )
     .map_err(|e| e.to_string())?;
     let packet = solstone_core_talent_runtime::daily_prepare::freeze(prepared, &execution)
-        .map_err(|e| format!("daily input preparation: {e:?}"))?;
+        .map_err(|e| {
+            context.failure(|locale| {
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.daily.snapshot.freeze",
+                    [("error", &(format!("{e:?}")))],
+                )
+            })
+        })?;
     let mut configs =
         solstone_core_talent_config::discover(&context.talent_root, &context.apps_root)?;
     let overrides = solstone_core_journal_config::read_journal_config(&context.journal)
@@ -105,10 +121,18 @@ pub(crate) fn prepare_daily_packet(
     let current = configs
         .iter()
         .find(|c| c.key == config.key)
-        .ok_or("daily talent removed during preparation")?;
+        .ok_or_else(|| {
+            crate::dispatch::RunFailure::message(
+                context.terminal_locale,
+                "journal.cli.think.daily.snapshot.removed",
+            )
+        })?;
     let after = compute_daily_evidence_revision(&context.journal, day, current, facet, None)?;
     if before != after {
-        return Err("daily evidence or contract changed during preparation".to_owned());
+        return Err(crate::dispatch::RunFailure::message(
+            context.terminal_locale,
+            "journal.cli.think.daily.snapshot.changed.after",
+        ));
     }
     Ok(packet)
 }

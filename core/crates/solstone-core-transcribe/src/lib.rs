@@ -192,6 +192,11 @@ fn owner_route_when_contended(owner: SpeakersAnalyzeOwnerView, error: CliError) 
         }
     );
     match error {
+        CliError::SpeakersGenerationHeld { message, .. } if held_by_running_journal => {
+            CliRunError::Cli(CliError::SpeakersInstallation {
+                message: format!("{TRANSCRIBE_BESIDE_RUNNING_JOURNAL}\n{message}"),
+            })
+        }
         CliError::SpeakersInstallation { message }
             if held_by_running_journal
                 && message.starts_with(speakers_installation::GENERATION_CONTENDED) =>

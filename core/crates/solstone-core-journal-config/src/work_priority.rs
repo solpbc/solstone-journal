@@ -53,10 +53,17 @@ impl WorkPriority {
     }
 
     pub fn from_environment() -> Result<Self, String> {
+        Self::from_environment_in(solstone_core_cli_copy::ENGLISH)
+    }
+    pub fn from_environment_in(locale: &str) -> Result<Self, String> {
         match std::env::var(WORK_PRIORITY_ENV) {
-            Ok(value) => value.parse(),
+            Ok(value) => Self::parse_in(locale, &value),
             Err(std::env::VarError::NotPresent) => Ok(Self::default()),
-            Err(error) => Err(format!("invalid work priority: {error}")),
+            Err(error) => Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.priority.environment",
+                [("error", &(error))],
+            )),
         }
     }
 }
@@ -71,7 +78,13 @@ impl FromStr for WorkPriority {
     type Err = String;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let invalid = || "invalid work priority; expected band 1–6 and a source time".to_owned();
+        Self::parse_in(solstone_core_cli_copy::ENGLISH, value)
+    }
+}
+impl WorkPriority {
+    fn parse_in(locale: &str, value: &str) -> Result<Self, String> {
+        let invalid =
+            || solstone_core_cli_copy::render_for(locale, "journal.cli.think.priority.syntax", &[]);
         let (band, source) = value.split_once(':').ok_or_else(invalid)?;
         let band = match band {
             "1" => WorkBand::Now,

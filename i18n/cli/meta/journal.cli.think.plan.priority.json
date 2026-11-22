@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for plan priority.",
+  "context": "Journal command-line text for plan priority.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "priority",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fb3af916ef4f1cc3671c938c675f0eeb312fcca7230f15891c22f969259d1b81",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

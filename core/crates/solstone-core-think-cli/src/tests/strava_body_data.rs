@@ -389,7 +389,7 @@ fn work(context: &context::ThinkContext, activity: &str, state: &str) {
             .park("participation", "activity_failed", context)
             .unwrap(),
         "blocked" => work
-            .block("owner_field_held", "activity output is held by owner")
+            .block("owner_field_held", "activity output is held by owner", None)
             .unwrap(),
         "muted" => work.set_muted_pause(true).unwrap(),
         other => panic!("{other}"),

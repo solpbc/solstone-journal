@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for daily location packet.",
+  "context": "Journal command-line text for daily location packet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c2e1e39e6f4670a7e152aa61e0156d0b8ddd4e7aef38c1df8e10235afd68e179",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for validation weekly incompatible.",
+  "context": "Journal command-line text for validation weekly incompatible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7ee46217e8940dab3a500a09371116b26ba4d15e17badff8ccce3975ee05adbd",
+  "max_length": 148,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "weekly_flag",
+      "kind": "flag",
+      "value": "--weekly"
+    },
+    {
+      "name": "segment_flag",
+      "kind": "flag",
+      "value": "--segment"
+    },
+    {
+      "name": "segments_flag",
+      "kind": "flag",
+      "value": "--segments"
+    },
+    {
+      "name": "activity_flag",
+      "kind": "flag",
+      "value": "--activity"
+    },
+    {
+      "name": "flush_flag",
+      "kind": "flag",
+      "value": "--flush"
+    }
+  ]
+}

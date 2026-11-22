@@ -27,6 +27,20 @@ pub struct ActivityRetry {
 pub struct BlockedDisposition {
     pub reason_code: String,
     pub message: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "display_key"
+    )]
+    pub message_key: Option<String>,
+}
+
+fn display_key<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    Ok(serde_json::Value::deserialize(deserializer)?
+        .as_str()
+        .map(str::to_owned))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -81,20 +95,33 @@ fn path(journal: &Path, identity: &ActivityRetry) -> Result<PathBuf, String> {
 }
 
 fn read(path: &Path) -> Result<Option<Record>, String> {
+    read_in(solstone_core_cli_copy::ENGLISH, path)
+}
+
+fn read_in(locale: &str, path: &Path) -> Result<Option<Record>, String> {
     use solstone_core_journal_io::durability::{
         ArtifactId, DurableObservation, observe_json_durable,
     };
     match observe_json_durable::<Record>(ArtifactId::ActivityWork, path) {
         DurableObservation::Present(record) if record.version == 1 => Ok(Some(record)),
-        DurableObservation::Present(_) => Err("unsupported activity work version".to_owned()),
-        DurableObservation::Absent => Ok(None),
-        DurableObservation::Malformed { path, .. } => {
-            Err(format!("malformed activity work: {}", path.display()))
-        }
-        DurableObservation::Unreadable { path, source } => Err(format!(
-            "cannot read activity work {}: {source}",
-            path.display()
+        DurableObservation::Present(_) => Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.activity.work.version",
+            &[],
         )),
+        DurableObservation::Absent => Ok(None),
+        DurableObservation::Malformed { path, .. } => Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.think.activity.work.malformed",
+            [("path", &(path.display()))],
+        )),
+        DurableObservation::Unreadable { path, source } => {
+            Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.activity.work.unreadable",
+                [("path", &(path.display())), ("error", &(source))],
+            ))
+        }
     }
 }
 
@@ -208,7 +235,7 @@ impl ActivityWork {
         let path = path(&context.journal, &identity)?;
         let claim = claim(context, &identity)?;
         context.checkpoint()?;
-        let Some(record) = read(&path)? else {
+        let Some(record) = read_in(context.locale(), &path)? else {
             return Ok(None);
         };
         if record.identity != identity {
@@ -257,7 +284,7 @@ impl ActivityWork {
             None => claim(context, &identity)?,
         };
         context.checkpoint()?;
-        let old = read(&path)?;
+        let old = read_in(context.locale(), &path)?;
         if let Some(old) = old.as_ref()
             && (refresh || old.input_hash != input_hash)
         {
@@ -360,10 +387,16 @@ impl ActivityWork {
         self.record.destination_id = Some(id);
         self.save()
     }
-    pub(crate) fn block(&mut self, reason_code: &str, message: &str) -> Result<(), String> {
+    pub(crate) fn block(
+        &mut self,
+        reason_code: &str,
+        message: &str,
+        message_key: Option<&str>,
+    ) -> Result<(), String> {
         self.record.blocked = Some(BlockedDisposition {
             reason_code: reason_code.to_owned(),
             message: message.to_owned(),
+            message_key: message_key.map(str::to_owned),
         });
         self.save()
     }
@@ -522,6 +555,14 @@ pub fn activity_held_input(
     journal: &Path,
     unit: &solstone_core_system::work_retry::Unit,
 ) -> Result<Option<String>, String> {
+    held_input_in(None, journal, unit).map_err(|error| error.source)
+}
+
+pub(crate) fn held_input_in(
+    locale: Option<&str>,
+    journal: &Path,
+    unit: &solstone_core_system::work_retry::Unit,
+) -> Result<Option<String>, crate::dispatch::RunFailure> {
     use solstone_core_system::work_retry::{self, Unit};
     let Unit::Activity {
         day,
@@ -530,7 +571,10 @@ pub fn activity_held_input(
         talent,
     } = unit
     else {
-        return Err("not activity work".into());
+        return Err(crate::dispatch::RunFailure::message(
+            locale,
+            "journal.cli.think.activity.retry.kind",
+        ));
     };
     let identity = ActivityRetry {
         day: day.clone(),
@@ -541,7 +585,10 @@ pub fn activity_held_input(
         return Ok(None);
     };
     if record.identity != identity {
-        return Err("activity work identity mismatch".into());
+        return Err(crate::dispatch::RunFailure::message(
+            locale,
+            "journal.cli.think.activity.retry.identity",
+        ));
     }
     if !record.remaining.contains(talent) || !record.parked.contains(talent) {
         return Ok(None);
@@ -557,12 +604,17 @@ pub fn activity_held_input(
         &legacy_retry_baseline(journal, &record)?,
     )?;
     if let Some(blocked) = record.blocked {
-        return Err(blocked.message);
+        return Err(blocked.failure(locale));
     }
     if record.muted_pause {
-        return Err("the activity's facet is muted".into());
+        return Err(crate::dispatch::RunFailure::message(
+            locale,
+            "journal.cli.think.activity.retry.muted",
+        ));
     }
-    work_retry::input::current(journal, unit).map(Some)
+    work_retry::input::current(journal, unit)
+        .map(Some)
+        .map_err(Into::into)
 }
 
 /// Whether an activity record is Strava's: a reading of a workout, which is
@@ -1221,6 +1273,38 @@ pub(crate) fn seed_activity_retries_checked(
 mod tests {
     use super::*;
 
+    #[test]
+    fn blocked_display_requires_a_matching_known_message_and_keeps_the_source() {
+        let id = "journal.cli.think.activity.missing";
+        let en = solstone_core_cli_copy::ENGLISH;
+        let english = solstone_core_cli_copy::render_for(en, id, &[]);
+        let read = |value| serde_json::from_value::<BlockedDisposition>(value).unwrap();
+        let row = serde_json::json!({"reason_code": "fixture", "message": english});
+        for key in [
+            None,
+            Some(serde_json::Value::Null),
+            Some(serde_json::json!(7)),
+            Some(serde_json::json!("fixture.unknown")),
+            Some(serde_json::json!("journal.cli.think.activity.pending")),
+        ] {
+            let mut input = row.clone();
+            if let Some(key) = key {
+                input["message_key"] = key;
+            }
+            let stored = read(input);
+            assert_eq!(stored.failure(Some("en-XA")).terminal, None);
+            assert_eq!(stored.failure(None).display(), english);
+        }
+        let mut matching = row;
+        matching["message_key"] = serde_json::json!(id);
+        let stored = read(matching);
+        assert_eq!(stored.failure(Some(en)).display(), english);
+        assert_eq!(
+            stored.failure(Some("en-XA")).terminal.as_deref(),
+            Some(solstone_core_cli_copy::render_for("en-XA", id, &[]).as_str())
+        );
+    }
+
     struct NoDispatch;
     impl crate::context::CortexBoundary for NoDispatch {
         fn dispatch_prepared(
@@ -1492,6 +1576,7 @@ mod tests {
                     work.record.blocked = Some(BlockedDisposition {
                         reason_code: "retained".into(),
                         message: "held".into(),
+                        message_key: None,
                     });
                 }
                 "muted" => {
@@ -1784,6 +1869,7 @@ mod tests {
                 blocked: Some(BlockedDisposition {
                     reason_code: "held".into(),
                     message: "held".into(),
+                    message_key: None,
                 }),
                 refresh: false,
             };

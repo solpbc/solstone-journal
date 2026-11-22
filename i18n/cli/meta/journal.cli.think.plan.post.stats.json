@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for plan post stats.",
+  "context": "Journal command-line text for plan post stats.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dbcc5a8d835916f684cedf8b71c72d5e678d243d638337a262bda51b0a1e7937",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal journal-stats"
+    }
+  ]
+}

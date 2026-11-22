@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for routing source invalid.",
+  "context": "Journal command-line text for routing source invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "41d474a620139ce296a09ee1699d33d9c0e3392d53f476b43a2fdd8b2e043d9d",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

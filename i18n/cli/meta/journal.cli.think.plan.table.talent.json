@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for plan table talent.",
+  "context": "Journal command-line text for plan table talent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "row",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "28c9633319575aa0ea117beb2c0d2a9de99630b2118f61f3e0ec1253bb26bf6d",
+  "max_length": 296,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "row",
+    "type": "string",
+    "enum_values": [
+      "generator_existing",
+      "generator_new",
+      "generator_plain",
+      "agent_existing",
+      "agent_new",
+      "agent_plain"
+    ],
+    "enum_default": "agent_plain"
+  }
+}

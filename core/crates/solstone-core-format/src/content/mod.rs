@@ -35,7 +35,7 @@ mod protected_video;
 mod raw_screen;
 mod screen;
 mod sense;
-pub use sense::owner_sense_text;
+pub use sense::{owner_sense_text, sense_presentations};
 mod shape;
 pub mod strava_body;
 mod talent_projections;
@@ -2507,9 +2507,26 @@ pub fn has_partial_input(record: &JsonObject) -> bool {
 /// Keep a limitation visible under the same read limit as its saved body.
 /// Only partial results reserve space by shortening the rendered projection;
 /// their full saved source remains available.
-pub fn with_partial_input_notice(mut text: String, record: &JsonObject) -> String {
+pub fn with_partial_input_notice(text: String, record: &JsonObject) -> String {
+    partial_input_document(crate::stored_markdown::Document::plain(text), record).into_text()
+}
+
+pub fn partial_input_document(
+    mut text: crate::stored_markdown::Document,
+    record: &JsonObject,
+) -> crate::stored_markdown::Document {
+    append_partial_input_notice(&mut text, record);
+    text
+}
+
+/// Return the exact number of original bytes retained before the notice.
+fn append_partial_input_notice(
+    text: &mut crate::stored_markdown::Document,
+    record: &JsonObject,
+) -> usize {
+    use crate::stored_markdown::Message;
     if !has_partial_input(record) {
-        return text;
+        return text.len();
     }
     let limit = [16 * 1024, 64 * 1024]
         .into_iter()
@@ -2520,11 +2537,11 @@ pub fn with_partial_input_notice(mut text: String, record: &JsonObject) -> Strin
         .and_then(|s| s.get("partial_input"))
         .is_some_and(Value::is_object)
     {
-        "\n\nThis story, and anything saved with it, was written from part of the activity, not all of it."
+        Message::PartialStory
     } else {
-        "\n\nLeft out: Some input did not fit. This result was written from part of the input."
+        Message::PartialInput
     };
-    let body_limit = limit - note.len();
+    let body_limit = limit - note.render(solstone_core_cli_copy::ENGLISH).len() - 2;
     if text.len() > body_limit {
         let mut boundary = body_limit;
         while !text.is_char_boundary(boundary) {
@@ -2532,7 +2549,9 @@ pub fn with_partial_input_notice(mut text: String, record: &JsonObject) -> Strin
         }
         text.truncate(boundary);
     }
-    text.push_str(note);
+    let retained = text.len();
+    text.push_str("\n\n");
+    text.push_message(note);
     let mut counts = Vec::new();
     for marker in partial_markers(record) {
         for key in ["dropped_entries", "dropped_chars"] {
@@ -2541,11 +2560,16 @@ pub fn with_partial_input_notice(mut text: String, record: &JsonObject) -> Strin
             }
         }
     }
-    let detail = format!("\nLeft out: {}", counts.join(", "));
-    if !counts.is_empty() && text.len() + detail.len() <= limit {
-        text.push_str(&detail);
+    let detail = Message::PartialCounts {
+        details: counts.join(", "),
+    };
+    if !counts.is_empty()
+        && text.len() + 1 + detail.render(solstone_core_cli_copy::ENGLISH).len() <= limit
+    {
+        text.push_str("\n");
+        text.push_message(detail);
     }
-    text
+    retained
 }
 
 pub(super) fn recorded_chunk(

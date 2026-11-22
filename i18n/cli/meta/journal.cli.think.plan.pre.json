@@ -1,0 +1,37 @@
+{
+  "description": "Journal command-line text for plan pre.",
+  "context": "Journal command-line text for plan pre.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "jobs",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "50a7c1c57bb6e840526ba4a91eaf2bca6f0ec7203e29ed929f1765888c849fb0",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal sense --day"
+    },
+    {
+      "name": "jobs_flag",
+      "kind": "flag",
+      "value": "-j"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for preflight held unavailable.",
+  "context": "Journal command-line text for preflight held unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "72515a317cc0d9855b7219d6162c9bc7b9291d7b9bfdb0a3210709e264467f96",
+  "max_length": 116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reason",
+      "kind": "accepted-input",
+      "value": "generation-lease-contended"
+    },
+    {
+      "name": "owner",
+      "kind": "accepted-input",
+      "value": "owner_details=unavailable"
+    }
+  ]
+}

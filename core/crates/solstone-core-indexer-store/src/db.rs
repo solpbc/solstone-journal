@@ -37,7 +37,8 @@ pub struct StreamPruneCounts {
     pub files: u64,
 }
 
-const CREATE_FILES: &str = "CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, mtime INTEGER)";
+const CREATE_FILES: &str =
+    "CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, mtime INTEGER, display_stamp TEXT)";
 const CREATE_MEMORY_ORIGINALS: &str = "CREATE TABLE IF NOT EXISTS memory_originals(\
 path TEXT PRIMARY KEY, day TEXT NOT NULL, stream TEXT NOT NULL, segment TEXT NOT NULL, \
 source_key TEXT NOT NULL, bytes BLOB NOT NULL, origin_json TEXT NOT NULL, digest TEXT NOT NULL, \
@@ -837,6 +838,13 @@ pub(crate) fn migrate_chunk_classification_screen_text(
 
 fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_FILES, [])?;
+    if !conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('files') WHERE name='display_stamp')",
+        [],
+        |row| row.get::<_, bool>(0),
+    )? {
+        conn.execute("ALTER TABLE files ADD COLUMN display_stamp TEXT", [])?;
+    }
     conn.execute(CREATE_CHUNKS, [])?;
     conn.execute(CREATE_CHUNK_SOURCES, [])?;
     conn.execute(CREATE_CHUNK_SOURCES_PATH_INDEX, [])?;
@@ -1569,7 +1577,7 @@ mod tests {
             .expect("files schema");
         assert_eq!(
             files_sql,
-            "CREATE TABLE files(path TEXT PRIMARY KEY, mtime INTEGER)"
+            "CREATE TABLE files(path TEXT PRIMARY KEY, mtime INTEGER, display_stamp TEXT)"
         );
         let chunk_cols: Vec<String> = conn
             .prepare("PRAGMA table_info(chunks)")
@@ -1593,6 +1601,39 @@ mod tests {
         );
         drop(conn);
         fs::remove_dir_all(root).expect("cleanup schema root");
+    }
+
+    #[test]
+    fn file_stamps_migrate_existing_rows_and_clear_on_an_older_writers_replace() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE files(path TEXT PRIMARY KEY, mtime INTEGER);
+             INSERT INTO files(path, mtime) VALUES ('document', 12);",
+        )
+        .unwrap();
+        create_schema(&conn).unwrap();
+        let read = || {
+            conn.query_row(
+                "SELECT mtime, display_stamp FROM files WHERE path='document'",
+                [],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<String>>(1)?)),
+            )
+            .unwrap()
+        };
+        assert_eq!(read(), (12, None));
+        conn.execute(
+            "UPDATE files SET display_stamp='current' WHERE path='document'",
+            [],
+        )
+        .unwrap();
+        assert_eq!(read(), (12, Some("current".into())));
+        // Earlier writers name the two columns they understand when replacing a file's rows.
+        conn.execute(
+            "REPLACE INTO files(path, mtime) VALUES ('document', 13)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(read(), (13, None));
     }
 
     #[test]
@@ -2626,7 +2667,7 @@ mod derived_recovery_tests {
         let mut conn = Connection::open_in_memory().unwrap();
         ensure_schema(&mut conn, &|| Ok(())).unwrap();
         conn.execute_batch("INSERT INTO chunks(rowid,content,path) VALUES (41,'preserved','facets/work/news/20260101.md');
-            INSERT INTO files VALUES ('facets/work/news/20260101.md', 12);
+            INSERT INTO files(path,mtime) VALUES ('facets/work/news/20260101.md', 12);
             INSERT INTO chunk_classification VALUES ('facets/work/news/20260101.md','facets','facet_owned',1,0);
             INSERT INTO chunk_classification_backfill VALUES(1,'z',1,0,NULL,2);
             DROP TABLE chunk_classification_facets;").unwrap();

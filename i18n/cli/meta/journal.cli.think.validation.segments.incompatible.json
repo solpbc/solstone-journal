@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for validation segments incompatible.",
+  "context": "Journal command-line text for validation segments incompatible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4885dfdfbb3ab043406a108769e814da0d2efa061de0fa43bcd7f84d02821f1e",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "segments_flag",
+      "kind": "flag",
+      "value": "--segments"
+    },
+    {
+      "name": "segment_flag",
+      "kind": "flag",
+      "value": "--segment"
+    },
+    {
+      "name": "facet_flag",
+      "kind": "flag",
+      "value": "--facet"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for log name answers.",
+  "context": "Journal command-line text for log name answers.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "answers",
+      "type": "string"
+    },
+    {
+      "name": "judged",
+      "type": "string"
+    },
+    {
+      "name": "changed",
+      "type": "string"
+    },
+    {
+      "name": "waiting",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6dd14bc8fcdf263953de03ec5b8408bf8bb58689a04cf93eec772831b035c29f",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

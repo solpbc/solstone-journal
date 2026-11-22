@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sense worker output incomplete.",
+  "context": "Journal command-line text for sense worker output incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "54980763acdb6dd28443791d1172a506aba4c79292a63c23ada9fdfaad1e300a",
+  "max_length": 116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

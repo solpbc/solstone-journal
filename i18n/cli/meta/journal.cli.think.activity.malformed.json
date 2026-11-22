@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for activity malformed.",
+  "context": "Journal command-line text for activity malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d546b18859f5c48fb2406679d4e23d801a0abf875c3d68444d241361e7f070f2",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reactivate_flag",
+      "kind": "flag",
+      "value": "--reactivate"
+    }
+  ]
+}

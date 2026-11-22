@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for sense interrupted write.",
+  "context": "Journal command-line text for sense interrupted write.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f020bebf9aeb5b910ccd6b757c2fa2f8af7043018a22c83d428d9003a2e927df",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "event",
+      "kind": "accepted-input",
+      "value": "observe.interrupted"
+    }
+  ]
+}

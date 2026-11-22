@@ -834,7 +834,7 @@ impl OwnerIndex {
         per_day_limit: usize,
     ) -> Result<Vec<(String, Vec<SearchHit>)>, IndexAccessError> {
         self.connection
-            .fetch_day_hits(&plan.0, days, per_day_limit, false)
+            .fetch_day_hits(&plan.0, days, per_day_limit, false, false)
     }
 
     pub fn fetch_day_hits_with_passages(
@@ -843,7 +843,19 @@ impl OwnerIndex {
         days: &[String],
         limit: usize,
     ) -> Result<Vec<(String, Vec<SearchHit>)>, IndexAccessError> {
-        self.connection.fetch_day_hits(&plan.0, days, limit, true)
+        self.connection
+            .fetch_day_hits(&plan.0, days, limit, true, false)
+    }
+
+    /// Include each writer's presentation stamp in the same read as its owner-visible row.
+    pub fn fetch_localized_day_hits(
+        &mut self,
+        plan: &SearchPlan,
+        days: &[String],
+        limit: usize,
+    ) -> Result<Vec<(String, Vec<SearchHit>)>, IndexAccessError> {
+        self.connection
+            .fetch_day_hits(&plan.0, days, limit, true, true)
     }
 
     #[cfg(any(test, feature = "test-hooks"))]
@@ -1456,19 +1468,50 @@ pub fn read_indexed_entry(
     row_id: i64,
     max_bytes: u64,
 ) -> Result<IndexedEntry, IndexAccessError> {
+    Ok(read_entry_snapshot(journal, boundary, path, idx, row_id, max_bytes, false)?.0)
+}
+
+/// Read an owner's bounded entry and the display stamp saved with that same indexed row.
+pub fn read_owner_entry_for_display(
+    journal: &Path,
+    path: &str,
+    idx: i64,
+    row_id: i64,
+    max_bytes: u64,
+) -> Result<(IndexedEntry, Option<String>), IndexAccessError> {
+    read_entry_snapshot(
+        journal,
+        QueryBoundary::Owner,
+        path,
+        idx,
+        row_id,
+        max_bytes,
+        true,
+    )
+}
+
+fn read_entry_snapshot(
+    journal: &Path,
+    boundary: QueryBoundary,
+    path: &str,
+    idx: i64,
+    row_id: i64,
+    max_bytes: u64,
+    display: bool,
+) -> Result<(IndexedEntry, Option<String>), IndexAccessError> {
     let reader = match open_index_reader(journal, &boundary) {
         Ok(reader) => reader,
         Err(IndexAccessError::Absent { .. } | IndexAccessError::Empty { .. })
             if matches!(&boundary, QueryBoundary::Connection(_)) =>
         {
-            return Ok(IndexedEntry::NotFound);
+            return Ok((IndexedEntry::NotFound, None));
         }
         Err(error) => return Err(error),
     };
     let (row_id, reindexed) = match locate_entry(&reader, &boundary, path, idx, row_id)? {
         EntryLocation::AsSearched => (row_id, false),
         EntryLocation::Reindexed(row_id) => (row_id, true),
-        EntryLocation::Gone => return Ok(IndexedEntry::NotFound),
+        EntryLocation::Gone => return Ok((IndexedEntry::NotFound, None)),
     };
     let (clause, rest) = entry_row_predicate(&boundary, path, idx);
     let mut values = vec![
@@ -1476,27 +1519,27 @@ pub fn read_indexed_entry(
         Value::Integer(row_id),
     ];
     values.extend(rest);
-    let found: Option<(i64, Option<String>)> = reader
+    let stamp = reader.display_stamp_expression(display)?;
+    let found: Option<(i64, Option<String>, Option<String>)> = reader
         .connection
         .query_row(
             &format!(
-                "SELECT length(CAST(content AS BLOB)),
-                CASE WHEN length(CAST(content AS BLOB)) <= ? THEN content ELSE NULL END
+                "SELECT length(CAST(content AS BLOB)), CASE WHEN length(CAST(content AS BLOB)) <= ? THEN content ELSE NULL END, {stamp}
          FROM chunks WHERE {clause} LIMIT 1"
             ),
             params_from_iter(values.iter()),
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(|error| reader.classify(error))?;
     let owner = matches!(&boundary, QueryBoundary::Owner);
     Ok(match found {
-        None => IndexedEntry::NotFound,
-        Some((_, Some(content))) if reindexed => IndexedEntry::Reindexed(content),
-        Some((_, Some(content))) => IndexedEntry::Found(content),
+        None => (IndexedEntry::NotFound, None),
+        Some((_, Some(content), stamp)) if reindexed => (IndexedEntry::Reindexed(content), stamp),
+        Some((_, Some(content), stamp)) => (IndexedEntry::Found(content), stamp),
         // An agent is not told the size of an entry it cannot read.
-        Some(_) if owner => IndexedEntry::TooLarge,
-        Some(_) => IndexedEntry::NotFound,
+        Some(_) if owner => (IndexedEntry::TooLarge, None),
+        Some(_) => (IndexedEntry::NotFound, None),
     })
 }
 
@@ -1806,6 +1849,21 @@ impl QueryConnection {
             #[cfg(any(test, feature = "test-hooks"))]
             injected_fetch_failure: false,
         })
+    }
+
+    /// Older databases have no stamp column. Every supported reader can still serve their rows.
+    fn display_stamp_expression(&self, requested: bool) -> Result<&'static str, IndexAccessError> {
+        if requested && self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('files') WHERE name='display_stamp')",
+            [],
+            |row| row.get::<_, bool>(0),
+        ).map_err(|err| self.classify(err))? {
+            // files.path is the primary key. This correlated lookup reads one file row and
+            // remains in the same SQLite snapshot as the chunk supplying its text.
+            Ok("(SELECT display_stamp FROM files WHERE files.path=chunks.path AND typeof(display_stamp)='text' AND length(display_stamp)=64)")
+        } else {
+            Ok("NULL")
+        }
     }
 
     /// Extra per-hit columns, in order: the screen-text group offset, the
@@ -2266,6 +2324,7 @@ impl QueryConnection {
                 let calendar = CalendarHit::from_columns(row.get(11)?, row.get(12)?, row.get(13)?);
                 let agent = agent.unwrap_or_default();
                 Ok(SearchHit {
+                    display_stamp: None,
                     match_spans: Vec::new(),
                     row_id,
                     id: format!("{path}:{idx}"),
@@ -2296,6 +2355,7 @@ impl QueryConnection {
         days: &[String],
         per_day_limit: usize,
         passages: bool,
+        display: bool,
     ) -> Result<Vec<(String, Vec<SearchHit>)>, IndexAccessError> {
         if days.is_empty() {
             return Ok(Vec::new());
@@ -2327,13 +2387,14 @@ impl QueryConnection {
             ("0.0", "ORDER BY day DESC, rowid DESC")
         };
         let (extra_columns, joins) = self.hit_projection()?;
+        let stamp = self.display_stamp_expression(display)?;
         let marked = if passages && plan.has_live_match_expression {
             "CASE WHEN path GLOB '*/conversation_transcript.jsonl' OR path GLOB '*/imported_audio.jsonl' THEN highlight(chunks,0,char(1),char(1)) END"
         } else {
             "NULL"
         };
         let sql = format!(
-            "SELECT content, path, day, facet, agent, stream, idx, {score_expr}, chunks.rowid, {extra_columns}, {marked} FROM chunks{joins} WHERE {} AND day IN ({placeholders}) {order_clause}",
+            "SELECT content, path, day, facet, agent, stream, idx, {score_expr}, chunks.rowid, {extra_columns}, {marked}, {stamp} FROM chunks{joins} WHERE {} AND day IN ({placeholders}) {order_clause}",
             plan.where_clause
         );
         let mut values = plan.params.clone();
@@ -2382,6 +2443,7 @@ impl QueryConnection {
                     }
                 }
                 Ok(SearchHit {
+                    display_stamp: row.get(15)?,
                     match_spans,
                     row_id,
                     id: format!("{path}:{idx}"),

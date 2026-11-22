@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for activity state.",
+  "context": "Journal command-line text for activity state.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b3b238ecffdbb7b61d831978715bb47b8082ddb4f93a54f3f9924c7d11601363",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

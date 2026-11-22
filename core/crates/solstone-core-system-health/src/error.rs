@@ -31,3 +31,59 @@ pub enum HealthError {
     #[error(transparent)]
     Identity(solstone_core_journal_io::SegmentIdentityError),
 }
+
+impl HealthError {
+    pub fn render(&self, locale: &str) -> String {
+        use solstone_core_journal_io::cli_diagnostics::{
+            health_marker_detail, path_detail, read_detail, segment_identity,
+        };
+        match self {
+            Self::Source(detail) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.health.source",
+                [("detail", &(detail))],
+            ),
+            Self::InvalidDay(day) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.health.day.invalid",
+                [("day", &(day))],
+            ),
+            Self::JournalIo(detail) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.health.read",
+                [("detail", &(read_detail(locale, detail)))],
+            ),
+            Self::HealthMarker(detail) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.health.marker",
+                [("detail", &(health_marker_detail(locale, detail)))],
+            ),
+            Self::Directory { path, message } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.health.directory",
+                [("path", &(path.display())), ("detail", &(message))],
+            ),
+            Self::Metadata { path, message } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.health.metadata",
+                [("path", &(path.display())), ("detail", &(message))],
+            ),
+            Self::JournalPath(detail) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.stats.cause.path",
+                [("detail", &(path_detail(locale, detail)))],
+            ),
+            Self::UnrepresentableSegment { path } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.backfill.identity.encoding",
+                [("path", &(path.display()))],
+            ),
+            Self::AmbiguousNamedDefault { path } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.backfill.identity.ambiguous",
+                [("path", &(path.display()))],
+            ),
+            Self::Identity(error) => segment_identity(locale, error),
+        }
+    }
+}

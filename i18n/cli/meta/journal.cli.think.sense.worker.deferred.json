@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense worker deferred.",
+  "context": "Journal command-line text for sense worker deferred.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "178faf34f0db383c3dd834a31b3371798ebb6a2893d9ce475022eb190bf242a1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

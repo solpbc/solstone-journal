@@ -1,0 +1,54 @@
+{
+  "description": "Journal command-line text for plan activity heading.",
+  "context": "Journal command-line text for plan activity heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "activity",
+      "type": "string"
+    },
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "f47a0d2684f86805758de94ca5cee0a3aa07386d4693bedfc4f76919009f6e57",
+  "max_length": 239,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "activity_flag",
+      "kind": "flag",
+      "value": "--activity"
+    },
+    {
+      "name": "facet_flag",
+      "kind": "flag",
+      "value": "--facet"
+    }
+  ],
+  "selector": {
+    "name": "operation",
+    "type": "string",
+    "enum_values": [
+      "refresh",
+      "ordinary"
+    ],
+    "enum_default": "ordinary"
+  }
+}

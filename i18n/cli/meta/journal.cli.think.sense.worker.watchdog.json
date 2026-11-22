@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sense worker watchdog.",
+  "context": "Journal command-line text for sense worker watchdog.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "289183ccd51f566652661c46ebddd651314ed44e609a2ac06963257be5290a70",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

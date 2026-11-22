@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for markdown terminal clock.",
+  "context": "Journal command-line text for markdown terminal clock.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "clock",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3bc93b1ae958d4a03f3eef5acffb518958db2d44b742d60fb9fbed213c032fe3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -13,6 +13,7 @@ use std::path::Path;
 
 use serde_json::Value;
 use solstone_core_format::objects::{object_counts, qualified_objects};
+use solstone_core_format::stored_markdown::{Document, Message};
 
 #[derive(Default)]
 struct ClassTally {
@@ -21,18 +22,10 @@ struct ClassTally {
     most_at_once: usize,
 }
 
-fn counted(count: usize, singular: &str, plural: &str) -> Option<String> {
-    match count {
-        0 => None,
-        1 => Some(format!("1 {singular}")),
-        _ => Some(format!("{count} {plural}")),
-    }
-}
-
 /// Markdown for every qualified object in the segment's detection rows, or
 /// `None` when nothing qualified. Unreadable files and rows are skipped:
 /// detections are best-effort enrichment and never block the segment.
-pub(crate) fn segment_objects_markdown(segment_dir: &Path) -> Option<String> {
+pub(crate) fn segment_objects_markdown(segment_dir: &Path) -> Option<Document> {
     let mut files = fs::read_dir(segment_dir)
         .ok()?
         .filter_map(Result::ok)
@@ -78,26 +71,21 @@ pub(crate) fn segment_objects_markdown(segment_dir: &Path) -> Option<String> {
             .cmp(&(left.1.frames + left.1.photos))
             .then_with(|| left.0.cmp(&right.0))
     });
-    let lines = ordered
-        .into_iter()
-        .map(|(name, tally)| {
-            let seen = [
-                counted(tally.frames, "frame", "frames"),
-                counted(tally.photos, "photo", "photos"),
-            ]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .join(" and ");
-            let frames = format!("in {seen}");
-            if tally.most_at_once > 1 {
-                format!("- {name}: {frames}, up to {} at once", tally.most_at_once)
-            } else {
-                format!("- {name}: {frames}")
-            }
-        })
-        .collect::<Vec<_>>();
-    Some(format!("# Objects\n\n{}\n", lines.join("\n")))
+    let mut document = Document::default();
+    document.push_str("# ");
+    document.push_message(Message::Objects);
+    document.push_str("\n\n");
+    for (class, tally) in ordered {
+        document.push_str("- ");
+        document.push_message(Message::Object {
+            class,
+            frames: tally.frames,
+            photos: tally.photos,
+            most: tally.most_at_once,
+        });
+        document.push_str("\n");
+    }
+    Some(document)
 }
 
 #[cfg(test)]

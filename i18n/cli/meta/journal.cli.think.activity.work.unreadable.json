@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for activity work unreadable.",
+  "context": "Journal command-line text for activity work unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "32338778dc81845c1cf2c3f19639c2d9a4cd9e8dcfe208132eb35b188f59cb88",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

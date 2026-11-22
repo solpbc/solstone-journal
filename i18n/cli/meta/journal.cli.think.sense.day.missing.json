@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense day missing.",
+  "context": "Journal command-line text for sense day missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d38ce886d2f78bc72729d893a9ecd8401ee9c1c226398db1c9c0497d552f98d9",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

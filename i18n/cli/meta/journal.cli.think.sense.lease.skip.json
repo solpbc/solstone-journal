@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense lease skip.",
+  "context": "Journal command-line text for sense lease skip.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9c51a12d2c2b408fdce1a6930b1870ea3089097f7fb2df91580fc825217d7592",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

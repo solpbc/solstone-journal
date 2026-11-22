@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for repair segment missing.",
+  "context": "Journal command-line text for repair segment missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2e3636d69738d9ec61b9648baa83d77cccfaffd830eeffe3a34277d3db186f9f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

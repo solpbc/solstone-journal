@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for health marker stream.",
+  "context": "Journal command-line text for health marker stream.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef731a55bb6106102addd3b25db97fa21a3b1243e935e909f1637ec73c2e4309",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

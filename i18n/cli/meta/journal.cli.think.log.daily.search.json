@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for log daily search.",
+  "context": "Journal command-line text for log daily search.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "abe22afc3b05b4586823d0d846068042bb5c4eb7ffc8e9dc114cfb7ca53b351f",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

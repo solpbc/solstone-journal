@@ -3,6 +3,7 @@
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ThinkArgs {
+    pub terminal_locale: Option<&'static str>,
     pub day: Option<String>,
     pub segment: Option<String>,
     pub repair_segment: bool,
@@ -37,6 +38,7 @@ pub(crate) struct ThinkArgs {
 impl Default for ThinkArgs {
     fn default() -> Self {
         Self {
+            terminal_locale: None,
             day: None,
             segment: None,
             repair_segment: false,
@@ -70,28 +72,11 @@ impl Default for ThinkArgs {
     }
 }
 
-pub(crate) const UPDATED_INCOMPATIBLE: &str = "--updated is incompatible with ";
-pub(crate) const FACET_REQUIRES_ACTIVITY: &str = "--facet requires --activity";
-pub(crate) const ACTIVITY_REQUIRES_FACET: &str = "--activity requires --facet";
-pub(crate) const ACTIVITY_REQUIRES_DAY: &str = "--activity requires --day";
-pub(crate) const REACTIVATE_REQUIRES_ACTIVITY: &str = "--reactivate requires --activity";
+#[cfg(test)]
 pub(crate) const REACTIVATE_INCOMPATIBLE_REFRESH: &str =
     "--reactivate is incompatible with --refresh";
-pub(crate) const NO_ACTIVITY_PROMPTS_WITH_ACTIVITY: &str =
-    "--no-activity-prompts cannot be combined with --activity";
-pub(crate) const SEGMENT_WORKERS_RANGE: &str = "--segment-workers must be between 1 and 32";
-pub(crate) const ACTIVITY_INCOMPATIBLE: &str =
-    "--activity is incompatible with --segment, --segments, and --flush";
-pub(crate) const FLUSH_REQUIRES_SEGMENT: &str = "--flush requires --segment";
-pub(crate) const SETTLE_INCOMPATIBLE: &str = "--settle is incompatible with --segment, --segments, --activity, --flush, --refresh, --weekly, and --cadence";
-pub(crate) const FLUSH_INCOMPATIBLE: &str = "--flush is incompatible with --segments and --refresh";
-pub(crate) const SEGMENTS_INCOMPATIBLE: &str =
-    "--segments is incompatible with --segment and --facet";
-pub(crate) const WEEKLY_INCOMPATIBLE: &str =
-    "--weekly is incompatible with --segment, --segments, --activity, and --flush";
-pub(crate) const CADENCE_INCOMPATIBLE: &str =
-    "--cadence is incompatible with --segment, --segments, --activity, --flush, and --weekly";
-pub(crate) const MULTI_WORKER_UNLIMITED_JOBS: &str = "--jobs 0 is incompatible with multi-worker --segments; set --jobs to a positive bound or --segment-workers 1";
+#[cfg(test)]
+pub(crate) const REACTIVATE_REQUIRES_ACTIVITY: &str = "--reactivate requires --activity";
 
 pub(crate) enum ParseOutcome {
     Help,
@@ -99,14 +84,29 @@ pub(crate) enum ParseOutcome {
 }
 
 pub(crate) fn parse(args: &[String]) -> Result<ParseOutcome, String> {
-    let mut parsed = ThinkArgs::default();
+    parse_in(args, None)
+}
+
+pub(crate) fn parse_in(
+    args: &[String],
+    terminal_locale: Option<&'static str>,
+) -> Result<ParseOutcome, String> {
+    let locale = terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
+    let mut parsed = ThinkArgs {
+        terminal_locale,
+        ..ThinkArgs::default()
+    };
     let mut index = 0;
     while let Some(argument) = args.get(index) {
         let mut value = |name: &str| {
             index += 1;
-            args.get(index)
-                .cloned()
-                .ok_or_else(|| format!("argument {name}: expected one argument"))
+            args.get(index).cloned().ok_or_else(|| {
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.argument.value",
+                    [("option", &(name))],
+                )
+            })
         };
         match argument.as_str() {
             "--day" => parsed.day = Some(value("--day")?),
@@ -126,17 +126,24 @@ pub(crate) fn parse(args: &[String]) -> Result<ParseOutcome, String> {
             "--flush" => parsed.flush = true,
             "--settle" => parsed.settle = true,
             "-j" | "--jobs" => {
-                parsed.jobs = value(argument)?
-                    .parse()
-                    .map_err(|_| format!("argument {argument}: invalid int value"))?
+                parsed.jobs = value(argument)?.parse().map_err(|_| {
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.think.argument.integer",
+                        [("option", &(argument))],
+                    )
+                })?
             }
             "--no-timeout" => parsed.no_timeout = true,
             "--segment-workers" => {
-                parsed.segment_workers = Some(
-                    value("--segment-workers")?
-                        .parse()
-                        .map_err(|_| "argument --segment-workers: invalid int value".to_owned())?,
-                )
+                parsed.segment_workers =
+                    Some(value("--segment-workers")?.parse().map_err(|_| {
+                        solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.think.argument.integer",
+                            [("option", &argument)],
+                        )
+                    })?)
             }
             "--no-activity-prompts" => parsed.no_activity_prompts = true,
             "--skip-talents" => parsed.skip_talents = value("--skip-talents")?,
@@ -149,14 +156,18 @@ pub(crate) fn parse(args: &[String]) -> Result<ParseOutcome, String> {
             "-v" | "--verbose" => parsed.verbose = true,
             "-d" | "--debug" => parsed.debug = true,
             "-h" | "--help" => return Ok(ParseOutcome::Help),
-            unknown => return Err(format!("unrecognized arguments: {unknown}")),
+            unknown => {
+                return Err(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.think.argument.unknown",
+                    [("argument", &(unknown))],
+                ));
+            }
         }
         index += 1;
     }
     Ok(ParseOutcome::Args(Box::new(parsed)))
 }
-
-pub(crate) const SENSE_BATCH_INCOMPATIBLE: &str = "--sense-batch is incompatible with ";
 
 pub(crate) fn sense_batch_offenders(args: &ThinkArgs) -> Vec<&'static str> {
     let mut offenders = Vec::new();

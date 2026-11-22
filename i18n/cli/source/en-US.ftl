@@ -3086,3 +3086,663 @@ journal.cli.talent.hook.lookup.separator = invalid path component '{ $candidate 
 journal.cli.talent.hook.resolution.absent = resolved ambiguity { $ambiguity } names entity { $entity } absent from this resolution call
 
 journal.cli.talent.hook.resolution.hidden = resolved ambiguity { $ambiguity } names hidden entity { $entity }
+
+journal.cli.think.argument.integer = argument { $option }: invalid int value
+
+journal.cli.think.argument.unknown = unrecognized arguments: { $argument }
+
+journal.cli.think.argument.value = argument { $option }: expected one argument
+
+journal.cli.think.error = { $command }: { $message }
+
+journal.cli.think.help = usage: { $syntax }
+
+journal.cli.think.host.sense.missing = hosted Sense executor is unavailable
+
+journal.cli.think.sense.conflict = { $sense_batch_flag } is incompatible with { $options }
+
+journal.cli.think.sense.day = { $sense_batch_flag } requires { $day_flag }
+
+journal.cli.think.updated.conflict = { $updated_flag } is incompatible with { $options }
+
+journal.cli.think.usage.error = usage: { $syntax }{ $line_break }{ $command }: error: { $message }
+
+journal.cli.think.validation.activity.incompatible = { $activity_flag } is incompatible with { $segment_flag }, { $segments_flag }, and { $flush_flag }
+
+journal.cli.think.validation.activity.requires.day = { $activity_flag } requires { $day_flag }
+
+journal.cli.think.validation.activity.requires.facet = { $activity_flag } requires { $facet_flag }
+
+journal.cli.think.validation.cadence.incompatible = { $cadence_flag } is incompatible with { $segment_flag }, { $segments_flag }, { $activity_flag }, { $flush_flag }, and { $weekly_flag }
+
+journal.cli.think.validation.daily.only = { $daily_only_flag } requires { $day_flag } and cannot be combined with another thinking mode
+
+journal.cli.think.validation.facet.requires.activity = { $facet_flag } requires { $activity_flag }
+
+journal.cli.think.validation.flush.incompatible = { $flush_flag } is incompatible with { $segments_flag } and { $refresh_flag }
+
+journal.cli.think.validation.flush.requires.segment = { $flush_flag } requires { $segment_flag }
+
+journal.cli.think.validation.multi.worker.unlimited.jobs = { $jobs_flag } 0 is incompatible with multi-worker { $segments_flag }; set { $jobs_flag } to a positive bound or { $segment_workers_flag } 1
+
+journal.cli.think.validation.no.activity.prompts.with.activity = { $no_activity_prompts_flag } cannot be combined with { $activity_flag }
+
+journal.cli.think.validation.reactivate.incompatible.refresh = { $reactivate_flag } is incompatible with { $refresh_flag }
+
+journal.cli.think.validation.reactivate.requires.activity = { $reactivate_flag } requires { $activity_flag }
+
+journal.cli.think.validation.repair.segment = { $repair_segment_flag } requires { $day_flag } and { $segment_flag } and cannot be combined with another thinking mode
+
+journal.cli.think.validation.retry.unit = { $retry_unit_flag } requires { $day_flag } and { $retry_cause_flag } without another thinking mode
+
+journal.cli.think.validation.segment.workers.range = { $segment_workers_flag } must be between 1 and 32
+
+journal.cli.think.validation.segments.incompatible = { $segments_flag } is incompatible with { $segment_flag } and { $facet_flag }
+
+journal.cli.think.validation.settle.incompatible = { $settle_flag } is incompatible with { $segment_flag }, { $segments_flag }, { $activity_flag }, { $flush_flag }, { $refresh_flag }, { $weekly_flag }, and { $cadence_flag }
+
+journal.cli.think.validation.weekly.incompatible = { $weekly_flag } is incompatible with { $segment_flag }, { $segments_flag }, { $activity_flag }, and { $flush_flag }
+
+journal.cli.think.validation.work.intent = { $work_intent_flag } requires a from-scratch daily request
+
+journal.cli.think.plan.activity.count = segments: { $segments }
+
+journal.cli.think.plan.activity.empty = No agents match activity type '{ $kind }'
+
+journal.cli.think.plan.activity.heading = { $operation ->
+    [refresh] Day { $day } { $activity_flag } { $activity } { $facet_flag } { $facet } (refresh)
+    *[ordinary] Day { $day } { $activity_flag } { $activity } { $facet_flag } { $facet }
+    }
+
+journal.cli.think.plan.activity.missing = Activity not found: { $activity } in facet '{ $facet }' on { $day }
+
+journal.cli.think.plan.activity.type = type:     { $kind }
+
+journal.cli.think.plan.cadence = Day { $day } — cadence agents
+
+journal.cli.think.plan.cadence.fire = { $segments ->
+    [one] { $activities ->
+        [one] fire  { $name } — window: { $segments } segment, { $activities } activity
+        *[other] fire  { $name } — window: { $segments } segment, { $activities } activity(ies)
+    }
+    *[other] { $activities ->
+        [one] fire  { $name } — window: { $segments } segment(s), { $activities } activity
+        *[other] fire  { $name } — window: { $segments } segment(s), { $activities } activity(ies)
+    }
+    }
+
+journal.cli.think.plan.cadence.idle = no-op { $name } — no new work since last cadence run
+
+journal.cli.think.plan.cadence.skip = skip  { $name } — interval not elapsed ({ $seconds }s < { $minutes }m)
+
+journal.cli.think.plan.day = Day { $day }
+
+journal.cli.think.plan.day.refresh = Day { $day } (refresh)
+
+journal.cli.think.plan.day.segment = Day { $day } segment { $segment }
+
+journal.cli.think.plan.day.segment.refresh = Day { $day } segment { $segment } (refresh)
+
+journal.cli.think.plan.empty.cadence = No prompts for schedule: { $cadence }
+
+journal.cli.think.plan.empty.weekly = No prompts for schedule: { $weekly }
+
+journal.cli.think.plan.flush = Day { $day } { $flush_flag } segment { $segment }
+
+journal.cli.think.plan.flush.empty = No flush-eligible agents
+
+journal.cli.think.plan.flush.talent = { $kind ->
+    [generate] gen  { $name }
+    *[agent] agent  { $name }
+    }
+
+journal.cli.think.plan.idle = idle segments: write stubs only (unless { $refresh_flag })
+
+journal.cli.think.plan.orchestrator = Sense orchestrator (linear):
+
+journal.cli.think.plan.post.indexer = Post-phase: { $command }
+
+journal.cli.think.plan.post.stats = Post-phase: { $command }
+
+journal.cli.think.plan.pre = Pre-phase:  { $command } { $day } { $jobs_flag } { $jobs }
+
+journal.cli.think.plan.priority = Priority { $priority }:
+
+journal.cli.think.plan.reprocess = { $count ->
+    [one] Day { $day } — re-process { $count } segment
+    *[other] Day { $day } — re-process { $count } segments
+    }
+
+journal.cli.think.plan.schedule.empty = No prompts for schedule: { $schedule }
+
+journal.cli.think.plan.segment.row = [{ $index }/{ $total }] { $segment } ({ $start }-{ $end }) stream={ $stream }
+
+journal.cli.think.plan.skip = skip { $name } — no activity: { $facets }
+
+journal.cli.think.plan.state = activity state machine: updates per segment
+
+journal.cli.think.plan.step.entities = { $presence ->
+    [existing] { $step }. { $name } ({ $kind }/{ $format }) (exists) — always for non-idle
+    [new] { $step }. { $name } ({ $kind }/{ $format }) (new) — always for non-idle
+    *[plain] { $step }. { $name } ({ $kind }/{ $format }) — always for non-idle
+    }
+
+journal.cli.think.plan.step.possible = { $presence ->
+    [existing] { $step }. { $name } ({ $kind }/{ $format }) (exists) — if a speech transcript (never gates the segment)
+    [new] { $step }. { $name } ({ $kind }/{ $format }) (new) — if a speech transcript (never gates the segment)
+    *[plain] { $step }. { $name } ({ $kind }/{ $format }) — if a speech transcript (never gates the segment)
+    }
+
+journal.cli.think.plan.step.screen = { $presence ->
+    [existing] { $step }. { $name } ({ $kind }/{ $format }) (exists) — if { $recommend_screen_record }
+    [new] { $step }. { $name } ({ $kind }/{ $format }) (new) — if { $recommend_screen_record }
+    *[plain] { $step }. { $name } ({ $kind }/{ $format }) — if { $recommend_screen_record }
+    }
+
+journal.cli.think.plan.step.sense = { $presence ->
+    [existing] { $step }. { $name } ({ $kind }/{ $format }) (exists) — mandatory
+    [new] { $step }. { $name } ({ $kind }/{ $format }) (new) — mandatory
+    *[plain] { $step }. { $name } ({ $kind }/{ $format }) — mandatory
+    }
+
+journal.cli.think.plan.step.speaker.attribution = { $presence ->
+    [existing] { $step }. { $name } ({ $kind }/{ $format }) (exists) — if audio embeddings (the model layer only if { $recommend_speaker_attribution })
+    [new] { $step }. { $name } ({ $kind }/{ $format }) (new) — if audio embeddings (the model layer only if { $recommend_speaker_attribution })
+    *[plain] { $step }. { $name } ({ $kind }/{ $format }) — if audio embeddings (the model layer only if { $recommend_speaker_attribution })
+    }
+
+journal.cli.think.plan.table.facet = { $row ->
+    [generator_existing] gen  { $name }/{ $facet } (exists)
+    [generator_new] gen  { $name }/{ $facet } (new)
+    [generator_plain] gen  { $name }/{ $facet }
+    [agent_existing] agent  { $name }/{ $facet } (exists)
+    [agent_new] agent  { $name }/{ $facet } (new)
+    *[agent_plain] agent  { $name }/{ $facet }
+    }
+
+journal.cli.think.plan.table.talent = { $row ->
+    [generator_existing] gen  { $name } (exists)
+    [generator_new] gen  { $name } (new)
+    [generator_plain] gen  { $name }
+    [agent_existing] agent  { $name } (exists)
+    [agent_new] agent  { $name } (new)
+    *[agent_plain] agent  { $name }
+    }
+
+journal.cli.think.plan.total = { $total ->
+    [one] Total: { $total } agent
+    *[other] Total: { $total } agents
+    }
+
+journal.cli.think.plan.weekly = Day { $day } — weekly agents
+
+journal.cli.think.sense.complete = Batch processing complete
+
+journal.cli.think.sense.day.missing = Day directory not found: { $path }
+
+journal.cli.think.sense.deferred = { $quantity ->
+    [one] Batch processing deferred: { $deferred } of { $ran } handler waiting; unfinished files will retry
+    *[other] Batch processing deferred: { $deferred } of { $ran } handlers waiting; unfinished files will retry
+    }
+
+journal.cli.think.sense.files = { $quantity ->
+    [one] Found { $count } unprocessed file to process ({ $extensions })
+    *[other] Found { $count } unprocessed files to process ({ $extensions })
+    }
+
+journal.cli.think.sense.nothing = No unprocessed files found in { $path }
+
+journal.cli.think.sense.processing.day = { $quantity ->
+    [one] Processing files from day { $day } with { $jobs } concurrent job
+    *[other] Processing files from day { $day } with { $jobs } concurrent jobs
+    }
+
+journal.cli.think.sense.processing.segment = { $quantity ->
+    [one] Processing files from day { $day } (segment: { $segment }) with { $jobs } concurrent job
+    *[other] Processing files from day { $day } (segment: { $segment }) with { $jobs } concurrent jobs
+    }
+
+journal.cli.think.outcome.completed = { $command }: { $count } completed
+
+journal.cli.think.outcome.failed = { $command }: { $count } failed
+
+journal.cli.think.reprocess.record = could not record reprocess outcome: { $error }
+
+journal.cli.think.activity.blocked = activity blocked
+
+journal.cli.think.activity.body.data = this activity comes from a { $provider } workout, which is body data; nothing further runs on it.
+
+journal.cli.think.activity.malformed = the facet declaration is malformed. correct it, then retry with { $reactivate_flag }.
+
+journal.cli.think.activity.missing = the destination facet is missing. after restoring its declaration, retry with { $reactivate_flag }; otherwise reclassify the source segment.
+
+journal.cli.think.activity.muted.blocked = the destination facet is muted. unmute it, then retry the blocked activity with { $reactivate_flag }.
+
+journal.cli.think.activity.muted.retry = the destination facet is muted. unmute it to resume unfinished activity processing.
+
+journal.cli.think.activity.owner.field.held = activity output is held by owner
+
+journal.cli.think.activity.pending = activity retry pending
+
+journal.cli.think.activity.read.blocked = the facet declaration could not be read. after restoring access, retry the blocked activity with { $reactivate_flag }.
+
+journal.cli.think.activity.read.retry = the facet declaration could not be read. the unfinished activity will retry automatically.
+
+journal.cli.think.activity.record.missing = no activity record exists for this classification. after correcting the declaration, reprocess the source segment.
+
+journal.cli.think.activity.replaced = the destination facet was replaced. reclassify the source segment; an old result cannot be applied to the replacement.
+
+journal.cli.think.activity.settled = { $facet }/{ $activity } settled: this activity comes from a { $provider } workout, which is body data; nothing further runs on it.
+
+journal.cli.think.activity.routing = correct the declaration, then reprocess this source segment.
+
+journal.cli.think.daily.blockers.more = { $names }, +{ $count } more
+
+journal.cli.think.daily.incomplete = { $units ->
+    [one] { $blockers ->
+        [one] { $phase } ({ $units } daily unit non-terminal; { $blockers } segment blocker remains{ $details })
+        *[other] { $phase } ({ $units } daily unit non-terminal; { $blockers } segment blocker(s) remain{ $details })
+    }
+    *[other] { $blockers ->
+        [one] { $phase } ({ $units } daily unit(s) non-terminal; { $blockers } segment blocker remains{ $details })
+        *[other] { $phase } ({ $units } daily unit(s) non-terminal; { $blockers } segment blocker(s) remain{ $details })
+    }
+    }
+
+journal.cli.think.daily.incomplete.record = { $phase } ({ $units } daily unit(s) non-terminal; { $blockers } segment blocker(s) remain{ $details })
+
+journal.cli.think.log.name.answers = name answers: { $answers } changed, { $judged } activities judged again, { $changed } changed, { $waiting } waiting
+
+journal.cli.think.log.provider = { $left ->
+    [one] thinking provider is unavailable; { $left } segment waits for the next run
+    *[other] thinking provider is unavailable; { $left } segments wait for the next run
+    }
+
+journal.cli.think.log.work.discovery = work discovery: pass took { $elapsed } ms over { $inspected } of { $days } days; ranked { $handed } tasks for the queue
+
+journal.cli.think.preflight.disk = Your journal has run out of space on its disk ({ $detail }). Repair: free up space on that disk, then start your journal again.
+
+journal.cli.think.preflight.held = { $reason }: { $role_key }{ $role } { $pid_key }{ $pid } { $time_key }{ $started } { $generation_key }{ $generation } { $age_key }{ $age }; use the supervised path or stop that process cleanly
+
+journal.cli.think.preflight.held.unavailable = { $reason }: { $owner }; use the supervised path or stop the current process cleanly
+
+journal.cli.think.error.with.log = { $primary }; { $log }
+
+journal.cli.think.plan.cadence.fire.record = fire  { $name } — window: { $segments } segment(s), { $activities } activity(ies)
+
+journal.cli.think.plan.reprocess.record = Day { $day } — re-process { $count } segments
+
+journal.cli.think.plan.total.record = Total: { $total } agents
+
+journal.cli.think.retry.activity.changed = activity retry permission changed
+
+journal.cli.think.retry.activity.released = activity is no longer set aside
+
+journal.cli.think.retry.daily.changed = daily retry permission changed
+
+journal.cli.think.retry.daily.missing = missing daily permission
+
+journal.cli.think.retry.daily.released = daily unit is no longer held
+
+journal.cli.think.retry.daily.terminal.missing = missing daily terminal record
+
+journal.cli.think.retry.daily.unresolved = daily retry is still unresolved
+
+journal.cli.think.retry.daily.unused = daily writer did not consume retry permission
+
+journal.cli.think.retry.day.mismatch = retry day does not match
+
+journal.cli.think.retry.evidence.missing = retry evidence is missing
+
+journal.cli.think.retry.permission.changed = retry permission changed
+
+journal.cli.think.retry.raw.released = native output is no longer held
+
+journal.cli.think.retry.segment.changed = segment retry permission changed
+
+journal.cli.think.activity.retry.identity = activity work identity mismatch
+
+journal.cli.think.activity.retry.kind = not activity work
+
+journal.cli.think.activity.retry.muted = the activity's facet is muted
+
+journal.cli.think.log.budget = think outcome exceeds operational log record budget
+
+journal.cli.think.log.day.format = day must be { $date_format }
+
+journal.cli.think.log.day.local = invalid local day
+
+journal.cli.think.log.failed = think run log { $path } failed: { $detail }
+
+journal.cli.think.log.failure.lock = think run log failure lock poisoned
+
+journal.cli.think.log.lock = think run log lock poisoned
+
+journal.cli.think.log.reconciliation = retry reconciliation failed: { $error }
+
+journal.cli.think.priority.environment = invalid work priority: { $error }
+
+journal.cli.think.priority.syntax = invalid work priority; expected band 1–6 and a source time
+
+journal.cli.think.cancelled = thinking cancelled
+
+journal.cli.think.repair.segment.missing = missing repair segment
+
+journal.cli.think.sense.error.delete = could not delete { $path }: { $error }
+
+journal.cli.think.sense.error.deleted.dirty = reprocess removed { $path }, but could not durably mark day { $day } dirty: { $detail }
+
+journal.cli.think.sense.error.failed = { $failed } failed of { $ran } ran
+
+journal.cli.think.sense.error.held = sense batch lease for day { $day } is held by another process
+
+journal.cli.think.sense.error.join = Sense worker did not stop cleanly
+
+journal.cli.think.sense.error.lease = sense batch lease error: { $error }
+
+journal.cli.think.sense.error.runtime = batch callosum runtime unavailable
+
+journal.cli.think.sense.error.scan = could not scan { $path }: { $error }
+
+journal.cli.think.sense.error.timeout = sense batch timed out after { $duration }
+
+journal.cli.think.sense.refused = sense batch refused: { $reason }
+
+journal.cli.think.sense.retry.changed = native retry inputs changed
+
+journal.cli.think.sense.retry.handler = unknown native retry handler
+
+journal.cli.think.sense.retry.kind = retry is not native analysis
+
+journal.cli.think.sense.retry.mismatch = native failure handler does not match its source
+
+journal.cli.think.wait.cortex = cortex wait failed: { $error }
+
+journal.cli.think.wait.failed = wait failed: { $error }
+
+journal.cli.think.health.day.invalid = invalid day { $day }; expected { $date_format }
+
+journal.cli.think.health.directory = cannot read directory { $path }: { $detail }
+
+journal.cli.think.health.marker = health marker error: { $detail }
+
+journal.cli.think.health.marker.atomic = health marker publication failed: { $error }
+
+journal.cli.think.health.marker.fingerprint = health marker fingerprint read failed: { $detail }
+
+journal.cli.think.health.marker.io = health marker I/O failed at { $path }: { $error }
+
+journal.cli.think.health.marker.lock = health marker lock failed: { $error }
+
+journal.cli.think.health.marker.malformed = health marker is malformed: { $path }
+
+journal.cli.think.health.metadata = cannot read file metadata { $path }: { $detail }
+
+journal.cli.think.health.read = journal I/O error: { $detail }
+
+journal.cli.think.health.source = health-log source error: { $detail }
+
+journal.cli.think.phase.exit = exit { $code }
+
+journal.cli.think.phase.segment.prerequisites = segment prerequisites changed
+
+journal.cli.think.activity.day.missing = activity day file is missing: { $path }
+
+journal.cli.think.activity.row.missing = activity row is missing: { $path }
+
+journal.cli.think.health.progress.unreadable = segment progress contains unreadable records
+
+journal.cli.think.intent.gone = destructive request is no longer waiting
+
+journal.cli.think.retry.talent.disabled = held talent is no longer enabled
+
+journal.cli.think.retry.talent.dispatch = held talent could not be dispatched
+
+journal.cli.think.retry.talent.segment.missing = segment no longer exists
+
+journal.cli.think.retry.talent.skipped = held talent could not be retried
+
+journal.cli.think.activity.state = activity state not saved: { $error }
+
+journal.cli.think.activity.state.segment = { $segment }: activity state not saved: { $error }
+
+journal.cli.think.activity.work.pending = activity work pending: { $failures }
+
+journal.cli.think.health.marker.stream = stream health marker is malformed
+
+journal.cli.think.phase.daily.prerequisites = daily work is waiting for its segment prerequisites
+
+journal.cli.think.settle.save = activity settle state not saved: { $error }
+
+journal.cli.think.markdown.entities = Sense Entities
+
+journal.cli.think.markdown.objects = Objects
+
+journal.cli.think.markdown.partial.input = Left out: Some input did not fit. This result was written from part of the input.
+
+journal.cli.think.markdown.partial.story = This story, and anything saved with it, was written from part of the activity, not all of it.
+
+journal.cli.think.markdown.quotes = Quotes
+
+journal.cli.think.markdown.speaker = Speaker { $number }
+
+journal.cli.think.markdown.terminal.clock = { $clock } · terminal
+
+journal.cli.think.markdown.terminal.notice = text shown in your terminal. this says what was visible, not what you read, typed or did. masking passwords and other secrets is best effort; your redaction rules do not apply.
+
+journal.cli.think.markdown.topics = Topics
+
+journal.cli.think.markdown.object.both = { $frames ->
+    [one] { $photos ->
+        [one] { $class }: in { $frames } frame and { $photos } photo
+        *[other] { $class }: in { $frames } frame and { $photos } photos
+    }
+    *[other] { $photos ->
+        [one] { $class }: in { $frames } frames and { $photos } photo
+        *[other] { $class }: in { $frames } frames and { $photos } photos
+    }
+    }
+
+journal.cli.think.markdown.object.both.maximum = { $frames ->
+    [one] { $photos ->
+        [one] { $class }: in { $frames } frame and { $photos } photo, up to { $most } at once
+        *[other] { $class }: in { $frames } frame and { $photos } photos, up to { $most } at once
+    }
+    *[other] { $photos ->
+        [one] { $class }: in { $frames } frames and { $photos } photo, up to { $most } at once
+        *[other] { $class }: in { $frames } frames and { $photos } photos, up to { $most } at once
+    }
+    }
+
+journal.cli.think.markdown.object.frames = { $frames ->
+    [one] { $class }: in { $frames } frame
+    *[other] { $class }: in { $frames } frames
+    }
+
+journal.cli.think.markdown.object.frames.maximum = { $frames ->
+    [one] { $class }: in { $frames } frame, up to { $most } at once
+    *[other] { $class }: in { $frames } frames, up to { $most } at once
+    }
+
+journal.cli.think.markdown.object.photos = { $photos ->
+    [one] { $class }: in { $photos } photo
+    *[other] { $class }: in { $photos } photos
+    }
+
+journal.cli.think.markdown.object.photos.maximum = { $photos ->
+    [one] { $class }: in { $photos } photo, up to { $most } at once
+    *[other] { $class }: in { $photos } photos, up to { $most } at once
+    }
+
+journal.cli.think.markdown.partial.counts = Left out: { $details }
+
+journal.cli.think.markdown.entity = { $kind } — { $name } (role={ $role }, source={ $source }) — { $context }
+
+journal.cli.think.markdown.sense.entities = ### Entities
+
+journal.cli.think.markdown.sense.facets = ### Facets
+
+journal.cli.think.markdown.sense.record = ## Sense: { $kind }
+
+journal.cli.think.markdown.sense.speakers = **Speakers:** { $names }
+
+journal.cli.think.retry.raw.coordinate.invalid = invalid native retry coordinate
+
+journal.cli.think.retry.raw.coordinate.utf8 = non-UTF8 retry coordinate
+
+journal.cli.think.retry.raw.fingerprint.invalid = native failure input fingerprint is malformed
+
+journal.cli.think.retry.raw.handler.missing = native failure has no handler
+
+journal.cli.think.retry.raw.header.incomplete = native processing header is incomplete
+
+journal.cli.think.retry.raw.header.kind = native processing header is not an object
+
+journal.cli.think.retry.raw.kind = not native analysis
+
+journal.cli.think.retry.raw.parent.missing = native output has no parent
+
+journal.cli.think.retry.raw.permission.unused = native writer did not consume the retry permission
+
+journal.cli.think.retry.raw.receipt.changed = native terminal receipt changed
+
+journal.cli.think.retry.raw.receipt.missing = native terminal receipt is missing
+
+journal.cli.think.retry.raw.receipt.unpublished = native writer has not published this retry's terminal receipt
+
+journal.cli.think.retry.raw.receipt.unreadable = native terminal receipt is unreadable
+
+journal.cli.think.retry.raw.record.malformed = native processing record is malformed
+
+journal.cli.think.retry.raw.schema.unknown = native processing schema is unrecognized
+
+journal.cli.think.retry.raw.source.invalid = native failure has no safe source filename
+
+journal.cli.think.retry.raw.source.mismatch = native failure source does not match its output
+
+journal.cli.think.activity.fingerprint.failed = cannot fingerprint activity inputs
+
+journal.cli.think.activity.repair.required = requires repair
+
+journal.cli.think.activity.work.malformed = malformed activity work: { $path }
+
+journal.cli.think.activity.work.running = previous activity input is still running
+
+journal.cli.think.activity.work.unreadable = cannot read activity work { $path }: { $error }
+
+journal.cli.think.activity.work.version = unsupported activity work version
+
+journal.cli.think.daily.inputs.changed = raw input changed during whole-day processing
+
+journal.cli.think.daily.location.packet = daily location reuse has no stored packet
+
+journal.cli.think.daily.location.read = daily location could not be read
+
+journal.cli.think.daily.snapshot.changed = daily evidence changed before preparation
+
+journal.cli.think.daily.snapshot.changed.after = daily evidence or contract changed during preparation
+
+journal.cli.think.daily.snapshot.freeze = daily input preparation: { $error }
+
+journal.cli.think.daily.snapshot.parent = talent root has no parent
+
+journal.cli.think.daily.snapshot.removed = daily talent removed during preparation
+
+journal.cli.think.routing.log.malformed = cannot read routing recovery from malformed health logs
+
+journal.cli.think.routing.source.invalid = retained routing source is invalid
+
+journal.cli.think.segment.ambiguous = { $count ->
+    [one] ambiguous segment { $day }/{ $segment }: { $count } stream shares this name
+   *[other] ambiguous segment { $day }/{ $segment }: { $count } streams share this name
+    }
+
+journal.cli.think.sense.config.concurrency = sense: invalid { $handler }.{ $setting }; defaulting to 1
+
+journal.cli.think.sense.config.read = sense: journal config unavailable: { $error }
+
+journal.cli.think.sense.config.runtime = sense: invalid { $handler }.{ $setting }; defaulting to { $seconds }s
+
+journal.cli.think.sense.priority.encoding = { $variable } contains invalid UTF-8
+
+journal.cli.think.sense.worker.authority = { $handler } launch authority was not managed
+
+journal.cli.think.sense.worker.deferred = deferred (exit { $code })
+
+journal.cli.think.sense.worker.detail = sense: day={ $day } stream={ $stream } segment={ $segment } file={ $file } error={ $error }
+
+journal.cli.think.sense.worker.exit = { $handler } exit { $code }
+
+journal.cli.think.sense.worker.failed = failed (exit { $code })
+
+journal.cli.think.sense.worker.launch = { $handler } spawn failed
+
+journal.cli.think.sense.worker.log.tail = sense: handler diagnostic log={ $log } tail={ $tail }
+
+journal.cli.think.sense.worker.log.unreadable = sense: handler diagnostic log={ $log } unreadable: { $error }
+
+journal.cli.think.sense.worker.output.incomplete = { $handler } exited 0 with unfinished output (analysis output incomplete): { $path }
+
+journal.cli.think.sense.worker.output.nonregular = { $handler } exited 0 without a regular output: { $path }
+
+journal.cli.think.sense.worker.output.unfinished = { $handler } exited 0 with unfinished output ({ $reason }): { $path }
+
+journal.cli.think.sense.worker.output.unreadable = { $handler } exited 0 without readable output { $path }: { $error }
+
+journal.cli.think.sense.worker.pool = { $handler } pool unavailable
+
+journal.cli.think.sense.worker.program.executable = { $handler } dispatcher current_exe failed: { $error }
+
+journal.cli.think.sense.worker.program.missing = { $handler } dispatcher missing: { $path }
+
+journal.cli.think.sense.worker.program.nonexecutable = { $handler } dispatcher not executable: { $path }
+
+journal.cli.think.sense.worker.program.nonregular = { $handler } dispatcher not a file: { $path }
+
+journal.cli.think.sense.worker.status = sense: handler={ $handler } file={ $file } outcome={ $outcome } log={ $log }
+
+journal.cli.think.sense.worker.survivors = sense: process-tree-not-reaped handler={ $handler } reason={ $reason } survivors={ $count }
+
+journal.cli.think.sense.worker.termination = sense: managed termination failed handler={ $handler }: { $error }
+
+journal.cli.think.sense.worker.timeout = { $handler } watchdog_timeout after { $seconds }s
+
+journal.cli.think.sense.worker.watchdog = watchdog or process wait failed
+
+journal.cli.think.updated.capability = catchup capability unavailable on this platform
+
+journal.cli.think.updated.io = catchup I/O failed at { $path }: { $error }
+
+journal.cli.think.updated.marker = catchup marker error: { $error }
+
+journal.cli.think.updated.path = catchup journal path error: { $error }
+
+journal.cli.think.updated.state = catchup state is malformed: { $detail }
+
+journal.cli.think.sense.interrupted.write = failed to record { $event } event to { $path }: { $error }
+
+journal.cli.think.sense.lease.skip = Sense batch lease for day { $day } is held; skipping batch walk
+
+journal.cli.think.sense.worker.launch.failed = sense: { $handler } launch failed: { $error }
+
+journal.cli.think.log.activity.join = { $command }: late { $day }/{ $segment } joined its open activity
+
+journal.cli.think.log.activity.no.advance = { $command }: { $day }/{ $segment } does not advance live activity state
+
+journal.cli.think.log.activity.replay = { $command }: late { $day }/{ $segment } is replayed with its stream's day
+
+journal.cli.think.log.activity.turn = advancing { $stream } activity state without its turn: { $error }
+
+journal.cli.think.log.cadence.read = Failed to load cadence state: { $error }
+
+journal.cli.think.log.cadence.set.aside = Failed to load cadence state: corrupt artifact set aside
+
+journal.cli.think.log.daily.search = could not inspect search work before daily thinking: { $error }
+
+journal.cli.think.log.display.metadata = could not save display metadata for { $path }: { $error }
+
+journal.cli.think.log.held.release = could not release held { $name } for { $segment }: { $error }
+
+journal.cli.think.log.segment.turn = thinking { $day }/{ $segment } without its turn: { $error }
+
+journal.cli.think.log.provider.record = thinking provider is unavailable; { $left } segments wait for the next run

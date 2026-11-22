@@ -1,0 +1,41 @@
+{
+  "description": "Journal command-line text for plan segment row.",
+  "context": "Journal command-line text for plan segment row.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    },
+    {
+      "name": "start",
+      "type": "string"
+    },
+    {
+      "name": "end",
+      "type": "string"
+    },
+    {
+      "name": "stream",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c628a8f155bbe081fa5b836801015686a7913aec853d064af598628a6eeee7ca",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

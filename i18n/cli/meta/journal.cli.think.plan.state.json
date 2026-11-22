@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for plan state.",
+  "context": "Journal command-line text for plan state.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ca287f2afa257c2ef0db2b0fa0685358087d5494b76bc303850d44f036079e1d",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

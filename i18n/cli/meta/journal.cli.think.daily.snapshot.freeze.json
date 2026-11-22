@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for daily snapshot freeze.",
+  "context": "Journal command-line text for daily snapshot freeze.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f33f7a68adc34e96b017e232bf18a9bf1899886b8a3367529a4c850807c0787d",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

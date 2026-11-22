@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for plan cadence idle.",
+  "context": "Journal command-line text for plan cadence idle.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5fb75593e7f9747d7b939265ed033c19cb6ef734e497304bd007fd7ce7d91d63",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

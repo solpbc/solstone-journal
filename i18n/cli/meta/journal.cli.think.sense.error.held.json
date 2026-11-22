@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense error held.",
+  "context": "Journal command-line text for sense error held.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ac6ba33e758b464201573c0bc8ff90c8ee6122529fe1ec0b5364cc6092948b6c",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense worker pool.",
+  "context": "Journal command-line text for sense worker pool.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e2962b6d285702114ee8b590694d4112b2c4c56b97a063d5bbbe15791cb67c59",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

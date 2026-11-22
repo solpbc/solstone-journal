@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for sense conflict.",
+  "context": "Journal command-line text for sense conflict.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "options",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "59a7fa95131baaced713b92a46fc743e06b339b5a3efecf9ee8fbec6b81a4941",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "sense_batch_flag",
+      "kind": "flag",
+      "value": "--sense-batch"
+    }
+  ]
+}

@@ -15,8 +15,16 @@ pub(crate) fn run(
     args: &ThinkArgs,
     timeout: Option<Duration>,
     child_environment: &solstone_core_system::process::ChildLaunchContext,
-) -> Result<ModeResult, String> {
-    let segment = args.segment.as_deref().ok_or("missing repair segment")?;
+) -> Result<ModeResult, crate::dispatch::RunFailure> {
+    let segment = args.segment.as_deref().ok_or_else(|| {
+        context.failure(|locale| {
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.think.repair.segment.missing",
+                &[],
+            )
+        })
+    })?;
     let request = solstone_core_sense::batch::BatchRequest {
         day: context.day.clone(),
         jobs: args.jobs,
@@ -37,16 +45,20 @@ pub(crate) fn run(
             solstone_core_sense::dispatch::BatchMarkerPolicy::AdvanceStream,
         )
     } else {
-        solstone_core_sense::batch::run_batch_with_environment_and_timeout(
+        solstone_core_sense::batch::run_batch_in(
+            context.terminal_locale,
             &context.journal,
             &request,
             child_environment,
             Some(Duration::from_secs(1800)),
+            solstone_core_sense::dispatch::BatchMarkerPolicy::AdvanceStream,
         )
     }
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| context.failure(|locale| error.render(locale)))?;
     if (context.cancel_checkpoint)() {
-        return Err("thinking cancelled".into());
+        return Err(context.failure(|locale| {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.think.cancelled", &[])
+        }));
     }
     // Thinking that is already current is skipped, so a segment owed only its
     // publication is published without a model call.
@@ -62,4 +74,5 @@ pub(crate) fn run(
         &[],
         segment::CurrentSegment::Skip,
     )
+    .map_err(Into::into)
 }

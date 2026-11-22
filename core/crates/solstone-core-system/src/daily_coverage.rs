@@ -11,7 +11,7 @@ use serde_json::Value;
 use solstone_core_indexer::daily_evidence::{DailyEvidence, DayProjectionCache};
 use solstone_core_journal_io::{DailyUnitIdentity, DailyUnitStatus, observe_daily_unit_record};
 use solstone_core_talent_config::{
-    TalentConfig, TalentFilter, load_talent_configs, read_talent_overrides_checked,
+    TalentConfig, TalentFilter, load_talent_configs_in, read_talent_overrides_checked,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -169,7 +169,8 @@ pub(crate) fn daily_configs_in(
             [("path", &path.display())],
         )
     })?;
-    load_talent_configs(
+    load_talent_configs_in(
+        locale,
         talent,
         apps,
         overrides.as_ref(),
@@ -345,13 +346,23 @@ pub fn read_daily_coverage_with_roots(
     talent: &Path,
     apps: &Path,
 ) -> Result<DailyCoverage, String> {
+    read_daily_coverage_with_roots_in(journal, day, talent, apps, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn read_daily_coverage_with_roots_in(
+    journal: &Path,
+    day: &str,
+    talent: &Path,
+    apps: &Path,
+    locale: &str,
+) -> Result<DailyCoverage, String> {
     read_daily_coverage_with_cache(
         journal,
         day,
         talent,
         apps,
-        &mut DayProjectionCache::new(journal, day),
-        solstone_core_cli_copy::ENGLISH,
+        &mut DayProjectionCache::new_in(journal, day, locale),
+        locale,
     )
 }
 

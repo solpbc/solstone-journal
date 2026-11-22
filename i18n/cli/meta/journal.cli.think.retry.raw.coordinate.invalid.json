@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry raw coordinate invalid.",
+  "context": "Journal command-line text for retry raw coordinate invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dda2421305bd9cb59c2965ae7a8b953aa1dc7f081d452f47973cc25060d0a183",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

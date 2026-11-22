@@ -34,6 +34,26 @@ pub(crate) fn mode(args: &ThinkArgs) -> &'static str {
     }
 }
 
+enum LogProblem {
+    Detail(String),
+    Message(solstone_core_cli_copy::Diagnostic),
+}
+
+impl From<String> for LogProblem {
+    fn from(detail: String) -> Self {
+        Self::Detail(detail)
+    }
+}
+
+impl LogProblem {
+    fn render(&self, locale: &str) -> String {
+        match self {
+            Self::Detail(detail) => detail.clone(),
+            Self::Message(message) => message.render(locale),
+        }
+    }
+}
+
 /// Structured diagnostic writer for one think invocation.
 ///
 /// Clones share the same append-only oplog, serialize each complete record, and
@@ -42,7 +62,7 @@ pub(crate) struct RunLogWriter<W: Write = OplogWriter> {
     sink: Option<Arc<Mutex<W>>>,
     display_path: PathBuf,
     pub(crate) skip_count: usize,
-    first_error: Arc<Mutex<Option<String>>>,
+    first_error: Arc<Mutex<Option<LogProblem>>>,
 }
 
 impl RunLogWriter<OplogWriter> {
@@ -93,7 +113,7 @@ impl<W: Write> RunLogWriter<W> {
         event: &str,
         now_ms: i64,
         mut fields: Map<String, Value>,
-        failures: &[String],
+        failures: &[impl AsRef<str>],
     ) {
         if !failures.is_empty() {
             fields.insert(
@@ -102,7 +122,7 @@ impl<W: Write> RunLogWriter<W> {
                     failures
                         .iter()
                         .take(8)
-                        .map(|failure| safe_failure(failure))
+                        .map(|failure| safe_failure(failure.as_ref()))
                         .collect(),
                 ),
             );
@@ -149,7 +169,9 @@ impl<W: Write> RunLogWriter<W> {
         }
         match size(&fields) {
             Ok(size) if size <= maximum => self.log(event, now_ms, fields),
-            _ => self.remember_error("think outcome exceeds operational log record budget".into()),
+            _ => self.remember(LogProblem::Message(
+                solstone_core_cli_copy::Diagnostic::new("journal.cli.think.log.budget", []),
+            )),
         }
     }
 
@@ -169,24 +191,35 @@ impl<W: Write> RunLogWriter<W> {
         let mut data = fields;
         data.insert("event".to_owned(), Value::String(event.to_owned()));
         data.insert("ts".to_owned(), Value::from(now_ms));
-        let result: Result<(), String> = (|| {
+        let result: Result<(), LogProblem> = (|| {
             checkpoint()?;
             let mut record = serde_json::to_vec(&data).map_err(|error| error.to_string())?;
             record.push(b'\n');
-            let mut sink = sink
-                .lock()
-                .map_err(|_| "think run log lock poisoned".to_owned())?;
+            let mut sink = sink.lock().map_err(|_| {
+                LogProblem::Message(solstone_core_cli_copy::Diagnostic::new(
+                    "journal.cli.think.log.lock",
+                    [],
+                ))
+            })?;
             checkpoint()?;
             sink.write_all(&record).map_err(|error| error.to_string())?;
             sink.flush().map_err(|error| error.to_string())?;
             Ok(())
         })();
         if let Err(error) = result {
-            self.remember_error(error);
+            self.remember(error);
         }
     }
 
     pub(crate) fn remember_error(&self, detail: String) {
+        self.remember(detail.into());
+    }
+
+    pub(crate) fn remember_diagnostic(&self, detail: solstone_core_cli_copy::Diagnostic) {
+        self.remember(LogProblem::Message(detail));
+    }
+
+    fn remember(&self, detail: LogProblem) {
         let mut first_error = self
             .first_error
             .lock()
@@ -197,14 +230,21 @@ impl<W: Write> RunLogWriter<W> {
     }
 
     pub(crate) fn finish(&self) -> Result<(), String> {
-        let first_error = self
-            .first_error
-            .lock()
-            .map_err(|_| "think run log failure lock poisoned".to_owned())?;
+        self.finish_in(solstone_core_cli_copy::ENGLISH)
+    }
+
+    pub(crate) fn finish_in(&self, locale: &str) -> Result<(), String> {
+        let first_error = self.first_error.lock().map_err(|_| {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.think.log.failure.lock", &[])
+        })?;
         match first_error.as_ref() {
-            Some(detail) => Err(format!(
-                "think run log {} failed: {detail}",
-                self.display_path.display()
+            Some(detail) => Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.think.log.failed",
+                [
+                    ("path", &(self.display_path.display())),
+                    ("detail", &(detail.render(locale))),
+                ],
             )),
             None => Ok(()),
         }
@@ -267,7 +307,7 @@ fn safe_failure(failure: &str) -> Value {
     serde_json::json!({"stage":stage,"detail":detail})
 }
 
-fn open_oplog(journal: &Path, day: &str, run: &str) -> Result<OplogWriter, String> {
+fn open_oplog(journal: &Path, day: &str, run: &str) -> Result<OplogWriter, LogProblem> {
     create_oplog_at(
         JournalRoot::open(journal).map_err(|error| error.to_string())?,
         "think",
@@ -275,14 +315,18 @@ fn open_oplog(journal: &Path, day: &str, run: &str) -> Result<OplogWriter, Strin
         OplogFormat::Jsonl,
         &current_time_on_local_day(journal, day)?,
     )
-    .map_err(|error| error.to_string())
+    .map_err(|error| LogProblem::Detail(error.to_string()))
 }
 
 /// Now's wall-clock time placed on `day`, at that day's own offset in the
 /// owner zone, so a day across a daylight-time change keeps its own offset.
-fn current_time_on_local_day(journal: &Path, day: &str) -> Result<ZonedDateTime, String> {
-    let day =
-        solstone_core_time::parse_day(day).ok_or_else(|| "day must be YYYYMMDD".to_owned())?;
+fn current_time_on_local_day(journal: &Path, day: &str) -> Result<ZonedDateTime, LogProblem> {
+    let day = solstone_core_time::parse_day(day).ok_or_else(|| {
+        LogProblem::Message(solstone_core_cli_copy::Diagnostic::new(
+            "journal.cli.think.log.day.format",
+            [],
+        ))
+    })?;
     let zone = solstone_core_journal_config::owner_zone(journal);
     let wall = day.to_datetime(Timestamp::now().to_zoned_datetime(zone.clone()).time());
     solstone_core_time::from_local(&zone, wall)
@@ -293,7 +337,12 @@ fn current_time_on_local_day(journal: &Path, day: &str) -> Result<ZonedDateTime,
                 .and_then(|later| solstone_core_time::from_local(&zone, later).earliest())
         })
         .map(|instant| solstone_core_time::at_offset(instant.timestamp(), instant.offset()))
-        .ok_or_else(|| "invalid local day".to_owned())
+        .ok_or_else(|| {
+            LogProblem::Message(solstone_core_cli_copy::Diagnostic::new(
+                "journal.cli.think.log.day.local",
+                [],
+            ))
+        })
 }
 
 #[cfg(test)]
@@ -353,17 +402,12 @@ mod tests {
     #[test]
     fn success_has_no_failure_diagnostic_and_outcome_write_failure_stays_failed() {
         let mut writer = RunLogWriter::with_sink(PathBuf::from("fixture"), Vec::<u8>::new());
-        writer.outcome("run.complete", 1, Map::new(), &[]);
+        writer.outcome("run.complete", 1, Map::new(), &[] as &[String]);
         let bytes = writer.sink.as_ref().unwrap().lock().unwrap();
         let event: Value = serde_json::from_slice(&bytes).unwrap();
         assert!(event.get("failure_details").is_none());
         let mut broken = RunLogWriter::with_sink(PathBuf::from("fixture"), FlushFailure);
-        broken.outcome(
-            "run.complete",
-            1,
-            Map::new(),
-            &["thinking cancelled".into()],
-        );
+        broken.outcome("run.complete", 1, Map::new(), &["thinking cancelled"]);
         assert!(broken.finish().is_err());
     }
 

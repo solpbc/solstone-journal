@@ -1,0 +1,48 @@
+{
+  "description": "Journal command-line text for validation cadence incompatible.",
+  "context": "Journal command-line text for validation cadence incompatible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f687ef953fe52e08066012d4761cc89c28cdab2021c55f9197b3a85ca9767bc",
+  "max_length": 167,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "cadence_flag",
+      "kind": "flag",
+      "value": "--cadence"
+    },
+    {
+      "name": "segment_flag",
+      "kind": "flag",
+      "value": "--segment"
+    },
+    {
+      "name": "segments_flag",
+      "kind": "flag",
+      "value": "--segments"
+    },
+    {
+      "name": "activity_flag",
+      "kind": "flag",
+      "value": "--activity"
+    },
+    {
+      "name": "flush_flag",
+      "kind": "flag",
+      "value": "--flush"
+    },
+    {
+      "name": "weekly_flag",
+      "kind": "flag",
+      "value": "--weekly"
+    }
+  ]
+}

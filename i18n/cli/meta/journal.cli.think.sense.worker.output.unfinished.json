@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for sense worker output unfinished.",
+  "context": "Journal command-line text for sense worker output unfinished.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6b427214abfff3f6b911db4bd5f9b00c32a8dec75bcd74c518383dde4d40ab25",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

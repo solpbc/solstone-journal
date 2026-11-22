@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry talent segment missing.",
+  "context": "Journal command-line text for retry talent segment missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea9d9af2734fbe4b0f027a86c4f1f58b789c74f4e0dd7e20f4a413022a867e16",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
