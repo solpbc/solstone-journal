@@ -196,6 +196,24 @@ pub fn apply_permanent_facet_description_divergence(expected: &mut Value) {
     recompute_case_digests(expected);
 }
 
+/// Permanent narrow divergence introduced 2026-11-22: Plaud sync moved from a
+/// legacy `env.PLAUD_ACCESS_TOKEN` string to an OAuth sign-in stored at
+/// `config/plaud-sign-in.json`. The frozen `tokened` phase carries only the
+/// retired `env.PLAUD_ACCESS_TOKEN` field and no OAuth sign-in, so `GET api/sync`
+/// in that one phase now reports `plaud.available: false`. Never generalize this.
+pub fn apply_permanent_plaud_oauth_sync_availability_divergence(expected: &mut Value) {
+    let available = expected
+        .pointer_mut("/phases/tokened/GET api~1sync/normalized/plaud/available")
+        .expect("frozen tokened GET api/sync plaud.available");
+    assert_eq!(
+        *available,
+        Value::Bool(true),
+        "frozen tokened GET api/sync captured legacy PLAUD_ACCESS_TOKEN availability"
+    );
+    *available = Value::Bool(false);
+    recompute_case_digests(expected);
+}
+
 fn update_empty_journal_name_probes(value: &mut Value) {
     match value {
         Value::Object(map) => {

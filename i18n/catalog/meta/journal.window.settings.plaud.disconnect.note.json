@@ -1,0 +1,16 @@
+{
+  "description": "Settings Plaud calm note under connected controls explaining disconnect.",
+  "context": "journal-window. Settings Plaud calm note under connected controls explaining disconnect.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f3015450fb3477dc4bcc44eccd903b5205ce77d7c2ea821fce7b0d474361186",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

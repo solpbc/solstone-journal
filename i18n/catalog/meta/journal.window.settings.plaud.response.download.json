@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud attention message when recording download fails.",
+  "context": "journal-window. Settings Plaud attention message when recording download fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "920555fcfc2f1c9c20ef07ee041cc7689f3a564776da4b8e35675fdad1f49c6d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

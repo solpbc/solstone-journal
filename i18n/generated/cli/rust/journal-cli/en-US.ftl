@@ -2551,6 +2551,22 @@ m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e726f6f7
 
 m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e766572696669636174696f6e = could not verify the signed { "Parakeet" } app payload: { $error }
 
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e65 = { "Plaud" } is connected, and your sign-in is saved in this journal.
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e652e6163636f756e74 = { "Plaud" } is connected as { $account }, and your sign-in is saved in this journal.
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6661696c6564 = could not connect { "Plaud" }: { $detail }
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6e657874 = run { "solstone journal importer --sync plaud --save" } to bring in recordings now, or turn on hourly sync in settings.
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6f70656e = open this link to sign in with { "Plaud" }:
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e72657472792e75726c = that wasn't the sign-in address from { "Plaud" }. paste the full address from your browser bar, or finish in the browser.
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e77616974696e67 = waiting for { "Plaud" } to finish sign-in. if your browser is on another device, paste the final address from the browser bar and press enter:
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e73796e632e62757379 = your journal is already checking { "Plaud" }. try again when it finishes.
+
 m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e617267756d656e74 = unexpected argument
 
 m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6461792e6578636c7573697665 = { "--day" } cannot be combined with { "--from" } or { "--to" }

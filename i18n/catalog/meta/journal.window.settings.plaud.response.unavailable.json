@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud attention message when Plaud service is unreachable.",
+  "context": "journal-window. Settings Plaud attention message when Plaud service is unreachable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ee92311fd76e4ddfd6817717709bf4ed64d132f0831661a12277a76b2ddf0a53",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

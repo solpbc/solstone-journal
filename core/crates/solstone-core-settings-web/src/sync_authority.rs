@@ -11,6 +11,7 @@ pub type SourceSyncResponse = Pin<Box<dyn Future<Output = Response> + Send + 'st
 pub trait SourceSyncAuthority: Send + Sync {
     fn get(&self) -> SourceSyncResponse;
     fn update(&self, changes: Vec<(&'static str, bool)>) -> SourceSyncResponse;
+    fn trigger_plaud_sync(&self) -> SourceSyncResponse;
 }
 
 #[derive(Clone)]
@@ -25,5 +26,8 @@ impl SourceSyncDelegate {
     }
     pub async fn update(&self, changes: Vec<(&'static str, bool)>) -> Response {
         self.0.update(changes).await
+    }
+    pub async fn trigger_plaud_sync(&self) -> Response {
+        self.0.trigger_plaud_sync().await
     }
 }

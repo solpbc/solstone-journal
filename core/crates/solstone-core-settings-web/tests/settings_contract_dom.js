@@ -563,7 +563,8 @@ function journal(overrides = {}) {
     '/app/settings/api/transcribe': { backends: [], owner_voice: null },
     '/app/settings/api/transcribe/owner-voice': { stored: false },
     '/app/settings/api/vision': { max_extractions: 20, category_defaults: {}, categories: {}, redaction: [] },
-    '/app/settings/api/sync': { plaud: { enabled: false } },
+    '/app/settings/api/sync': { plaud: { available: false, enabled: false } },
+    '/app/settings/api/plaud': { connected: false, account_label: null, enabled: false, syncing: false, recordings: 0, last_sync: null, last_added: null, attention: null, attention_code: null },
     '/app/settings/api/granola': { configured: false, syncing: false },
     '/app/settings/api/storage/config': { retention: { raw_media: 'keep', raw_media_days: null, keep_empty_audio: false, per_stream: {}, journal_logs: { enabled: true, days: 30 } }, streams: [] },
     '/app/settings/api/storage': { summary: { raw_media_human: '0 B', derived_human: '0 B', total_segments: 0, segments_with_raw: 0, segments_purged: 0 }, warnings: [] },
@@ -593,11 +594,13 @@ function journal(overrides = {}) {
 
 const HOME_MARKUP = '<section id="home"><h1>home</h1><p id="home-text">home as it was</p><a id="to-settings" href="/app/settings/">settings</a><a id="to-trash" href="/app/settings#trash">trash</a></section>';
 
-function makePage(env, address = '/app/settings/', { answers } = {}) {
-  let current = new URL(address, ORIGIN);
+function makePage(env, address = '/app/settings/', { answers, origin = ORIGIN, journalHost = null, nativeV1Capability = false } = {}) {
+  let current = new URL(address, origin);
   const loads = [];
+  const openedUrls = [];
   const location = {
-    get origin() { return ORIGIN; },
+    get origin() { return current.origin; },
+    get hostname() { return current.hostname; },
     get href() { return current.href; },
     set href(url) { loads.push(new URL(url, current.href).href); },
     get pathname() { return current.pathname; },
@@ -753,7 +756,7 @@ function makePage(env, address = '/app/settings/', { answers } = {}) {
   const main = doc.getElementById('main-content');
 
   const page = {
-    env, window, doc, main, clock, calls, errors, loads, notices, storage,
+    env, window, doc, main, clock, calls, errors, loads, notices, storage, openedUrls,
     holds: [],
     statuses: [],
     ready: [],
@@ -819,9 +822,18 @@ function makePage(env, address = '/app/settings/', { answers } = {}) {
     else await place();
   };
 
+  window.top = window;
+  window.navigator = window.navigator || { userAgent: 'Mozilla/5.0' };
+  window.open = (url) => {
+    const popup = { closed: false, opener: null, location: { href: url, replace(next) { this.href = next; } }, close() { this.closed = true; } };
+    openedUrls.push(popup);
+    return popup;
+  };
   const context = vm.createContext({
     window, document: doc, location, history: window.history, sessionStorage: window.sessionStorage,
     URL, URLSearchParams, AbortController, AbortSignal, DOMException, WeakMap, WeakRef, Map, Set, Promise,
+    crypto: { randomUUID: () => require('crypto').randomUUID() },
+    navigator: window.navigator,
     console, Math, Number, String, Object, Array, Boolean, Date, Intl, JSON, Error, TypeError, ReferenceError, RegExp, Symbol, Infinity, CustomEvent: class {},
     setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
     setInterval: clock.setInterval, clearInterval: clock.clearInterval,
@@ -834,7 +846,16 @@ function makePage(env, address = '/app/settings/', { answers } = {}) {
   });
   context.self = window;
   loadWindowCatalog(context);
-  for (const name of ['store.js', 'views.js', 'router.js', 'focus.js']) {
+  for (const name of ['store.js', 'views.js', 'router.js', 'focus.js', 'journal-web-host.js']) {
+    vm.runInContext(fs.readFileSync(path.join(env.shellDir, name), 'utf8'), context);
+  }
+  if (nativeV1Capability) {
+    window[window.solstoneJournalWebHost.javascriptCapability] = 1;
+  }
+  if (journalHost) {
+    window[window.solstoneAuthContract.capability] = journalHost;
+  }
+  for (const name of ['external-navigation.js', 'oauth-broker.js']) {
     vm.runInContext(fs.readFileSync(path.join(env.shellDir, name), 'utf8'), context);
   }
   window.SolViews.register('home', { mount: (ctx) => { ctx.ready('content'); return () => {}; } });
@@ -1104,15 +1125,19 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(p.writes().some((call) => call.url === '/app/settings/api/granola' && call.method === 'POST'), "Granola's connect posts the key");
     assert.ok(!p.byId('revalidateAllKeys'), 'no re-validate button: nothing here can check a key');
     const forms = p.qa('form').filter((form) => form.getAttribute('onsubmit'));
-    assert.ok(forms.length === 7, `the seven form guards: ${forms.length}`);
+    assert.ok(forms.length === 6, `the six form guards: ${forms.length}`);
   });
 
   await test('each section is an arrival by its hash, the bare path takes the slashed address, and ?facet= shows the index', async () => {
-    const sections = ['about', 'guide', 'profile', 'apikeys', 'transcription', 'vision', 'sync', 'storage', 'trash', 'facets', 'localaccess'];
+    const sections = ['about', 'guide', 'profile', 'transcription', 'vision', 'sync', 'storage', 'trash', 'facets', 'localaccess'];
     for (const section of sections) {
       const p = await boot(env, `/app/settings/#${section}`);
       assert.strictEqual(activeSection(p), `section-${section}`, section);
     }
+    const retired = await boot(env, '/app/settings/#apikeys');
+    assert.strictEqual(retired.byId('tab-apikeys'), null, 'empty API keys tab is gone');
+    assert.strictEqual(retired.byId('section-apikeys'), null, 'empty API keys section is gone');
+    assert.strictEqual(activeSection(retired), 'section-guide', 'retired #apikeys falls back to default section');
     const bare = await boot(env, '/app/settings#trash');
     assert.strictEqual(new URL(bare.entry().url).pathname + new URL(bare.entry().url).hash, '/app/settings/#trash', 'the address a full load ends on');
     assert.strictEqual(activeSection(bare), 'section-trash');
@@ -1606,7 +1631,7 @@ module.exports = async function settingsContractCases(crateDir) {
   const typeInto = (el, text) => { el.focus(); el.value = text; };
   const leaveField = (p, el) => { el.blur(); p.doc.dispatch(el, { type: 'blur', bubbles: false }); };
   const FIELDS = [['field-name', 'a new name', '#profile'], ['field-preferred', 'lab', '#profile'], ['field-aliases', 'lab, labby', '#profile'],
-    ['field-emails', 'lab@example.com', '#profile'], ['field-timezone', 'Europe/Paris', '#profile'], ['field-env-plaud', 'lab-token', '#apikeys']];
+    ['field-emails', 'lab@example.com', '#profile'], ['field-timezone', 'Europe/Paris', '#profile']];
 
   await test('Enter in each auto-save field saves it once, after its half second, and keeps focus in the field: answered, failed and held', async () => {
     for (const [id, text, hash] of FIELDS) {
@@ -1628,7 +1653,7 @@ module.exports = async function settingsContractCases(crateDir) {
   });
 
   await test("a second Enter, and leaving the field, while its save is out send nothing more; a new value still saves", async () => {
-    for (const [id, text, hash] of [FIELDS[1], FIELDS[5]]) {
+    for (const [id, text, hash] of [FIELDS[1], FIELDS[4]]) {
       const p = await boot(env, `/app/settings/${hash}`);
       p.holds.push((call) => call.method === 'PUT');
       const field = p.byId(id);
@@ -1910,6 +1935,156 @@ module.exports = async function settingsContractCases(crateDir) {
     await settle();
     assert.ok(mutationsUnder(card, moved) > 0, 'a change is drawn');
     assert.ok(p.doc.activeElement === disconnect, `and focus stays on the same node: ${at(p)}`);
+  });
+
+  // ---- Plaud OAuth sign-in via shared window.solstoneOAuthBroker, card states, manual check & disconnect
+
+  const PLAUD_OFF = {
+    connected: false, account_label: null, enabled: false, syncing: false,
+    recordings: 0, last_sync: null, last_added: null, attention: null, attention_code: null,
+  };
+  const PLAUD_ON = {
+    connected: true, account_label: 'Alex Rivera', enabled: true, syncing: false,
+    recordings: 4, last_sync: '2026-11-22T00:00:00Z', last_added: '2026-11-21T23:00:00Z',
+    attention: null, attention_code: null,
+  };
+
+  async function plaudPage(start = {}, opts = {}) {
+    let state = { ...PLAUD_OFF, ...start };
+    let attemptStatus = { state: 'pending', reason: null, account_label: null, error: null };
+    const base = journal();
+    const p = await boot(env, '/app/settings/#sync', {
+      ...opts,
+      answers: (url, fetchOpts) => {
+        const u = new URL(url, opts.origin || ORIGIN);
+        const method = String(fetchOpts?.method || 'GET').toUpperCase();
+        if (u.pathname === '/app/settings/api/plaud') {
+          if (method === 'DELETE') {
+            state = { ...state, connected: false, account_label: null, enabled: false, syncing: false, attention: null, attention_code: null };
+            return { success: true, revoked: true };
+          }
+          return { ...state };
+        }
+        if (u.pathname === '/app/settings/api/plaud/sign-in' && method === 'POST') {
+          const req = fetchOpts?.body ? JSON.parse(fetchOpts.body) : {};
+          const redirectUri = req.redirect_uri || 'http://127.0.0.1:43210/auth/callback';
+          return {
+            attempt_id: 'att-plaud-1',
+            authorize_url: 'https://mcp.plaud.ai/authorize?state=st-1&redirect_uri=' + encodeURIComponent(redirectUri),
+            expected_state: 'st-1',
+            redirect_uri: redirectUri,
+          };
+        }
+        if (u.pathname === '/app/settings/api/plaud/sign-in/att-plaud-1' && method === 'GET') {
+          return { ...attemptStatus };
+        }
+        if (u.pathname === '/app/settings/api/plaud/sign-in/att-plaud-1/finish' && method === 'POST') {
+          state = { ...state, connected: true, account_label: 'Alex Rivera', attention: null, attention_code: null };
+          attemptStatus = { state: 'signed_in', reason: 'signed_in', account_label: 'Alex Rivera', error: null };
+          return { success: true, reason: 'signed_in', account_label: 'Alex Rivera' };
+        }
+        if (u.pathname === '/app/settings/api/plaud/sync' && method === 'POST') {
+          state = { ...state, syncing: true };
+          return { success: true };
+        }
+        if (u.pathname === '/app/settings/api/sync' && method === 'GET') {
+          return { plaud: { available: state.connected, enabled: state.enabled, configured: state.enabled } };
+        }
+        return base(url, fetchOpts);
+      },
+    });
+    p.plaud = (next) => { state = { ...state, ...next }; };
+    p.plaudAttempt = (next) => { attemptStatus = { ...attemptStatus, ...next }; };
+    return p;
+  }
+
+  await test('Plaud sign-in uses native_broker first when window.solstoneJournalHost is present and displays nickname', async () => {
+    const brokerMessages = [];
+    const journalHost = {
+      version: 2,
+      types: ['auth.prepare', 'auth.authorize', 'auth.cancel'],
+      async send(msg) {
+        brokerMessages.push(msg);
+        if (msg.type === 'auth.prepare') {
+          return { type: 'auth.prepared', id: msg.id, outcome: 'ready', session_id: 'sess-1', mode: 'loopback', redirect_uri: 'http://127.0.0.1:49999/auth/callback' };
+        }
+        if (msg.type === 'auth.authorize') {
+          return { type: 'auth.result', id: msg.id, outcome: 'callback', callback_url: 'http://127.0.0.1:49999/auth/callback?code=c1&state=st-1' };
+        }
+        return { type: 'auth.cancelled', id: msg.id };
+      },
+    };
+    const p = await plaudPage(PLAUD_OFF, { journalHost, nativeV1Capability: true });
+    assert.strictEqual(p.byId('plaudState').dataset.state, 'ready');
+    assert.strictEqual(p.byId('plaudSignedOut').hidden, false);
+    assert.strictEqual(p.byId('plaudConnected').hidden, true);
+    p.press(p.byId('plaudSignIn'));
+    await settle();
+    assert.strictEqual(brokerMessages.map((m) => m.type).join(','), 'auth.prepare,auth.authorize');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(brokerMessages[0].preferences)), [
+      { mode: 'loopback', host: '127.0.0.1', path: '/auth/callback', port: 0 },
+      { mode: 'custom_scheme', uri: 'solstone://oauth/callback' },
+    ]);
+    const startCall = p.writes().find((c) => c.url === '/app/settings/api/plaud/sign-in' && c.method === 'POST');
+    assert.strictEqual(JSON.parse(startCall.body).redirect_uri, 'http://127.0.0.1:49999/auth/callback');
+    assert.ok(p.writes().some((c) => c.url === '/app/settings/api/plaud/sign-in/att-plaud-1/finish' && c.method === 'POST'));
+    assert.strictEqual(p.byId('plaudConnected').hidden, false);
+    assert.strictEqual(p.byId('plaudState').dataset.state, 'connected');
+    assert.ok(p.byId('plaudFacts').textContent.includes('Alex Rivera'), 'shows connected nickname');
+  });
+
+  await test('Plaud sign-in uses journal_loopback on localhost plain browser and polls attempt until signed in', async () => {
+    const p = await plaudPage(PLAUD_OFF, { origin: 'http://127.0.0.1:5015' });
+    p.press(p.byId('plaudSignIn'));
+    await settle();
+    assert.strictEqual(p.byId('plaudPending').hidden, false, 'pending sign-in panel shown while waiting');
+    assert.strictEqual(p.openedUrls.length, 1, 'authorize URL opened in browser');
+    p.plaud({ connected: true, account_label: 'Alex Rivera' });
+    p.plaudAttempt({ state: 'signed_in', reason: 'signed_in', account_label: 'Alex Rivera' });
+    p.clock.advance(1600);
+    await settle();
+    assert.strictEqual(p.byId('plaudPending').hidden, true, 'pending panel hides on completion');
+    assert.strictEqual(p.byId('plaudConnected').hidden, false, 'connected panel shown');
+    assert.ok(p.byId('plaudFacts').textContent.includes('Alex Rivera'));
+  });
+
+  await test('Plaud sign-in falls back to paste_url on remote browser and submits pasted callback URL', async () => {
+    const p = await plaudPage(PLAUD_OFF, { origin: 'https://remote.journal.example' });
+    p.press(p.byId('plaudSignIn'));
+    await settle();
+    assert.strictEqual(p.byId('plaudPending').hidden, false);
+    assert.strictEqual(p.byId('plaudPastePanel').hidden, false, 'paste panel open immediately for remote browser');
+    p.byId('plaudPasteUrl').value = 'http://127.0.0.1:43210/auth/callback?code=pasted&state=st-1';
+    p.press(p.byId('plaudPasteSubmit'));
+    await settle();
+    assert.ok(p.writes().some((c) => c.url === '/app/settings/api/plaud/sign-in/att-plaud-1/finish' && c.method === 'POST'));
+    assert.strictEqual(p.byId('plaudConnected').hidden, false);
+    assert.ok(p.byId('plaudFacts').textContent.includes('Alex Rivera'));
+  });
+
+  await test('Plaud Check now triggers background sync, stops polling on view leave, and Disconnect preserves recordings', async () => {
+    const p = await plaudPage(PLAUD_ON);
+    assert.strictEqual(p.byId('plaudState').dataset.state, 'on');
+    assert.strictEqual(p.byId('field-plaud-sync-enabled').checked, true);
+    p.press(p.byId('plaudCheck'));
+    await settle();
+    assert.ok(p.writes().some((c) => c.url === '/app/settings/api/plaud/sync' && c.method === 'POST'));
+    const readsBefore = p.reads('/app/settings/api/plaud').length;
+    p.clock.advance(2000);
+    await settle();
+    assert.strictEqual(p.reads('/app/settings/api/plaud').length, readsBefore + 1, 'polls every 2s while syncing');
+    p.leave();
+    p.clock.advance(10000);
+    await settle();
+    assert.strictEqual(p.reads('/app/settings/api/plaud').length, readsBefore + 1, 'stops polling after leaving settings');
+
+    const p2 = await plaudPage(PLAUD_ON);
+    p2.press(p2.byId('plaudDisconnect'));
+    await settle();
+    assert.ok(p2.writes().some((c) => c.url === '/app/settings/api/plaud' && c.method === 'DELETE'));
+    assert.strictEqual(p2.byId('plaudState').dataset.state, 'off');
+    assert.strictEqual(p2.byId('plaudOffKept').hidden, false, 'shows kept recordings after disconnect');
+    assert.ok(p2.byId('plaudOffKept').textContent.includes('4'));
   });
 
   // ---- speech processing, leave out other voices, photos of people
@@ -2439,7 +2614,7 @@ module.exports = async function settingsContractCases(crateDir) {
   const PHONE_BLUR = 865; // the slowest delay seen on a phone from the change to its blur
 
   await test("a pick from the narrow section menu, then the menu's own blur, puts focus back on the select, for every section that keeps it", async () => {
-    for (const value of ['transcription', 'profile', 'about', 'apikeys', 'vision', 'sync', 'storage', 'trash', 'guide']) {
+    for (const value of ['transcription', 'profile', 'about', 'vision', 'sync', 'storage', 'trash', 'guide']) {
       const p = await boot(env, '/app/settings/#profile');
       const before = p.view.ctx.held();
       const select = pickSection(p, value);

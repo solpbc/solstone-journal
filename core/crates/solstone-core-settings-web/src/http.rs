@@ -83,16 +83,6 @@ pub fn settings_operation_failed_with_detail(locale: &str, detail: impl Into<Str
     .into_response()
 }
 
-pub fn plaud_validation_unavailable(locale: &str) -> Response {
-    error_envelope(
-        "plaud_validation_unavailable",
-        text(locale, "journal.window.settings.http.plaud.validation.unavailable.that.plaud.token.can.t.be"),
-        text(locale, "journal.window.settings.http.plaud.validation.unavailable.live.plaud.validation.is.not.available"),
-        StatusCode::NOT_IMPLEMENTED,
-    )
-    .into_response()
-}
-
 pub fn owner_voice_consent_required(locale: &str) -> Response {
     error_envelope(
         "owner_voice_consent_required",

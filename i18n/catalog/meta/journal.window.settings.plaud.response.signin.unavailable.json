@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud error when starting sign-in fails.",
+  "context": "journal-window. Settings Plaud error when starting sign-in fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "214ec14905fa673132c3d3a57e91a71d26ccd4b07f87ee3b323e48946fc882c9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

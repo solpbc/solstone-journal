@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud error when triggering manual sync fails.",
+  "context": "journal-window. Settings Plaud error when triggering manual sync fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "815696f43cbe8f0cd125f13a38e10f1624ce5e8bc00c3670ef2255ea6301d68d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

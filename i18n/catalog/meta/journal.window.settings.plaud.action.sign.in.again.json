@@ -1,0 +1,16 @@
+{
+  "description": "Settings Plaud re-authentication button label.",
+  "context": "journal-window. Settings Plaud re-authentication button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "692d0eff5a71752e937d998f403e496b2a2ddfa1984f12f6484673f80469b27a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

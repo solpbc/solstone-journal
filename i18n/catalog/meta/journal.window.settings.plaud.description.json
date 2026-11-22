@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud sync card description.",
+  "context": "journal-window. Settings Plaud sync card description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6a999065a7d8a10195e5281ccb1f0952fc8a7334a7add491611e039fcb8ff66c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

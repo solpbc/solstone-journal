@@ -215,6 +215,23 @@ impl solstone_core_settings_web::SourceSyncAuthority for SettingsSync {
             async move { submit_operation(ingress, Operation::SettingsSync(Some(changes))).await },
         )
     }
+    fn trigger_plaud_sync(&self) -> solstone_core_settings_web::SourceSyncResponse {
+        let ingress = self.0.clone();
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_millis());
+        let request_id = format!("settings-plaud-{stamp}");
+        Box::pin(async move {
+            submit_operation(
+                ingress,
+                Operation::SourceRun(source_runs::Request::Sync {
+                    source: "plaud".to_owned(),
+                    request_id,
+                }),
+            )
+            .await
+        })
+    }
 }
 
 async fn discover() -> Json<Value> {

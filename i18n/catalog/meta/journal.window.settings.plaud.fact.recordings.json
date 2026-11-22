@@ -1,0 +1,16 @@
+{
+  "description": "Settings Plaud facts row label for imported recordings count.",
+  "context": "journal-window. Settings Plaud facts row label for imported recordings count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a8309c0268c98e5009a1ed2fe81e8db50ad3c9f9e3fe26a8aa365c39b9ed46d2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

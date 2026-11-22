@@ -32,6 +32,7 @@ pub mod originals;
 pub mod oura_connect;
 pub mod oura_fetched;
 pub mod oura_http;
+pub mod plaud;
 pub mod projection;
 pub mod publish;
 pub mod saved_start;

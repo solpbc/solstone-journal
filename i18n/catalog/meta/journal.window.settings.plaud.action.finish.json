@@ -1,0 +1,16 @@
+{
+  "description": "Settings Plaud paste-URL submit button label.",
+  "context": "journal-window. Settings Plaud paste-URL submit button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "602c8b6cb5da15dee7e804f0330b9ad7a3cd40a84d6af48e13ffb9dcdc4db00d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Settings Plaud facts row label for connected account name.",
+  "context": "journal-window. Settings Plaud facts row label for connected account name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ed0ca8b65436a42cb99ea5421cd11c4f61f426a9a1469c51280e8d4bcb63af0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Settings Plaud facts value for count of imported recordings.",
+  "context": "journal-window. Settings Plaud facts value for count of imported recordings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ea02255db2fb11a56cdbd81128dac4013872b334e33b2ab7123d20fcc3217041",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -7487,3 +7487,19 @@ journal.cli.talent.daily.owner.promoted.entity.blocked.name = conflict: promoted
 journal.cli.talent.daily.owner.relationship.changed = conflict: promotion relationship changed after preparation
 
 journal.cli.talent.daily.owner.relationship.occupied = conflict: promotion { $name } needs relationship directory { $relationship_dir }, which is already occupied
+
+journal.cli.importer.plaud.connect.open = open this link to sign in with { $provider }:
+
+journal.cli.importer.plaud.connect.waiting = waiting for { $provider } to finish sign-in. if your browser is on another device, paste the final address from the browser bar and press enter:
+
+journal.cli.importer.plaud.connect.retry.url = that wasn't the sign-in address from { $provider }. paste the full address from your browser bar, or finish in the browser.
+
+journal.cli.importer.plaud.connect.done = { $provider } is connected, and your sign-in is saved in this journal.
+
+journal.cli.importer.plaud.connect.done.account = { $provider } is connected as { $account }, and your sign-in is saved in this journal.
+
+journal.cli.importer.plaud.connect.next = run { $command } to bring in recordings now, or turn on hourly sync in settings.
+
+journal.cli.importer.plaud.connect.failed = could not connect { $provider }: { $detail }
+
+journal.cli.importer.plaud.sync.busy = your journal is already checking { $provider }. try again when it finishes.

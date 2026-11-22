@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud attention message when Plaud audio file is still preparing.",
+  "context": "journal-window. Settings Plaud attention message when Plaud audio file is still preparing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "20d967416094ec012a6a4358a68db944ce6d98184d91df0eb6a31e37f1a4db43",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

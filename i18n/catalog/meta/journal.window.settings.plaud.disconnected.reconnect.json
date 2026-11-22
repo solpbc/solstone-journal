@@ -1,0 +1,16 @@
+{
+  "description": "Settings Plaud disconnected line explaining re-sign-in deduplication.",
+  "context": "journal-window. Settings Plaud disconnected line explaining re-sign-in deduplication.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "99f4d8cfa3edf95ec55c27eea567cf00695ee6e312a13c6a5ac1038ca839cd6d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -128,9 +128,9 @@ fn unavailable() -> (StatusCode, Value) {
 fn connection(root: &JournalRoot, source: &str) -> (StatusCode, Value) {
     debug_assert_eq!(source, "plaud", "source whitelist checked before read");
     match solstone_core_journal_config::read_journal_config_bound(root) {
-        Ok(config) => (
+        Ok(_) => (
             StatusCode::OK,
-            json!({"source":source,"available":solstone_core_settings_web::source_sync_plaud_available(&config.config.unwrap_or_default())}),
+            json!({"source":source,"available":solstone_core_settings_web::source_sync_plaud_available(root.canonical_path())}),
         ),
         Err(_) => (
             StatusCode::UNPROCESSABLE_ENTITY,

@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud paste-URL fallback field label.",
+  "context": "journal-window. Settings Plaud paste-URL fallback field label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8198effa0234dcb31f6857cc4d453026cc84f271dc8c2294853a0358e94d04ef",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud generic sign-in failure message.",
+  "context": "journal-window. Settings Plaud generic sign-in failure message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9420a0284c590e45ce686caf6d24922f7ae92f7f1aa0d074f51ba870204385c8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

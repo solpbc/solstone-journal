@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud error when pasted callback URL is invalid or mismatched.",
+  "context": "journal-window. Settings Plaud error when pasted callback URL is invalid or mismatched.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e89a6887ccabd325a6fb8ff1ccb72182f4e2a36a99a7ffed5cdc93736d753b80",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Settings Plaud message when sign-in is cancelled.",
+  "context": "journal-window. Settings Plaud message when sign-in is cancelled.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55c324c628dcb6bafb6eb907d37ed5d1c3a432ad687eafd4e164abd7d6f9a995",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

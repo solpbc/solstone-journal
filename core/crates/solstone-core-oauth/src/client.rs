@@ -254,6 +254,17 @@ pub fn exchange_authorization_code(
     parse_token_response_body(&resp.body, dpop_nonce)
 }
 
+/// Normalize standard OAuth token types to canonical casing (e.g. `"bearer"` -> `"Bearer"`).
+pub fn normalize_token_type(raw: &str) -> String {
+    if raw.eq_ignore_ascii_case("bearer") {
+        "Bearer".to_owned()
+    } else if raw.eq_ignore_ascii_case("dpop") {
+        "DPoP".to_owned()
+    } else {
+        raw.to_owned()
+    }
+}
+
 /// Parse a JSON token endpoint response body into [`TokenResponse`].
 pub fn parse_token_response_body(
     body: &[u8],
@@ -272,12 +283,12 @@ pub fn parse_token_response_body(
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
         .map(ToOwned::to_owned);
-    let token_type = json
-        .get("token_type")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("Bearer")
-        .to_owned();
+    let token_type = normalize_token_type(
+        json.get("token_type")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("Bearer"),
+    );
     let expires_in = json
         .get("expires_in")
         .and_then(Value::as_u64)
@@ -437,5 +448,17 @@ mod tests {
         assert_eq!(tokens.subject.as_deref(), Some("did:plc:example"));
         assert_eq!(tokens.dpop_nonce.as_deref(), Some("tok-nonce-2"));
         assert_eq!(http.requests.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn parse_token_response_normalizes_lowercase_bearer_token_type() {
+        let parsed = parse_token_response_body(
+            br#"{"access_token":"at-plaud","refresh_token":"rt-plaud","token_type":"bearer","expires_in":86400}"#,
+            None,
+        )
+        .expect("token response parses");
+        assert_eq!(parsed.token_type, "Bearer");
+        assert_eq!(parsed.expires_in, Some(86400));
+        assert_eq!(normalize_token_type("dpop"), "DPoP");
     }
 }

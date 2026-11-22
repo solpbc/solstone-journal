@@ -736,6 +736,11 @@ mod tests {
         assert_eq!(connect.sync_source, None);
         assert_eq!(connect.body, BodyAdmission::Held);
 
+        let plaud_connect =
+            classify_arguments(&["--connect".to_owned(), "plaud".to_owned()]).unwrap();
+        assert_eq!(plaud_connect.sync_source, None);
+        assert_eq!(plaud_connect.body, BodyAdmission::NotBody);
+
         let apple = classify_arguments(&[
             "--source".to_owned(),
             "apple_health".to_owned(),

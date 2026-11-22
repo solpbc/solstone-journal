@@ -20780,3 +20780,83 @@ journal.window.talent.story.speech.numbered = Speaker { $speaker }, whom the jou
 journal.window.talent.story.speech.owner = You said: "{ $quote }"
 
 journal.window.talent.story.speech.unknown = An unidentified speaker said: "{ $quote }"
+
+journal.window.settings.plaud.description = your { $provider } recordings come into your journal as audio at the times they happened. with hourly sync on, new recordings follow within the hour.
+
+journal.window.settings.plaud.state.connected = connected
+
+journal.window.settings.plaud.state.signing.in = signing in
+
+journal.window.settings.plaud.fact.account = account
+
+journal.window.settings.plaud.fact.recordings = recordings
+
+journal.window.settings.plaud.recordings.in.journal = { $count } in your journal
+
+journal.window.settings.plaud.recordings.none = none yet
+
+journal.window.settings.plaud.action.sign.in = sign in with { $provider }
+
+journal.window.settings.plaud.action.sign.in.again = sign in again
+
+journal.window.settings.plaud.action.open.again = open { $provider } sign-in again
+
+journal.window.settings.plaud.action.paste.link = paste sign-in address instead
+
+journal.window.settings.plaud.action.finish = finish sign-in
+
+journal.window.settings.plaud.signin.waiting = finish signing in with { $provider } in your browser.
+
+journal.window.settings.plaud.signin.paste.help = after approving in { $provider }, copy the full address from your browser bar and paste it here.
+
+journal.window.settings.plaud.signin.paste.placeholder = paste the address from your browser bar
+
+journal.window.settings.plaud.signin.paste.empty = paste the address from your browser bar first.
+
+journal.window.settings.plaud.signin.failed = couldn't finish signing in with { $provider }. try again.
+
+journal.window.settings.plaud.signin.cancelled = sign-in cancelled.
+
+journal.window.settings.plaud.disconnect.note = disconnecting stops future checks and clears your sign-in from this journal. recordings already imported stay in your journal.
+
+journal.window.settings.plaud.disconnect.failed = couldn't disconnect { $provider }. try again.
+
+journal.window.settings.plaud.load.failed = couldn't load { $provider }. reopen sync settings to try again.
+
+journal.window.settings.plaud.check.started = checking { $provider } for new recordings...
+
+journal.window.settings.plaud.check.failed = couldn't start a { $provider } check. try again.
+
+journal.window.settings.plaud.disconnected.recordings = { $quantity ->
+        [one] the 1 recording from { $provider } stays in your journal.
+       *[other] the { $count } recordings from { $provider } stay in your journal.
+    }
+
+journal.window.settings.plaud.disconnected.reconnect = sign in again to bring in new recordings; nothing comes in twice.
+
+journal.window.settings.plaud.attention.recordings = { $quantity ->
+        [one] the 1 recording already in your journal stays.
+       *[other] the { $count } recordings already in your journal stay.
+    }
+
+journal.window.settings.plaud.response.auth = { $provider } no longer accepts this sign-in. sign in again to carry on.
+
+journal.window.settings.plaud.response.audio.not.ready = a recording in { $provider } wasn't ready to download yet. check again later, or your journal will retry if hourly sync is on.
+
+journal.window.settings.plaud.response.unavailable = couldn't reach { $provider }. check again later, or your journal will retry if hourly sync is on.
+
+journal.window.settings.plaud.response.download = couldn't download a recording from { $provider }. check again later, or your journal will retry if hourly sync is on.
+
+journal.window.settings.plaud.response.storage = your journal couldn't save what came from { $provider }. check that this computer has free space.
+
+journal.window.settings.plaud.response.busy = your journal is already checking { $provider }. try again when it finishes.
+
+journal.window.settings.plaud.response.not.connected = sign in with { $provider } before checking for recordings.
+
+journal.window.settings.plaud.response.callback.invalid = that wasn't the sign-in address from { $provider }. copy the full address from your browser bar and try again.
+
+journal.window.settings.plaud.response.attempt.expired = that sign-in attempt timed out. start sign-in again.
+
+journal.window.settings.plaud.response.signin.unavailable = couldn't start { $provider } sign-in right now. check your internet connection and try again.
+
+journal.window.settings.plaud.response.signin.denied = { $provider } didn't approve sign-in. try again.

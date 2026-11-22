@@ -1,0 +1,16 @@
+{
+  "description": "Settings Plaud pending sign-in button to reveal paste-URL fallback.",
+  "context": "journal-window. Settings Plaud pending sign-in button to reveal paste-URL fallback.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4336ea28bff013b4718cb1a93714b1e86a2f9278cfec95bb39be85e2954f1ccc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

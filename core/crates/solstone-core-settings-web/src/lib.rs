@@ -23,6 +23,7 @@ mod icons;
 mod keys;
 mod logs;
 mod owner_voice;
+mod plaud;
 mod processing;
 mod request_body;
 mod retention;
@@ -80,6 +81,11 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
     let granola_connect_root = journal_root.clone();
     let granola_disconnect_root = journal_root.clone();
     let granola_sync_root = journal_root.clone();
+    let plaud_get_root = journal_root.clone();
+    let plaud_disconnect_root = journal_root.clone();
+    let plaud_begin_root = journal_root.clone();
+    let plaud_finish_root = journal_root.clone();
+    let plaud_sync_root = journal_root.clone();
     let sync_get_root = journal_root.clone();
     let sync_put_root = journal_root;
     Router::new()
@@ -101,6 +107,50 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
             post(move |locale: Option<Extension<ResponseLocale>>| {
                 granola::sync_now(response_locale(locale), granola_sync_root.clone())
             }),
+        )
+        .route(
+            "/app/settings/api/plaud",
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                plaud::get(response_locale(locale), plaud_get_root.clone())
+            })
+            .delete(move |locale: Option<Extension<ResponseLocale>>| {
+                plaud::disconnect(response_locale(locale), plaud_disconnect_root.clone())
+            }),
+        )
+        .route(
+            "/app/settings/api/plaud/sign-in",
+            post(move |locale: Option<Extension<ResponseLocale>>, body| {
+                plaud::begin_sign_in(response_locale(locale), plaud_begin_root.clone(), body)
+            })
+            .delete(plaud::cancel_sign_in),
+        )
+        .route(
+            "/app/settings/api/plaud/sign-in/{attempt_id}",
+            get(move |locale: Option<Extension<ResponseLocale>>, path| {
+                plaud::sign_in_status(response_locale(locale), path)
+            }),
+        )
+        .route(
+            "/app/settings/api/plaud/sign-in/{attempt_id}/finish",
+            post(
+                move |locale: Option<Extension<ResponseLocale>>, path, body| {
+                    plaud::finish_sign_in(
+                        response_locale(locale),
+                        plaud_finish_root.clone(),
+                        path,
+                        body,
+                    )
+                },
+            ),
+        )
+        .route(
+            "/app/settings/api/plaud/sync",
+            post(
+                move |locale: Option<Extension<ResponseLocale>>,
+                      delegate: Option<axum::Extension<SourceSyncDelegate>>| {
+                    plaud::sync_now(response_locale(locale), plaud_sync_root.clone(), delegate)
+                },
+            ),
         )
         .route("/app/settings/workspace", get(assets::workspace))
         .route("/app/settings/static/settings.js", get(assets::settings_js))

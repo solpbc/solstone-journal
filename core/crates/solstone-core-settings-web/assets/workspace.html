@@ -380,12 +380,6 @@
   padding-right: 3em;
 }
 
-#section-apikeys .password-wrap input {
-  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', 'Consolas', monospace;
-  font-size: 0.9em;
-  letter-spacing: 0.02em;
-}
-
 .password-toggle {
   position: absolute;
   right: 0.5em;
@@ -2443,6 +2437,7 @@ button:focus:not(:focus-visible) {
   border-radius: 8px;
   background: var(--cream-bright);
 }
+.granola-card + .granola-card { margin-top: 1.5em; }
 .granola-head {
   display: flex;
   align-items: center;
@@ -2460,9 +2455,11 @@ button:focus:not(:focus-visible) {
   color: var(--ink-soft);
   background: var(--hairline);
 }
-.granola-state[data-state="on"] { color: var(--success-ink); background: var(--success-wash); }
+.granola-state[data-state="on"],
+.granola-state[data-state="connected"] { color: var(--success-ink); background: var(--success-wash); }
 .granola-state[data-state="attention"] { color: var(--warn-ink); background: var(--warn-wash); }
-.granola-state[data-state="setting-up"] { color: var(--orange-text-aa); background: var(--orange-wash); }
+.granola-state[data-state="setting-up"],
+.granola-state[data-state="signing-in"] { color: var(--orange-text-aa); background: var(--orange-wash); }
 .granola-progress { margin: 0 0 0.75em; color: var(--ink-soft); font-size: 0.9em; }
 .granola-attention {
   margin: 0 0 0.85em;
@@ -2543,7 +2540,6 @@ button:focus:not(:focus-visible) {
         <option value="profile">{{journal.window.settings.option.label.profile}}</option>
       </optgroup>
       <optgroup label="{{journal.window.settings.group.label.ai}}">
-        <option value="apikeys">{{journal.window.settings.option.label.api.keys}}</option>
         <option value="transcription">{{journal.window.settings.option.label.transcription}}</option>
       </optgroup>
       <optgroup label="{{journal.window.settings.group.label.devices}}">
@@ -2577,7 +2573,6 @@ button:focus:not(:focus-visible) {
     </div>
     <div class="settings-nav-group">
       <div class="settings-nav-label">{{journal.window.settings.visible.text.ai}}</div>
-      <button class="settings-nav-item" data-section="apikeys" id="tab-apikeys" role="tab" aria-selected="false" aria-controls="section-apikeys" tabindex="-1">{{journal.window.settings.button.label.api.keys}}</button>
       <button class="settings-nav-item" data-section="transcription" id="tab-transcription" role="tab" aria-selected="false" aria-controls="section-transcription" tabindex="-1">{{journal.window.settings.button.label.transcription}}</button>
     </div>
     <div class="settings-nav-group">
@@ -2744,29 +2739,6 @@ button:focus:not(:focus-visible) {
       </form>
     </section>
 
-    <!-- API Keys Section -->
-    <section class="settings-section" id="section-apikeys" role="tabpanel" aria-labelledby="tab-apikeys">
-      <h2>{{journal.window.settings.section.heading.api.keys}}</h2>
-      <p class="settings-section-desc">{{!journal.window.settings.visible.text.configure.service.tokens.for.imports.tokens}}</p>
-
-      <form class="settings-form" onsubmit="return false;">
-      <div class="settings-field">
-        <label for="field-env-plaud">Plaud</label>
-        <div class="password-wrap">
-          <input type="password" id="field-env-plaud" data-section="env" data-key="PLAUD_ACCESS_TOKEN" placeholder="{{journal.window.settings.field.placeholder.enter.access.token}}" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true">
-          <button type="button" class="password-toggle" data-toggle="field-env-plaud" title="{{journal.window.settings.tooltip.show.token}}">
-            <span>&#128065;</span>
-          </button>
-        </div>
-        <small>{{!journal.window.settings.visible.text.import.audio.from.plaud.recorder.paste}}</small>
-        <details class="settings-field-note">
-          <summary>{{journal.window.settings.disclosure.label.how.to.find.it}}</summary>
-          <small>{{journal.window.settings.visible.text.sign.in.to.plaud.s.web}}</small>
-        </details>
-      </div>
-      </form>
-    </section>
-
     <!-- Transcription Section -->
     <section class="settings-section" id="section-transcription" role="tabpanel" aria-labelledby="tab-transcription">
       <h2>{{journal.window.settings.section.heading.transcription}}</h2>
@@ -2792,13 +2764,6 @@ button:focus:not(:focus-visible) {
           <!-- Options populated dynamically from /api/transcribe -->
         </select>
         <small>{{journal.window.settings.visible.text.speech.to.text.engine.to.use}}</small>
-      </div>
-
-      <!-- Backend API key warning (shown when selected backend needs API key) -->
-      <div id="backendKeyWarning" class="provider-key-warning" style="display:none">
-        <span>&#9888;</span>
-        <span id="backendKeyWarningText">{{journal.window.settings.visible.text.api.key.not.configured}}</span>
-        <a href="#" id="backendKeyLink">{{journal.window.settings.link.label.configure.in.api.keys}}</a>
       </div>
 
       <div id="transcribeResourceNotice" class="provider-key-warning" style="display:none">
@@ -3026,31 +2991,70 @@ button:focus:not(:focus-visible) {
         <p class="granola-load-error" id="granolaLoadError" role="alert" hidden>{{journal.window.settings.visible.text.couldn.t.load.granola.reopen.sync}}</p>
       </div>
 
-      <div id="plaudSyncCard">
-        <h3 class="settings-subsection-title">Plaud</h3>
-        <p class="settings-subsection-desc">
-          {{!journal.window.settings.visible.text.automatically.sync.and.import.material.from}}
-        </p>
+      <div id="plaudSyncCard" class="granola-card" aria-labelledby="plaudTitle">
+        <div class="granola-head">
+          <h3 class="settings-subsection-title" id="plaudTitle">Plaud</h3>
+          <span class="granola-state" id="plaudState" data-state="loading">{{journal.window.settings.visible.text.checking}}</span>
+        </div>
+        <p class="settings-subsection-desc">{{journal.window.settings.plaud.description}}</p>
+        <p class="granola-progress" id="plaudProgress" role="status" aria-live="polite" hidden></p>
+        <div class="granola-attention" id="plaudAttention" hidden>
+          <p class="granola-attention-reason" id="plaudAttentionReason"></p>
+          <p class="granola-kept" id="plaudAttentionKept"></p>
+        </div>
+        <dl class="granola-facts" id="plaudFacts" hidden></dl>
+        <p class="granola-kept" id="plaudOffKept" hidden></p>
 
-        <div class="settings-field" id="plaudSyncField">
-          <label for="field-plaud-sync-enabled">{{journal.window.settings.field.label.hourly.sync}}</label>
-          <div style="display: flex; align-items: center; gap: 1em;">
-            <label class="toggle-switch toggle-positive">
-              <input type="checkbox" id="field-plaud-sync-enabled">
-              <span class="slider"></span>
-            </label>
-            <span style="color: var(--ink-soft); font-size: 0.9em;">{{!journal.window.settings.visible.text.sync.and.import.plaud.material.every}}</span>
+        <div id="plaudSignedOut" hidden>
+          <div class="granola-actions">
+            <button type="button" class="granola-primary" id="plaudSignIn">{{journal.window.settings.plaud.action.sign.in}}</button>
+          </div>
+          <p class="granola-load-error" id="plaudSignInError" role="alert" hidden></p>
+        </div>
+
+        <div class="granola-key" id="plaudPending" hidden>
+          <p class="granola-progress" id="plaudPendingText" role="status" aria-live="polite"></p>
+          <div class="granola-actions">
+            <button type="button" class="btn-secondary" id="plaudOpenAgain" hidden>{{journal.window.settings.plaud.action.open.again}}</button>
+            <button type="button" class="btn-secondary" id="plaudShowPaste" hidden>{{journal.window.settings.plaud.action.paste.link}}</button>
+            <button type="button" class="btn-secondary" id="plaudCancelSignIn">{{journal.window.settings.button.label.cancel}}</button>
+          </div>
+          <div class="settings-field granola-key-field" id="plaudPastePanel" hidden style="margin-top: 0.85em;">
+            <label for="plaudPasteUrl">{{journal.window.settings.plaud.signin.paste.help}}</label>
+            <input type="url" id="plaudPasteUrl" autocomplete="off" spellcheck="false" placeholder="{{journal.window.settings.plaud.signin.paste.placeholder}}" aria-describedby="plaudPasteError" data-1p-ignore data-lpignore="true" data-bwignore="true">
+            <small id="plaudPasteError" class="granola-key-error" role="alert" hidden></small>
+            <div class="granola-actions" style="margin-top: 0.6em;">
+              <button type="button" class="granola-primary" id="plaudPasteSubmit">{{journal.window.settings.plaud.action.finish}}</button>
+            </div>
           </div>
         </div>
 
-        <div class="settings-field" id="plaudOriginalsField">
-          <label><input type="checkbox" id="field-plaud-keep-originals" disabled> {{journal.window.settings.field.label.keep.originals}}</label>
-          <p class="settings-subsection-desc">{{!journal.window.settings.visible.text.turn.this.on.if.you.want}}</p>
+        <div id="plaudConnected" hidden>
+          <div class="settings-field" id="plaudSyncField">
+            <label for="field-plaud-sync-enabled">{{journal.window.settings.field.label.hourly.sync}}</label>
+            <div style="display: flex; align-items: center; gap: 1em;">
+              <label class="toggle-switch toggle-positive">
+                <input type="checkbox" id="field-plaud-sync-enabled">
+                <span class="slider"></span>
+              </label>
+              <span style="color: var(--ink-soft); font-size: 0.9em;">{{!journal.window.settings.visible.text.sync.and.import.plaud.material.every}}</span>
+            </div>
+          </div>
+
+          <div class="settings-field" id="plaudOriginalsField">
+            <label><input type="checkbox" id="field-plaud-keep-originals" disabled> {{journal.window.settings.field.label.keep.originals}}</label>
+            <p class="settings-subsection-desc">{{!journal.window.settings.visible.text.turn.this.on.if.you.want}}</p>
+          </div>
+
+          <div class="granola-actions">
+            <button type="button" class="btn-secondary" id="plaudCheck">{{journal.window.settings.button.label.check.now}}</button>
+            <button type="button" class="granola-primary" id="plaudSignInAgain" hidden>{{journal.window.settings.plaud.action.sign.in.again}}</button>
+            <button type="button" class="btn-secondary" id="plaudDisconnect">{{journal.window.settings.button.label.disconnect}}</button>
+          </div>
+          <p class="granola-note">{{journal.window.settings.plaud.disconnect.note}}</p>
         </div>
 
-        <p id="plaudSyncTokenNote" style="display: none; color: var(--ink-faint); font-size: 0.85em; margin-top: 1em; padding: 0.75em; background: var(--cream-bright); border-radius: 4px;">
-          <a href="#apikeys" id="plaudApiKeysLink" style="color: var(--orange-text-aa);"></a>
-        </p>
+        <p class="granola-load-error" id="plaudLoadError" role="alert" hidden>{{journal.window.settings.plaud.load.failed}}</p>
       </div>
 
       </form>
@@ -3787,15 +3791,6 @@ for (const step of document.querySelectorAll('[data-granola-guide]')) {
   const fixed = Object.fromEntries(Array.from(step.children, item => [item.dataset.inline, item]));
   step.replaceChildren(...window.JournalI18n.renderMarkup(step.dataset.granolaGuide, [], { fixed }));
 }
-const plaudKeysLink = document.getElementById('plaudApiKeysLink');
-if (plaudKeysLink?.parentElement?.id === 'plaudSyncTokenNote') {
-  const note = plaudKeysLink.parentElement;
-  const beforeLink = note.firstChild;
-  const afterLink = note.lastChild;
-  note.replaceChildren(beforeLink, ...window.JournalI18n.renderMarkup(
-    'journal.window.settings.plaud.guide.token.link', [], { elements: { keys: plaudKeysLink } }
-  ), afterLink);
-}
 
 // Every timer is the mount's, and goes with it. A frame asked for while
 // settings was up does nothing once it has gone.
@@ -3958,6 +3953,11 @@ function disposeSettings() {
   } catch (error) {
     if (!(error instanceof ReferenceError)) throw error;
   }
+  try {
+    cancelPlaudSignIn(false);
+  } catch (error) {
+    if (!(error instanceof ReferenceError)) throw error;
+  }
 }
 // A mount that throws part-way runs it too.
 ctx.onDispose(disposeSettings);
@@ -4088,7 +4088,7 @@ setupModalAccessibility('cleanupLogsModal');
 setupModalAccessibility('facetCreateModal');
 
 // ========== NAVIGATION ==========
-const VALID_SECTIONS = ['about', 'guide', 'profile', 'apikeys', 'transcription', 'vision', 'sync', 'storage', 'trash', 'support', 'facets', 'localaccess'];
+const VALID_SECTIONS = ['about', 'guide', 'profile', 'transcription', 'vision', 'sync', 'storage', 'trash', 'support', 'facets', 'localaccess'];
 
 let settingsAbout = '';
 let settingsAboutLoad = null;
@@ -4634,74 +4634,9 @@ function populateFields(config) {
   const parakeetCpp = transcribe['parakeet-cpp'] || {};
   setValue('field-parakeet-cpp-device', parakeetCpp.device || 'auto');
 
-  // Env (API keys) - show status indicators
-  // env = journal config status, runtime_env = loaded into process
-  const env = config.env || {};
-  const sysEnv = config.runtime_env || {};
-  keyValidationData = config.key_validation || {};
-  updateEnvStatus('field-env-plaud', env.PLAUD_ACCESS_TOKEN, sysEnv.PLAUD_ACCESS_TOKEN);
-
   document.querySelectorAll('[data-section][data-key]').forEach((el) => {
     el.__lastKnownValue = readAutoSaveControlValue(el);
   });
-}
-
-function updateEnvStatus(fieldId, isJournalConfigured, isSystemConfigured) {
-  const field = document.getElementById(fieldId);
-  if (!field) return;
-
-  // Update placeholder to indicate status
-  if (isJournalConfigured) {
-    field.placeholder = window.JournalI18n.render('journal.window.settings.field.or.control.label.key.configured.enter.new.value.to');
-  } else if (isSystemConfigured) {
-    field.placeholder = window.JournalI18n.render('journal.window.settings.field.or.control.label.key.available.from.system.environment');
-  } else {
-    field.placeholder = window.JournalI18n.render('journal.window.settings.field.or.control.label.enter.api.key');
-  }
-
-  // Update label with status indicator
-  const label = field.closest('.settings-field')?.querySelector('label');
-  if (label) {
-    // Remove existing status indicator
-    const existingStatus = label.querySelector('.key-status');
-    if (existingStatus) existingStatus.remove();
-
-    if (isJournalConfigured) {
-      const status = document.createElement('span');
-      status.className = 'key-status key-status-journal';
-      status.textContent = ' \u2713';
-      label.appendChild(status);
-    } else if (isSystemConfigured) {
-      const status = document.createElement('span');
-      status.className = 'key-status key-status-system';
-      status.textContent = window.JournalI18n.render('journal.window.settings.visible.text.system');
-      label.appendChild(status);
-    }
-
-    // Add validation status for transcription/import service tokens.
-    const providerName = fieldId.replace('field-env-', '');
-    if (['plaud'].includes(providerName)) {
-      const validation = keyValidationData[providerName];
-      const oldValidation = label.querySelector('.key-validation-status');
-      if (oldValidation) oldValidation.remove();
-
-      if (validation) {
-        const validationSpan = document.createElement('span');
-        validationSpan.className = 'key-validation-status';
-        if (validation.valid) {
-          validationSpan.className += ' key-status-valid';
-          validationSpan.textContent = window.JournalI18n.render('journal.window.settings.visible.text.valid');
-        } else {
-          validationSpan.className += ' key-status-invalid';
-          const errMsg = validation.error || window.JournalI18n.render('journal.window.settings.validation.invalid');
-          const shortErr = errMsg.length > 60 ? errMsg.slice(0, 60) + '…' : errMsg;
-          validationSpan.textContent = ' ✗ ' + shortErr;
-          validationSpan.title = errMsg;
-        }
-        label.appendChild(validationSpan);
-      }
-    }
-  }
 }
 
 function setValue(id, value) {
@@ -4739,12 +4674,6 @@ function applyEnvSaveEffects(el, key, result) {
     keyValidationData = result.key_validation;
     configData.key_validation = keyValidationData;
   }
-  updateEnvStatus(
-    el.id,
-    configData?.env?.[key],
-    configData?.runtime_env?.[key]
-  );
-
 }
 
 // ========== GENERIC FIELD SAVING ==========
@@ -6362,24 +6291,6 @@ function switchTranscribeBackend(backend, config) {
   document.getElementById('parakeetCppInstallNote').style.display = (parakeetCppUnavailable || parakeetCppBundled) ? 'none' : '';
   document.getElementById('parakeetCppBundledNote').style.display = parakeetCppBundled ? '' : 'none';
   document.getElementById('parakeetCppMacNote').style.display = parakeetCppUnavailable ? '' : 'none';
-
-  // Find the backend metadata
-  const backendInfo = transcribeBackends.find(b => b.name === backend);
-  const warning = document.getElementById('backendKeyWarning');
-  const warningText = document.getElementById('backendKeyWarningText');
-
-  if (warning && backendInfo) {
-    const envKey = backendInfo.env_key;
-    // Show warning if backend requires API key and it's not configured
-    if (envKey && !transcribeApiKeys[backend]) {
-      warningText.textContent = window.JournalI18n.render('journal.window.settings.credentials.environment.unconfigured', [['environment_variable', String(envKey)]]);
-      warning.style.display = 'flex';
-    } else {
-      warning.style.display = 'none';
-    }
-  } else if (warning) {
-    warning.style.display = 'none';
-  }
 }
 
 // Backend selector change handler
@@ -6718,18 +6629,6 @@ document.getElementById('facesClearConfirm')?.addEventListener('click', () => {
   clearFaceData();
 });
 
-// Backend key warning link
-document.getElementById('backendKeyLink')?.addEventListener('click', (e) => {
-  e.preventDefault();
-  switchSection('apikeys');
-});
-
-// Plaud sync token note → API keys section
-document.getElementById('plaudApiKeysLink')?.addEventListener('click', (e) => {
-  e.preventDefault();
-  switchSection('apikeys');
-});
-
 ['field-parakeet-model-version', 'field-parakeet-device', 'field-parakeet-timeout'].forEach(id => {
   document.getElementById(id)?.addEventListener('change', async (e) => {
     const key = id === 'field-parakeet-model-version' ? 'model_version' :
@@ -6783,14 +6682,17 @@ document.getElementById('field-parakeet-cpp-device')?.addEventListener('change',
 // ========== SYNC ==========
 async function loadSync() {
   loadGranola();
+  loadPlaud();
   try {
     const [data, originals] = await Promise.all([
       settingsApi('/app/settings/api/sync'),
       settingsApi('/app/import/api/keep-originals'),
     ]);
     const keep = document.getElementById('field-plaud-keep-originals');
-    keep.checked = originals.keep_originals?.plaud === true;
-    keep.disabled = !data.plaud?.available;
+    if (keep) {
+      keep.checked = originals.keep_originals?.plaud === true;
+      keep.disabled = !data.plaud?.available;
+    }
     setLoadState('syncLoadState');
     setSyncControlsDisabled(false);
     populateSync(data);
@@ -6807,26 +6709,11 @@ async function loadSync() {
 }
 
 function populateSync(data) {
-  const plaud = data.plaud || {};
+  const plaudSync = data.plaud || {};
   const toggle = document.getElementById('field-plaud-sync-enabled');
-  const card = document.getElementById('plaudSyncCard');
-  const field = document.getElementById('plaudSyncField');
-  const note = document.getElementById('plaudSyncTokenNote');
-
-  if (plaud.available) {
-    // Token configured — enable the card
-    card.style.opacity = '1';
-    toggle.disabled = false;
-    toggle.checked = plaud.enabled;
-    field.style.opacity = '1';
-    note.style.display = 'none';
-  } else {
-    // No token — grey out the card
-    card.style.opacity = '0.5';
-    toggle.disabled = true;
-    toggle.checked = false;
-    field.style.opacity = '0.5';
-    note.style.display = 'block';
+  if (toggle) {
+    toggle.disabled = !plaudSync.available;
+    toggle.checked = plaudSync.available ? !!plaudSync.enabled : false;
   }
 }
 
@@ -6861,9 +6748,539 @@ document.getElementById('field-plaud-sync-enabled').addEventListener('change', a
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plaud: { enabled } }),
       }),
-      onSuccess: () => showFieldStatus(this, 'saved'),
+      onSuccess: () => {
+        showFieldStatus(this, 'saved');
+        if (plaud.data) {
+          plaud.data = { ...plaud.data, enabled };
+          renderPlaud();
+        }
+      },
     });
   } catch (_) {
+  }
+});
+
+// Plaud: OAuth 2.1 + DCR sign-in via shared window.solstoneOAuthBroker,
+// mirroring Granola's card states and keyboard focus discipline.
+const PLAUD_BROKER_PREFERENCES = [
+  { mode: 'loopback', host: '127.0.0.1', path: '/auth/callback', port: 0 },
+  { mode: 'custom_scheme', uri: 'solstone://oauth/callback' },
+];
+const plaud = {
+  data: null,
+  busy: false,
+  poll: null,
+  signingIn: false,
+  signInController: null,
+  pending: null,
+};
+const plaudEl = id => document.getElementById(id);
+
+function plaudMode(data) {
+  if (plaud.signingIn) return 'signing-in';
+  if (!data.connected) return data.recordings > 0 ? 'off' : 'ready';
+  if (data.attention) return 'attention';
+  return data.enabled ? 'on' : 'connected';
+}
+
+const PLAUD_STATE_WORDS = {
+  ready: window.JournalI18n.render('journal.window.settings.granola.state.words.ready.ready.to.set.up'),
+  'signing-in': window.JournalI18n.render('journal.window.settings.plaud.state.signing.in'),
+  connected: window.JournalI18n.render('journal.window.settings.plaud.state.connected'),
+  on: window.JournalI18n.render('journal.window.settings.granola.state.words.on.on'),
+  attention: window.JournalI18n.render('journal.window.settings.granola.state.words.attention.needs.attention'),
+  off: window.JournalI18n.render('journal.window.settings.granola.state.words.off.off'),
+};
+
+function plaudSignInError(message) {
+  const el = plaudEl('plaudSignInError');
+  if (!el) return;
+  granolaHidden(el, !message);
+  granolaText(el, message || '');
+}
+
+function plaudPasteError(message) {
+  const el = plaudEl('plaudPasteError');
+  if (!el) return;
+  granolaHidden(el, !message);
+  granolaText(el, message || '');
+}
+
+function plaudLandings(held) {
+  const shown = id => plaudEl(id);
+  if (plaudEl('plaudPending')?.contains(held)) {
+    return plaud.data?.connected
+      ? [shown('plaudCheck'), shown('plaudDisconnect'), shown('field-plaud-sync-enabled')]
+      : [shown('plaudSignIn'), shown('plaudOffKept')];
+  }
+  if (plaudEl('plaudSignedOut')?.contains(held)) {
+    return [shown('plaudPasteUrl'), shown('plaudCancelSignIn'), shown('plaudCheck'), shown('plaudDisconnect')];
+  }
+  return [shown('plaudOffKept'), shown('plaudSignIn'), shown('plaudDisconnect')];
+}
+
+function renderPlaud() {
+  const data = plaud.data;
+  if (!data) return;
+  const card = plaudEl('plaudSyncCard');
+  if (!card) return;
+  const held = card.contains(settingsPage.activeElement) ? settingsPage.activeElement : null;
+  const mode = plaudMode(data);
+  const state = plaudEl('plaudState');
+  if (state.dataset.state !== mode) state.dataset.state = mode;
+  granolaText(state, PLAUD_STATE_WORDS[mode] || '');
+
+  const progress = plaudEl('plaudProgress');
+  granolaHidden(progress, !data.syncing || plaud.signingIn);
+  if (data.syncing && !plaud.signingIn) {
+    granolaText(progress, window.JournalI18n.render('journal.window.settings.plaud.check.started'));
+  }
+
+  const showAttention = !plaud.signingIn && data.connected && Boolean(data.attention);
+  granolaHidden(plaudEl('plaudAttention'), !showAttention);
+  if (showAttention) {
+    granolaText(plaudEl('plaudAttentionReason'), data.attention);
+    granolaText(
+      plaudEl('plaudAttentionKept'),
+      data.recordings > 0
+        ? window.JournalI18n.render('journal.window.settings.plaud.attention.recordings', [
+            ['quantity', window.JournalI18n.cardinalQuantity(data.recordings)],
+            ['count', String(data.recordings)],
+          ])
+        : window.JournalI18n.render('journal.window.settings.settings.feedback.nothing.in.your.journal.was.changed'),
+    );
+  }
+
+  const facts = plaudEl('plaudFacts');
+  const rows = [];
+  if (data.connected && !plaud.signingIn) {
+    if (data.account_label) {
+      rows.push([
+        window.JournalI18n.render('journal.window.settings.plaud.fact.account'),
+        data.account_label,
+      ]);
+    }
+    const recordings = data.recordings > 0
+      ? window.JournalI18n.render('journal.window.settings.plaud.recordings.in.journal', [['count', String(data.recordings)]])
+      : window.JournalI18n.render('journal.window.settings.plaud.recordings.none');
+    rows.push([window.JournalI18n.render('journal.window.settings.plaud.fact.recordings'), recordings]);
+    if (data.last_added) {
+      rows.push([window.JournalI18n.render('journal.window.settings.granola.last.added'), granolaRelative(data.last_added)]);
+    }
+    if (data.last_sync) {
+      const checked = data.syncing
+        ? window.JournalI18n.render('journal.window.settings.granola.checking.now')
+        : granolaRelative(data.last_sync);
+      rows.push([window.JournalI18n.render('journal.window.settings.granola.last.checked'), checked]);
+    }
+  }
+  granolaHidden(facts, rows.length === 0);
+  const words = rows.flat();
+  const drawn = Array.from(facts.children);
+  const same = drawn.length === words.length
+    && drawn.every((el, i) => el.tagName === (i % 2 ? 'DD' : 'DT') && el.textContent === words[i]);
+  if (!same) {
+    facts.replaceChildren(...rows.flatMap(([term, value]) => {
+      const dt = document.createElement('dt');
+      dt.textContent = term;
+      const dd = document.createElement('dd');
+      dd.textContent = value;
+      return [dt, dd];
+    }));
+  }
+
+  const offKept = plaudEl('plaudOffKept');
+  const showOffKept = !plaud.signingIn && !data.connected && data.recordings > 0;
+  granolaHidden(offKept, !showOffKept);
+  if (showOffKept) {
+    granolaText(
+      offKept,
+      [
+        window.JournalI18n.render('journal.window.settings.granola.disconnected.status'),
+        window.JournalI18n.render('journal.window.settings.plaud.disconnected.recordings', [
+          ['quantity', window.JournalI18n.cardinalQuantity(data.recordings)],
+          ['count', String(data.recordings)],
+        ]),
+        window.JournalI18n.render('journal.window.settings.plaud.disconnected.reconnect'),
+      ].join(' '),
+    );
+  }
+
+  const pending = plaud.pending;
+  const showPending = plaud.signingIn && Boolean(pending);
+  granolaHidden(plaudEl('plaudPending'), !showPending);
+  if (showPending) {
+    const pasteOnly = pending.mode === 'paste';
+    granolaHidden(plaudEl('plaudPendingText'), pasteOnly);
+    if (!pasteOnly) {
+      granolaText(
+        plaudEl('plaudPendingText'),
+        window.JournalI18n.render('journal.window.settings.plaud.signin.waiting'),
+      );
+    }
+    granolaHidden(plaudEl('plaudOpenAgain'), !pending.authorizeUrl);
+    granolaHidden(plaudEl('plaudShowPaste'), pending.showPaste);
+    granolaHidden(plaudEl('plaudPastePanel'), !pending.showPaste);
+    granolaMark(plaudEl('plaudPasteSubmit'), pending.submitting ? 'busy' : null);
+  }
+
+  const authFault = data.connected && data.attention_code === 'auth';
+  granolaHidden(plaudEl('plaudSignedOut'), data.connected || showPending);
+  granolaHidden(plaudEl('plaudConnected'), !data.connected || showPending);
+  granolaHidden(plaudEl('plaudSignInAgain'), !authFault);
+  granolaHidden(plaudEl('plaudCheck'), authFault);
+
+  const toggle = plaudEl('field-plaud-sync-enabled');
+  if (toggle) {
+    toggle.disabled = !data.connected || plaud.busy === 'disconnect';
+    toggle.checked = data.connected ? !!data.enabled : false;
+  }
+  const keepOriginals = plaudEl('field-plaud-keep-originals');
+  if (keepOriginals) {
+    keepOriginals.disabled = !data.connected || plaud.busy === 'disconnect';
+  }
+
+  const check = plaudEl('plaudCheck');
+  granolaText(
+    check,
+    data.syncing
+      ? window.JournalI18n.render('journal.window.settings.settings.feedback.checking')
+      : window.JournalI18n.render('journal.window.settings.button.label.check.now'),
+  );
+
+  const other = name => (plaud.busy && plaud.busy !== name ? 'off' : null);
+  granolaMark(plaudEl('plaudSignIn'), plaud.busy === 'sign-in' ? 'busy' : other('sign-in'));
+  granolaMark(plaudEl('plaudSignInAgain'), plaud.busy === 'sign-in' ? 'busy' : other('sign-in'));
+  granolaMark(check, plaud.busy === 'check' || data.syncing ? 'busy' : other('check'));
+  granolaMark(plaudEl('plaudDisconnect'), plaud.busy === 'disconnect' ? 'busy' : other('disconnect'));
+
+  if (held && !window.SolFocus.isShown(held)) settingsLand(held, plaudLandings(held));
+}
+
+async function loadPlaud() {
+  try {
+    plaud.data = await settingsApi('/app/settings/api/plaud');
+    granolaHidden(plaudEl('plaudLoadError'), true);
+    renderPlaud();
+  } catch (_) {
+    const loadErr = plaudEl('plaudLoadError');
+    if (loadErr) loadErr.hidden = false;
+    const state = plaudEl('plaudState');
+    if (state) {
+      state.textContent = window.JournalI18n.render('journal.window.settings.visible.text.unavailable');
+      state.dataset.state = 'unavailable';
+    }
+  }
+  const following = plaud.data && plaud.data.syncing;
+  clearTimeout(plaud.poll);
+  if (following && document.visibilityState === 'visible') {
+    plaud.poll = setTimeout(loadPlaud, 2000);
+  }
+}
+
+function cancelPlaudSignIn(notifyServer = true) {
+  clearTimeout(plaud.poll);
+  if (plaud.pending && typeof plaud.pending.cancel === 'function') {
+    const cancel = plaud.pending.cancel;
+    plaud.pending = null;
+    cancel();
+  }
+  if (plaud.signInController) {
+    plaud.signInController.abort();
+    plaud.signInController = null;
+  }
+  plaud.signingIn = false;
+  if (plaud.busy === 'sign-in') plaud.busy = false;
+  if (notifyServer) {
+    void settingsFetch('/app/settings/api/plaud/sign-in', { method: 'DELETE' }).catch(() => {});
+  }
+  if (plaud.data) renderPlaud();
+}
+
+async function startPlaudSignIn() {
+  if (plaud.busy || plaud.signingIn) return;
+  const broker = window.solstoneOAuthBroker;
+  if (!broker || typeof broker.run !== 'function') {
+    plaudSignInError(window.JournalI18n.render('journal.window.settings.plaud.signin.failed'));
+    return;
+  }
+
+  const controller = new AbortController();
+  plaud.signInController = controller;
+  plaud.signingIn = true;
+  plaud.busy = 'sign-in';
+  plaudSignInError('');
+  plaudPasteError('');
+  if (plaudEl('plaudPasteUrl')) plaudEl('plaudPasteUrl').value = '';
+  renderPlaud();
+
+  let runResult = null;
+  let caughtError = null;
+  try {
+    runResult = await broker.run({
+      service: 'plaud',
+      preferences: PLAUD_BROKER_PREFERENCES,
+      signal: controller.signal,
+      start: async ({ strategy, redirectUri }) => {
+        const payload = strategy === broker.STRATEGIES.NATIVE_BROKER && redirectUri
+          ? { redirect_uri: redirectUri }
+          : {};
+        const started = await settingsApi('/app/settings/api/plaud/sign-in', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        return {
+          attemptId: started.attempt_id,
+          authorizeUrl: started.authorize_url,
+          expectedState: started.expected_state,
+          redirectUri: started.redirect_uri,
+        };
+      },
+      finish: async ({ attemptId, callbackUrl }) => {
+        return await settingsApi(`/app/settings/api/plaud/sign-in/${encodeURIComponent(attemptId)}/finish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_url: callbackUrl }),
+        });
+      },
+      waitForCompletion: ({ attemptId, started, opened, signal }) => new Promise((resolve) => {
+        let settled = false;
+        let pollTimer = null;
+        const done = (value) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(pollTimer);
+          if (signal && typeof signal.removeEventListener === 'function') {
+            signal.removeEventListener('abort', onAbort);
+          }
+          resolve(value);
+        };
+        const onAbort = () => done({ state: 'cancelled' });
+        if (signal && typeof signal.addEventListener === 'function') {
+          if (signal.aborted) {
+            onAbort();
+            return;
+          }
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
+
+        const openAgain = (url) => {
+          if (window.solstoneOutside && typeof window.solstoneOutside.openUrl === 'function') {
+            window.solstoneOutside.openUrl(url);
+          } else {
+            window.open(url, '_blank', 'noopener,noreferrer');
+          }
+        };
+
+        plaud.pending = {
+          mode: 'loopback',
+          attemptId,
+          authorizeUrl: started.authorizeUrl,
+          showPaste: !opened,
+          submitting: false,
+          openUrl: openAgain,
+          submitPaste: async (callbackUrl) => {
+            if (settled) return;
+            plaud.pending.submitting = true;
+            plaudPasteError('');
+            renderPlaud();
+            try {
+              const out = await settingsApi(
+                `/app/settings/api/plaud/sign-in/${encodeURIComponent(attemptId)}/finish`,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ callback_url: callbackUrl }),
+                },
+              );
+              done({ state: 'signed_in', account_label: out.account_label || null });
+            } catch (err) {
+              if (!settled && plaud.pending) {
+                plaud.pending.submitting = false;
+                plaudPasteError(
+                  err?.serverMessage
+                  || window.JournalI18n.render('journal.window.settings.plaud.response.callback.invalid'),
+                );
+                renderPlaud();
+              }
+            }
+          },
+          cancel: () => done({ state: 'cancelled' }),
+        };
+        renderPlaud();
+
+        const pollStatus = async () => {
+          if (settled || ctx.disposed) return;
+          try {
+            const status = await settingsApi(`/app/settings/api/plaud/sign-in/${encodeURIComponent(attemptId)}`);
+            if (settled) return;
+            if (status.state && status.state !== 'pending') {
+              done(status);
+              return;
+            }
+          } catch (_) {
+            // Keep polling on transient read errors while the attempt is active.
+          }
+          if (!settled && !ctx.disposed) {
+            pollTimer = setTimeout(pollStatus, 1500);
+          }
+        };
+        pollTimer = setTimeout(pollStatus, 1500);
+      }),
+      onPasteFallback: ({ attemptId, authorizeUrl, submitCallbackUrl, openUrl, signal }) => new Promise((resolve) => {
+        let settled = false;
+        const done = (value) => {
+          if (settled) return;
+          settled = true;
+          if (signal && typeof signal.removeEventListener === 'function') {
+            signal.removeEventListener('abort', onAbort);
+          }
+          resolve(value);
+        };
+        const onAbort = () => done({ outcome: 'cancelled' });
+        if (signal && typeof signal.addEventListener === 'function') {
+          if (signal.aborted) {
+            onAbort();
+            return;
+          }
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
+
+        plaud.pending = {
+          mode: 'paste',
+          attemptId,
+          authorizeUrl,
+          showPaste: true,
+          submitting: false,
+          openUrl,
+          submitPaste: async (callbackUrl) => {
+            if (settled) return;
+            plaud.pending.submitting = true;
+            plaudPasteError('');
+            renderPlaud();
+            try {
+              const out = await submitCallbackUrl(callbackUrl);
+              done({ outcome: 'signed_in', result: out });
+            } catch (err) {
+              if (!settled && plaud.pending) {
+                plaud.pending.submitting = false;
+                plaudPasteError(
+                  err?.serverMessage
+                  || window.JournalI18n.render('journal.window.settings.plaud.response.callback.invalid'),
+                );
+                renderPlaud();
+              }
+            }
+          },
+          cancel: () => done({ outcome: 'cancelled' }),
+        };
+        renderPlaud();
+        plaudEl('plaudPasteUrl')?.focus();
+      }),
+    });
+  } catch (err) {
+    caughtError = err;
+  } finally {
+    plaud.signingIn = false;
+    plaud.busy = false;
+    plaud.pending = null;
+    plaud.signInController = null;
+  }
+
+  if (ctx.disposed) return;
+
+  const cancelled = runResult?.outcome === 'cancelled' || runResult?.result?.state === 'cancelled';
+  const innerFailed = runResult?.result?.state === 'failed' || runResult?.result?.state === 'expired';
+  if (caughtError) {
+    plaudSignInError(
+      caughtError?.serverMessage
+      || window.JournalI18n.render('journal.window.settings.plaud.signin.failed'),
+    );
+  } else if (!cancelled && (!runResult?.ok || innerFailed)) {
+    plaudSignInError(
+      runResult?.result?.error
+      || window.JournalI18n.render('journal.window.settings.plaud.signin.failed'),
+    );
+  } else if (!cancelled) {
+    plaudSignInError('');
+  }
+  await loadPlaud();
+}
+
+async function submitPlaudPaste() {
+  if (!plaud.pending || plaud.pending.submitting) return;
+  const input = plaudEl('plaudPasteUrl');
+  const raw = input?.value?.trim() || '';
+  if (!raw) {
+    plaudPasteError(window.JournalI18n.render('journal.window.settings.plaud.signin.paste.empty'));
+    input?.focus();
+    return;
+  }
+  await plaud.pending.submitPaste(raw);
+}
+
+async function checkPlaud() {
+  if (plaud.busy || plaud.data?.syncing) return;
+  plaud.busy = 'check';
+  renderPlaud();
+  try {
+    await settingsApi('/app/settings/api/plaud/sync', { method: 'POST' });
+    granolaHidden(plaudEl('plaudLoadError'), true);
+  } catch (err) {
+    const loadErr = plaudEl('plaudLoadError');
+    if (loadErr) {
+      loadErr.textContent = err?.serverMessage
+        || window.JournalI18n.render('journal.window.settings.plaud.check.failed');
+      loadErr.hidden = false;
+    }
+  } finally {
+    plaud.busy = false;
+  }
+  await loadPlaud();
+}
+
+async function disconnectPlaud() {
+  if (plaud.busy) return;
+  plaud.busy = 'disconnect';
+  renderPlaud();
+  try {
+    await settingsApi('/app/settings/api/plaud', { method: 'DELETE' });
+    granolaHidden(plaudEl('plaudLoadError'), true);
+  } catch (err) {
+    const loadErr = plaudEl('plaudLoadError');
+    if (loadErr) {
+      loadErr.textContent = err?.serverMessage
+        || window.JournalI18n.render('journal.window.settings.plaud.disconnect.failed');
+      loadErr.hidden = false;
+    }
+  } finally {
+    plaud.busy = false;
+  }
+  await loadPlaud();
+}
+
+plaudEl('plaudSignIn')?.addEventListener('click', startPlaudSignIn);
+plaudEl('plaudSignInAgain')?.addEventListener('click', startPlaudSignIn);
+plaudEl('plaudCheck')?.addEventListener('click', checkPlaud);
+plaudEl('plaudDisconnect')?.addEventListener('click', disconnectPlaud);
+plaudEl('plaudOpenAgain')?.addEventListener('click', () => {
+  if (plaud.pending?.authorizeUrl && typeof plaud.pending.openUrl === 'function') {
+    plaud.pending.openUrl(plaud.pending.authorizeUrl);
+  }
+});
+plaudEl('plaudShowPaste')?.addEventListener('click', () => {
+  if (!plaud.pending) return;
+  plaud.pending.showPaste = true;
+  renderPlaud();
+  plaudEl('plaudPasteUrl')?.focus();
+});
+plaudEl('plaudCancelSignIn')?.addEventListener('click', () => cancelPlaudSignIn(true));
+plaudEl('plaudPasteSubmit')?.addEventListener('click', submitPlaudPaste);
+plaudEl('plaudPasteUrl')?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    submitPlaudPaste();
   }
 });
 
@@ -7139,7 +7556,10 @@ granolaEl('granolaGuide').addEventListener('toggle', event => {
   if (event.isTrusted) event.target.dataset.touched = '1';
 });
 ctx.on(window.document, 'visibilitychange', () => {
-  if (document.visibilityState === 'visible' && document.getElementById('section-sync')?.classList.contains('active')) loadGranola();
+  if (document.visibilityState === 'visible' && document.getElementById('section-sync')?.classList.contains('active')) {
+    loadGranola();
+    loadPlaud();
+  }
 });
 
 // ========== VISION ==========

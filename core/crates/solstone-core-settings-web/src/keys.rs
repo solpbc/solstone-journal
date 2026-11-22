@@ -7,11 +7,9 @@ use solstone_core_journal_config_write::{
     JournalConfigMutation, LockError, LockOptions, mutate_journal_config,
 };
 
-use crate::http::{
-    config_busy, json_response, plaud_validation_unavailable, settings_operation_failed,
-};
+use crate::http::{config_busy, json_response, settings_operation_failed};
 
-/// Expose the stored validation projection; live Plaud validation is unavailable natively.
+/// Expose the stored validation projection.
 pub async fn get() -> Response {
     json_response(json!({"key_validation": {}}))
 }
@@ -22,19 +20,6 @@ pub async fn post(
     lock_options: LockOptions,
     _body: Bytes,
 ) -> Response {
-    let config = match solstone_core_journal_config::read_journal_config(&journal_root) {
-        Ok(config) => config.config.unwrap_or_default(),
-        Err(_) => return settings_operation_failed(locale),
-    };
-    let token = config
-        .get("env")
-        .and_then(|value| value.get("PLAUD_ACCESS_TOKEN"))
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
-        .trim();
-    if !token.is_empty() {
-        return plaud_validation_unavailable(locale);
-    }
     match mutate_journal_config(&journal_root, lock_options, |config| {
         let existing = config
             .entry("service_key_validation".to_owned())

@@ -1,0 +1,23 @@
+{
+  "description": "CLI retry message when pasted sign-in address is invalid.",
+  "context": "journal-cli. CLI retry message when pasted sign-in address is invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fc15debc0fae9a80926e64e1844e3bc586cd2fbcf617749f15bdb3a210b969a3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

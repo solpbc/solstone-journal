@@ -1419,6 +1419,34 @@ fn owner_sources_serve_plaud_refuse_audio_and_skip_retired_audio_schedules() {
     .unwrap();
     host.stop_discovery_for_test();
 
+    let plaud_legacy = call(&server, "GET", "/api/journal/sources/plaud", "");
+    assert_eq!(plaud_legacy.0, 200);
+    assert_eq!(
+        plaud_legacy.1["available"], false,
+        "legacy env.PLAUD_ACCESS_TOKEN alone must not report Plaud available"
+    );
+
+    write(
+        journal.path(),
+        "config/plaud-sign-in.json",
+        json!({
+            "version": 1,
+            "service": "plaud",
+            "epoch": 1,
+            "token_endpoint": "https://mcp.plaud.ai/token",
+            "registration": {
+                "client_id": "plaud-test-client",
+                "mode": "dcr"
+            },
+            "tokens": {
+                "access_token": "synthetic-readiness-token",
+                "token_type": "Bearer",
+                "scopes": []
+            }
+        })
+        .to_string(),
+    );
+
     let plaud = call(&server, "GET", "/api/journal/sources/plaud", "");
     assert_eq!(plaud.0, 200);
     assert_eq!(plaud.1["available"], true);

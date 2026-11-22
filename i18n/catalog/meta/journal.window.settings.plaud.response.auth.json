@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud error when sign-in has expired or been revoked.",
+  "context": "journal-window. Settings Plaud error when sign-in has expired or been revoked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0bc4c550fd1cb0cb75a385f6b9775296c7931cac77534a508579d07590e9acff",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

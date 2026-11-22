@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud attention message when local storage save fails.",
+  "context": "journal-window. Settings Plaud attention message when local storage save fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "24f740e2cbd593e9a0d8dbf6ab8a5bb7c044d99734c21658da57571f6a86ef1f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

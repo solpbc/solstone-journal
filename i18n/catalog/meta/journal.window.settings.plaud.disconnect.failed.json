@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud error when disconnecting fails.",
+  "context": "journal-window. Settings Plaud error when disconnecting fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f52a8fc33527aed6896a7cbc0a95f92c38352ce869a45a5c74aac49620c88ef7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

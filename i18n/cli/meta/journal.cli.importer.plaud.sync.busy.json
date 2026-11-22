@@ -1,0 +1,23 @@
+{
+  "description": "CLI error when another Plaud sync holds the lock.",
+  "context": "journal-cli. CLI error when another Plaud sync holds the lock.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef98a4b4ec0c846ddee1221ba131be550fb246fcd643dbcf2dbd4edd16f83569",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

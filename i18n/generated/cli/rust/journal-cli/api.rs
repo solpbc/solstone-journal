@@ -1168,6 +1168,14 @@ pub enum MessageId {
     m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e706c6174666f726d,
     m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e726f6f74,
     m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e766572696669636174696f6e,
+    m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e65,
+    m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e652e6163636f756e74,
+    m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6661696c6564,
+    m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6e657874,
+    m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6f70656e,
+    m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e72657472792e75726c,
+    m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e77616974696e67,
+    m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e73796e632e62757379,
     m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e617267756d656e74,
     m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6461792e6578636c7573697665,
     m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6461792e696e76616c6964,
@@ -4569,6 +4577,14 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.cli.doctor.windows.parakeet.platform", MessageId::m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e706c6174666f726d),
         ("journal.cli.doctor.windows.parakeet.root", MessageId::m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e726f6f74),
         ("journal.cli.doctor.windows.parakeet.verification", MessageId::m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e766572696669636174696f6e),
+        ("journal.cli.importer.plaud.connect.done", MessageId::m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e65),
+        ("journal.cli.importer.plaud.connect.done.account", MessageId::m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e652e6163636f756e74),
+        ("journal.cli.importer.plaud.connect.failed", MessageId::m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6661696c6564),
+        ("journal.cli.importer.plaud.connect.next", MessageId::m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6e657874),
+        ("journal.cli.importer.plaud.connect.open", MessageId::m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6f70656e),
+        ("journal.cli.importer.plaud.connect.retry.url", MessageId::m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e72657472792e75726c),
+        ("journal.cli.importer.plaud.connect.waiting", MessageId::m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e77616974696e67),
+        ("journal.cli.importer.plaud.sync.busy", MessageId::m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e73796e632e62757379),
         ("journal.cli.journal.archive.argument", MessageId::m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e617267756d656e74),
         ("journal.cli.journal.archive.day.exclusive", MessageId::m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6461792e6578636c7573697665),
         ("journal.cli.journal.archive.day.invalid", MessageId::m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6461792e696e76616c6964),
@@ -7998,6 +8014,14 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e706c6174666f726d", no_arguments),
     ("m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e726f6f74", prepare_m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e726f6f74),
     ("m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e766572696669636174696f6e", prepare_m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e766572696669636174696f6e),
+    ("m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e65", no_arguments),
+    ("m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e652e6163636f756e74", prepare_m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e652e6163636f756e74),
+    ("m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6661696c6564", prepare_m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6661696c6564),
+    ("m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6e657874", no_arguments),
+    ("m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6f70656e", no_arguments),
+    ("m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e72657472792e75726c", no_arguments),
+    ("m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e77616974696e67", no_arguments),
+    ("m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e73796e632e62757379", no_arguments),
     ("m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e617267756d656e74", no_arguments),
     ("m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6461792e6578636c7573697665", no_arguments),
     ("m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6461792e696e76616c6964", no_arguments),
@@ -20912,6 +20936,42 @@ fn prepare_m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565
         _ => return Err(RenderError::InvalidArgumentType("error".to_string())),
     };
     f_args.set("error", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e652e6163636f756e74(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["account"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "account").ok_or_else(|| RenderError::MissingArgument("account".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("account".to_string())),
+    };
+    f_args.set("account", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6661696c6564(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["detail"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "detail").ok_or_else(|| RenderError::MissingArgument("detail".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("detail".to_string())),
+    };
+    f_args.set("detail", FluentValue::from(v0.clone()));
     Ok((_resource_key, f_args))
 }
 

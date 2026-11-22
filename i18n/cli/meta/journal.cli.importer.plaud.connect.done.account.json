@@ -1,0 +1,28 @@
+{
+  "description": "CLI confirmation after Plaud sign-in showing account name.",
+  "context": "journal-cli. CLI confirmation after Plaud sign-in showing account name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "account",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3849e42219d0147ec2d8f83d655a55b398f7906605239b934d5a1a7f216606d3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

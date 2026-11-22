@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud primary sign-in button label.",
+  "context": "journal-window. Settings Plaud primary sign-in button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "53a46e8a18cc65d6318b757307748edc10c8cbf02d97bec2ac4c0194122594d9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

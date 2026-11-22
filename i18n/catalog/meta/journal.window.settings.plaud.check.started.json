@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud progress text while manual or hourly sync is running.",
+  "context": "journal-window. Settings Plaud progress text while manual or hourly sync is running.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f13e35998d4d066850953b5cc2d4e1b5fe9c44ba3a1f6ca138becc3b590ce59a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

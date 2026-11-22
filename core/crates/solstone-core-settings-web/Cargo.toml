@@ -26,7 +26,8 @@ jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-tokio = { workspace = true, features = ["rt"] }
+tokio = { workspace = true, features = ["rt", "time"] }
+solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-convey-http.workspace = true
 solstone-core-describe-categories.workspace = true
 solstone-core-journal-config.workspace = true
@@ -51,6 +52,7 @@ serde_json.workspace = true
 
 [dev-dependencies]
 solstone-core-convey-shell.workspace = true
+solstone-core-oauth.workspace = true
 tempfile = "3.24.0"
 temp-env = "0.3.6"
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }

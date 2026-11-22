@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud error when loading status fails.",
+  "context": "journal-window. Settings Plaud error when loading status fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b2f2145a19ac8bf5e4e1341a58eaf9cccc9df89c99fd7ad6d5f3a3100fc0e0c1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

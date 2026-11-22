@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud error when sign-in approval is denied.",
+  "context": "journal-window. Settings Plaud error when sign-in approval is denied.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4aca902f595c60fb2f2aadab6dd988013fa13c98f822eb43115020a8ca7db4b7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

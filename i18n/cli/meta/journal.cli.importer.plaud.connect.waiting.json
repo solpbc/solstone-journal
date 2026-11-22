@@ -1,0 +1,23 @@
+{
+  "description": "CLI prompt while waiting for loopback or pasted sign-in address.",
+  "context": "journal-cli. CLI prompt while waiting for loopback or pasted sign-in address.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1bc045e737aabd0f2797d3cf77531ae52e12d60fdb9caac53dc1997819fa22ca",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

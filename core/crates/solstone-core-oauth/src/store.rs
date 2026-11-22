@@ -278,6 +278,18 @@ pub struct AccessTokenView {
     pub dpop_nonce: Option<String>,
 }
 
+impl AccessTokenView {
+    /// Format the outbound HTTP `Authorization` header with normalized scheme casing
+    /// (e.g. `"bearer"` -> `"Bearer <access_token>"`).
+    pub fn authorization_header(&self) -> String {
+        format!(
+            "{} {}",
+            crate::client::normalize_token_type(&self.token_type),
+            self.access_token
+        )
+    }
+}
+
 impl fmt::Debug for AccessTokenView {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -853,12 +865,12 @@ impl OAuthCredentialManager {
                     .get("expires_in")
                     .and_then(Value::as_u64)
                     .filter(|v| *v > 0);
-                let token_type = json
-                    .get("token_type")
-                    .and_then(Value::as_str)
-                    .filter(|s| !s.is_empty())
-                    .map(ToOwned::to_owned)
-                    .unwrap_or_else(|| existing_tokens.token_type.clone());
+                let token_type = crate::client::normalize_token_type(
+                    json.get("token_type")
+                        .and_then(Value::as_str)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(existing_tokens.token_type.as_str()),
+                );
                 let scopes = json
                     .get("scope")
                     .and_then(Value::as_str)

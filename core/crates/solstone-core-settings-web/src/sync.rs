@@ -3,7 +3,7 @@
 
 use solstone_core_convey_http::window_catalog::text;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use axum::{body::Bytes, response::Response};
 use serde_json::{Value, json};
@@ -11,7 +11,6 @@ use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_du
 use solstone_core_journal_io::{LockOptions, hold_lock};
 
 use crate::{
-    config::truthy,
     http::{invalid_config_value, json_response, missing_request_body, settings_operation_failed},
     request_body::{JsonBody, json_body},
 };
@@ -22,12 +21,8 @@ pub async fn get(journal_root: PathBuf) -> Response {
         Ok(DurableRead::Present(Value::Object(map))) => map,
         _ => serde_json::Map::new(),
     };
-    let config = solstone_core_journal_config::read_journal_config(&journal_root)
-        .expect("session gate handled corrupt config")
-        .config
-        .unwrap_or_default();
     json_response(json!({
-        "plaud": status(schedules.get("sync:plaud"), source_sync_plaud_available(&config)),
+        "plaud": status(schedules.get("sync:plaud"), source_sync_plaud_available(&journal_root)),
     }))
 }
 
@@ -98,13 +93,8 @@ pub async fn update(locale: &str, journal_root: PathBuf, body: Bytes) -> Respons
     get(journal_root).await
 }
 
-pub fn source_sync_plaud_available(config: &serde_json::Map<String, Value>) -> bool {
-    config
-        .get("env")
-        .and_then(Value::as_object)
-        .and_then(|values| values.get("PLAUD_ACCESS_TOKEN"))
-        .is_some_and(truthy)
-        || std::env::var_os("PLAUD_ACCESS_TOKEN").is_some_and(|value| !value.is_empty())
+pub fn source_sync_plaud_available(journal_root: &Path) -> bool {
+    solstone_core_import::plaud::is_connected(journal_root)
 }
 
 pub fn parse_sync_update(body: Bytes) -> Result<Vec<(&'static str, bool)>, Box<Response>> {
@@ -193,6 +183,10 @@ mod tests {
         fn update(&self, changes: Vec<(&'static str, bool)>) -> SourceSyncResponse {
             assert_eq!(changes, [("plaud", false)]);
             Box::pin(async { json_response(json!({"saved": true})) })
+        }
+
+        fn trigger_plaud_sync(&self) -> SourceSyncResponse {
+            unreachable!("the test only sends updates")
         }
     }
 

@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud pending sign-in status line while waiting for browser approval.",
+  "context": "journal-window. Settings Plaud pending sign-in status line while waiting for browser approval.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "370f9f7067ea95ab3d6c49fcbf6ee0566ece7490be64a843ca1518b0918c5f47",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

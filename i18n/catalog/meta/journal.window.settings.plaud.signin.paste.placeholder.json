@@ -1,0 +1,16 @@
+{
+  "description": "Settings Plaud paste-URL input placeholder.",
+  "context": "journal-window. Settings Plaud paste-URL input placeholder.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5d90cc3bd3f47142d842d73f62e9bbaae64c9753710798ad899a9f8c86b0be02",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

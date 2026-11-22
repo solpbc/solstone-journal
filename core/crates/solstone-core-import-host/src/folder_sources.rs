@@ -440,14 +440,29 @@ fn plaud_preview_uses_a_synthetic_catalogue_and_stores_no_token() {
 
 #[test]
 fn plaud_save_marks_the_file_imported_and_does_not_repeat() {
-    // This save calls `run_plaud_with`; the preview test above still must not call `PlaudApi`.
     let journal = tempfile::tempdir().unwrap();
     let token = "plaud-token-not-for-state";
-    let config = journal.path().join("config");
-    fs::create_dir_all(&config).unwrap();
-    fs::write(
-        config.join("journal.json"),
-        format!(r#"{{"env":{{"PLAUD_ACCESS_TOKEN":"{token}"}}}}"#),
+    let mut doc = solstone_core_oauth::store::OAuthCredentialDoc::new(
+        &solstone_core_import::plaud::service_id(),
+        "https://mcp.plaud.ai/token",
+    );
+    doc.registration = Some(solstone_core_oauth::store::ClientRegistration {
+        client_id: "plaud-test-client".to_owned(),
+        client_secret: None,
+        mode: solstone_core_oauth::registration::RegistrationMode::Dcr,
+        client_refused: false,
+    });
+    doc.tokens = Some(solstone_core_oauth::store::OAuthTokens {
+        access_token: token.to_owned(),
+        refresh_token: Some("plaud-refresh-not-for-state".to_owned()),
+        token_type: "Bearer".to_owned(),
+        expires_at: Some(solstone_core_oauth::store::now_unix_secs() + 3600),
+        scopes: Vec::new(),
+    });
+    solstone_core_oauth::store::save_credential_file(
+        journal.path(),
+        &solstone_core_import::plaud::service_id(),
+        &doc,
     )
     .unwrap();
     let mut catalogue = Catalogue;
@@ -485,6 +500,35 @@ fn plaud_save_marks_the_file_imported_and_does_not_repeat() {
     assert_eq!(download.calls, 1);
     assert_eq!(pipeline.calls, 1);
     assert_eq!(fs::read(written).unwrap(), b"known-plaud-bytes");
+}
+
+#[test]
+fn legacy_plaud_env_token_is_ignored_without_bricking() {
+    let journal = tempfile::tempdir().unwrap();
+    let config = journal.path().join("config");
+    fs::create_dir_all(&config).unwrap();
+    fs::write(
+        config.join("journal.json"),
+        r#"{"env":{"PLAUD_ACCESS_TOKEN":"retired-legacy-token"}}"#,
+    )
+    .unwrap();
+    let mut catalogue = Catalogue;
+    let mut download = KnownDownload::default();
+    let mut pipeline = ImportedPipeline::default();
+    let run = crate::cli_argv::run_plaud_with(
+        journal.path(),
+        true,
+        &mut catalogue,
+        &mut download,
+        &mut pipeline,
+    );
+    assert_eq!(run.exit_code, 1);
+    assert!(
+        run.stderr.contains("Plaud credential is not configured"),
+        "{}",
+        run.stderr
+    );
+    assert_eq!(download.calls, 0);
 }
 
 struct Token;

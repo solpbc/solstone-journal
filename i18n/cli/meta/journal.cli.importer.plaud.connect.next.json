@@ -1,0 +1,23 @@
+{
+  "description": "CLI follow-up guidance after Plaud sign-in.",
+  "context": "journal-cli. CLI follow-up guidance after Plaud sign-in.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "308a0cb8a308fdbb82ab4f8bd79e1b084c8e9cde215c50f3772724066e5f5c97",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal importer --sync plaud --save"
+    }
+  ]
+}

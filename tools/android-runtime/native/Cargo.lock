@@ -6060,6 +6060,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-oauth",
  "solstone-core-processing-record",
  "solstone-core-removals",
  "solstone-core-retention",
@@ -6085,6 +6086,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-callosum",
+ "solstone-core-cli-copy",
  "solstone-core-entity-matching",
  "solstone-core-facets",
  "solstone-core-format",
@@ -6097,6 +6099,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-location",
+ "solstone-core-oauth",
  "solstone-core-pdf",
  "solstone-core-processing-record",
  "solstone-core-retention",
@@ -6686,6 +6689,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-oauth"
+version = "2.0.87"
+dependencies = [
+ "getrandom 0.3.4",
+ "ring",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "solstone-core-auth-flow",
+ "solstone-core-journal-io",
+ "subtle",
+ "webpki-roots 1.0.10",
+]
+
+[[package]]
 name = "solstone-core-observe-audio"
 version = "2.0.87"
 dependencies = [
@@ -6968,6 +6987,7 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-backup",
  "solstone-core-backup-runtime",
+ "solstone-core-callosum",
  "solstone-core-convey-http",
  "solstone-core-describe-categories",
  "solstone-core-entity",

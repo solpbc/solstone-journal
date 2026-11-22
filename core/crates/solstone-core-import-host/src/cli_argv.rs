@@ -25,8 +25,8 @@ use solstone_core_import::detect::{
 use solstone_core_import::sync_plaud::{
     FilesystemPlaudStateWriter, ImportPipeline, PipelineAuto, PipelineImportRequest,
     PipelineOutcome, PlaudCatalogue, PlaudCredential, PlaudDownload, PlaudFailureKind, PlaudFile,
-    PlaudManifestLookup, PlaudPreviewSeams, PlaudSaveSeams, PlaudSyncRequest, SyncClock,
-    sanitize_filename, sync_plaud_preview, sync_plaud_save,
+    PlaudManifestLookup, PlaudPreviewSeams, PlaudSaveSeams, PlaudSyncError, PlaudSyncRequest,
+    SyncClock, sanitize_filename, sync_plaud_preview, sync_plaud_save,
 };
 
 use crate::audio::{AudioImportRequest, import_audio};
@@ -596,12 +596,16 @@ fn refusal_run(refusal: SupervisorRefusal) -> CliRun {
 }
 
 fn run_connect(backend: &str, journal_path: &Path) -> CliRun {
-    if backend != "oura" {
-        return failure(
-            "",
-            &format!("Unknown connect backend: {backend}\nConnectable backends: oura\n"),
-            1,
-        );
+    match backend {
+        "plaud" => return run_plaud_connect(journal_path),
+        "oura" => {}
+        _ => {
+            return failure(
+                "",
+                &format!("Unknown connect backend: {backend}\nConnectable backends: oura, plaud\n"),
+                1,
+            );
+        }
     }
     let connect = |app| {
         connect_oura(&OuraConnectRequest {
@@ -1634,9 +1638,196 @@ fn no_manifest_match(_: &solstone_core_import::SourceHash) -> Option<ManifestSum
     None
 }
 
+fn run_plaud_connect(journal_path: &Path) -> CliRun {
+    use std::io::{BufRead, Write};
+    use std::sync::mpsc;
+
+    use solstone_core_import::plaud::{self, PlaudSignInOutcome};
+
+    let attempt = match plaud::begin_sign_in(None) {
+        Ok(attempt) => attempt,
+        Err(error) => {
+            return failure(
+                "",
+                &format!(
+                    "{}\n",
+                    solstone_core_cli_copy::strings(
+                        "journal.cli.importer.plaud.connect.failed",
+                        [("detail", &error.to_string())],
+                    )
+                ),
+                1,
+            );
+        }
+    };
+
+    if let Ok(invocation) = solstone_core_oauth::plan_browser(
+        solstone_core_oauth::current_target_os(),
+        &attempt.authorize_url,
+    ) {
+        let _ = solstone_core_oauth::execute_browser_invocation(&invocation);
+    }
+
+    let mut out = std::io::stdout();
+    let _ = writeln!(
+        out,
+        "{}\n{}\n",
+        solstone_core_cli_copy::text("journal.cli.importer.plaud.connect.open"),
+        attempt.authorize_url,
+    );
+    let _ = writeln!(
+        out,
+        "{}",
+        solstone_core_cli_copy::text("journal.cli.importer.plaud.connect.waiting"),
+    );
+    let _ = out.flush();
+
+    let (tx, rx) = mpsc::channel();
+
+    let tx_loopback = tx.clone();
+    let attempt_loopback = attempt.clone();
+    let journal_loopback = journal_path.to_path_buf();
+    std::thread::spawn(move || {
+        match plaud::finish_sign_in(
+            &journal_loopback,
+            &attempt_loopback,
+            None,
+            Duration::from_secs(300),
+        ) {
+            Ok(finished) => {
+                let _ = tx_loopback.send(Ok(finished));
+            }
+            Err(PlaudSignInOutcome::Cancelled) => {}
+            Err(outcome) => {
+                let _ = tx_loopback.send(Err(outcome));
+            }
+        }
+    });
+
+    let tx_stdin = tx;
+    let attempt_stdin = attempt.clone();
+    let journal_stdin = journal_path.to_path_buf();
+    std::thread::spawn(move || {
+        let stdin = std::io::stdin();
+        let mut reader = stdin.lock();
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+            if attempt_stdin.gate.is_claimed() {
+                break;
+            }
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            match plaud::finish_sign_in(
+                &journal_stdin,
+                &attempt_stdin,
+                Some(trimmed),
+                Duration::from_secs(30),
+            ) {
+                Ok(finished) => {
+                    let _ = tx_stdin.send(Ok(finished));
+                    break;
+                }
+                Err(PlaudSignInOutcome::CallbackInvalid) => {
+                    if attempt_stdin.gate.is_claimed() {
+                        break;
+                    }
+                    eprintln!(
+                        "{}",
+                        solstone_core_cli_copy::text(
+                            "journal.cli.importer.plaud.connect.retry.url"
+                        )
+                    );
+                }
+                Err(PlaudSignInOutcome::Cancelled) => break,
+                Err(outcome) => {
+                    let _ = tx_stdin.send(Err(outcome));
+                    break;
+                }
+            }
+        }
+    });
+
+    let result = rx.recv().unwrap_or(Err(PlaudSignInOutcome::Cancelled));
+    match result {
+        Ok(finished) => {
+            let headline = match finished.account_label.as_deref() {
+                Some(account) => solstone_core_cli_copy::strings(
+                    "journal.cli.importer.plaud.connect.done.account",
+                    [("account", account)],
+                ),
+                None => solstone_core_cli_copy::text("journal.cli.importer.plaud.connect.done"),
+            };
+            let next = solstone_core_cli_copy::text("journal.cli.importer.plaud.connect.next");
+            success(format!("{headline}\n{next}\n"))
+        }
+        Err(outcome) => {
+            plaud::cancel_active_attempt();
+            let detail = match outcome {
+                PlaudSignInOutcome::Denied => "sign-in was not approved",
+                PlaudSignInOutcome::CallbackInvalid => "the sign-in address was invalid",
+                PlaudSignInOutcome::ExchangeFailed | PlaudSignInOutcome::SignedIn => {
+                    "couldn't finish signing in"
+                }
+                PlaudSignInOutcome::Cancelled => "sign-in cancelled",
+                PlaudSignInOutcome::Expired => "the sign-in attempt timed out",
+                PlaudSignInOutcome::Busy => "another sign-in or sync is already running",
+                PlaudSignInOutcome::Storage => "couldn't save the sign-in in this journal",
+            };
+            failure(
+                "",
+                &format!(
+                    "{}\n",
+                    solstone_core_cli_copy::strings(
+                        "journal.cli.importer.plaud.connect.failed",
+                        [("detail", detail)],
+                    )
+                ),
+                1,
+            )
+        }
+    }
+}
+
 fn run_plaud_sync(journal_path: &Path, options: &Options) -> CliRun {
-    let mut catalogue = PlaudApi::new();
-    let mut download = PlaudApi::new();
+    use std::sync::Arc;
+
+    let _sync_lock = match solstone_core_import::plaud::hold_sync_lock(journal_path) {
+        Ok(lock) => lock,
+        Err(_) => {
+            return failure(
+                "",
+                &format!(
+                    "{}\n",
+                    solstone_core_cli_copy::text("journal.cli.importer.plaud.sync.busy")
+                ),
+                1,
+            );
+        }
+    };
+    let http: Arc<dyn solstone_core_oauth::ssrf::OAuthHttpClient> =
+        Arc::new(solstone_core_oauth::ssrf::SsrfHttpsClient::new());
+    let manager = Arc::new(solstone_core_oauth::store::OAuthCredentialManager::new(
+        journal_path.to_path_buf(),
+        solstone_core_import::plaud::service_id(),
+        Arc::clone(&http),
+    ));
+    let mut catalogue = solstone_core_import::plaud::PlaudMcpClient::with_manager(
+        Arc::clone(&manager),
+        Arc::clone(&http),
+        solstone_core_import::plaud::PLAUD_MCP_URL.to_owned(),
+    );
+    let mut download = solstone_core_import::plaud::PlaudMcpClient::with_manager(
+        manager,
+        http,
+        solstone_core_import::plaud::PLAUD_MCP_URL.to_owned(),
+    );
     let mut pipeline = GenericAudioPipeline { journal_path };
     run_plaud_with(
         journal_path,
@@ -1654,7 +1845,7 @@ pub(crate) fn run_plaud_with(
     download: &mut dyn PlaudDownload,
     pipeline: &mut dyn ImportPipeline,
 ) -> CliRun {
-    let credential = ConfiguredPlaudCredential::read(journal_path);
+    let credential = OAuthPlaudCredential::read(journal_path);
     let manifests = ImportFilenameMatches { journal_path };
     let clock = SystemSyncClock;
     let mut state_writer = FilesystemPlaudStateWriter;
@@ -1672,7 +1863,17 @@ pub(crate) fn run_plaud_with(
             Ok(outcome) => success(cli_render::plaud_sync_preview(state_file_count(
                 &outcome.state,
             ))),
-            Err(error) => failure("", &format!("{error}\n"), 1),
+            Err(error) => {
+                if let PlaudSyncError::Operation(kind) = &error {
+                    solstone_core_import::plaud::record_sync_attention(
+                        journal_path,
+                        Some(solstone_core_import::plaud::attention_code_for_failure(
+                            *kind,
+                        )),
+                    );
+                }
+                failure("", &format!("{error}\n"), 1)
+            }
         };
     }
     let request = PlaudSyncRequest::<SyncSaveRequest>::new(journal_path.to_path_buf());
@@ -1688,7 +1889,17 @@ pub(crate) fn run_plaud_with(
             &outcome.errors,
             outcome.stopped,
         ),
-        Err(error) => failure("", &format!("{error}\n"), 1),
+        Err(error) => {
+            if let PlaudSyncError::Operation(kind) = &error {
+                solstone_core_import::plaud::record_sync_attention(
+                    journal_path,
+                    Some(solstone_core_import::plaud::attention_code_for_failure(
+                        *kind,
+                    )),
+                );
+            }
+            failure("", &format!("{error}\n"), 1)
+        }
     }
 }
 
@@ -1815,166 +2026,25 @@ impl SyncClock for SystemSyncClock {
     }
 }
 
-/// The owner's Plaud token, as Settings stores it, or from the environment.
-struct ConfiguredPlaudCredential {
-    token: Option<String>,
+/// Indicates whether the journal has an active Plaud OAuth sign-in (`config/plaud-sign-in.json`).
+/// The MCP client loads and refreshes the real credential directly through `OAuthCredentialManager`,
+/// so raw tokens never flow through the generic sync seam.
+struct OAuthPlaudCredential {
+    connected: bool,
 }
 
-impl ConfiguredPlaudCredential {
-    const KEY: &'static str = "PLAUD_ACCESS_TOKEN";
-
+impl OAuthPlaudCredential {
     fn read(journal_path: &Path) -> Self {
-        let configured = solstone_core_journal_config::read_journal_config(journal_path)
-            .ok()
-            .and_then(|read| read.config)
-            .and_then(|config| {
-                config
-                    .get("env")
-                    .and_then(|env| env.get(Self::KEY))
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            });
-        let token = configured
-            .or_else(|| std::env::var(Self::KEY).ok())
-            .filter(|token| !token.trim().is_empty());
-        Self { token }
-    }
-}
-
-impl PlaudCredential for ConfiguredPlaudCredential {
-    fn access_token(&self) -> Option<&str> {
-        self.token.as_deref()
-    }
-}
-
-const PLAUD_API: &str = "https://api.plaud.ai";
-/// A recording download is bounded, so a stalled transfer cannot hold a sync forever.
-const PLAUD_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-
-/// The Plaud web API: the owner's recording list, and each recording's download.
-struct PlaudApi {
-    agent: ureq::Agent,
-}
-
-impl PlaudApi {
-    fn new() -> Self {
-        let timeout = Some(Duration::from_secs(30));
-        let config = ureq::Agent::config_builder()
-            .http_status_as_error(false)
-            .timeout_connect(timeout)
-            .timeout_recv_response(timeout)
-            .timeout_recv_body(Some(PLAUD_DOWNLOAD_TIMEOUT))
-            .build();
         Self {
-            agent: ureq::Agent::new_with_config(config),
-        }
-    }
-
-    fn get_json(
-        &self,
-        url: &str,
-        token: &str,
-        failure: PlaudFailureKind,
-    ) -> Result<Value, PlaudFailureKind> {
-        let mut response = self
-            .agent
-            .get(url)
-            .header("accept", "application/json, text/plain, */*")
-            .header("authorization", format!("bearer {token}"))
-            .header("app-platform", "web")
-            .call()
-            .map_err(|_| failure)?;
-        match response.status().as_u16() {
-            200 => {}
-            401 | 403 => return Err(PlaudFailureKind::TokenRefused),
-            _ => return Err(failure),
-        }
-        let value: Value =
-            serde_json::from_reader(response.body_mut().as_reader()).map_err(|_| failure)?;
-        if value.get("status").and_then(Value::as_i64) == Some(0) {
-            Ok(value)
-        } else {
-            Err(failure)
+            connected: solstone_core_import::plaud::is_connected(journal_path),
         }
     }
 }
 
-impl PlaudCatalogue for PlaudApi {
-    fn list_files(&mut self, token: &str) -> Result<Vec<PlaudFile>, PlaudFailureKind> {
-        let url = format!(
-            "{PLAUD_API}/file/simple/web?skip=0&limit=99999&is_trash=2&sort_by=start_time&is_desc=true"
-        );
-        let value = self.get_json(&url, token, PlaudFailureKind::Catalogue)?;
-        let files = value
-            .get("data_file_list")
-            .and_then(Value::as_array)
-            .ok_or(PlaudFailureKind::Catalogue)?;
-        Ok(files.iter().filter_map(plaud_file).collect())
+impl PlaudCredential for OAuthPlaudCredential {
+    fn access_token(&self) -> Option<&str> {
+        self.connected.then_some("oauth")
     }
-}
-
-impl PlaudDownload for PlaudApi {
-    fn temporary_url(&mut self, token: &str, file_id: &str) -> Result<String, PlaudFailureKind> {
-        let value = self.get_json(
-            &format!("{PLAUD_API}/file/temp-url/{file_id}"),
-            token,
-            PlaudFailureKind::TemporaryUrl,
-        )?;
-        value
-            .get("temp_url")
-            .and_then(Value::as_str)
-            .filter(|url| !url.is_empty())
-            .map(str::to_owned)
-            .ok_or(PlaudFailureKind::TemporaryUrl)
-    }
-
-    fn download(&mut self, url: &str, destination: &Path) -> Result<(), PlaudFailureKind> {
-        let response = self
-            .agent
-            .get(url)
-            .call()
-            .map_err(|_| PlaudFailureKind::Download)?;
-        if response.status() != 200 {
-            return Err(PlaudFailureKind::Download);
-        }
-        // Stream beside the destination, then rename: a failed transfer leaves no recording
-        // that looks whole.
-        let partial = destination.with_extension("part");
-        let written = fs::File::create(&partial)
-            .and_then(|mut file| {
-                std::io::copy(&mut response.into_body().into_reader(), &mut file)?;
-                file.sync_all()
-            })
-            .and_then(|()| fs::rename(&partial, destination));
-        if written.is_err() {
-            let _ = fs::remove_file(&partial);
-            return Err(PlaudFailureKind::Download);
-        }
-        Ok(())
-    }
-}
-
-fn plaud_file(value: &Value) -> Option<PlaudFile> {
-    let number = |key: &str| value.get(key).and_then(Value::as_f64).unwrap_or(0.0);
-    let text = |key: &str| {
-        value
-            .get(key)
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned()
-    };
-    Some(PlaudFile {
-        id: value.get("id")?.as_str()?.to_owned(),
-        filename: text("filename"),
-        fullname: text("fullname"),
-        filesize: value.get("filesize").and_then(Value::as_u64).unwrap_or(0),
-        start_time: number("start_time"),
-        duration: number("duration"),
-        is_trash: value
-            .get("is_trash")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-    })
 }
 
 /// A Plaud recording the owner already imported by hand is matched by its file name, so a
@@ -2617,27 +2687,15 @@ mod tests {
     }
 
     fn recording(id: &str, filename: &str, fullname: &str) -> PlaudFile {
-        plaud_file(&serde_json::json!({
-            "id": id,
-            "filename": filename,
-            "fullname": fullname,
-            "filesize": 1024,
-            "start_time": 1_773_230_400_000_u64,
-            "duration": 95_000,
-            "is_trash": false,
-        }))
-        .expect("a catalogue row with an id is a recording")
-    }
-
-    #[test]
-    fn a_catalogue_row_becomes_a_recording_and_a_row_without_an_id_does_not() {
-        let file = recording("abc", "Team standup", "abc.opus");
-        assert_eq!(file.id, "abc");
-        assert_eq!(file.filename, "Team standup");
-        assert_eq!(file.start_time, 1_773_230_400_000.0);
-        assert_eq!(file.duration, 95_000.0);
-        assert!(!file.is_trash);
-        assert!(plaud_file(&serde_json::json!({"filename": "no id"})).is_none());
+        PlaudFile {
+            id: id.to_owned(),
+            filename: filename.to_owned(),
+            fullname: fullname.to_owned(),
+            filesize: 1024,
+            start_time: 1_773_230_400_000.0,
+            duration: 95_000.0,
+            is_trash: false,
+        }
     }
 
     #[test]

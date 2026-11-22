@@ -71,7 +71,34 @@ fn wave() -> Vec<u8> {
 fn journal() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("config")).unwrap();
-    fs::write(root.path().join("config/journal.json"), br#"{"identity":{"timezone":"UTC"},"env":{"PLAUD_ACCESS_TOKEN":"synthetic-token-not-for-state"}}"#).unwrap();
+    fs::write(
+        root.path().join("config/journal.json"),
+        br#"{"identity":{"timezone":"UTC"}}"#,
+    )
+    .unwrap();
+    let mut doc = solstone_core_oauth::store::OAuthCredentialDoc::new(
+        &solstone_core_import::plaud::service_id(),
+        "https://mcp.plaud.ai/token",
+    );
+    doc.registration = Some(solstone_core_oauth::store::ClientRegistration {
+        client_id: "plaud-test-client".to_owned(),
+        client_secret: None,
+        mode: solstone_core_oauth::registration::RegistrationMode::Dcr,
+        client_refused: false,
+    });
+    doc.tokens = Some(solstone_core_oauth::store::OAuthTokens {
+        access_token: "synthetic-token-not-for-state".to_owned(),
+        refresh_token: Some("synthetic-refresh-not-for-state".to_owned()),
+        token_type: "Bearer".to_owned(),
+        expires_at: Some(solstone_core_oauth::store::now_unix_secs() + 3600),
+        scopes: Vec::new(),
+    });
+    solstone_core_oauth::store::save_credential_file(
+        root.path(),
+        &solstone_core_import::plaud::service_id(),
+        &doc,
+    )
+    .unwrap();
     root
 }
 

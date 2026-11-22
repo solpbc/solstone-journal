@@ -1,0 +1,23 @@
+{
+  "description": "CLI confirmation after Plaud sign-in when no account name is returned.",
+  "context": "journal-cli. CLI confirmation after Plaud sign-in when no account name is returned.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "07a6913f7768660d0cef33efac11f6e7d30da80e96ec08bc44a52ddf6c2b3bab",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

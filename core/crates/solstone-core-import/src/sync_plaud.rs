@@ -39,11 +39,13 @@ pub struct PlaudFile {
 /// A safe, closed description of a Plaud operation failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PlaudFailureKind {
-    /// Plaud refused the token: it expired or was revoked, so only a new one helps.
+    /// Plaud refused the sign-in: it expired or was revoked, so the owner needs to sign in again.
     TokenRefused,
     Catalogue,
     Manifest,
     TemporaryUrl,
+    /// Plaud returned `presigned_url: null` while audio finishes preparing; retry on next sync.
+    AudioNotReady,
     Download,
     Pipeline,
 }
@@ -51,10 +53,13 @@ pub enum PlaudFailureKind {
 impl PlaudFailureKind {
     const fn message(self) -> &'static str {
         match self {
-            Self::TokenRefused => "refused the saved token; paste a new one in settings",
+            Self::TokenRefused => "sign-in expired or was revoked; sign in again in settings",
             Self::Catalogue => "catalogue failed",
             Self::Manifest => "import matching failed",
             Self::TemporaryUrl => "failed to get download URL",
+            Self::AudioNotReady => {
+                "audio download link is not ready yet; will try again on next sync"
+            }
             Self::Download => "download failed",
             Self::Pipeline => "import failed",
         }
@@ -70,6 +75,23 @@ pub trait PlaudCatalogue {
 pub trait PlaudDownload {
     fn temporary_url(&mut self, token: &str, file_id: &str) -> Result<String, PlaudFailureKind>;
     fn download(&mut self, url: &str, destination: &Path) -> Result<(), PlaudFailureKind>;
+
+    /// Download `file` from `url` into `destination_dir`, deriving the audio extension from the
+    /// presigned URL or response `Content-Type` rather than hardcoding `.opus`.
+    fn download_for_file(
+        &mut self,
+        url: &str,
+        destination_dir: &Path,
+        file: &PlaudFile,
+    ) -> Result<PathBuf, PlaudFailureKind> {
+        let derived_ext = audio_extension_from_url(url);
+        let destination = destination_dir.join(destination_name_with_extension(
+            file,
+            derived_ext.as_deref(),
+        ));
+        self.download(url, &destination)?;
+        Ok(destination)
+    }
 }
 
 /// Caller-owned match against prior import metadata.
@@ -179,6 +201,7 @@ struct ResolvedImportTimestamp {
     timestamp: String,
     source_instant: Timestamp,
     used_fallback: bool,
+    downloaded_bytes: Option<u64>,
 }
 
 /// Named Plaud sync failure with no transport detail.
@@ -238,6 +261,7 @@ pub fn sync_plaud_save(
     let mut downloaded = 0;
     let mut errors = Vec::new();
     let mut stopped = false;
+    let mut first_error_code: Option<&'static str> = None;
     let mut used_fallback_timestamps = HashSet::new();
     for file in catalogued.available {
         if !crate::work_continues() {
@@ -264,19 +288,26 @@ pub fn sync_plaud_save(
             }
             FiledPlaud::Imported(resolved) => {
                 let selected = resolved.timestamp.clone();
+                let imported_at = seams.preview.clock.now();
                 entry.insert("status".to_owned(), Value::String("imported".to_owned()));
                 entry.insert(
                     "import_timestamp".to_owned(),
                     Value::String(resolved.timestamp),
                 );
+                if let Some(size) = resolved.downloaded_bytes
+                    && size > 0
+                {
+                    entry.insert("filesize".to_owned(), Value::from(size));
+                }
                 if resolved.used_fallback {
                     entry.insert("import_timestamp_fallback".to_owned(), Value::Bool(true));
                 }
-                entry.insert(
-                    "imported_at".to_owned(),
-                    Value::String(seams.preview.clock.now()),
-                );
+                entry.insert("imported_at".to_owned(), Value::String(imported_at.clone()));
                 entry.remove("last_error");
+                catalogued
+                    .state
+                    .root_mut()
+                    .insert("last_added".to_owned(), Value::String(imported_at));
                 downloaded += 1;
                 seams
                     .preview
@@ -294,9 +325,20 @@ pub fn sync_plaud_save(
                     "last_error".to_owned(),
                     Value::String(kind.message().to_owned()),
                 );
+                if first_error_code.is_none() {
+                    first_error_code = Some(crate::plaud::attention_code_for_failure(kind));
+                }
                 errors.push(format!("{}: {}", file.filename, kind.message()));
             }
         }
+    }
+    if let Some(code) = first_error_code {
+        catalogued
+            .state
+            .root_mut()
+            .insert("last_error_code".to_owned(), Value::String(code.to_owned()));
+    } else if !stopped {
+        catalogued.state.root_mut().remove("last_error_code");
     }
     seams
         .preview
@@ -370,7 +412,9 @@ fn catalogue<M>(
         let object = entry.as_object_mut().expect("sync-state files are objects");
         let existed = !object.is_empty();
         object.insert("filename".to_owned(), Value::String(file.filename.clone()));
-        object.insert("filesize".to_owned(), Value::from(file.filesize));
+        if file.filesize > 0 || !object.contains_key("filesize") {
+            object.insert("filesize".to_owned(), Value::from(file.filesize));
+        }
         if existed {
             // What the sync recorded as imported stays imported, whatever the owner has
             // since deleted: a sync never brings it back. Importing the downloaded file
@@ -459,10 +503,14 @@ fn import_file(
         Ok(url) => url,
         Err(kind) => return FiledPlaud::Failed(kind),
     };
-    let destination = destination_dir.join(destination_name(file));
-    if let Err(kind) = seams.download.download(&url, &destination) {
-        return FiledPlaud::Failed(kind);
-    }
+    let destination = match seams
+        .download
+        .download_for_file(&url, &destination_dir, file)
+    {
+        Ok(path) => path,
+        Err(kind) => return FiledPlaud::Failed(kind),
+    };
+    let downloaded_bytes = std::fs::metadata(&destination).ok().map(|meta| meta.len());
     if destination.is_file() {
         let registered = (|| -> Result<(), String> {
             let hash = crate::hash_source(&destination).map_err(|error| error.to_string())?;
@@ -500,6 +548,7 @@ fn import_file(
             timestamp: selected,
             source_instant: resolved.source_instant,
             used_fallback: resolved.used_fallback,
+            downloaded_bytes,
         }),
         Ok(PipelineOutcome::Skipped { .. })
         | Ok(PipelineOutcome::NoResult)
@@ -540,6 +589,7 @@ fn import_timestamp(
                 .to_string(),
             source_instant: device_time,
             used_fallback: false,
+            downloaded_bytes: None,
         });
     }
 
@@ -551,6 +601,7 @@ fn import_timestamp(
                 timestamp,
                 source_instant: fallback_time.timestamp(),
                 used_fallback: true,
+                downloaded_bytes: None,
             });
         }
         fallback_time = fallback_time
@@ -559,11 +610,56 @@ fn import_timestamp(
     }
 }
 
-fn destination_name(file: &PlaudFile) -> String {
-    let extension = Path::new(&file.fullname)
+/// Extract a known audio extension (with leading dot, lowercased) from a presigned URL path.
+#[must_use]
+pub fn audio_extension_from_url(url: &str) -> Option<String> {
+    let without_query = url.split(['?', '#']).next().unwrap_or(url);
+    let last_segment = without_query.rsplit('/').next()?;
+    let ext = Path::new(last_segment)
         .extension()
-        .filter(|extension| !extension.is_empty())
-        .map(|extension| format!(".{}", extension.to_string_lossy()))
+        .and_then(|e| e.to_str())?
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "mp3" | "m4a" | "wav" | "ogg" | "opus" | "flac" | "aac" | "webm" | "mp4" => {
+            Some(format!(".{ext}"))
+        }
+        _ => None,
+    }
+}
+
+/// Derive a known audio extension (with leading dot) from an HTTP `Content-Type` header.
+#[must_use]
+pub fn audio_extension_from_content_type(content_type: &str) -> Option<String> {
+    let mime = content_type
+        .split(';')
+        .next()
+        .unwrap_or(content_type)
+        .trim()
+        .to_ascii_lowercase();
+    let ext = match mime.as_str() {
+        "audio/mpeg" | "audio/mp3" => ".mp3",
+        "audio/mp4" | "audio/x-m4a" | "audio/m4a" => ".m4a",
+        "audio/wav" | "audio/x-wav" | "audio/wave" => ".wav",
+        "audio/ogg" | "audio/opus" => ".opus",
+        "audio/flac" | "audio/x-flac" => ".flac",
+        "audio/aac" => ".aac",
+        "audio/webm" => ".webm",
+        _ => return None,
+    };
+    Some(ext.to_owned())
+}
+
+#[must_use]
+pub fn destination_name_with_extension(file: &PlaudFile, preferred_ext: Option<&str>) -> String {
+    let extension = preferred_ext
+        .filter(|ext| ext.starts_with('.') && ext.len() > 1)
+        .map(str::to_owned)
+        .or_else(|| {
+            Path::new(&file.fullname)
+                .extension()
+                .filter(|extension| !extension.is_empty())
+                .map(|extension| format!(".{}", extension.to_string_lossy()))
+        })
         .unwrap_or_else(|| ".opus".to_owned());
     format!("{}{}", sanitize_filename(&file.filename), extension)
 }

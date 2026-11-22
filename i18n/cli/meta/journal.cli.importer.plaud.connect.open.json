@@ -1,0 +1,23 @@
+{
+  "description": "CLI prompt introducing the Plaud sign-in link.",
+  "context": "journal-cli. CLI prompt introducing the Plaud sign-in link.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2bf5777002c31b1d5c0911de4f31843735624fc2b985f120aa557c4076963818",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

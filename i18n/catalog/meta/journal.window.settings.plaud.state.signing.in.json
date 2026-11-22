@@ -1,0 +1,16 @@
+{
+  "description": "Settings Plaud state badge while browser sign-in is in progress.",
+  "context": "journal-window. Settings Plaud state badge while browser sign-in is in progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8197f568318153b71d6ca79d6b05dfa985aa273091055a7962b1e87fdb4dc55e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

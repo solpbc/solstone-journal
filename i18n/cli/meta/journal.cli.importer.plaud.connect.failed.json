@@ -1,0 +1,28 @@
+{
+  "description": "CLI error when Plaud sign-in fails.",
+  "context": "journal-cli. CLI error when Plaud sign-in fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "14ebc03206ccdce590838044db5c775c1d287f68221d60478e4b67f5b020375d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

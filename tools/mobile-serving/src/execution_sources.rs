@@ -194,17 +194,14 @@ pub(super) fn settings(
     updates: Option<Vec<(&'static str, bool)>>,
     cancelled: &(dyn Fn() -> bool + Send + Sync),
 ) -> (StatusCode, Value) {
-    let config = match solstone_core_journal_config::read_journal_config_bound(root) {
-        Ok(config) => config.config.unwrap_or_default(),
-        Err(error) => {
-            log::warn!("owner sync settings: {error}");
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                json!({"error":"schedules_unavailable"}),
-            );
-        }
-    };
-    let available = solstone_core_settings_web::source_sync_plaud_available(&config);
+    if let Err(error) = solstone_core_journal_config::read_journal_config_bound(root) {
+        log::warn!("owner sync settings: {error}");
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!({"error":"schedules_unavailable"}),
+        );
+    }
+    let available = solstone_core_settings_web::source_sync_plaud_available(root.canonical_path());
     let mut changed_fields = serde_json::Map::new();
     let result = schedules::mutate(root, cancelled, |raw| {
         let mut working = raw.clone();

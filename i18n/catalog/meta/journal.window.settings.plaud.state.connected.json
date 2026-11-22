@@ -1,0 +1,16 @@
+{
+  "description": "Settings Plaud state badge when signed in with hourly sync off.",
+  "context": "journal-window. Settings Plaud state badge when signed in with hourly sync off.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0fa3d3df46986856c35358f0cc3bcf11834b476f740b1696e356678e3ba4cf99",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

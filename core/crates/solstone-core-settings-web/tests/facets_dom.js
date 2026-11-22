@@ -1226,26 +1226,32 @@ async function testCase(name, fn) {
     assert.ok(notifRow.querySelector('.sapp-open').textContent.trim().length > 0, 'the card carries an action label');
   });
 
-  await testCase('G3-115 API-keys pane stops instructing the owner to open devtools up front', async () => {
+  await testCase('Settings retires empty API-keys tab and uses OAuth sign-in on Sync for Plaud', async () => {
     const harness = createHarness();
-    const apiKeyField = harness.document
-      .getElementById('field-env-plaud')
-      .closest('.settings-field');
-    const visibleHint = apiKeyField.querySelector('small').textContent;
-    assert.ok(
-      !visibleHint.includes("open your browser's console"),
-      'the devtools instruction is no longer in the always-visible hint'
+    assert.strictEqual(
+      harness.document.getElementById('tab-apikeys'),
+      null,
+      'empty API keys tab is retired'
     );
-    const disclosure = apiKeyField.querySelector('details');
-    assert.ok(disclosure, 'the step-by-step how-to is behind a disclosure');
-    assert.ok(!disclosure.hasAttribute('open'), 'the disclosure is closed by default');
+    assert.strictEqual(
+      harness.document.getElementById('section-apikeys'),
+      null,
+      'empty API keys section is retired'
+    );
+    assert.strictEqual(
+      harness.document.getElementById('field-env-plaud'),
+      null,
+      'legacy PLAUD_ACCESS_TOKEN input is retired'
+    );
+    const plaudCard = harness.document.getElementById('plaudSyncCard');
+    assert.ok(plaudCard, 'Plaud card lives in Settings -> Sync');
     assert.ok(
-      disclosure.querySelector('summary').textContent.length > 0,
-      'the disclosure has a visible summary label'
+      harness.document.getElementById('plaudSignIn'),
+      'Plaud card exposes Sign in with Plaud'
     );
     assert.ok(
-      disclosure.textContent.includes("open your browser's console"),
-      'the full mechanics are still reachable inside the disclosure'
+      !plaudCard.textContent.includes("open your browser's console"),
+      'Plaud card never instructs opening browser devtools'
     );
   });
 

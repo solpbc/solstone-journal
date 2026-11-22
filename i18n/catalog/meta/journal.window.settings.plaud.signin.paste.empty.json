@@ -1,0 +1,16 @@
+{
+  "description": "Settings Plaud validation error when paste-URL input is empty.",
+  "context": "journal-window. Settings Plaud validation error when paste-URL input is empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "11dbc52a782a24fde19433bcc47347acf8f35e84c4ee191478dcd8be97cb3198",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

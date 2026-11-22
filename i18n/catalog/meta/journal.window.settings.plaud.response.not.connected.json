@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud error when manual check is requested while signed out.",
+  "context": "journal-window. Settings Plaud error when manual check is requested while signed out.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6ab70b9eb30c25d442831b79d717723aff674832bed894490d6c56807b397f84",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

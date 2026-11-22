@@ -1,0 +1,23 @@
+{
+  "description": "Settings Plaud pending sign-in button to reopen authorization page.",
+  "context": "journal-window. Settings Plaud pending sign-in button to reopen authorization page.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a862dbea44e2759ca88c5ffcc14dd4106c0a9ce1e87bec254c55d8b83a64704a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    }
+  ]
+}

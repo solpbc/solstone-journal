@@ -1,0 +1,16 @@
+{
+  "description": "Settings Plaud error when sign-in attempt has expired.",
+  "context": "journal-window. Settings Plaud error when sign-in attempt has expired.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "729b14c7a1143f2c528db96e69489eab926b979453791b0d48b1e07e6dd94924",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

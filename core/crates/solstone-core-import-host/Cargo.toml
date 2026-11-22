@@ -39,6 +39,7 @@ serde_json.workspace = true
 sha2 = { workspace = true }
 log.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
+solstone-core-cli-copy.workspace = true
 solstone-core-entity-matching.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-format = { workspace = true }
@@ -50,6 +51,7 @@ solstone-core-indexer-store.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-oauth.workspace = true
 solstone-core-pdf = { workspace = true, optional = true }
 solstone-core-processing-record.workspace = true
 solstone-core-retention.workspace = true

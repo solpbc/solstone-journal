@@ -23144,6 +23144,166 @@
       "selector": null
     },
     {
+      "id": "journal.cli.importer.plaud.connect.done",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e65",
+      "namespace": "journal.cli.importer.plaud.connect",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "provider",
+          "kind": "accepted-input",
+          "value": "Plaud"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.connect.done.account",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e652e6163636f756e74",
+      "namespace": "journal.cli.importer.plaud.connect.done",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "account",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "provider",
+          "kind": "accepted-input",
+          "value": "Plaud"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.connect.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6661696c6564",
+      "namespace": "journal.cli.importer.plaud.connect",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "provider",
+          "kind": "accepted-input",
+          "value": "Plaud"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.connect.next",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6e657874",
+      "namespace": "journal.cli.importer.plaud.connect",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal importer --sync plaud --save"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.connect.open",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e6f70656e",
+      "namespace": "journal.cli.importer.plaud.connect",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "provider",
+          "kind": "accepted-input",
+          "value": "Plaud"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.connect.retry.url",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e72657472792e75726c",
+      "namespace": "journal.cli.importer.plaud.connect.retry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "provider",
+          "kind": "accepted-input",
+          "value": "Plaud"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.connect.waiting",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e77616974696e67",
+      "namespace": "journal.cli.importer.plaud.connect",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "provider",
+          "kind": "accepted-input",
+          "value": "Plaud"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.sync.busy",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e73796e632e62757379",
+      "namespace": "journal.cli.importer.plaud.sync",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "provider",
+          "kind": "accepted-input",
+          "value": "Plaud"
+        }
+      ],
+      "selector": null
+    },
+    {
       "id": "journal.cli.journal.archive.argument",
       "resource": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e617267756d656e74",
       "namespace": "journal.cli.journal.archive",

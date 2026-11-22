@@ -471,6 +471,15 @@ async function main() {
     assert(res.skipped.some((s) => s.strategy === 'native_broker' && s.reason === 'unsupported'));
   });
 
+  // Verify shell.html loads oauth-broker.js in the boot partition so views can invoke it immediately.
+  await runCase('shell.html includes oauth-broker.js in data-shell-part="boot"', async () => {
+    const shellHtml = fs.readFileSync(path.join(staticDir, 'shell.html'), 'utf8');
+    assert(
+      /<script\b[^>]*\bsrc="\/static\/oauth-broker\.js"[^>]*\bdata-shell-part="boot"[^>]*><\/script>/.test(shellHtml),
+      'shell.html must load /static/oauth-broker.js in data-shell-part="boot"',
+    );
+  });
+
   console.log(`DOM CASES: ${passed} passed`);
 }
 
