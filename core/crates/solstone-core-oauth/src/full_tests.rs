@@ -20,7 +20,7 @@ use crate::registration::RegistrationMode;
 use crate::ssrf::{HttpRequest, HttpResponse, OAuthHttpClient, SsrfFetchError};
 use crate::store::{
     ClientRegistration, OAuthCredentialDoc, OAuthCredentialManager, OAuthTokens, ServiceId,
-    credential_path, save_credential_file,
+    save_credential_file,
 };
 
 fn raw_http(port: u16, req: &str) -> String {
@@ -207,6 +207,7 @@ fn flock_serializes_concurrent_rotating_refreshes_to_one_http_call() {
 
     #[cfg(unix)]
     {
+        use crate::store::credential_path;
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(credential_path(&journal, &service))
             .unwrap()
