@@ -10,20 +10,12 @@
       [
         "plaud",
         "solstone.think.importers.plaud"
-      ],
-      [
-        "audio",
-        "solstone.think.importers.audio"
       ]
     ],
     "backends": [
       {
         "name": "plaud",
         "sync_signature": "(journal_root: pathlib._local.Path, *, dry_run: bool = True) -> dict[str, typing.Any]"
-      },
-      {
-        "name": "audio",
-        "sync_signature": "(journal_root: pathlib._local.Path, *, dry_run: bool = True, source_path: pathlib._local.Path | None = None, force: bool = False, auto: bool | str = True) -> dict[str, typing.Any]"
       }
     ],
     "state_path_shape": "<journal>/imports/<backend>.json, written atomically with the private import file mode",

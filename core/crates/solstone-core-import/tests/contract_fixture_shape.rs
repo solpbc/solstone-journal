@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 use solstone_core_import::{
-    AudioAuto, ImportPreview, ImportResult, SyncBackendRequest, SyncGuidance, should_write_manifest,
+    ImportPreview, ImportResult, SyncBackendRequest, SyncGuidance, should_write_manifest,
 };
 use std::path::PathBuf;
 
@@ -12,7 +12,6 @@ const W9_SURFACE: &str = concat!(
     include_str!("../src/contract.rs"),
     include_str!("../src/sync_state.rs"),
     include_str!("../src/sync_plaud.rs"),
-    include_str!("../src/sync_audio.rs"),
     include_str!("../src/connect.rs"),
 );
 
@@ -28,11 +27,6 @@ const SYNC_SEAM_FIELDS: &[(&str, &[&str])] = &[
         ],
     ),
     ("PlaudSaveSeams", &["preview", "download", "pipeline"]),
-    (
-        "AudioPreviewSeams",
-        &["scanner", "probe", "manifests", "clock", "state_writer"],
-    ),
-    ("AudioSaveSeams", &["preview", "pipeline"]),
 ];
 
 #[test]
@@ -94,18 +88,13 @@ fn sync_backend_request_confines_window_days_to_the_native_variant() {
         SyncBackendRequest::Oura { window_days, .. } => assert_eq!(window_days, 14),
         _ => panic!("Oura request must retain window days"),
     }
-    let request = SyncBackendRequest::Audio {
+    let request = SyncBackendRequest::Plaud {
         journal_root: path,
         save: false,
-        source_path: Some(PathBuf::from("audio")),
-        force: false,
-        auto: AudioAuto::Enabled,
     };
     match request {
-        SyncBackendRequest::Audio { source_path, .. } => {
-            assert_eq!(source_path, Some(PathBuf::from("audio")))
-        }
-        _ => panic!("audio request must retain its source override"),
+        SyncBackendRequest::Plaud { save, .. } => assert!(!save),
+        _ => panic!("Plaud request must retain its save flag"),
     }
 }
 

@@ -126,64 +126,15 @@ fn unavailable() -> (StatusCode, Value) {
 }
 
 fn connection(root: &JournalRoot, source: &str) -> (StatusCode, Value) {
-    if source == "plaud" {
-        return match solstone_core_journal_config::read_journal_config_bound(root) {
-            Ok(config) => (
-                StatusCode::OK,
-                json!({"source":source,"available":solstone_core_settings_web::source_sync_plaud_available(&config.config.unwrap_or_default())}),
-            ),
-            Err(_) => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                json!({"error":"source_state_unavailable"}),
-            ),
-        };
-    }
-    #[cfg(unix)]
-    {
-        use solstone_core_import::{
-            BackendName, SyncStateRead, public_connection_status, read_sync_state_bound,
-        };
-        let backend = match source {
-            "audio" => BackendName::Audio,
-            _ => unreachable!("source whitelist checked before read"),
-        };
-        match read_sync_state_bound(root, backend) {
-            SyncStateRead::Absent => (StatusCode::OK, json!({"source":source,"connection":null})),
-            SyncStateRead::Loaded(state) => {
-                let connection = match public_connection_status(&state) {
-                    Ok(connection) => connection,
-                    Err(_) => {
-                        return (
-                            StatusCode::UNPROCESSABLE_ENTITY,
-                            json!({"error":"source_state_unavailable"}),
-                        );
-                    }
-                };
-                let connection = connection.map(|connection| {
-                    json!({
-                        "source_identity":connection.source_identity,
-                        "folder_name":connection.folder_name,
-                        "remembered":connection.remembered,
-                        "access_state":connection.access_state.to_string(),
-                    })
-                });
-                (
-                    StatusCode::OK,
-                    json!({"source":source,"connection":connection}),
-                )
-            }
-            SyncStateRead::Unreadable { .. } => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                json!({"error":"source_state_unavailable"}),
-            ),
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = root;
-        (
+    debug_assert_eq!(source, "plaud", "source whitelist checked before read");
+    match solstone_core_journal_config::read_journal_config_bound(root) {
+        Ok(config) => (
+            StatusCode::OK,
+            json!({"source":source,"available":solstone_core_settings_web::source_sync_plaud_available(&config.config.unwrap_or_default())}),
+        ),
+        Err(_) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             json!({"error":"source_state_unavailable"}),
-        )
+        ),
     }
 }

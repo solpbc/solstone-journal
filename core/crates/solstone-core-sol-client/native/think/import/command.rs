@@ -172,11 +172,6 @@ fn push_positional(parsed: &mut ParsedArgs, value: String) {
 }
 
 fn reject_unsupported_modes(parsed: &ParsedArgs) -> Option<CommandOutput> {
-    if parsed.sync.as_deref() == Some("audio") {
-        return Some(rejected(
-            "audio folder sync is gone on computers. use `solstone journal importer FILE --timestamp YYYYMMDD_HHMMSS` or `solstone journal importer --audio-archive MANIFEST.json`.",
-        ));
-    }
     if parsed.backends {
         return Some(rejected(format!(
             "`--backends` requires the journal host. {JOURNAL_HOST_HINT}"

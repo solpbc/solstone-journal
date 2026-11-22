@@ -39,7 +39,7 @@ async function main() {
     webkit: {messageHandlers: {journalOwner: {postMessage(message) {
       messages.push(JSON.parse(JSON.stringify(message)));
       if (message.op === 'bind') return {ok: true, authority: issued};
-      if (message.op === 'chooseFolder' || message.op === 'chooseSource') {
+      if (message.op === 'chooseFolder') {
         return new Promise(resolve => folderReplies.set(message.id, {message, resolve}));
       }
       if (message.op === 'open') return {ok: true};
@@ -156,24 +156,25 @@ async function main() {
   assert.equal(stallCancel.length, 1);
   assert.equal(stallCancel[0].authority, 4);
   assert.equal(messages.filter((message) => message.op === 'bind').length, 1);
-  const connected = context.JournalOwnerSources.change('audio', 'begin', null, 'retained-source-reference', () => true);
+  assert.equal(context.JournalOwnerSources, undefined);
+  const chosen = context.JournalOwnerFolders.choose('gemini', 'retained-folder-reference', () => true);
   await waitFor(() => folderReplies.size === 1);
   const selected = folderReplies.get('folder-1');
-  assert.deepEqual(JSON.parse(JSON.stringify(selected.message)), {op: 'chooseSource', authority: 4, id: 'folder-1', source: 'audio', action: 'begin', expected_identity: null, client_item_id: 'retained-source-reference'});
-  assert.equal(context.__journalFolderSelected(9, 'folder-1'), false, 'another page cannot acknowledge this source');
+  assert.deepEqual(JSON.parse(JSON.stringify(selected.message)), {op: 'chooseFolder', authority: 4, id: 'folder-1', source: 'gemini', client_item_id: 'retained-folder-reference'});
+  assert.equal(context.__journalFolderSelected(9, 'folder-1'), false, 'another page cannot acknowledge this folder');
   assert.equal(context.__journalFolderSelected(4, 'folder-1'), true);
-  selected.resolve({state: 'updated', connection: {folder_name: 'picked notes'}});
-  assert.equal((await connected).state, 'updated');
+  selected.resolve({state: 'saved', folder_name: 'picked notes'});
+  assert.equal((await chosen).state, 'saved');
   folderReplies.clear();
 
-  const forgotten = context.JournalOwnerSources.change('audio', 'forget', 'displayed-identity', 'forget-reference', () => false);
+  const refused = context.JournalOwnerFolders.choose('gemini', 'refused-reference', () => false);
   await waitFor(() => folderReplies.has('folder-2'));
-  assert.equal(context.__journalFolderSelected(4, 'folder-2'), false, 'a failed retention acknowledgement must refuse native permission changes');
-  context.JournalOwnerSources.cancel();
-  assert.deepEqual(JSON.parse(JSON.stringify(await forgotten)), {state: 'outcome_unknown', client_item_id: 'forget-reference'});
-  const later = context.JournalOwnerSources.change('audio', 'reauthorize', 'displayed-identity', 'later-reference', () => undefined);
+  assert.equal(context.__journalFolderSelected(4, 'folder-2'), false, 'a failed retention acknowledgement must refuse native folder copy');
+  context.JournalOwnerFolders.cancel();
+  assert.deepEqual(JSON.parse(JSON.stringify(await refused)), {state: 'outcome_unknown', client_item_id: 'refused-reference'});
+  const later = context.JournalOwnerFolders.choose('gemini', 'later-reference', () => undefined);
   await waitFor(() => folderReplies.has('folder-3'));
-  folderReplies.get('folder-2').resolve({state: 'updated'});
+  folderReplies.get('folder-2').resolve({state: 'saved'});
   assert.equal(context.__journalFolderSelected(4, 'folder-3'), false, 'only explicit true acknowledges retained custody');
   folderReplies.get('folder-3').resolve({state: 'cancelled'});
   assert.equal((await later).state, 'cancelled', 'a late old reply cannot settle a newer selection');

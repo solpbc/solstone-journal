@@ -185,12 +185,6 @@
       return folderChoice('chooseFolder', source, reference, selected);
     },
   };
-  window.JournalOwnerSources = {
-    change(source, action, expectedIdentity, reference, selected) {
-      return folderChoice('chooseSource', source, reference, selected, { action, expected_identity: expectedIdentity });
-    },
-    cancel() { window.JournalOwnerFolders.cancel(); },
-  };
   window.addEventListener('pagehide', () => {
     window.JournalOwnerFolders.cancel();
     for (const abort of Array.from(pending.values())) abort();

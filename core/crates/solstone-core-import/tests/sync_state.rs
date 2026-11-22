@@ -38,7 +38,7 @@ fn inventory_matches_the_grammar_and_sync_oracle() {
         .map(|backend| backend["name"].as_str())
         .collect::<Option<Vec<_>>>()
         .unwrap();
-    assert_eq!(&actual[..2], oracle_names);
+    assert_eq!(&actual[..1], oracle_names);
 }
 
 #[test]
@@ -65,59 +65,42 @@ fn oracle_backed_schema_fixture_round_trips_every_backend_union_member() {
     }
 }
 
-fn reference_states() -> [(BackendName, Value); 2] {
-    [
-        (
-            BackendName::Plaud,
-            json!({
-                "backend": "plaud",
-                "last_sync": "2026-08-11T12:00:00+00:00",
-                "unknown_root": {"keep": [1, true]},
-                "files": {
-                    "imported": {
-                        "filename": "recording", "fullname": "recording.opus", "filesize": 12,
-                        "start_time": 1725000000000.5, "duration": 60000.25, "is_trash": false,
-                        "status": "imported", "import_timestamp": "20240801_010203",
-                        "matched_at": "2026-08-11T12:00:00+00:00", "imported_at": "2026-08-11T12:00:00+00:00"
-                    },
-                    "trash": {"filename": "trash", "status": "skipped", "skip_reason": "trashed"},
-                    "available": {"filename": "available", "status": "available", "last_error": "download failed"},
-                    "unknown": {"unknown_entry": {"preserve": "yes"}}
-                }
-            }),
-        ),
-        (
-            BackendName::Audio,
-            json!({
-                "backend": "audio", "source_path": "/example/audio",
-                "last_sync": "2026-08-11T12:00:00+00:00", "unknown_root": {"keep": true},
-                "files": {
-                    "nested/track.wav": {"filename": "track.wav", "filesize": 12, "hash": "abc",
-                        "duration": 45.5, "status": "imported", "imported_at": "2026-08-11T12:00:00+00:00"},
-                    "short.wav": {"status": "skipped", "duration": 29.5, "skip_reason": "too_short"},
-                    "unreadable.wav": {"status": "unreadable"},
-                    "retry.wav": {"status": "available", "last_error": "pipeline failed"},
-                    "gone.wav": {"status": "removed"}
-                }
-            }),
-        ),
-    ]
+fn reference_states() -> [(BackendName, Value); 1] {
+    [(
+        BackendName::Plaud,
+        json!({
+            "backend": "plaud",
+            "last_sync": "2026-08-11T12:00:00+00:00",
+            "unknown_root": {"keep": [1, true]},
+            "files": {
+                "imported": {
+                    "filename": "recording", "fullname": "recording.opus", "filesize": 12,
+                    "start_time": 1725000000000.5, "duration": 60000.25, "is_trash": false,
+                    "status": "imported", "import_timestamp": "20240801_010203",
+                    "matched_at": "2026-08-11T12:00:00+00:00", "imported_at": "2026-08-11T12:00:00+00:00"
+                },
+                "trash": {"filename": "trash", "status": "skipped", "skip_reason": "trashed"},
+                "available": {"filename": "available", "status": "available", "last_error": "download failed"},
+                "unknown": {"unknown_entry": {"preserve": "yes"}}
+            }
+        }),
+    )]
 }
 
 #[test]
 fn authored_state_uses_private_atomic_python_style_json() {
     let tree = TempDir::new().unwrap();
-    let mut state = SyncState::empty(BackendName::Audio);
+    let mut state = SyncState::empty(BackendName::Plaud);
     state
         .root_mut()
         .insert("label".to_owned(), Value::String("café".to_owned()));
     write_sync_state(tree.path(), &state).unwrap();
 
-    let path = state_path(tree.path(), BackendName::Audio);
+    let path = state_path(tree.path(), BackendName::Plaud);
     let bytes = fs::read(&path).unwrap();
     assert_eq!(
         String::from_utf8(bytes).unwrap(),
-        "{\n  \"backend\": \"audio\",\n  \"files\": {},\n  \"label\": \"caf\\u00e9\"\n}"
+        "{\n  \"backend\": \"plaud\",\n  \"files\": {},\n  \"label\": \"caf\\u00e9\"\n}"
     );
     #[cfg(unix)]
     {
@@ -151,7 +134,7 @@ fn unreadable_sync_state_is_a_benign_recatalogue_value() {
 #[test]
 fn known_state_numbers_over_i64_become_a_benign_recatalogue_value() {
     let tree = TempDir::new().unwrap();
-    let path = state_path(tree.path(), BackendName::Audio);
+    let path = state_path(tree.path(), BackendName::Plaud);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(
         path,
@@ -159,7 +142,7 @@ fn known_state_numbers_over_i64_become_a_benign_recatalogue_value() {
     )
     .unwrap();
     assert!(matches!(
-        read_sync_state(tree.path(), BackendName::Audio),
+        read_sync_state(tree.path(), BackendName::Plaud),
         SyncStateRead::Unreadable { .. }
     ));
 }

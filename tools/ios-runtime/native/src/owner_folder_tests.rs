@@ -76,7 +76,7 @@ impl Fixture {
         .unwrap();
         let binding = server.backup_dependencies().retained_root().unwrap();
         let stop = Arc::new(AtomicBool::new(false));
-        let (factory, sources) = crate::saved_sources::factory(PathBuf::from(
+        let factory = journal_mobile_serving::import_route::packaged_import_factory(PathBuf::from(
             std::env::var("SOLSTONE_NATIVE_FOLDER_TEST_PDFIUM")
                 .expect("maintained host PDFium input required"),
         ));
@@ -104,7 +104,6 @@ impl Fixture {
         *SERVING.lock().unwrap() = Some(ServingInstance {
             serving: server,
             processing: Some(host),
-            sources,
         });
         Self {
             directory,

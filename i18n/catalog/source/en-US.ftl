@@ -3308,14 +3308,6 @@ journal.window.import.detail.provenance.importer = { $source_type } importer
 
 journal.window.import.detail.provenance.processed = processed { $finished_at }
 
-journal.window.import.folder.access.remembered = { $folder }: read access remembered for future syncs.
-
-journal.window.import.folder.access.repeat = { $folder }: choose the folder again to restore read access.
-
-journal.window.import.folder.schedule.active = automatic sync is on: { $cadences }.
-
-journal.window.import.folder.schedule.conflicts = custom schedules stay unchanged: { $schedule_names }.
-
 journal.window.import.guide.step.number = step { $step_number }
 
 journal.window.import.history.archive.left.out = { $quantity ->
@@ -19001,29 +18993,15 @@ journal.window.import.body.status.upload.limit.mac = this export is larger than 
 
 journal.window.import.body.status.upload.limit.other = this export is larger than 4.3 { $slot1 }, the most this page uploads. instead, from a terminal on the computer your journal runs on, run: { $slot2 }
 
-journal.window.import.button.label.change.folder = change folder
-
 journal.window.import.button.label.check.status = check status
 
 journal.window.import.button.label.choose.folder = choose folder
-
-journal.window.import.button.label.choose.folder.again = choose folder again
-
-journal.window.import.button.label.connect.folder = connect folder
-
-journal.window.import.button.label.forget.folder = forget folder
 
 journal.window.import.button.label.next = next
 
 journal.window.import.button.label.prev = prev
 
 journal.window.import.button.label.preview.import = preview import
-
-journal.window.import.button.label.remove.schedule = remove schedule
-
-journal.window.import.button.label.save.schedule = save schedule
-
-journal.window.import.button.label.sync.now = sync now
 
 journal.window.import.button.label.validate = validate
 
@@ -19114,15 +19092,9 @@ journal.window.import.content.type.note = note
 
 journal.window.import.content.type.pdf = pdf
 
-journal.window.import.disclosure.label.automatic.sync = automatic sync
-
-journal.window.import.field.label.automatic.sync.enabled = automatic sync enabled
-
 journal.window.import.field.label.context = context
 
 journal.window.import.field.label.date = date
-
-journal.window.import.field.label.how.often = how often
 
 journal.window.import.field.label.keep.originals = keep originals
 
@@ -19360,16 +19332,6 @@ journal.window.import.import.delete.copy.title.your.journal.didn.t.answer = your
 
 journal.window.import.import.delete.copy.workoutsunknown.the.workouts.it.brought.in = the workouts it brought in
 
-journal.window.import.import.source.control.audio.folder = audio folder
-
-journal.window.import.import.source.control.choose.a.cadence = choose a cadence
-
-journal.window.import.import.source.control.every.day = every day
-
-journal.window.import.import.source.control.every.hour = every hour
-
-journal.window.import.import.source.control.every.minutes = every 15 minutes
-
 journal.window.import.import.source.names.audio.archive.audio.archive = audio archive
 
 journal.window.import.import.source.names.audio.audio.folder = audio folder
@@ -19387,38 +19349,6 @@ journal.window.import.import.source.names.quick.quick.import = quick import
 journal.window.import.import.source.names.recording.meeting.audio = meeting audio
 
 journal.window.import.import.source.names.text.text = text
-
-journal.window.import.import.status.or.action.choose.how.often.to.sync.before = choose how often to sync before saving the schedule.
-
-journal.window.import.import.status.or.action.could.not.confirm.the.folder.change = could not confirm the folder change. check the current connection before trying again.
-
-journal.window.import.import.status.or.action.could.not.confirm.the.schedule.change = could not confirm the schedule change. check the current schedule before trying again.
-
-journal.window.import.import.status.or.action.could.not.confirm.the.sync.result = could not confirm the sync result. check status again in a moment.
-
-journal.window.import.import.status.or.action.could.not.confirm.this.sync.request = could not confirm this sync request. check status before syncing again.
-
-journal.window.import.import.status.or.action.could.not.read.the.sync.result = could not read the sync result. check again before syncing again.
-
-journal.window.import.import.status.or.action.folder.access.forgotten.earlier.imports.stay = folder forgotten. what it already brought in stays in your journal.
-
-journal.window.import.import.status.or.action.folder.connection.updated = folder connection updated.
-
-journal.window.import.import.status.or.action.schedule.updated = schedule updated.
-
-journal.window.import.import.status.or.action.sending.sync.request = sending sync request…
-
-journal.window.import.import.status.or.action.source.sync.did.not.finish.check = source sync did not finish. try again.
-
-journal.window.import.import.status.or.action.source.sync.finished.media.processing.may = source sync finished. media processing may continue.
-
-journal.window.import.import.status.or.action.source.sync.is.running = source sync is running.
-
-journal.window.import.import.status.or.action.this.page.could.not.keep.the = this page could not keep the request. reload the page before trying again.
-
-journal.window.import.import.status.or.action.updating.folder.access = updating folder access…
-
-journal.window.import.import.status.or.action.waiting.to.sync = waiting to sync.
 
 journal.window.import.import.view.choose.the.time.zone.in.the = choose the time zone in the recording filenames, or enter the manifest filename.
 
@@ -19475,8 +19405,6 @@ journal.window.import.link.label.view.imported.content = view imported content
 journal.window.import.option.label.all.months = all months
 
 journal.window.import.option.label.all.sources = all sources
-
-journal.window.import.option.label.choose.a.cadence = choose a cadence
 
 journal.window.import.option.label.choose.a.time.zone = choose a time zone
 
@@ -19918,29 +19846,15 @@ journal.window.import.visible.text.a.short.note.about.what.this = a short note a
 
 journal.window.import.visible.text.add.your.plaud.token.in.settings = add your { $slot1 } token in settings to sync recordings into your journal.
 
-journal.window.import.visible.text.automatic.sync.is.off = automatic sync is off.
-
 journal.window.import.visible.text.checking.import = checking import…
-
-journal.window.import.visible.text.checking.schedule = checking schedule…
-
-journal.window.import.visible.text.checking.source = checking source…
 
 journal.window.import.visible.text.completed = completed
 
 journal.window.import.visible.text.configure.and.start = configure and start
 
-journal.window.import.visible.text.connecting.keeps.read.access.to.the = your journal keeps access to this folder and brings in its audio, including what's already there. forgetting the folder stops that, and what it already brought in stays in your journal.
-
 journal.window.import.visible.text.contains.gaps = contains gaps
 
 journal.window.import.visible.text.content = content
-
-journal.window.import.visible.text.could.not.confirm.the.folder.change = could not confirm the folder change. check the current connection before trying again.
-
-journal.window.import.visible.text.could.not.read.the.schedule.check = could not read the schedule. check again before changing it.
-
-journal.window.import.visible.text.could.not.read.this.source.check = could not read this source. check again before changing it.
 
 journal.window.import.visible.text.couldn.t.check.status.reload.to = couldn't check status. reload to try again.
 
@@ -19983,8 +19897,6 @@ journal.window.import.visible.text.loading.imports = loading imports…
 journal.window.import.visible.text.no.content.available = No content available
 
 journal.window.import.visible.text.no.creation.date.was.found.in = no creation date was found in this file. choose its date, or keep the upload date.
-
-journal.window.import.visible.text.no.folder.connected = no folder connected.
 
 journal.window.import.visible.text.no.items.found = no items found
 

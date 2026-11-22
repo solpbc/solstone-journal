@@ -228,7 +228,7 @@ fn submit_bound_owner_command(
 pub(super) fn source_sync_command(source: &str) -> Option<Vec<String>> {
     // Body sources retain the migration/approval prerequisite. This is the
     // existing source whitelist and fixed argv, shared by recurrence and run.
-    matches!(source, "plaud" | "audio").then(|| {
+    (source == "plaud").then(|| {
         solstone_core_system::partition::canonical_journal_command([
             "importer", "--sync", source, "--save",
         ])
@@ -1172,6 +1172,11 @@ struct HostScheduleSink {
 }
 impl ScheduleSubmissionSink for HostScheduleSink {
     fn submit(&self, request: ScheduledRequest) -> bool {
+        if solstone_core_maintenance::schedule_sync::is_retired_audio_sync_command(
+            request.cmd.as_wire(),
+        ) {
+            return false;
+        }
         !matches!(
             self.queue.submit(ExecutionRequest::Scheduled(request)),
             solstone_core_system::queue::SubmitOutcome::Rejected

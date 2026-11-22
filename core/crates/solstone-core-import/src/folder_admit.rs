@@ -159,7 +159,6 @@ pub enum ReimportSource {
     PdfDirectory,
     AudioArchive,
     SyncPlaud,
-    SyncAudio,
 }
 
 /// The re-import answer for one [`ReimportSource`].
@@ -739,9 +738,7 @@ pub fn folder_preview_current(tree: &Path, custody_snapshot: &str) -> Result<(),
 pub fn reimport_policy(source: ReimportSource) -> ReimportPolicy {
     match source {
         ReimportSource::GeminiDirectory | ReimportSource::PdfDirectory => ReimportPolicy::Permitted,
-        ReimportSource::AudioArchive | ReimportSource::SyncPlaud | ReimportSource::SyncAudio => {
-            ReimportPolicy::Refused
-        }
+        ReimportSource::AudioArchive | ReimportSource::SyncPlaud => ReimportPolicy::Refused,
     }
 }
 
@@ -1508,10 +1505,6 @@ mod tests {
         );
         assert_eq!(
             reimport_policy(ReimportSource::SyncPlaud),
-            ReimportPolicy::Refused
-        );
-        assert_eq!(
-            reimport_policy(ReimportSource::SyncAudio),
             ReimportPolicy::Refused
         );
         let journal = tempfile::tempdir().unwrap();

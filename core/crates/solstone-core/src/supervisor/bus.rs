@@ -183,57 +183,11 @@ pub(crate) struct SupervisorScheduleSink {
     pub server: Arc<CallosumSocketServer>,
 }
 
-/// Match a direct invocation of the retired importer command, using the
-/// importer grammar to distinguish a sync from an argument containing its name.
-pub(super) fn is_retired_audio_schedule(command: &[String]) -> bool {
-    let Some((program, args)) = command.split_first() else {
-        return false;
-    };
-    let name = program.rsplit(['/', '\\']).next().unwrap_or(program);
-    let lower_name = name.to_ascii_lowercase();
-    let executable = lower_name.strip_suffix(".exe").unwrap_or(&lower_name);
-    let (verb, args) = match (executable, args) {
-        ("solstone" | "solstone-core-sol", [family, args @ ..]) if family == "journal" => {
-            ("importer", strip_journal_verbose(args))
-        }
-        ("solstone-core-journal", args) => ("importer", strip_journal_verbose(args)),
-        ("journal", args) if program == name || installed_journal_alias(program) => {
-            ("importer", strip_journal_verbose(args))
-        }
-        ("solstone-core", args) => ("importer", args),
-        ("sol", args) if program == name => ("import", args),
-        _ => return false,
-    };
-    matches!(args, [command, args @ ..] if command == verb
-        && solstone_core_import_host::cli_argv::selects_audio_sync(args))
-}
-
-fn strip_journal_verbose(args: &[String]) -> &[String] {
-    match args {
-        [flag, args @ ..] if matches!(flag.as_str(), "-v" | "--verbose") => args,
-        _ => args,
-    }
-}
-
-fn installed_journal_alias(program: &str) -> bool {
-    #[cfg(windows)]
-    {
-        std::env::current_exe()
-            .ok()
-            .map(|path| path.with_file_name("journal.exe"))
-            .and_then(|path| path.to_str().map(|path| path.replace('\\', "/")))
-            .is_some_and(|path| path.eq_ignore_ascii_case(&program.replace('\\', "/")))
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = program;
-        false
-    }
-}
-
 impl ScheduleSubmissionSink for SupervisorScheduleSink {
     fn submit(&self, request: ScheduledRequest) -> bool {
-        if is_retired_audio_schedule(request.cmd.as_wire()) {
+        if solstone_core_maintenance::schedule_sync::is_retired_audio_sync_command(
+            request.cmd.as_wire(),
+        ) {
             return false;
         }
         let name = request.scheduler_name.clone();

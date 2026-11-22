@@ -24,8 +24,6 @@ public class JournalService extends Service {
     volatile boolean destroyed;
     OwnerFolderServiceEndpoint folderRequests;
     CreatorRecoveryEndpoint creatorRecovery;
-    SavedFolderServiceProvider savedFolderProvider;
-    long savedFolderProviderIdentity;
     String serviceToolAdmission;
     String qwenRuntimeAdmission;
     Messenger incoming;
@@ -35,8 +33,6 @@ public class JournalService extends Service {
         new ArrayBlockingQueue<Runnable>(32),new ThreadPoolExecutor.AbortPolicy());
     public void onCreate() {
         super.onCreate();
-        savedFolderProvider = new SavedFolderServiceProvider(getContentResolver());
-        savedFolderProviderIdentity = Native.installSavedFolderProvider(getCacheDir().getAbsolutePath(),savedFolderProvider);
         long admissionStarted = SystemClock.elapsedRealtime();
         evidence("service_tools_admission_started", "");
         try { serviceToolAdmission = ServiceToolAssets.install(this); }
@@ -341,7 +337,6 @@ public class JournalService extends Service {
         evidence("service_destroyed","last binding released");
         execution.retire(this::cancelNativeWork, () -> Native.run("", "serve:{\"op\":\"stop\"}", 1));
         setupForeground.close();
-        Native.retireSavedFolderProvider(savedFolderProviderIdentity);
         super.onDestroy();
     }
 }

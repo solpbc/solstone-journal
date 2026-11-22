@@ -388,9 +388,6 @@ fn validate_resolved(args: &[String], expected: &ArgumentClass) -> Result<(), St
     if resolved.body != expected.body || resolved.sync_source != expected.sync_source {
         return Err("this import could not start".into());
     }
-    if resolved.sync_source.as_deref() == Some("audio") && resolved.explicit_path.is_none() {
-        return Err("source connection is unavailable".into());
-    }
     Ok(())
 }
 

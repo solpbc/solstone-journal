@@ -322,7 +322,6 @@ async fn source_recurrence_controls_legacy_aliases_and_preserves_modified_custom
         "daily_time":"00:15", "weekly_time":"03:15",
         "sync:plaud":{"cmd":["solstone","journal","importer","--sync","plaud","--save","--dry-run"],"every":"hourly","max_runtime":"10m","extra":"kept"},
         "owner:source:plaud":{"cmd":["journal","importer","--sync","plaud","--save"],"every":"weekly","enabled":true},
-        "owner:source:audio":custom,
         "custom":custom
     });
     std::fs::write(&path, original.to_string()).unwrap();
@@ -339,16 +338,19 @@ async fn source_recurrence_controls_legacy_aliases_and_preserves_modified_custom
         "legacy missing-enabled is active"
     );
     assert_eq!(observed["entries"].as_array().unwrap().len(), 2);
-    let (_, audio) = routed_request(
-        &router,
-        "GET",
-        "/api/journal/recurrences/source/audio",
-        json!({}),
-    )
-    .await;
-    assert_eq!(audio["enabled"], false);
-    assert_eq!(audio["entries"], json!([]));
-    assert_eq!(audio["blocked_names"], json!(["owner:source:audio"]));
+    for retired in ["audio", "oura"] {
+        assert_eq!(
+            routed_request(
+                &router,
+                "GET",
+                &format!("/api/journal/recurrences/source/{retired}"),
+                json!({})
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
     assert_eq!(
         std::fs::read(&path).unwrap(),
         before,
@@ -404,25 +406,11 @@ async fn source_recurrence_controls_legacy_aliases_and_preserves_modified_custom
         emitted, 1,
         "the actual scheduler submits only one owned source recurrence"
     );
-    let audio = "/api/journal/recurrences/source/audio";
-    let (status, refused) = routed_request(
-        &router,
-        "PUT",
-        audio,
-        json!({"every":"daily","enabled":false}),
-    )
-    .await;
-    assert_eq!(status, StatusCode::CONFLICT, "{refused}");
-    assert_eq!(
-        routed_request(&router, "DELETE", audio, json!({})).await.0,
-        StatusCode::OK
-    );
     let (status, removed) = routed_request(&router, "DELETE", plaud, json!({})).await;
     assert_eq!(status, StatusCode::OK, "{removed}");
     assert_eq!(removed["enabled"], false);
     let mut saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert!(saved.get("sync:plaud").is_none() && saved.get("owner:source:plaud").is_none());
-    assert_eq!(saved["owner:source:audio"], custom);
     assert_eq!(saved["custom"], custom);
     assert_eq!(saved["daily_time"], "00:15");
     assert_eq!(saved["weekly_time"], "03:15");
@@ -1347,314 +1335,17 @@ fn contains_action(root: &Path, action: &str) -> bool {
 
 /// A recording the catalogue already holds as imported, so a sync finds it and has no work.
 #[cfg(all(unix, feature = "in-process-pdf"))]
-const SAVED_CLIP: &[u8] = b"already imported clip";
-
-#[cfg(all(unix, feature = "in-process-pdf"))]
-fn saved_clip_entry() -> Value {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("clip.wav");
-    std::fs::write(&path, SAVED_CLIP).unwrap();
-    let hash = solstone_core_import::hash_source(&path)
-        .unwrap()
-        .into_inner();
-    json!({"status":"imported","hash":hash})
-}
-
 #[cfg(all(unix, feature = "in-process-pdf"))]
 #[test]
-fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
+fn owner_sources_serve_plaud_refuse_audio_and_skip_retired_audio_schedules() {
     use crate::foreground::ForegroundProcessingHost;
-    use crate::import_route::{
-        ConfiguredSources, SavedFolderProvider, SavedFolderRequest, SourceCopyError,
-        packaged_import_factory_with_sources,
-    };
-    use solstone_core_import::{
-        BackendName, SyncState, WorkStop, begin_folder, write_sync_state_bound,
-    };
+    use crate::import_route::packaged_import_factory;
     use solstone_core_maintenance::{
         registry::routines,
         schedule_sync::{expected_entry, schedule_name},
     };
     use solstone_core_system::schedule::ScheduleNow;
-    use std::sync::atomic::AtomicUsize;
 
-    struct Provider {
-        identity: String,
-        calls: AtomicUsize,
-    }
-    impl SavedFolderProvider for Provider {
-        fn copy(
-            &self,
-            request: SavedFolderRequest<'_>,
-            destination: &Path,
-        ) -> Result<(), SourceCopyError> {
-            assert_eq!(request.backend, BackendName::Audio);
-            assert_eq!(request.source_identity, self.identity);
-            assert_eq!(request.access_material, "synthetic-owner-grant");
-            assert!(!request.stop.is_requested());
-            self.calls.fetch_add(1, Ordering::AcqRel);
-            std::fs::write(destination.join("clip.wav"), SAVED_CLIP).unwrap();
-            Ok(())
-        }
-    }
-    fn call(server: &crate::MobileServing, method: &str, body: Value) -> (u16, Value) {
-        let response = server
-            .request_owner(
-                method,
-                "/api/journal/recurrences/source/audio",
-                &body.to_string(),
-            )
-            .unwrap();
-        (
-            response.status,
-            serde_json::from_str(&response.body).unwrap(),
-        )
-    }
-    fn completed(host: &ForegroundProcessingHost, name: &str) -> usize {
-        host.queue()
-            .history()
-            .iter()
-            .filter(|record| {
-                record.scheduler_name.as_deref() == Some(name) && record.exit_status == "ok"
-            })
-            .count()
-    }
-    fn wait_completed(host: &ForegroundProcessingHost, name: &str, expected: usize) {
-        let deadline = std::time::Instant::now() + Duration::from_secs(15);
-        while completed(host, name) < expected {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "source did not complete: {:?}",
-                host.queue().history()
-            );
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        host.queue().join_callable_workers().unwrap();
-    }
-    let _serial = crate::foreground::TEST_LOCK
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    let journal = fixture("http://127.0.0.1:1");
-    let config_path = journal.path().join("config/journal.json");
-    let mut config: Value = serde_json::from_slice(&std::fs::read(&config_path).unwrap()).unwrap();
-    config["setup"] = json!({"completed_at":1});
-    config["processing"] = json!({"history_confirmed":true});
-    std::fs::write(&config_path, config.to_string()).unwrap();
-    let mut schedules = serde_json::Map::from_iter([
-        ("daily_time".into(), json!("00:15")),
-        ("weekly_time".into(), json!("03:15")),
-    ]);
-    for name in [
-        "heartbeat",
-        "weekly-agents",
-        "cadence",
-        "brain",
-        "facet-candidates",
-        "rebuild-edges",
-        "search-catch-all",
-    ] {
-        schedules.insert(name.into(), json!({"enabled":false}));
-    }
-    for routine in routines() {
-        let mut entry = expected_entry(routine);
-        entry["enabled"] = json!(false);
-        schedules.insert(schedule_name(routine.id), entry);
-    }
-    let custom =
-        json!({"cmd":["owner-custom-command"],"every":"weekly","enabled":false,"extra":"kept"});
-    schedules.insert("custom".into(), custom.clone());
-    let saved_audio_schedule = json!({
-        "cmd": ["solstone", "journal", "importer", "--sync", "audio", "--save"],
-        "every": "1m", "enabled": false
-    });
-    schedules.insert("owner:source:audio".into(), saved_audio_schedule.clone());
-    write(
-        journal.path(),
-        "config/schedules.json",
-        Value::Object(schedules).to_string(),
-    );
-    let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let std::net::SocketAddr::V4(address) = probe.local_addr().unwrap() else {
-        unreachable!()
-    };
-    drop(probe);
-    let server = Arc::new(
-        crate::MobileServing::start_with_payload(journal.path().to_path_buf(), address, payload())
-            .unwrap(),
-    );
-    let retained = tempfile::tempdir().unwrap();
-    let mut saved = SyncState::empty(BackendName::Audio);
-    let identity = begin_folder(&mut saved, "Notes", true, Some("synthetic-owner-grant")).unwrap();
-    saved
-        .files_mut()
-        .insert("clip.wav".into(), saved_clip_entry());
-    saved
-        .root_mut()
-        .insert("source_path".into(), json!(retained.path()));
-    write_sync_state_bound(&server.root, &saved, &WorkStop::new()).unwrap();
-    let provider = Arc::new(Provider {
-        identity,
-        calls: AtomicUsize::new(0),
-    });
-    let cache = tempfile::tempdir().unwrap();
-    // This format never invokes the PDF worker.
-    let library = cache.path().join("unused-pdfium.so");
-    std::fs::write(&library, b"notes do not load PDFium").unwrap();
-    let sources = Arc::new(ConfiguredSources::new(
-        cache.path().to_path_buf(),
-        provider.clone(),
-    ));
-    let host = ForegroundProcessingHost::open_with_imports(
-        Arc::clone(&server.root),
-        &payload(),
-        Arc::new(|| false),
-        Arc::new(AtomicBool::new(false)),
-        server.backup_dependencies(),
-        packaged_import_factory_with_sources(library, sources),
-        false,
-        false,
-    )
-    .unwrap();
-    host.stop_discovery_for_test();
-    let saved: Value = serde_json::from_slice(
-        &std::fs::read(journal.path().join("config/schedules.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(saved["owner:source:audio"], saved_audio_schedule);
-    let config_before = std::fs::read(&config_path).unwrap();
-    let now = jiff::Timestamp::now();
-    assert_eq!(call(&server, "GET", json!({})).1["enabled"], false);
-    let (status, created) = call(&server, "PUT", json!({"every":"1m","enabled":true}));
-    assert_eq!(status, 200, "{created}");
-    assert_eq!(created["entries"].as_array().unwrap().len(), 1);
-    let name = created["entries"][0]["name"].as_str().unwrap().to_owned();
-    assert!(
-        created["entries"][0]["entry"]["cmd"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|arg| arg.as_str() != Some("--path"))
-    );
-    let report = host
-        .check_schedule(ScheduleNow::in_zone(
-            now + jiff::SignedDuration::from_mins(1),
-            jiff::tz::TimeZone::UTC,
-        ))
-        .unwrap();
-    assert!(report.submitted.iter().any(|submitted| submitted == &name));
-    host.queue().resume_processing();
-    wait_completed(&host, &name, 1);
-    assert_eq!(provider.calls.load(Ordering::Acquire), 1);
-    let (status, changed) = call(&server, "PUT", json!({"every":"5m","enabled":true}));
-    assert_eq!(status, 200, "{changed}");
-    let report = host
-        .check_schedule(ScheduleNow::in_zone(
-            now + jiff::SignedDuration::from_mins(2),
-            jiff::tz::TimeZone::UTC,
-        ))
-        .unwrap();
-    assert!(!report.submitted.iter().any(|submitted| submitted == &name));
-    host.queue().join_callable_workers().unwrap();
-    assert_eq!(
-        provider.calls.load(Ordering::Acquire),
-        1,
-        "cadence change prevents the old one-minute invocation"
-    );
-    let report = host
-        .check_schedule(ScheduleNow::in_zone(
-            now + jiff::SignedDuration::from_mins(8),
-            jiff::tz::TimeZone::UTC,
-        ))
-        .unwrap();
-    assert!(report.submitted.iter().any(|submitted| submitted == &name));
-    host.queue().resume_processing();
-    wait_completed(&host, &name, 2);
-    assert_eq!(call(&server, "DELETE", json!({})).0, 200);
-    let report = host
-        .check_schedule(ScheduleNow::in_zone(
-            now + jiff::SignedDuration::from_mins(9),
-            jiff::tz::TimeZone::UTC,
-        ))
-        .unwrap();
-    assert!(!report.submitted.iter().any(|submitted| submitted == &name));
-    host.queue().join_callable_workers().unwrap();
-    assert_eq!(
-        provider.calls.load(Ordering::Acquire),
-        2,
-        "removed recurrence cannot invoke the retained source"
-    );
-    let raw: Value = serde_json::from_slice(
-        &std::fs::read(journal.path().join("config/schedules.json")).unwrap(),
-    )
-    .unwrap();
-    assert!(raw.get("owner:source:audio").is_none());
-    assert_eq!(raw["custom"], custom);
-    assert_eq!(raw["daily_time"], "00:15");
-    assert_eq!(raw["weekly_time"], "03:15");
-    assert_eq!(std::fs::read(&config_path).unwrap(), config_before);
-    host.shutdown().unwrap();
-    server.shutdown_for_retirement().unwrap();
-}
-
-#[cfg(all(unix, feature = "in-process-pdf"))]
-#[test]
-fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
-    use crate::foreground::ForegroundProcessingHost;
-    use crate::import_route::{
-        ConfiguredSources, SavedFolderProvider, SavedFolderRequest, SourceCopyError,
-        packaged_import_factory_with_sources,
-    };
-    use solstone_core_import::{
-        BackendName, SyncState, WorkStop, begin_folder, write_sync_state_bound,
-    };
-    use solstone_core_maintenance::{
-        registry::routines,
-        schedule_sync::{expected_entry, schedule_name},
-    };
-    use std::sync::{Condvar, atomic::AtomicUsize};
-
-    struct Provider {
-        identity: String,
-        calls: AtomicUsize,
-        entered: std::sync::mpsc::Sender<()>,
-        gate: Arc<(Mutex<bool>, Condvar)>,
-    }
-    impl SavedFolderProvider for Provider {
-        fn copy(
-            &self,
-            request: SavedFolderRequest<'_>,
-            destination: &Path,
-        ) -> Result<(), SourceCopyError> {
-            assert_eq!(request.backend, BackendName::Audio);
-            assert_eq!(request.source_identity, self.identity);
-            assert_eq!(request.access_material, "synthetic-sync-grant");
-            self.calls.fetch_add(1, Ordering::AcqRel);
-            self.entered.send(()).unwrap();
-            let (lock, changed) = &*self.gate;
-            let mut released = lock.lock().unwrap();
-            while !*released {
-                released = changed.wait(released).unwrap();
-            }
-            drop(released);
-            assert!(!request.stop.is_requested());
-            std::fs::write(destination.join("clip.wav"), SAVED_CLIP).unwrap();
-            Ok(())
-        }
-    }
-    struct Release(Arc<(Mutex<bool>, Condvar)>);
-    impl Drop for Release {
-        fn drop(&mut self) {
-            let (lock, changed) = &*self.0;
-            *lock.lock().unwrap() = true;
-            changed.notify_all();
-        }
-    }
-    struct ReleaseRestore(PathBuf);
-    impl Drop for ReleaseRestore {
-        fn drop(&mut self) {
-            solstone_core_journal_io::whole_journal_restore::release_target_for_restore(&self.0);
-        }
-    }
     fn call(server: &crate::MobileServing, method: &str, path: &str, body: &str) -> (u16, Value) {
         let response = server.request_owner(method, path, body).unwrap();
         (
@@ -1698,10 +1389,11 @@ fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
         entry["enabled"] = json!(false);
         schedules.insert(schedule_name(routine.id), entry);
     }
+    let schedule_path = journal.path().join("config/schedules.json");
     write(
         journal.path(),
         "config/schedules.json",
-        Value::Object(schedules).to_string(),
+        Value::Object(schedules.clone()).to_string(),
     );
     let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let std::net::SocketAddr::V4(address) = probe.local_addr().unwrap() else {
@@ -1711,73 +1403,37 @@ fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
     let server =
         crate::MobileServing::start_with_payload(journal.path().to_path_buf(), address, payload())
             .unwrap();
-    let retained = tempfile::tempdir().unwrap();
-    let mut saved = SyncState::empty(BackendName::Audio);
-    let identity = begin_folder(
-        &mut saved,
-        "Selected notes",
-        true,
-        Some("synthetic-sync-grant"),
-    )
-    .unwrap();
-    saved
-        .files_mut()
-        .insert("clip.wav".into(), saved_clip_entry());
-    saved
-        .root_mut()
-        .insert("source_path".into(), json!(retained.path()));
-    write_sync_state_bound(&server.root, &saved, &WorkStop::new()).unwrap();
-    let gate = Arc::new((Mutex::new(false), Condvar::new()));
-    let (entered_send, entered) = std::sync::mpsc::channel();
-    let provider = Arc::new(Provider {
-        identity: identity.clone(),
-        calls: AtomicUsize::new(0),
-        entered: entered_send,
-        gate: Arc::clone(&gate),
-    });
     let cache = tempfile::tempdir().unwrap();
     let library = cache.path().join("unused-pdfium.so");
     std::fs::write(&library, b"notes never load PDFium").unwrap();
-    let sources = Arc::new(ConfiguredSources::new(
-        cache.path().to_path_buf(),
-        provider.clone(),
-    ));
     let host = ForegroundProcessingHost::open_with_imports(
         Arc::clone(&server.root),
         &payload(),
         Arc::new(|| false),
         Arc::new(AtomicBool::new(false)),
         server.backup_dependencies(),
-        packaged_import_factory_with_sources(library, sources),
+        packaged_import_factory(library),
         false,
         false,
     )
     .unwrap();
     host.stop_discovery_for_test();
-    // This guard is created after the host, so a failed assertion releases the
-    // actual provider before the host's joined shutdown can run.
-    let release = Release(Arc::clone(&gate));
-    let schedule_path = journal.path().join("config/schedules.json");
-    let schedule_before = std::fs::read(&schedule_path).unwrap();
-    let config_before = std::fs::read(&config_path).unwrap();
-    let resource = "/api/journal/sources/audio";
-    let run = "/api/journal/sources/audio/sync";
-    let (status, connection) = call(&server, "GET", resource, "");
-    assert_eq!(status, 200, "{connection}");
-    assert_eq!(connection["connection"]["source_identity"], identity);
-    assert_eq!(connection["connection"]["folder_name"], "Selected notes");
-    assert_eq!(connection["connection"]["access_state"], "ready");
-    assert!(!connection.to_string().contains("synthetic-sync-grant"));
-    assert!(
-        !connection
-            .to_string()
-            .contains(&retained.path().to_string_lossy().into_owned())
-    );
+
     let plaud = call(&server, "GET", "/api/journal/sources/plaud", "");
     assert_eq!(plaud.0, 200);
     assert_eq!(plaud.1["available"], true);
     assert!(!plaud.1.to_string().contains("synthetic-readiness-token"));
-    for source in ["oura", "apple", "shell"] {
+    let unknown = call(
+        &server,
+        "GET",
+        "/api/journal/sources/plaud/sync/fixture-client-sync-01",
+        "",
+    );
+    assert_eq!(unknown.0, 200);
+    assert_eq!(unknown.1["state"], "unknown");
+    assert_eq!(unknown.1["terminal"], false);
+
+    for source in ["audio", "oura", "apple", "shell"] {
         assert_eq!(
             call(
                 &server,
@@ -1793,162 +1449,46 @@ fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
                 &server,
                 "POST",
                 &format!("/api/journal/sources/{source}/sync"),
+                r#"{"request_id":"req-1"}"#
+            )
+            .0,
+            400
+        );
+        assert_eq!(
+            call(
+                &server,
+                "GET",
+                &format!("/api/journal/recurrences/source/{source}"),
                 ""
             )
             .0,
             400
         );
     }
-    assert_eq!(
-        call(&server, "POST", run, r#"{"args":["--path","/unselected"]}"#).0,
-        400
+
+    // Even if a retired audio-folder schedule appears on disk after startup, the
+    // mobile schedule sink never submits it to the queue.
+    schedules.insert(
+        "leftover-audio".into(),
+        json!({
+            "cmd": ["solstone", "journal", "importer", "--sync", "audio", "--save"],
+            "every": "1m",
+            "enabled": true
+        }),
     );
-    for request_id in ["", "not/a/reference", &"x".repeat(65)] {
-        assert_eq!(
-            call(
-                &server,
-                "POST",
-                run,
-                &json!({"request_id":request_id}).to_string()
-            )
-            .0,
-            400
-        );
-    }
-    let request_id = "fixture-client-sync-01";
-    let status_path = format!("{run}/{request_id}");
-    let run_body = json!({"request_id":request_id}).to_string();
-    let before_post = call(&server, "GET", &status_path, "");
-    assert_eq!(before_post.0, 200);
-    assert_eq!(before_post.1["request_id"], request_id);
-    assert_eq!(before_post.1["state"], "unknown");
-    assert_eq!(
-        provider.calls.load(Ordering::Acquire),
-        0,
-        "status never starts work"
-    );
-    let (lost_response, response_sink) = std::os::unix::net::UnixStream::pair().unwrap();
-    response_sink.set_nonblocking(true).unwrap();
-    let descriptor: std::os::fd::OwnedFd = response_sink.into();
-    let lost_head = server
-        .open_owner_response(
-            crate::next_owner_request_id(),
-            "POST",
-            run,
-            &[("content-type".into(), "application/json".into())],
-            run_body.as_bytes().to_vec(),
-            std::fs::File::from(descriptor),
-        )
+    std::fs::write(&schedule_path, Value::Object(schedules).to_string()).unwrap();
+    let report = host
+        .check_schedule(ScheduleNow::in_zone(
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(2),
+            jiff::tz::TimeZone::UTC,
+        ))
         .unwrap();
-    // Lose both app reply channels before learning any server reference. The
-    // retained owner response task still hands this request to the same worker.
-    drop(lost_head);
-    drop(lost_response);
-    entered.recv_timeout(Duration::from_secs(5)).unwrap();
-    let active = call(&server, "GET", &status_path, "");
-    assert_eq!(active.0, 200);
-    assert_eq!(active.1["terminal"], false);
     assert!(
-        matches!(active.1["state"].as_str(), Some("accepted" | "running")),
-        "{}",
-        active.1
+        !report.submitted.iter().any(|name| name == "leftover-audio"),
+        "retired audio schedule must stay out of mobile queue: {:?}",
+        report.submitted
     );
-    assert_eq!(active.1["request_id"], request_id);
-    let reference = active.1["reference"].as_str().unwrap().to_owned();
-    assert!(reference.starts_with("owner-source-audio-request-"));
-    let duplicate = call(&server, "POST", run, &run_body);
-    assert_eq!(duplicate.0, 202);
-    assert_eq!(duplicate.1["request_id"], request_id);
-    assert_eq!(duplicate.1["reference"], reference);
-    assert_eq!(duplicate.1["reused"], true);
-    assert_eq!(duplicate.1["submitted"], false);
-    drop(release);
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
-    let terminal = loop {
-        let (status, body) = call(&server, "GET", &status_path, "");
-        assert_eq!(status, 200, "{body}");
-        if body["terminal"] == true {
-            break body;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "sync has no terminal: {body}; {:?}",
-            host.queue().history()
-        );
-        std::thread::sleep(Duration::from_millis(10));
-    };
-    host.queue().join_callable_workers().unwrap();
-    assert_eq!(terminal["exit_status"], "ok");
-    assert_eq!(terminal["request_id"], request_id);
-    let duplicate_completed = call(&server, "POST", run, &run_body);
-    assert_eq!(duplicate_completed.0, 202);
-    assert_eq!(duplicate_completed.1["reused"], true);
-    assert_eq!(duplicate_completed.1["reference"], reference);
-    assert_eq!(provider.calls.load(Ordering::Acquire), 1);
-    assert_eq!(
-        std::fs::read(&schedule_path).unwrap(),
-        schedule_before,
-        "sync-now creates no recurrence or new default"
-    );
-    assert_eq!(std::fs::read(&config_path).unwrap(), config_before);
-    let unknown = call(
-        &server,
-        "GET",
-        "/api/journal/sources/plaud/sync/fixture-client-sync-01",
-        "",
-    );
-    assert_eq!(unknown.0, 200);
-    assert_eq!(unknown.1["state"], "unknown");
-    assert_eq!(unknown.1["terminal"], false);
-    let state_path = journal.path().join("imports/audio.json");
-    let valid_state = std::fs::read(&state_path).unwrap();
-    std::fs::write(&state_path, b"{unreadable state").unwrap();
-    assert_eq!(call(&server, "GET", resource, "").0, 422);
-    assert_eq!(std::fs::read(&state_path).unwrap(), b"{unreadable state");
-    std::fs::write(&state_path, valid_state).unwrap();
-    let valid_state = std::fs::read(&state_path).unwrap();
-    let legacy = br#"{"source_path":"/legacy/catalogue-only","files":{"kept.md":{"catalogue_fact":"preserved"}}}"#;
-    std::fs::write(&state_path, legacy).unwrap();
-    let legacy_connection = call(&server, "GET", resource, "");
-    assert_eq!(legacy_connection.0, 200, "{legacy_connection:?}");
-    assert!(legacy_connection.1["connection"].is_null());
-    assert_eq!(std::fs::read(&state_path).unwrap(), legacy);
-    let partial = br#"{"files":{},"remembered":true}"#;
-    std::fs::write(&state_path, partial).unwrap();
-    assert_eq!(call(&server, "GET", resource, "").0, 422);
-    assert_eq!(std::fs::read(&state_path).unwrap(), partial);
-    std::fs::write(&state_path, valid_state).unwrap();
-    solstone_core_journal_io::whole_journal_restore::hold_target_for_restore(journal.path());
-    let hold = ReleaseRestore(journal.path().to_path_buf());
-    for (method, path) in [("GET", resource), ("POST", run)] {
-        let refusal = server.request_owner(method, path, "").unwrap();
-        assert_eq!(refusal.status, 302);
-        assert!(refusal.body.contains("href=\"/init\""), "{}", refusal.body);
-    }
-    assert_eq!(provider.calls.load(Ordering::Acquire), 1);
-    drop(hold);
-    assert_eq!(call(&server, "GET", resource, "").0, 200);
+
     host.shutdown().unwrap();
-    assert_eq!(call(&server, "POST", run, &run_body).0, 503);
-    assert_eq!(call(&server, "GET", &status_path, "").0, 503);
-    assert_eq!(
-        host.queue()
-            .history()
-            .iter()
-            .filter(|row| row.reference == reference)
-            .count(),
-        1,
-        "duplicate delivery must create only one queue invocation"
-    );
-    assert_eq!(provider.calls.load(Ordering::Acquire), 1);
-    let original = tempfile::tempdir().unwrap();
-    std::fs::rename(journal.path(), original.path().join("original")).unwrap();
-    std::fs::create_dir(journal.path()).unwrap();
-    assert!(server.request_owner("GET", resource, "").is_err());
-    assert!(server.request_owner("POST", run, "").is_err());
     server.shutdown_for_retirement().unwrap();
-    assert!(
-        std::fs::read_dir(journal.path()).unwrap().next().is_none(),
-        "replacement root must remain an empty tree"
-    );
 }

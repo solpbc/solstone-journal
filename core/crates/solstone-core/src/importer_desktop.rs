@@ -260,19 +260,4 @@ mod tests {
         assert_eq!(unavailable.1, format!("{SUPERVISOR_MESSAGE}\n"));
         assert_eq!(unavailable.2, 1);
     }
-
-    #[test]
-    fn retired_audio_sync_refuses_before_resolving_the_journal() {
-        for args in [
-            &["--sync", "audio", "--path", "recordings"][..],
-            &["--sync=audio", "--save", "--path=recordings"][..],
-        ] {
-            let args = args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>();
-            let result = run(&args, || Err::<PathBuf, _>("no journal selected")).unwrap();
-            assert_eq!(result.2, 1);
-            assert!(result.0.is_empty());
-            assert_eq!(result.1.lines().count(), 1);
-            assert!(result.1.contains("--audio-archive"));
-        }
-    }
 }

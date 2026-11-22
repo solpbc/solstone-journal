@@ -8,7 +8,6 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use ffmpeg_next as ffmpeg;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use serde_json::Value;
@@ -18,15 +17,10 @@ use solstone_core_segment::{
 
 use solstone_core_import::cli_render::{self, CliRun};
 use solstone_core_import::connect::{OuraConnectRequest, connect_oura, needs_oura_app};
-use solstone_core_import::contract::{AudioAuto, SyncPreviewRequest, SyncSaveRequest};
+use solstone_core_import::contract::{SyncPreviewRequest, SyncSaveRequest};
 use solstone_core_import::detect::{
     ManifestSummary, RegistrySource, ResolutionOptions, ResolutionOutcome, ResolutionSeams,
     ResolvedSource, resolve_import,
-};
-use solstone_core_import::sync_audio::{
-    AudioCandidate, AudioPreviewSeams, AudioProbe, AudioSaveSeams, AudioSyncRequest,
-    DirectoryScanner, FilesystemAudioStateWriter, ManifestLookup, sync_audio_preview,
-    sync_audio_save,
 };
 use solstone_core_import::sync_plaud::{
     FilesystemPlaudStateWriter, ImportPipeline, PipelineAuto, PipelineImportRequest,
@@ -259,14 +253,10 @@ pub fn force_day_notice_with(
 pub fn grammar_outcome_before_preflight(args: &[String]) -> Option<CliRun> {
     match parse_arguments(args) {
         Ok(ParsedCommand::Help) => Some(success(cli_render::HELP.to_owned())),
-        Ok(parsed) => desktop_retirement(&parsed),
+        Ok(ParsedCommand::RetiredNotesFolder) => Some(notes_folder_retired()),
+        Ok(_) => None,
         Err(arguments) => Some(argparse_error(arguments)),
     }
-}
-
-/// Does this argv select audio-folder sync in the importer grammar?
-pub fn selects_audio_sync(args: &[String]) -> bool {
-    parse_arguments(args).is_ok_and(|parsed| parsed.is_audio_sync())
 }
 
 /// Run the importer grammar with the process environment and local supervisor probe.
@@ -305,8 +295,8 @@ fn run_after_parse(
     journal_path: &Path,
     preflight: impl FnOnce() -> Result<(), SupervisorRefusal>,
 ) -> CliOutcome {
-    if let Some(run) = desktop_retirement(&parsed) {
-        return rendered(run);
+    if matches!(parsed, ParsedCommand::RetiredNotesFolder) {
+        return rendered(notes_folder_retired());
     }
     if let Err(refusal) = preflight() {
         return rendered(refusal_run(refusal));
@@ -451,24 +441,21 @@ pub enum BodyAdmission {
 /// Parsed shape of one importer invocation.
 ///
 /// Built by the same grammar as execution. It does not open a journal, probe
-/// the supervisor, read source bytes, or load saved audio settings.
+/// the supervisor, or read source bytes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArgumentClass {
     /// Backend of `--sync`. `None` for every other command.
     pub sync_source: Option<String>,
-    /// `--path` when the command names one. Audio sync treats `None` as the
-    /// caller's saved source settings.
-    pub explicit_path: Option<PathBuf>,
     /// Held ordinary Body entry, stored gated Oura, or neither.
     pub body: BodyAdmission,
 }
 
 /// Classify `args` with the importer grammar.
 ///
-/// The class is how a caller decides a saved audio path, and how
-/// it separates a held Body entry from stored gated Oura, without scanning
-/// flags itself. Acceptance matches [`admit_arguments`]. An import with no
-/// media path is rejected with the same requirement execution reports.
+/// The class is how a caller identifies the sync backend and separates a held
+/// Body entry from stored gated Oura without scanning flags itself. Acceptance
+/// matches [`admit_arguments`]. An import with no media path is rejected with
+/// the same requirement execution reports.
 pub fn classify_arguments(args: &[String]) -> Result<ArgumentClass, String> {
     let parsed = parse_arguments(args)?;
     if matches!(&parsed, ParsedCommand::Import(options) if options.media.is_none()) {
@@ -479,9 +466,8 @@ pub fn classify_arguments(args: &[String]) -> Result<ArgumentClass, String> {
 
 fn classify_parsed(parsed: &ParsedCommand) -> ArgumentClass {
     match parsed {
-        ParsedCommand::Sync { backend, options } => ArgumentClass {
+        ParsedCommand::Sync { backend, .. } => ArgumentClass {
             sync_source: Some(backend.clone()),
-            explicit_path: options.path.clone(),
             body: if backend == "oura" {
                 BodyAdmission::Held
             } else {
@@ -490,19 +476,16 @@ fn classify_parsed(parsed: &ParsedCommand) -> ArgumentClass {
         },
         ParsedCommand::Connect { backend } if backend == "oura" => ArgumentClass {
             sync_source: None,
-            explicit_path: None,
             body: BodyAdmission::Held,
         },
         ParsedCommand::Import(options) if options.source.as_deref() == Some("apple_health") => {
             ArgumentClass {
                 sync_source: None,
-                explicit_path: None,
                 body: BodyAdmission::Held,
             }
         }
         _ => ArgumentClass {
             sync_source: None,
-            explicit_path: None,
             body: BodyAdmission::NotBody,
         },
     }
@@ -514,7 +497,7 @@ fn classify_parsed(parsed: &ParsedCommand) -> ArgumentClass {
 /// or read source bytes. Acceptance is not a preview, not publication, and
 /// not approval of Apple Health or Oura. An import with no media path is
 /// rejected with the same requirement execution reports. Call
-/// [`classify_arguments`] for the sync source, explicit path, and Body class.
+/// [`classify_arguments`] for the sync source and Body class.
 pub fn admit_arguments(args: &[String]) -> Result<(), String> {
     classify_arguments(args).map(|_| ())
 }
@@ -560,7 +543,7 @@ fn dispatch_parsed(
     match parsed {
         ParsedCommand::Help => rendered(success(cli_render::HELP.to_owned())),
         ParsedCommand::ListImporters { json } => rendered(success(cli_render::importers(json))),
-        ParsedCommand::Backends => rendered(success(cli_render::backends(dispatch.embedded()))),
+        ParsedCommand::Backends => rendered(success(cli_render::backends())),
         ParsedCommand::Connect { backend } => {
             if dispatch.embedded() && backend == "oura" {
                 return rendered(embedded_body_refused());
@@ -572,12 +555,7 @@ fn dispatch_parsed(
             if dispatch.embedded() && backend == "oura" {
                 return rendered(embedded_body_refused());
             }
-            rendered(run_sync(
-                &backend,
-                &options,
-                journal_path,
-                dispatch.embedded(),
-            ))
+            rendered(run_sync(&backend, &options, journal_path))
         }
         ParsedCommand::AudioArchive(options) => rendered(crate::audio_archive::run_audio_archive(
             options,
@@ -606,22 +584,6 @@ fn notes_folder_retired() -> CliRun {
     failure(
         "",
         &format!("{}\n", cli_render::NOTES_FOLDER_IMPORT_RETIRED),
-        1,
-    )
-}
-
-fn desktop_retirement(parsed: &ParsedCommand) -> Option<CliRun> {
-    match parsed {
-        ParsedCommand::RetiredNotesFolder => Some(notes_folder_retired()),
-        parsed if parsed.is_audio_sync() => Some(audio_sync_retired()),
-        _ => None,
-    }
-}
-
-fn audio_sync_retired() -> CliRun {
-    failure(
-        "",
-        "audio folder sync is gone on computers. use `solstone journal importer FILE --timestamp YYYYMMDD_HHMMSS` or `solstone journal importer --audio-archive MANIFEST.json`.\n",
         1,
     )
 }
@@ -681,7 +643,7 @@ fn run_connect(backend: &str, journal_path: &Path) -> CliRun {
     }
 }
 
-fn run_sync(backend: &str, options: &Options, journal_path: &Path, embedded: bool) -> CliRun {
+fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
     match backend {
         "oura" => crate::body_commands::sync_oura(&body_command(options), journal_path),
         "plaud" => run_plaud_sync(journal_path, options),
@@ -697,15 +659,11 @@ fn run_sync(backend: &str, options: &Options, journal_path: &Path, embedded: boo
                 Err(error) => failure("", &format!("{error}\n"), 1),
             }
         }
-        "audio" if embedded => run_audio_sync(journal_path, options),
-        "audio" => audio_sync_retired(),
         _ => failure(
             "",
             &format!(
                 "Unknown sync backend: {backend}\nAvailable backends: {}\n",
-                cli_render::sync_backends(embedded)
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                cli_render::sync_backends().collect::<Vec<_>>().join(", ")
             ),
             1,
         ),
@@ -1676,65 +1634,6 @@ fn no_manifest_match(_: &solstone_core_import::SourceHash) -> Option<ManifestSum
     None
 }
 
-fn run_audio_sync(journal_path: &Path, options: &Options) -> CliRun {
-    let source_path = options.path.clone().unwrap_or_default();
-    let scanner = FilesystemAudioScanner;
-    let probe = FilesystemAudioProbe;
-    let manifests = FilesystemManifestLookup { journal_path };
-    let clock = SystemSyncClock;
-    let mut state_writer = FilesystemAudioStateWriter;
-    let preview = AudioPreviewSeams {
-        scanner: &scanner,
-        probe: &probe,
-        manifests: &manifests,
-        clock: &clock,
-        state_writer: &mut state_writer,
-    };
-    if !options.save {
-        let request = AudioSyncRequest::<SyncPreviewRequest>::new(
-            journal_path.to_path_buf(),
-            source_path.clone(),
-            options.force,
-            audio_auto(options),
-        );
-        let mut seams = preview;
-        return match sync_audio_preview(&request, &mut seams) {
-            Ok(outcome) => success(cli_render::audio_sync_preview(
-                &source_path,
-                state_file_count(&outcome.state),
-                outcome.errors.len(),
-            )),
-            Err(error) => failure("", &format!("{error}\n"), 1),
-        };
-    }
-    // A folder sync has no one to confirm each recording's time, so it adopts the time the
-    // file carries unless the owner named another rule.
-    let auto = match audio_auto(options) {
-        AudioAuto::Disabled => AudioAuto::Enabled,
-        auto => auto,
-    };
-    let request = AudioSyncRequest::<SyncSaveRequest>::new(
-        journal_path.to_path_buf(),
-        source_path,
-        options.force,
-        auto,
-    );
-    let mut pipeline = GenericAudioPipeline { journal_path };
-    let mut seams = AudioSaveSeams {
-        preview,
-        pipeline: &mut pipeline,
-    };
-    match sync_audio_save(&request, &mut seams) {
-        Ok(outcome) => sync_saved(
-            "Audio",
-            outcome.downloaded,
-            &outcome.errors,
-            outcome.stopped,
-        ),
-        Err(error) => failure("", &format!("{error}\n"), 1),
-    }
-}
-
 fn run_plaud_sync(journal_path: &Path, options: &Options) -> CliRun {
     let mut catalogue = PlaudApi::new();
     let mut download = PlaudApi::new();
@@ -1896,14 +1795,6 @@ fn file_mtime_stamp(path: &Path, zone: &TimeZone) -> Option<String> {
         .map(|_| stamp)
 }
 
-fn audio_auto(options: &Options) -> AudioAuto {
-    match options.auto.as_ref() {
-        Some(None) => AudioAuto::Enabled,
-        Some(Some(value)) => AudioAuto::Value(value.clone()),
-        None => AudioAuto::Disabled,
-    }
-}
-
 fn state_file_count(state: &solstone_core_import::SyncState) -> usize {
     state
         .root()
@@ -1921,90 +1812,6 @@ impl SyncClock for SystemSyncClock {
             solstone_core_time::Precision::AutoSi,
             false,
         )
-    }
-}
-
-struct FilesystemAudioScanner;
-
-impl DirectoryScanner for FilesystemAudioScanner {
-    fn audio_candidates(&self, root: &Path) -> Result<Vec<AudioCandidate>, String> {
-        let mut candidates = Vec::new();
-        collect_audio_candidates(root, root, &mut candidates)?;
-        Ok(candidates)
-    }
-}
-
-fn collect_audio_candidates(
-    root: &Path,
-    directory: &Path,
-    candidates: &mut Vec<AudioCandidate>,
-) -> Result<(), String> {
-    for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_audio_candidates(root, &path, candidates)?;
-            continue;
-        }
-        let extension = path
-            .extension()
-            .and_then(|value| value.to_str())
-            .map(str::to_ascii_lowercase);
-        if !path.is_file() || !extension.as_deref().is_some_and(is_generic_audio_extension) {
-            continue;
-        }
-        let relative_path = path
-            .strip_prefix(root)
-            .map_err(|error| error.to_string())?
-            .to_string_lossy()
-            .into_owned();
-        let filename = path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .ok_or_else(|| format!("audio filename is not UTF-8: {}", path.display()))?
-            .to_owned();
-        let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
-        let source_hash = solstone_core_import::hash_source(&path)
-            .map_err(|error| error.to_string())?
-            .into_inner();
-        candidates.push(AudioCandidate {
-            relative_path,
-            source: path,
-            filename,
-            filesize: metadata.len(),
-            source_hash,
-        });
-    }
-    Ok(())
-}
-
-struct FilesystemAudioProbe;
-
-impl AudioProbe for FilesystemAudioProbe {
-    fn duration_seconds(&self, source: &Path) -> Result<Option<f64>, String> {
-        ffmpeg::init().map_err(|error| error.to_string())?;
-        let input = crate::audio::open_input(source).map_err(|error| error.to_string())?;
-        let duration = input.duration();
-        if duration == ffmpeg::ffi::AV_NOPTS_VALUE {
-            return Ok(None);
-        }
-        Ok(Some(duration as f64 / f64::from(ffmpeg::ffi::AV_TIME_BASE)))
-    }
-}
-
-struct FilesystemManifestLookup<'a> {
-    journal_path: &'a Path,
-}
-
-impl ManifestLookup for FilesystemManifestLookup<'_> {
-    fn imported_hash(&self, source_hash: &str) -> bool {
-        solstone_core_import::find_manifest_by_hash(
-            self.journal_path,
-            &solstone_core_import::SourceHash::new(source_hash.to_owned()),
-        )
-        .ok()
-        .and_then(|scan| scan.found)
-        .is_some()
     }
 }
 
@@ -2273,7 +2080,6 @@ struct Options {
     connect: Option<String>,
     date_from: Option<String>,
     date_to: Option<String>,
-    path: Option<PathBuf>,
     facet: Option<String>,
     no_facet: bool,
     listed_moves_shown: Option<usize>,
@@ -2337,12 +2143,6 @@ enum ParsedCommand {
 
 /// The argument value of the retired notes-folder import and sync.
 const RETIRED_NOTES_SOURCE: &str = "obsidian";
-
-impl ParsedCommand {
-    fn is_audio_sync(&self) -> bool {
-        matches!(self, Self::Sync { backend, .. } if backend == "audio")
-    }
-}
 
 fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
     let mut options = Options::default();
@@ -2543,7 +2343,9 @@ fn assign_value(options: &mut Options, name: &str, value: &str) -> Result<(), St
         "--connect" => options.connect = Some(value.to_owned()),
         "--date-from" => options.date_from = Some(value.to_owned()),
         "--date-to" => options.date_to = Some(value.to_owned()),
-        "--path" => options.path = Some(PathBuf::from(value)),
+        "--path" => {
+            let _ = value;
+        }
         "--window-days" => {
             options.window_days = Some(
                 value
@@ -2875,33 +2677,155 @@ mod tests {
         );
         assert!(!matches.contains_key("new"));
     }
+}
 
-    #[cfg(all(test, feature = "full-tests"))]
+#[cfg(all(test, feature = "full-tests"))]
+mod opus_audio_tests {
+    use super::*;
+
+    fn write_utc_zone(journal: &Path) {
+        let config = journal.join("config");
+        fs::create_dir_all(&config).unwrap();
+        fs::write(
+            config.join("journal.json"),
+            r#"{"identity":{"timezone":"UTC"}}"#,
+        )
+        .unwrap();
+    }
+
+    fn opus_fixture(folder: &Path, name: &str) -> PathBuf {
+        let source = folder.join(name);
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/long_audio_remux_corpus/long-remux.opus"),
+            &source,
+        )
+        .unwrap();
+        source
+    }
+
+    fn step_back_inside_second_chunk(path: &Path) {
+        fn crc(bytes: &[u8]) -> u32 {
+            bytes.iter().fold(0_u32, |crc, byte| {
+                let mut value = crc ^ (u32::from(*byte) << 24);
+                for _ in 0..8 {
+                    value = if value & 0x8000_0000 != 0 {
+                        (value << 1) ^ 0x04C1_1DB7
+                    } else {
+                        value << 1
+                    };
+                }
+                value
+            })
+        }
+        let mut data = fs::read(path).unwrap();
+        let mut position = 0;
+        let mut changed = 0;
+        while position < data.len() {
+            assert_eq!(&data[position..position + 4], b"OggS");
+            let segments = usize::from(data[position + 26]);
+            let body: usize = data[position + 27..position + 27 + segments]
+                .iter()
+                .map(|lacing| usize::from(*lacing))
+                .sum();
+            let length = 27 + segments + body;
+            let granule = i64::from_le_bytes(data[position + 6..position + 14].try_into().unwrap());
+            if (420 * 48_000..440 * 48_000).contains(&granule) {
+                let moved = granule - 60 * 48_000;
+                data[position + 6..position + 14].copy_from_slice(&moved.to_le_bytes());
+                data[position + 22..position + 26].fill(0);
+                let checksum = crc(&data[position..position + length]);
+                data[position + 22..position + 26].copy_from_slice(&checksum.to_le_bytes());
+                changed += 1;
+            }
+            position += length;
+        }
+        assert!(changed > 0, "the fixture has pages in the second chunk");
+        fs::write(path, data).unwrap();
+    }
+
+    fn opening_packet(path: &Path) -> (i64, Vec<u8>) {
+        ffmpeg_next::init().unwrap();
+        let mut input = ffmpeg_next::format::input(path).unwrap();
+        let audio = input
+            .streams()
+            .best(ffmpeg_next::media::Type::Audio)
+            .unwrap()
+            .index();
+        input
+            .packets()
+            .find(|(stream, _)| stream.index() == audio)
+            .map(|(_, packet)| {
+                (
+                    packet.pts().unwrap(),
+                    packet.data().unwrap_or_default().to_vec(),
+                )
+            })
+            .unwrap()
+    }
+
     #[test]
-    fn filesystem_audio_scanner_finds_all_generic_audio_extensions_and_recurses() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path();
-        let sub = root.join("nested");
-        fs::create_dir_all(&sub).unwrap();
-        fs::write(sub.join("track1.ogg"), b"audio").unwrap();
-        fs::write(sub.join("track2.OGG"), b"audio").unwrap();
-        fs::write(root.join("sample.wav"), b"audio").unwrap();
-        fs::write(root.join("clip.mp4"), b"audio").unwrap();
-        fs::write(root.join("notes.txt"), b"text").unwrap();
-        fs::write(sub.join("info.txt"), b"text").unwrap();
+    fn an_import_with_a_part_left_out_is_not_marked_imported() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let folder = tempfile::tempdir().unwrap();
+        let source = opus_fixture(folder.path(), "20250717_120000.opus");
+        step_back_inside_second_chunk(&source);
 
-        let candidates = FilesystemAudioScanner.audio_candidates(root).unwrap();
-        let paths: std::collections::BTreeSet<_> = candidates
-            .into_iter()
-            .map(|c| c.relative_path.replace('\\', "/"))
-            .collect();
+        let timestamp = solstone_core_import::validate_timestamp("20250717_120000").unwrap();
+        let (run, _) = run_audio(
+            source.to_str().unwrap(),
+            &Options::default(),
+            journal.path(),
+            &timestamp,
+            false,
+        );
+        assert_eq!(
+            run.exit_code, 0,
+            "stdout={} stderr={}",
+            run.stdout, run.stderr
+        );
+        let day = journal.path().join("chronicle/20250717/import.audio");
+        assert!(day.join("120000_300/imported_audio.opus").is_file());
+        assert!(
+            !day.join("120500_300").exists(),
+            "the second chunk was left out"
+        );
 
-        let expected = std::collections::BTreeSet::from([
-            "nested/track1.ogg".to_string(),
-            "nested/track2.OGG".to_string(),
-            "sample.wav".to_string(),
-            "clip.mp4".to_string(),
-        ]);
-        assert_eq!(paths, expected);
+        let hash = solstone_core_import::hash_source(&source).unwrap();
+        let scan = solstone_core_import::find_manifest_by_hash(journal.path(), &hash).unwrap();
+        assert!(
+            scan.found.is_none(),
+            "a partial import must stay importable: {:?}",
+            scan.found.map(|found| found.path)
+        );
+    }
+
+    #[test]
+    fn an_opus_import_keeps_its_opening_packet() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let folder = tempfile::tempdir().unwrap();
+        let source = opus_fixture(folder.path(), "20250717_130000.opus");
+        let (source_pts, source_bytes) = opening_packet(&source);
+        assert!(source_pts < 0, "the fixture opens before zero (pre-skip)");
+
+        let timestamp = solstone_core_import::validate_timestamp("20250717_130000").unwrap();
+        let (run, _) = run_audio(
+            source.to_str().unwrap(),
+            &Options::default(),
+            journal.path(),
+            &timestamp,
+            false,
+        );
+        assert_eq!(
+            run.exit_code, 0,
+            "stdout={} stderr={}",
+            run.stdout, run.stderr
+        );
+        let chunk = journal
+            .path()
+            .join("chronicle/20250717/import.audio/130000_300/imported_audio.opus");
+        assert_eq!(opening_packet(&chunk), (source_pts, source_bytes));
     }
 }

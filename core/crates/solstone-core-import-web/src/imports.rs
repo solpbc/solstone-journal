@@ -974,8 +974,10 @@ mod tests {
         assert_eq!(listed, [oura, chosen]);
         assert_eq!(body["total"], 2);
         // A sync's run keeps its own page, where the owner deletes it whole.
-        let detail = detail_sync(state, plaud.to_owned(), "en");
+        let detail = detail_sync(state.clone(), plaud.to_owned(), "en");
         assert_eq!(detail.status(), StatusCode::OK);
+        let folder_detail = detail_sync(state, folder.to_owned(), "en");
+        assert_eq!(folder_detail.status(), StatusCode::OK);
     }
 
     #[test]

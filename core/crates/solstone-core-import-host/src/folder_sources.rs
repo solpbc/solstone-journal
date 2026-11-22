@@ -17,10 +17,7 @@ use solstone_core_import::sync_plaud::{
     PlaudDownload, PlaudFailureKind, PlaudFile, PlaudManifestLookup, PlaudPreviewSeams,
     PlaudStateWriter, PlaudSyncRequest, SyncClock, sync_plaud_preview,
 };
-use solstone_core_import::{
-    BackendName, SyncState, SyncStateRead, begin_folder, hash_source, read_sync_state, reauthorize,
-    replace_folder, write_sync_state,
-};
+use solstone_core_import::{BackendName, SyncState, SyncStateRead, hash_source, read_sync_state};
 use solstone_core_import_sources::document::{self, DocumentPreviewRequest};
 use solstone_core_import_sources::gemini;
 use solstone_core_import_sources::{NullPdfWorker, SkipReason};
@@ -410,90 +407,6 @@ fn audio_archive_reviewed_identity_and_owner_zone_refuse_before_admission() {
     );
     assert!(!journal.path().join("imports").exists());
     assert!(!journal.path().join("chronicle").exists());
-}
-
-#[test]
-fn audio_sync_keeps_one_key_and_an_imported_hash_is_not_forced() {
-    let journal = tempfile::tempdir().unwrap();
-    let folder = tempfile::tempdir().unwrap();
-    fs::write(folder.path().join("keep.wav"), b"keep-wav").unwrap();
-    fs::write(folder.path().join("edit.wav"), b"edit-wav").unwrap();
-    let mut created = SyncState::empty(BackendName::Audio);
-    let identity = begin_folder(&mut created, "Recordings", true, Some("grant-material")).unwrap();
-    write_sync_state(journal.path(), &created).unwrap();
-    let args = vec![
-        "--sync".to_owned(),
-        "audio".to_owned(),
-        "--path".to_owned(),
-        folder.path().display().to_string(),
-    ];
-    let preview = call::preview(&args, journal.path(), &idle_seams(journal.path()));
-    assert_eq!(preview.exit_code, 0, "{}", preview.stderr);
-    let started = call::start(
-        args.clone(),
-        journal.path().to_path_buf(),
-        idle_seams(journal.path()),
-        solstone_core_import::WorkStop::new(),
-    )
-    .unwrap();
-    let (started, _) = started.join();
-    assert_eq!(started.exit_code, 0, "{}", started.stderr);
-    let first = load(journal.path(), BackendName::Audio);
-    assert_eq!(files_of(&first).len(), 2);
-    let keep_hash = files_of(&first)["keep.wav"]["hash"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    fs::write(folder.path().join("edit.wav"), b"edit-wav!").unwrap();
-    let again = call::preview(&args, journal.path(), &idle_seams(journal.path()));
-    assert_eq!(again.exit_code, 0, "{}", again.stderr);
-    let second = load(journal.path(), BackendName::Audio);
-    assert_eq!(files_of(&second).len(), 2);
-    assert_eq!(
-        files_of(&second)["keep.wav"]["hash"].as_str(),
-        Some(keep_hash.as_str())
-    );
-    assert_ne!(
-        files_of(&second)["edit.wav"]["hash"].as_str(),
-        Some(files_of(&first)["edit.wav"]["hash"].as_str().unwrap())
-    );
-    let mut kept = second.clone();
-    reauthorize(&mut kept, "Recordings", false, None).unwrap();
-    assert_eq!(files_of(&kept).len(), 2);
-    assert_eq!(
-        kept.root()
-            .get("source_identity")
-            .and_then(serde_json::Value::as_str),
-        Some(identity.as_str())
-    );
-    replace_folder(&mut kept, "Recordings", false, None).unwrap();
-    assert!(files_of(&kept).is_empty());
-
-    let skipped = tempfile::tempdir().unwrap();
-    let source = skipped.path().join("one.wav");
-    fs::write(&source, b"already-imported").unwrap();
-    let digest = hash_source(&source).unwrap().into_inner();
-    let prior = skipped.path().join("imports").join("prior");
-    fs::create_dir_all(&prior).unwrap();
-    fs::write(
-        prior.join("manifest.json"),
-        format!(r#"{{"source_hash":"{digest}"}}"#),
-    )
-    .unwrap();
-    let skip_args = vec![
-        "--sync".to_owned(),
-        "audio".to_owned(),
-        "--path".to_owned(),
-        source.parent().unwrap().display().to_string(),
-    ];
-    let skipped_run = call::preview(&skip_args, skipped.path(), &idle_seams(skipped.path()));
-    assert_eq!(skipped_run.exit_code, 0, "{}", skipped_run.stderr);
-    let skipped_state = load(skipped.path(), BackendName::Audio);
-    assert_eq!(files_of(&skipped_state).len(), 1);
-    assert_eq!(
-        files_of(&skipped_state)["one.wav"]["status"].as_str(),
-        Some("imported")
-    );
 }
 
 #[test]

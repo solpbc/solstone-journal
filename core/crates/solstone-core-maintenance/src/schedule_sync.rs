@@ -19,7 +19,9 @@ const RETIRED_ENTRIES: &[&str] = &[
     "maintenance:timeline:rollup",
     "maintenance:timeline:rollup-day",
     "maintenance:timeline:rollup-master",
+    "owner:source:audio",
     "owner:source:obsidian",
+    "sync:audio",
     "sync:obsidian",
 ];
 
@@ -125,27 +127,10 @@ pub fn render_list(path: &Path, routines: &[RoutineDescriptor]) -> Result<String
 /// Prune retired schedule entries and add missing generated entries in one
 /// locked whole-file transaction.
 pub fn sync(path: &Path, routines: &[RoutineDescriptor]) -> Result<SyncSummary, String> {
-    sync_with_retirements(path, routines, |_| false)
-}
-
-/// Reconcile schedules and prune additional commands retired by the calling host.
-pub fn sync_with_retirements(
-    path: &Path,
-    routines: &[RoutineDescriptor],
-    is_retired: impl Fn(&Value) -> bool,
-) -> Result<SyncSummary, String> {
     initialize_schedule_config(path).map_err(|error| error.to_string())?;
     mutate_schedule_entries(path, |raw| {
         let mut next = raw.clone();
-        let mut summary = plan_sync(&mut next, routines, host_unscheduled());
-        next.retain(|name, entry| {
-            if is_retired(entry) {
-                summary.removed.push(name.clone());
-                false
-            } else {
-                true
-            }
-        });
+        let summary = plan_sync(&mut next, routines, host_unscheduled());
         let changed = next != *raw;
         if changed {
             *raw = next;
@@ -156,6 +141,151 @@ pub fn sync_with_retirements(
         }
     })
     .map_err(|error| error.to_string())
+}
+
+/// Match a direct invocation of the retired audio-folder sync command without
+/// matching unrelated tools, flag values, or archive/connect/list modes.
+#[must_use]
+pub fn is_retired_audio_sync_command(command: &[String]) -> bool {
+    let Some((program, args)) = command.split_first() else {
+        return false;
+    };
+    let name = program.rsplit(['/', '\\']).next().unwrap_or(program);
+    let lower_name = name.to_ascii_lowercase();
+    let executable = lower_name.strip_suffix(".exe").unwrap_or(&lower_name);
+    let (verb, args) = match (executable, args) {
+        ("solstone" | "solstone-core-sol", [family, args @ ..]) if family == "journal" => {
+            ("importer", strip_journal_verbose(args))
+        }
+        ("solstone-core-journal", args) => ("importer", strip_journal_verbose(args)),
+        ("journal", args) if program == name || installed_journal_alias(program) => {
+            ("importer", strip_journal_verbose(args))
+        }
+        ("solstone-core", args) => ("importer", args),
+        ("sol", args) if program == name => ("import", args),
+        _ => return false,
+    };
+    let [subcommand, rest @ ..] = args else {
+        return false;
+    };
+    subcommand == verb && importer_args_select_audio_sync(rest)
+}
+
+fn strip_journal_verbose(args: &[String]) -> &[String] {
+    match args {
+        [flag, args @ ..] if matches!(flag.as_str(), "-v" | "--verbose") => args,
+        _ => args,
+    }
+}
+
+fn installed_journal_alias(program: &str) -> bool {
+    #[cfg(windows)]
+    {
+        std::env::current_exe()
+            .ok()
+            .map(|path| path.with_file_name("journal.exe"))
+            .and_then(|path| path.to_str().map(|path| path.replace('\\', "/")))
+            .is_some_and(|path| path.eq_ignore_ascii_case(&program.replace('\\', "/")))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = program;
+        false
+    }
+}
+
+fn importer_args_select_audio_sync(args: &[String]) -> bool {
+    let mut sync_backend: Option<&str> = None;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_str();
+        if arg == "--" {
+            break;
+        }
+        if matches!(arg, "-h" | "--help" | "--list-importers" | "--backends") {
+            return false;
+        }
+        if let Some((flag, value)) = arg.split_once('=') {
+            if matches!(
+                flag,
+                "--connect"
+                    | "--audio-archive"
+                    | "--resume"
+                    | "--audio-archive-status"
+                    | "--audio-archive-members"
+            ) {
+                return false;
+            }
+            if flag == "--sync" {
+                sync_backend = Some(value);
+            }
+            index += 1;
+            continue;
+        }
+        if arg == "--sync" {
+            let Some(value) = args.get(index + 1).map(String::as_str) else {
+                return false;
+            };
+            sync_backend = Some(value);
+            index += 2;
+            continue;
+        }
+        if matches!(
+            arg,
+            "--connect"
+                | "--audio-archive"
+                | "--resume"
+                | "--audio-archive-status"
+                | "--audio-archive-members"
+        ) {
+            return false;
+        }
+        if matches!(
+            arg,
+            "--preview-token"
+                | "--preview-zone"
+                | "--preview-stamp"
+                | "--fallback-timestamp"
+                | "--snapshot-digest"
+                | "--timestamp"
+                | "--facet"
+                | "--listed-moves-shown"
+                | "--import-id"
+                | "--setting"
+                | "--source"
+                | "--path"
+                | "--window-days"
+                | "--date-from"
+                | "--date-to"
+                | "--archive-identity"
+                | "--source-zone"
+                | "--offset"
+                | "--limit"
+        ) {
+            index += 2;
+            continue;
+        }
+        if arg == "--auto" {
+            if args
+                .get(index + 1)
+                .is_some_and(|next| !next.starts_with('-'))
+            {
+                index += 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+        index += 1;
+    }
+    sync_backend == Some("audio")
+}
+
+fn entry_runs_retired_audio_sync(entry: &Value) -> bool {
+    entry
+        .get("cmd")
+        .and_then(|cmd| serde_json::from_value::<Vec<String>>(cmd.clone()).ok())
+        .is_some_and(|cmd| is_retired_audio_sync_command(&cmd))
 }
 
 fn plan_sync(
@@ -169,6 +299,14 @@ fn plan_sync(
             summary.removed.push((*entry).to_owned());
         }
     }
+    raw.retain(|name, entry| {
+        if entry_runs_retired_audio_sync(entry) {
+            summary.removed.push(name.clone());
+            false
+        } else {
+            true
+        }
+    });
 
     let classified = classify(routines, raw, unscheduled)
         .into_iter()
@@ -505,32 +643,43 @@ mod tests {
     }
 
     #[test]
-    fn sync_removes_the_retired_notes_folder_entries_in_any_form_and_keeps_their_siblings() {
+    fn sync_removes_retired_notes_and_audio_folder_entries_and_keeps_their_siblings() {
         let forms = [
             (
                 json!({"cmd": ["solstone", "journal", "importer", "--sync", "obsidian", "--save"], "every": "hourly", "enabled": true}),
                 json!({"cmd": ["journal", "importer", "--sync", "obsidian", "--save", "--path", "/retained/vault"], "every": "hourly"}),
+                json!({"cmd": ["solstone", "journal", "importer", "--sync", "audio", "--save"], "every": "hourly", "enabled": true}),
+                json!({"cmd": ["journal", "importer", "--sync", "audio", "--save", "--path", "/retained/audio"], "every": "daily"}),
             ),
             (
                 json!({"cmd": ["solstone", "journal", "importer", "--sync=obsidian"], "every": "daily", "enabled": false}),
                 json!({"cmd": ["journal", "importer", "--sync", "obsidian"], "every": "weekly", "enabled": false}),
+                json!({"cmd": ["solstone", "journal", "importer", "--sync=audio"], "every": "daily", "enabled": false}),
+                json!({"cmd": ["journal", "importer", "--sync", "audio"], "every": "weekly", "enabled": false}),
             ),
-            (json!(false), json!("not an entry")),
+            (
+                json!(false),
+                json!("not an entry"),
+                json!(false),
+                json!("not an entry"),
+            ),
         ];
-        for (sync_entry, owner_entry) in forms {
+        for (sync_obsidian, owner_obsidian, sync_audio, owner_audio) in forms {
             let root = tempfile::tempdir().expect("temporary journal");
             let config = root.path().join("config/schedules.json");
             let plaud = json!({"cmd": ["solstone", "journal", "importer", "--sync", "plaud", "--save"], "every": "hourly", "enabled": false});
-            let audio = json!({"cmd": ["journal", "importer", "--sync", "audio", "--save"], "every": "daily", "enabled": false});
+            let custom_audio = json!({"cmd": ["journal", "importer", "--sync=audio", "--save"], "every": "daily", "enabled": true});
             write_config(
                 &config,
                 &json!({
                     "daily_time": "00:15",
                     "weekly_time": "03:15",
-                    "sync:obsidian": sync_entry,
-                    "owner:source:obsidian": owner_entry,
+                    "sync:obsidian": sync_obsidian,
+                    "owner:source:obsidian": owner_obsidian,
+                    "sync:audio": sync_audio,
+                    "owner:source:audio": owner_audio,
+                    "custom:audio": custom_audio,
                     "sync:plaud": plaud,
-                    "owner:source:audio": audio,
                 }),
             );
 
@@ -538,16 +687,21 @@ mod tests {
             assert_eq!(
                 summary.removed,
                 vec![
+                    "owner:source:audio".to_owned(),
                     "owner:source:obsidian".to_owned(),
+                    "sync:audio".to_owned(),
                     "sync:obsidian".to_owned(),
+                    "custom:audio".to_owned(),
                 ]
             );
             let raw: Value =
                 serde_json::from_slice(&fs::read(&config).expect("config")).expect("json");
             assert!(raw.get("sync:obsidian").is_none(), "{raw}");
             assert!(raw.get("owner:source:obsidian").is_none(), "{raw}");
+            assert!(raw.get("sync:audio").is_none(), "{raw}");
+            assert!(raw.get("owner:source:audio").is_none(), "{raw}");
+            assert!(raw.get("custom:audio").is_none(), "{raw}");
             assert_eq!(raw["sync:plaud"], plaud, "{raw}");
-            assert_eq!(raw["owner:source:audio"], audio, "{raw}");
             assert_eq!(raw["daily_time"], "00:15");
 
             let again = sync(&config, &[]).expect("second sync");

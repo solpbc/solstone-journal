@@ -1735,8 +1735,6 @@ async function testCase(name, fn) {
 
   // Settings on the view contract, through the real contract, store and router.
   cases += await require('./settings_contract_dom.js')(crateDir);
-  // A phone journal's audio folder, which syncs from settings.
-  cases += await require('./audio_folder_dom.js')(crateDir);
 
   process.stdout.write('DOM CASES: ' + cases + ' passed\n', () => process.exit(0));
 })().catch((error) => {

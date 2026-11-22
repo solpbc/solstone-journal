@@ -43,7 +43,6 @@ pub mod strava_names;
 pub mod strava_refile;
 pub mod stream_name;
 pub mod stretch_trash;
-pub mod sync_audio;
 pub mod sync_plaud;
 pub mod sync_state;
 pub mod text;
@@ -62,9 +61,9 @@ pub use allocate::{
 pub use body_ingest_error::{BodyIngestError, BodyIngestErrorKind};
 pub use connect::{OuraApp, OuraConnectOutcome, OuraConnectRequest, connect_oura, needs_oura_app};
 pub use contract::{
-    AudioAuto, ImportPreview, ImportResult, OwnerSource, OwnerSourceMetadata, PreviewRequest,
-    SaveRequest, SourceHash, SourceImmutabilityReport, SyncBackendRequest, SyncGuidance,
-    SyncPreviewRequest, SyncSaveRequest, observe_source_immutability, should_write_manifest,
+    ImportPreview, ImportResult, OwnerSource, OwnerSourceMetadata, PreviewRequest, SaveRequest,
+    SourceHash, SourceImmutabilityReport, SyncBackendRequest, SyncGuidance, SyncPreviewRequest,
+    SyncSaveRequest, observe_source_immutability, should_write_manifest,
 };
 pub use creation::{
     CaptureMoment, decide, detect_creation, detect_creation_with_exif, detect_photo_capture_moment,
@@ -120,14 +119,9 @@ pub use staging::{
     discard_abandoned_import_records, relocate_import, remove_import_records, stage_source,
 };
 pub use sync_state::{
-    AccessState, BackendName, FolderIdentityError, PublicConnection, RefreshPermit, RefreshRefusal,
-    SYNC_BACKEND_INVENTORY, SyncState, SyncStateRead, SyncStateReadClass, SyncStateWriteError,
-    begin_folder, mark_access_lost, permit_remembered_refresh, permit_runtime_refresh,
-    public_connection, public_connection_status, read_sync_state, reauthorize, replace_folder,
-    state_path, write_sync_state,
+    BackendName, SYNC_BACKEND_INVENTORY, SyncState, SyncStateRead, SyncStateReadClass,
+    SyncStateWriteError, read_sync_state, state_path, write_sync_state,
 };
-#[cfg(unix)]
-pub use sync_state::{read_sync_state_bound, write_sync_state_bound};
 pub use text::{
     SystemWireClient, TextCreated, TextImportError, TextImportOutcome, TextImportWork, WireClient,
     process_transcript, process_transcript_with_wire,

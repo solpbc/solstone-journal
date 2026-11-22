@@ -885,11 +885,10 @@ module.exports = async function settingsContractCases(crateDir) {
   const workspace = fs.readFileSync(path.join(crateDir, 'assets/workspace.html'), 'utf8');
   const inline = [...workspace.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
   const settingsJs = fs.readFileSync(path.join(crateDir, 'assets/settings.js'), 'utf8');
-  const audioFolderJs = fs.readFileSync(path.join(crateDir, 'assets/audio_folder.js'), 'utf8');
   const markup = workspace.replace(/<style>[\s\S]*?<\/style>/g, '').replace(/<script[\s\S]*?<\/script>/g, '').replace(/<!--[\s\S]*?-->/g, '');
   const shellDir = path.join(crateDir, '../solstone-core-convey-shell/assets/static');
-  // In the fragment's order: settings.js, audio_folder.js, then the view's script.
-  const env = { markup, shellDir, scripts: [['settings.js', settingsJs], ['audio_folder.js', audioFolderJs], ['workspace.html', inline[inline.length - 1]]] };
+  // In the fragment's order: settings.js, then the view's script.
+  const env = { markup, shellDir, scripts: [['settings.js', settingsJs], ['workspace.html', inline[inline.length - 1]]] };
   const viewScript = inline[inline.length - 1];
   const mountSource = viewScript.slice(viewScript.indexOf('function mountSettings(ctx) {'));
 
@@ -924,7 +923,7 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.deepStrictEqual(listenerCounts(p), before, 'no listener at load');
     assert.ok(p.window.SolViews.registered('settings'), 'settings is registered');
     const added = p.windowKeys().filter((k) => !keys.includes(k));
-    assert.deepStrictEqual(added, ['SettingsAudioFolder', 'SettingsRender'], 'only settings.js\'s renderer and the audio folder\'s mount are made at load');
+    assert.deepStrictEqual(added, ['SettingsRender'], 'only settings.js\'s renderer is made at load');
     GONE.forEach((name) => assert.ok(!(name in p.window) && !(name in p.context), `${name} is not a global`));
   });
 

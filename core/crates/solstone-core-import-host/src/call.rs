@@ -24,9 +24,8 @@
 //!
 //! [`crate::cli_argv::admit_arguments`] parses the same grammar and touches
 //! no journal, supervisor, or source bytes. [`classify_arguments`] returns
-//! that parse: the sync backend, `--path` when present, and whether the
-//! command is a held Body entry. It does not load saved
-//! audio settings. [`WorkStop::linked`] observes a
+//! that parse: the sync backend and whether the command is a held Body entry.
+//! [`WorkStop::linked`] observes a
 //! parent cancellation flag and a deadline at each check.
 //! [`WorkStop::linked_with_checkpoint`] also calls the caller's retained
 //! checkpoint, which already includes host stop and root binding. There is
@@ -635,26 +634,9 @@ mod tests {
     }
 
     #[test]
-    fn preview_of_sync_save_and_audio_archive_does_not_publish() {
+    fn preview_of_audio_archive_does_not_publish() {
         let journal = tempfile::tempdir().unwrap();
-        let folder = tempfile::tempdir().unwrap();
-        std::fs::write(folder.path().join("clip.m4a"), b"not audio").unwrap();
         let seams = idle_seams(journal.path());
-        let sync = preview(
-            &[
-                "--sync".to_owned(),
-                "audio".to_owned(),
-                "--save".to_owned(),
-                "--path".to_owned(),
-                folder.path().display().to_string(),
-            ],
-            journal.path(),
-            &seams,
-        );
-        assert_eq!(sync.exit_code, 0, "{}", sync.stderr);
-        assert!(sync.stdout.contains("preview"), "{}", sync.stdout);
-        assert!(!sync.stdout.contains("saved="), "{}", sync.stdout);
-        assert!(!journal.path().join("chronicle").exists());
 
         let archive_dir = tempfile::tempdir().unwrap();
         let archive = preview(
@@ -716,21 +698,14 @@ mod tests {
     }
 
     #[test]
-    fn classify_arguments_names_sync_path_and_body_without_reading_a_source() {
+    fn classify_arguments_names_sync_and_body_without_reading_a_source() {
         let directory = tempfile::tempdir().unwrap();
         let missing = directory.path().join("export.zip");
         let missing_arg = missing.display().to_string();
 
-        let audio = classify_arguments(&[
-            "--sync".to_owned(),
-            "audio".to_owned(),
-            "--path".to_owned(),
-            "/clips".to_owned(),
-        ])
-        .unwrap();
-        assert_eq!(audio.sync_source.as_deref(), Some("audio"));
-        assert_eq!(audio.explicit_path.as_deref(), Some(Path::new("/clips")));
-        assert_eq!(audio.body, BodyAdmission::NotBody);
+        let plaud = classify_arguments(&["--sync".to_owned(), "plaud".to_owned()]).unwrap();
+        assert_eq!(plaud.sync_source.as_deref(), Some("plaud"));
+        assert_eq!(plaud.body, BodyAdmission::NotBody);
 
         let ordinary = classify_arguments(&["--sync".to_owned(), "oura".to_owned()]).unwrap();
         assert_eq!(ordinary.sync_source.as_deref(), Some("oura"));
@@ -768,7 +743,6 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(apple.sync_source, None);
-        assert_eq!(apple.explicit_path, None);
         assert_eq!(apple.body, BodyAdmission::Held);
         assert!(!missing.exists());
 

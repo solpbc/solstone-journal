@@ -224,7 +224,6 @@ struct Inputs {
     gemini: PathBuf,
     apple_export: PathBuf,
     oura: PathBuf,
-    audio_directory: PathBuf,
 }
 
 impl Inputs {
@@ -275,9 +274,6 @@ impl Inputs {
             &oura,
         )
         .expect("copy Oura input");
-        let audio_directory = directory.join("audio-directory");
-        fs::create_dir(&audio_directory).expect("audio directory");
-        fs::copy(&audio, audio_directory.join("audio.m4a")).expect("copy sync audio");
         Self {
             audio,
             text,
@@ -290,7 +286,6 @@ impl Inputs {
             gemini,
             apple_export,
             oura,
-            audio_directory,
         }
     }
 }
@@ -543,15 +538,10 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
             "sync",
             vec![
                 Case {
-                    args: vec![
-                        "--sync".to_owned(),
-                        "audio".to_owned(),
-                        "--path".to_owned(),
-                        path(&inputs.audio_directory),
-                    ],
+                    args: args(&["--sync", "audio"]),
                     exit: 1,
                     stream: Stream::Stderr,
-                    contains: "--audio-archive",
+                    contains: "Unknown sync backend: audio",
                 },
                 Case {
                     args: args(&["--sync", "obsidian"]),

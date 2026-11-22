@@ -29,16 +29,6 @@ use crate::foreground::{
     ForegroundProcessingHost, ImportKeepalive, ImportPreparation, ImportRequest,
 };
 
-#[cfg(all(unix, feature = "in-process-pdf"))]
-#[path = "import_sources.rs"]
-mod sources;
-#[cfg(all(unix, feature = "in-process-pdf"))]
-pub use sources::{
-    ConfiguredSources, FolderConnectionChange, SavedFolderProvider, SavedFolderRequest,
-    SourceConnectionError, SourceConnectionGuard, SourceCopyError,
-    packaged_import_factory_with_sources,
-};
-
 #[cfg(feature = "in-process-pdf")]
 use crate::foreground::{ImportSeamFactory, PreparedImport};
 
@@ -152,7 +142,17 @@ impl RetainedImportRoute for ForegroundImportRoute {
 /// search `PATH`, the environment, or `pdfium_library_path`.
 #[cfg(feature = "in-process-pdf")]
 pub fn packaged_import_factory(library: PathBuf) -> Arc<ImportSeamFactory> {
+    let plaud = Arc::new(tokio::sync::Mutex::new(()));
     Arc::new(move |context| {
+        let active_plaud = if context.classification().sync_source.as_deref() == Some("plaud") {
+            Some(
+                Arc::clone(&plaud)
+                    .try_lock_owned()
+                    .map_err(|_| "source connection is unavailable".to_owned())?,
+            )
+        } else {
+            None
+        };
         if !library.is_file() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -163,10 +163,8 @@ pub fn packaged_import_factory(library: PathBuf) -> Arc<ImportSeamFactory> {
         let seams = context.seams_with_pdf(Box::new(
             solstone_core_import_host::pdf_in_process::InProcessPdfWorker::new(library.clone()),
         ));
-        Ok(
-            PreparedImport::new(context.arguments().to_vec(), seams)
-                .with_resources(library.clone()),
-        )
+        Ok(PreparedImport::new(context.arguments().to_vec(), seams)
+            .with_resources((library.clone(), active_plaud)))
     })
 }
 
