@@ -815,9 +815,10 @@ impl MobileServing {
         if report.failed != 0 {
             return Err(format!("index scan failed: {:?}", report.failures));
         }
+        let warnings: Vec<_> = report.warnings.iter().map(ToString::to_string).collect();
         Ok(
             json!({"indexed":report.indexed,"removed":report.removed,"skipped":report.skipped,
-            "failed":report.failed,"warnings":report.warnings}),
+            "failed":report.failed,"warnings":warnings}),
         )
     }
 
@@ -1868,8 +1869,25 @@ mod tests {
             // The same configured worker advances its ordinary resume epoch.
             assert_eq!(foreground.audio_status()["generation"], 1);
         }
+        let flow = directory.path().join("chronicle/20260717/talents/flow.md");
+        std::fs::create_dir_all(flow.parent().unwrap()).unwrap();
+        std::fs::write(flow, format!("# Flow\n\nleft{}right", " ".repeat(100_000))).unwrap();
         let indexed = server.index().unwrap();
         assert_eq!(indexed["failed"], 0);
+        assert!(
+            indexed["warnings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|warning| {
+                    warning.as_str().is_some_and(|text| {
+                        text.contains(
+                            "Collapsed whitespace on 1 overlong Markdown line(s) during indexing",
+                        )
+                    })
+                }),
+            "{indexed}"
+        );
         assert!(db.is_file());
         #[cfg(all(feature = "processing", feature = "audio"))]
         {

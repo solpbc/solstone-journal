@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for provider model unconfigured.",
+  "context": "Journal command-line text for provider model unconfigured.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "67b0498bfbce41dc951e9866751e32c57b095333b40d31f775826e78135a55c9",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

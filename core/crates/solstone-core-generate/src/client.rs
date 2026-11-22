@@ -12,10 +12,9 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 
-use crate::{
-    GenerateRequest, GenerateResponse, ProtocolError, decode_one_shot_response,
-    decode_protocol_error, encode_one_shot_request,
-};
+use crate::TransportDiagnostic as Diagnostic;
+use crate::codec::{decode_one_shot_response_with, encode_one_shot_request_with};
+use crate::{GenerateRequest, GenerateResponse, ProtocolError, decode_protocol_error};
 
 pub const STDOUT_LIMIT: usize = 1_048_576;
 pub const STDERR_LIMIT: usize = 65_536;
@@ -52,9 +51,11 @@ impl CapturedStream {
     }
 }
 
-impl fmt::Display for CapturedStream {
+struct EscapedBytes<'a>(&'a [u8]);
+
+impl fmt::Display for EscapedBytes<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for &byte in &self.bytes {
+        for &byte in self.0 {
             match byte {
                 b'\\' => formatter.write_str("\\\\")?,
                 b'\n' => formatter.write_str("\\n")?,
@@ -64,6 +65,20 @@ impl fmt::Display for CapturedStream {
                 _ => write!(formatter, "\\x{byte:02x}")?,
             }
         }
+        Ok(())
+    }
+}
+
+impl CapturedStream {
+    /// The bounded wire bytes with controls escaped, without the truncation notice.
+    pub fn escaped(&self) -> impl fmt::Display + '_ {
+        EscapedBytes(&self.bytes)
+    }
+}
+
+impl fmt::Display for CapturedStream {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.escaped().fmt(formatter)?;
         if self.truncated {
             formatter.write_str(" [truncated]")?;
         }
@@ -189,6 +204,7 @@ pub struct OneShotClient {
     executable: PathBuf,
     prefix_arguments: Vec<OsString>,
     environment: BTreeMap<String, String>,
+    render_diagnostic: std::sync::Arc<dyn Fn(Diagnostic) -> String + Send + Sync>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -208,6 +224,7 @@ struct StreamCollection {
 }
 
 enum PipeCompletion {
+    Panicked(&'static str),
     Stdin(Result<StdinWrite, String>),
     Stdout(StreamCollection),
     Stderr(StreamCollection),
@@ -398,15 +415,18 @@ fn classify(
     stdout: CapturedStream,
     stderr: CapturedStream,
     stdin_write: StdinWrite,
+    render: &dyn Fn(Diagnostic) -> String,
 ) -> Result<GenerateResponse, ClientError> {
     let stdin_closed_early = stdin_write == StdinWrite::BrokenPipe;
     if status.exit_code == Some(0) {
         let decoded = if stdout.truncated {
-            Err(format!("stdout truncated at {STDOUT_LIMIT} bytes"))
+            Err(render(Diagnostic::Truncated {
+                limit: STDOUT_LIMIT,
+            }))
         } else {
             std::str::from_utf8(&stdout.bytes)
                 .map_err(|error| error.to_string())
-                .and_then(decode_one_shot_response)
+                .and_then(|input| decode_one_shot_response_with(input, render))
         };
         match decoded {
             Ok(response) => Ok(response),
@@ -443,38 +463,53 @@ fn classify(
 fn terminate_if_running<C: ChildControl>(
     child: &mut C,
     status: &mut Option<ChildStatus>,
+    render: &dyn Fn(Diagnostic) -> String,
 ) -> Vec<String> {
     let mut failures = Vec::new();
     match child.try_wait_status() {
         Ok(Some(exit)) => *status = Some(exit),
         Ok(None) => {
             if let Err(error) = child.terminate() {
-                failures.push(format!("terminate child: {error}"));
+                failures.push(render(Diagnostic::Terminate {
+                    detail: error.to_string(),
+                }));
             }
         }
         Err(error) => {
-            failures.push(format!("inspect child before termination: {error}"));
+            failures.push(render(Diagnostic::Inspect {
+                detail: error.to_string(),
+            }));
             if let Err(error) = child.terminate() {
-                failures.push(format!("terminate child: {error}"));
+                failures.push(render(Diagnostic::Terminate {
+                    detail: error.to_string(),
+                }));
             }
         }
     }
     failures
 }
 
-fn process_failure_without_workers<C: ChildControl>(child: &mut C, primary: String) -> ClientError {
+fn process_failure_without_workers<C: ChildControl>(
+    child: &mut C,
+    primary: String,
+    render: &dyn Fn(Diagnostic) -> String,
+) -> ClientError {
     let mut status = None;
-    let mut cleanup = terminate_if_running(child, &mut status);
+    let mut cleanup = terminate_if_running(child, &mut status, render);
     if status.is_none() {
         match child.wait_status() {
             Ok(exit) => status = Some(exit),
             Err(error) => {
-                cleanup.push(format!("reap child: {error}"));
-                cleanup.extend(terminate_if_running(child, &mut status));
+                cleanup.push(render(Diagnostic::Reap {
+                    detail: error.to_string(),
+                }));
+                cleanup.extend(terminate_if_running(child, &mut status, render));
                 if status.is_none() {
                     match child.wait_status() {
                         Ok(exit) => status = Some(exit),
-                        Err(error) => cleanup.push(format!("retry reap child: {error}")),
+                        Err(error) => cleanup.push(render(Diagnostic::RetryReap {
+                            detail: error.to_string(),
+                        })),
                     }
                 }
             }
@@ -496,15 +531,22 @@ impl PipeWorkers {
         stdout: std::process::ChildStdout,
         stderr: std::process::ChildStderr,
         input: Vec<u8>,
+        render: &dyn Fn(Diagnostic) -> String,
     ) -> Result<Self, (String, Self)> {
         Self::spawn_tasks(
             move || write_request(stdin, &input),
             move || collect_bounded(stdout, STDOUT_LIMIT),
             move || collect_bounded(stderr, STDERR_LIMIT),
+            render,
         )
     }
 
-    fn spawn_tasks<SI, SO, SE>(stdin: SI, stdout: SO, stderr: SE) -> Result<Self, (String, Self)>
+    fn spawn_tasks<SI, SO, SE>(
+        stdin: SI,
+        stdout: SO,
+        stderr: SE,
+        render: &dyn Fn(Diagnostic) -> String,
+    ) -> Result<Self, (String, Self)>
     where
         SI: FnOnce() -> io::Result<StdinWrite> + Send + 'static,
         SO: FnOnce() -> StreamCollection + Send + 'static,
@@ -517,15 +559,39 @@ impl PipeWorkers {
         };
         match spawn_stdin_worker(sender.clone(), stdin) {
             Ok(handle) => workers.handles.push(("stdin", handle)),
-            Err(error) => return Err((format!("start stdin worker: {error}"), workers)),
+            Err(error) => {
+                return Err((
+                    render(Diagnostic::StartWorker {
+                        pipe: "stdin",
+                        detail: error.to_string(),
+                    }),
+                    workers,
+                ));
+            }
         }
         match spawn_stream_worker(sender.clone(), stdout, PipeCompletion::Stdout, "stdout") {
             Ok(handle) => workers.handles.push(("stdout", handle)),
-            Err(error) => return Err((format!("start stdout worker: {error}"), workers)),
+            Err(error) => {
+                return Err((
+                    render(Diagnostic::StartWorker {
+                        pipe: "stdout",
+                        detail: error.to_string(),
+                    }),
+                    workers,
+                ));
+            }
         }
         match spawn_stream_worker(sender, stderr, PipeCompletion::Stderr, "stderr") {
             Ok(handle) => workers.handles.push(("stderr", handle)),
-            Err(error) => return Err((format!("start stderr worker: {error}"), workers)),
+            Err(error) => {
+                return Err((
+                    render(Diagnostic::StartWorker {
+                        pipe: "stderr",
+                        detail: error.to_string(),
+                    }),
+                    workers,
+                ));
+            }
         }
         Ok(workers)
     }
@@ -534,6 +600,7 @@ impl PipeWorkers {
         mut self,
         child: &mut C,
         initial_failure: Option<String>,
+        render: &dyn Fn(Diagnostic) -> String,
     ) -> PipeReport {
         let mut report = PipeReport::new();
         let mut terminated = initial_failure.is_some();
@@ -541,20 +608,22 @@ impl PipeWorkers {
             report.failures.push(failure);
             report
                 .failures
-                .extend(terminate_if_running(child, &mut report.status));
+                .extend(terminate_if_running(child, &mut report.status, render));
         }
         let expected = self.handles.len();
         for _ in 0..expected {
             let failure = match self.receiver.recv() {
-                Ok(completion) => report.apply(completion, terminated),
-                Err(error) => Some(format!("pipe worker completion channel: {error}")),
+                Ok(completion) => report.apply(completion, terminated, render),
+                Err(error) => Some(render(Diagnostic::Completion {
+                    detail: error.to_string(),
+                })),
             };
             if let Some(failure) = failure {
                 report.failures.push(failure);
                 if !terminated {
                     report
                         .failures
-                        .extend(terminate_if_running(child, &mut report.status));
+                        .extend(terminate_if_running(child, &mut report.status, render));
                     terminated = true;
                 }
             }
@@ -563,22 +632,26 @@ impl PipeWorkers {
             if handle.join().is_err() {
                 report
                     .failures
-                    .push(format!("{name} worker join: thread panicked"));
+                    .push(render(Diagnostic::JoinPanic { pipe: name }));
             }
         }
         if report.status.is_none() {
             match child.wait_status() {
                 Ok(exit) => report.status = Some(exit),
                 Err(error) => {
-                    report.failures.push(format!("reap child: {error}"));
+                    report.failures.push(render(Diagnostic::Reap {
+                        detail: error.to_string(),
+                    }));
                     report
                         .failures
-                        .extend(terminate_if_running(child, &mut report.status));
+                        .extend(terminate_if_running(child, &mut report.status, render));
                     if report.status.is_none() {
                         match child.wait_status() {
                             Ok(exit) => report.status = Some(exit),
                             Err(error) => {
-                                report.failures.push(format!("retry reap child: {error}"));
+                                report.failures.push(render(Diagnostic::RetryReap {
+                                    detail: error.to_string(),
+                                }));
                             }
                         }
                     }
@@ -601,25 +674,38 @@ impl PipeReport {
         }
     }
 
-    fn apply(&mut self, completion: PipeCompletion, cleanup_started: bool) -> Option<String> {
+    fn apply(
+        &mut self,
+        completion: PipeCompletion,
+        cleanup_started: bool,
+        render: &dyn Fn(Diagnostic) -> String,
+    ) -> Option<String> {
         match completion {
+            PipeCompletion::Panicked("stdin") => Some(render(Diagnostic::WriterPanic)),
+            PipeCompletion::Panicked(pipe) => Some(render(Diagnostic::CollectorPanic { pipe })),
             PipeCompletion::Stdin(Ok(result)) => {
                 self.stdin_closed_early = result == StdinWrite::BrokenPipe && !cleanup_started;
                 self.stdin_write = Some(result);
                 None
             }
-            PipeCompletion::Stdin(Err(error)) => Some(format!("stdin writer: {error}")),
+            PipeCompletion::Stdin(Err(error)) => Some(render(Diagnostic::Writer { detail: error })),
             PipeCompletion::Stdout(result) => {
                 self.stdout = result.captured;
-                result
-                    .error
-                    .map(|error| format!("stdout collector: {error}"))
+                result.error.map(|error| {
+                    render(Diagnostic::Collector {
+                        pipe: "stdout",
+                        detail: error,
+                    })
+                })
             }
             PipeCompletion::Stderr(result) => {
                 self.stderr = result.captured;
-                result
-                    .error
-                    .map(|error| format!("stderr collector: {error}"))
+                result.error.map(|error| {
+                    render(Diagnostic::Collector {
+                        pipe: "stderr",
+                        detail: error,
+                    })
+                })
             }
         }
     }
@@ -632,10 +718,11 @@ where
     thread::Builder::new()
         .name("solstone-generate-stdin".to_owned())
         .spawn(move || {
-            let result = panic::catch_unwind(AssertUnwindSafe(task))
-                .map_err(|_| "thread panicked".to_owned())
-                .and_then(|result| result.map_err(|error| error.to_string()));
-            let _ = sender.send(PipeCompletion::Stdin(result));
+            let message = match panic::catch_unwind(AssertUnwindSafe(task)) {
+                Ok(result) => PipeCompletion::Stdin(result.map_err(|e| e.to_string())),
+                Err(_) => PipeCompletion::Panicked("stdin"),
+            };
+            let _ = sender.send(message);
         })
 }
 
@@ -651,12 +738,11 @@ where
     thread::Builder::new()
         .name(format!("solstone-generate-{name}"))
         .spawn(move || {
-            let result =
-                panic::catch_unwind(AssertUnwindSafe(task)).unwrap_or_else(|_| StreamCollection {
-                    captured: CapturedStream::empty(),
-                    error: Some("thread panicked".to_owned()),
-                });
-            let _ = sender.send(completion(result));
+            let message = match panic::catch_unwind(AssertUnwindSafe(task)) {
+                Ok(stream) => completion(stream),
+                Err(_) => PipeCompletion::Panicked(name),
+            };
+            let _ = sender.send(message);
         })
 }
 
@@ -666,7 +752,17 @@ impl OneShotClient {
             executable: path.into(),
             prefix_arguments: Vec::new(),
             environment: BTreeMap::new(),
+            render_diagnostic: std::sync::Arc::new(String::from),
         }
+    }
+
+    /// Select the renderer for local one-shot diagnostics. It is never sent to the child.
+    pub fn with_diagnostic_renderer(
+        mut self,
+        render: impl Fn(Diagnostic) -> String + Send + Sync + 'static,
+    ) -> Self {
+        self.render_diagnostic = std::sync::Arc::new(render);
+        self
     }
 
     pub fn with_prefix_arguments(mut self, arguments: impl IntoIterator<Item = OsString>) -> Self {
@@ -705,7 +801,8 @@ impl OneShotClient {
     }
 
     pub fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
-        let input = encode_one_shot_request(request).map_err(ClientError::Decode)?;
+        let render = self.render_diagnostic.as_ref();
+        let input = encode_one_shot_request_with(request, render).map_err(ClientError::Decode)?;
         let mut command = Command::new(&self.executable);
         // A plain spawn inherits the admitted parent's consumed launch descriptor,
         // and the child refuses it as expired. Only the product launcher filters it.
@@ -729,24 +826,29 @@ impl OneShotClient {
         let Some(stdin) = child.child.stdin.take() else {
             return Err(process_failure_without_workers(
                 &mut child,
-                "wire stdin is unavailable".to_owned(),
+                render(Diagnostic::WireUnavailable { pipe: "stdin" }),
+                render,
             ));
         };
         let Some(stdout) = child.child.stdout.take() else {
             return Err(process_failure_without_workers(
                 &mut child,
-                "wire stdout is unavailable".to_owned(),
+                render(Diagnostic::WireUnavailable { pipe: "stdout" }),
+                render,
             ));
         };
         let Some(stderr) = child.child.stderr.take() else {
             return Err(process_failure_without_workers(
                 &mut child,
-                "wire stderr is unavailable".to_owned(),
+                render(Diagnostic::WireUnavailable { pipe: "stderr" }),
+                render,
             ));
         };
-        match PipeWorkers::spawn(stdin, stdout, stderr, input.into_bytes()) {
-            Ok(workers) => execute_with_workers(&mut child, workers, None),
-            Err((primary, workers)) => execute_with_workers(&mut child, workers, Some(primary)),
+        match PipeWorkers::spawn(stdin, stdout, stderr, input.into_bytes(), render) {
+            Ok(workers) => execute_with_workers(&mut child, workers, None, render),
+            Err((primary, workers)) => {
+                execute_with_workers(&mut child, workers, Some(primary), render)
+            }
         }
     }
 }
@@ -755,8 +857,9 @@ fn execute_with_workers<C: ChildControl>(
     child: &mut C,
     workers: PipeWorkers,
     initial_failure: Option<String>,
+    render: &dyn Fn(Diagnostic) -> String,
 ) -> Result<GenerateResponse, ClientError> {
-    let mut report = workers.collect(child, initial_failure);
+    let mut report = workers.collect(child, initial_failure, render);
     if !report.failures.is_empty() {
         let primary = report.failures.remove(0);
         return Err(ClientError::ProcessIo(Box::new(ProcessFailure {
@@ -774,7 +877,7 @@ fn execute_with_workers<C: ChildControl>(
     let stdin_write = report
         .stdin_write
         .expect("a failure-free pipe report has a stdin result");
-    classify(status, report.stdout, report.stderr, stdin_write)
+    classify(status, report.stdout, report.stderr, stdin_write, render)
 }
 
 #[cfg(test)]
@@ -1161,6 +1264,7 @@ mod tests {
                 captured: CapturedStream::empty(),
                 error: None,
             },
+            &String::from,
         ) {
             Ok(workers) => workers,
             Err((error, _)) => panic!("fixture workers start: {error}"),
@@ -1171,7 +1275,7 @@ mod tests {
         };
 
         let started = std::time::Instant::now();
-        let error = execute_with_workers(&mut child, workers, None)
+        let error = execute_with_workers(&mut child, workers, None, &String::from)
             .expect_err("collector failure must fail execution");
         let ClientError::ProcessIo(failure) = error else {
             panic!("expected process I/O error, got {error:?}");

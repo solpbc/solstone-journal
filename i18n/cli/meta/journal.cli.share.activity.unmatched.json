@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for activity unmatched.",
+  "context": "Journal command-line text for activity unmatched.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "activity",
+      "type": "string"
+    },
+    {
+      "name": "person",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f70d81e9ec5b2a1664007b5b09e88f0372a358cbf088875564480b2044f06cbb",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

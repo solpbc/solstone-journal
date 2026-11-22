@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for provider child cleanup.",
+  "context": "Journal command-line text for provider child cleanup.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "primary",
+      "type": "string"
+    },
+    {
+      "name": "cleanup",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "422e933c8f8a67301fef45c4f7877bd4f5a5c8b30fa432750028dedbcfa50c75",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

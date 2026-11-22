@@ -92,7 +92,7 @@ pub fn build_package(
     talents: &dyn TalentCaller,
 ) -> Option<SharePackage> {
     let activity = ActivityRef::from_record(record);
-    let sources = read_sources(journal, day, &activity);
+    let sources = read_sources(journal, day, &activity, talents.diagnostic_locale());
     let matched = match_sources(&sources, person, owner, talents)?;
     let segments = summarize_segments(&sources, &matched, person, owner, talents);
     let available = segments.iter().all(|segment| segment.summary.is_some());
@@ -208,7 +208,14 @@ fn summarize_lines(
             reply.partial_input.filter(Value::is_object),
         )),
         Err(error) => {
-            log::warn!("segment summary unavailable: {error}");
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    talents.diagnostic_locale(),
+                    "journal.cli.share.provider.segment.unavailable",
+                    [("detail", &error)]
+                )
+            );
             None
         }
     }
@@ -335,7 +342,14 @@ fn summarize_activity(
             reply.partial_input.filter(Value::is_object),
         )),
         Err(error) => {
-            log::warn!("activity summary unavailable: {error}");
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    talents.diagnostic_locale(),
+                    "journal.cli.share.provider.activity.unavailable",
+                    [("detail", &error)]
+                )
+            );
             None
         }
     }

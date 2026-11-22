@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for provider matching.",
+  "context": "Journal command-line text for provider matching.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "activity",
+      "type": "string"
+    },
+    {
+      "name": "entity",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2df9da81bf12e8d8b097031ae15dee3fd43ac742a750b1e707ea5a8dbbd4702e",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

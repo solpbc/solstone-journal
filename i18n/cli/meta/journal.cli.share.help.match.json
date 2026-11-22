@@ -1,0 +1,63 @@
+{
+  "description": "Journal command-line text for help match.",
+  "context": "Journal command-line text for help match.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ad648c0c05110e6c425f23e95b7430bcd7a71c4cfd5c3480a6c4db63cb0318a8",
+  "max_length": 353,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal share match [-h] --person PERSON --day YYYYMMDD [--facet FACET]"
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "person_option",
+      "kind": "accepted-input",
+      "value": "--person PERSON"
+    },
+    {
+      "name": "gap_3",
+      "kind": "whitespace",
+      "value": "   "
+    },
+    {
+      "name": "day_option",
+      "kind": "accepted-input",
+      "value": "--day YYYYMMDD"
+    },
+    {
+      "name": "gap_4",
+      "kind": "whitespace",
+      "value": "    "
+    },
+    {
+      "name": "facet_option",
+      "kind": "accepted-input",
+      "value": "--facet FACET"
+    },
+    {
+      "name": "gap_5",
+      "kind": "whitespace",
+      "value": "     "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

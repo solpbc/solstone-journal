@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for transport worker channel.",
+  "context": "Journal command-line text for transport worker channel.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7f541fc909ba557dcc43bf9ddd93ffa82744634708f0de2c678878b22f8ba5b2",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -59,6 +59,9 @@ pub(crate) fn prepare_in(
     mode: PrepareMode,
 ) -> Result<PreparedTalent, PrepareFailure> {
     let locale = display_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
+    // Only a prompt preview localizes the assembled source document. Execution uses
+    // its language for diagnostics, never for transcript or floor text sent to a model.
+    let display_locale = display_locale.filter(|_| mode == PrepareMode::Preview);
     let name = request
         .get("name")
         .and_then(Value::as_str)

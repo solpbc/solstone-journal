@@ -62,7 +62,7 @@ pub use identity::{
 };
 pub use journal_entities::{
     JournalEntity, every_journal_entity, is_admissible_person, is_placeholder_name,
-    live_journal_entities, load_all_journal_entities,
+    live_journal_entities, load_all_journal_entities, load_all_journal_entities_in,
 };
 pub use lifecycle::{
     EntityLifecycleError, adopt_configured_principal, delete_entity_directory, entity_is_hidden,

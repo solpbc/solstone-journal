@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for transport request empty.",
+  "context": "Journal command-line text for transport request empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9c02443b2d0856c6d8fd8d2440b736cffdd7ac42c26a658f84929d4945ac58cf",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "contents",
+      "kind": "accepted-input",
+      "value": "contents"
+    }
+  ]
+}

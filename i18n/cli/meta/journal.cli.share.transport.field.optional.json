@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for transport field optional.",
+  "context": "Journal command-line text for transport field optional.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7c14ce909a8f6d38b91cd34380eada1a0e0e1e1011803806d6204ae3dd44dc28",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

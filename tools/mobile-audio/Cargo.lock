@@ -2042,6 +2042,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-cli-copy",
  "solstone-core-entity-matching",
  "solstone-core-indexer-todo",
  "solstone-core-journal-config",

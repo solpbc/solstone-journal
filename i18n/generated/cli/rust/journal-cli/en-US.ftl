@@ -4596,6 +4596,158 @@ m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e726573756c74 = { $i18nCat
    *[other] { NUMBER($passed, useGrouping: 0) }/{ NUMBER($total, useGrouping: 0) } checks passed
 }
 
+m6a6f75726e616c2e636c692e73686172652e61637469766974696573 = could not read { $facet } activities for { $day }: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e61637469766974792e6d697373696e67 = no activity '{ $activity }' in { $facet } on { $day }
+
+m6a6f75726e616c2e636c692e73686172652e61637469766974792e756e6d617463686564 = activity '{ $activity }' does not match { $person }
+
+m6a6f75726e616c2e636c692e73686172652e666163657473 = could not list facets: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e6661696c757265 = { "solstone journal share" }: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e68656c702e6d61746368 = usage: { "solstone journal share match [-h] --person PERSON --day YYYYMMDD [--facet FACET]" }{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "--person PERSON" }{ "   " }entity id, or a unique name or alias of a person{ "\u000a" }{ "  " }{ "--day YYYYMMDD" }{ "    " }the day to read{ "\u000a" }{ "  " }{ "--facet FACET" }{ "     " }only this facet (default: every facet)
+
+m6a6f75726e616c2e636c692e73686172652e68656c702e7061636b616765 = usage: { "solstone journal share package [-h] --person PERSON --day YYYYMMDD --facet FACET --activity ID" }{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "--person PERSON" }{ "   " }entity id, or a unique name or alias of a person{ "\u000a" }{ "  " }{ "--day YYYYMMDD" }{ "    " }the activity's day{ "\u000a" }{ "  " }{ "--facet FACET" }{ "     " }the activity's facet{ "\u000a" }{ "  " }{ "--activity ID" }{ "     " }the activity id
+
+m6a6f75726e616c2e636c692e73686172652e68656c702e726f6f74 = usage: { "solstone journal share [-h] {match,package} ..." }{ "\u000a" }{ "\u000a" }Find activities shared with a linked person and preview what would be shared.{ "\u000a" }Both subcommands only read the journal.{ "\u000a" }{ "\u000a" }commands:{ "\u000a" }{ "    match     " }List the day's activities that match a person, one { "JSON" } line each{ "\u000a" }{ "    package   " }Print the scoped summary package for one matching activity
+
+m6a6f75726e616c2e636c692e73686172652e70617273652e617267756d656e74 = { "solstone journal share" }: error: unrecognized argument '{ $argument }'
+
+m6a6f75726e616c2e636c692e73686172652e70617273652e6475706c6963617465 = { "solstone journal share" }: error: { $flag } given more than once
+
+m6a6f75726e616c2e636c692e73686172652e70617273652e656e636f64696e67 = { "solstone journal share" }: error: arguments must be valid { "UTF-8" }
+
+m6a6f75726e616c2e636c692e73686172652e70617273652e6d697373696e67 = { "solstone journal share" }: error: a subcommand is required
+
+m6a6f75726e616c2e636c692e73686172652e70617273652e7265717569726564 = { "solstone journal share" }: error: { $option } is required
+
+m6a6f75726e616c2e636c692e73686172652e70617273652e756e6b6e6f776e = { "solstone journal share" }: error: unknown subcommand '{ $argument }'
+
+m6a6f75726e616c2e636c692e73686172652e70617273652e76616c7565 = { "solstone journal share" }: error: { $flag } needs a value
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e61637469766974792e756e617661696c61626c65 = activity summary unavailable: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6368696c642e636c65616e7570 = { $primary } (cleanup: { $cleanup })
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6368696c642e65786974 = exit { $code }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6368696c642e657869742e7369676e616c = exit { $code } signal { $signal }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6368696c642e696e76616c6964 = invalid child response ({ $status }): { $detail }; { "stdin_closed_early=" }{ $early }; { "stdout=" }{ $out }; { "stderr=" }{ $err }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6368696c642e70726f63657373 = process I/O failed: { $primary }; { "status=" }{ $status }; { "stdin_closed_early=" }{ $early }; { "stdout=" }{ $out }; { "stderr=" }{ $err }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6368696c642e70726f636573732e636c65616e7570 = process I/O failed: { $primary }; { "status=" }{ $status }; { "stdin_closed_early=" }{ $early }; { "stdout=" }{ $out }; { "stderr=" }{ $err }; { "cleanup=" }{ $cleanup }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6368696c642e70726f746f636f6c = protocol { $reason } ({ $status }): { $detail }; { "stdin_closed_early=" }{ $early }; { "stdout=" }{ $out }; { "stderr=" }{ $err }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6368696c642e7369676e616c = signal { $signal }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6368696c642e7374617475732e756e6b6e6f776e = status unknown
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6368696c642e7472756e6361746564 = { $bytes } [truncated]
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6368696c642e756e617661696c61626c65 = unavailable
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6368696c642e756e6578706563746564 = unexpected child ({ $status }); { "stdin_closed_early=" }{ $early }; { "stdout=" }{ $out }; { "stderr=" }{ $err }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e656e7469746965732e72656164 = could not read entities: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e656e746974792e696e76616c6964 = failed to load journal entity { $entity }: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6d61746368696e67 = matching { $facet }/{ $day }/{ $activity } for { $entity }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e6d6f64656c2e756e636f6e66696775726564 = No model is chosen yet. Choose one in Thinking.
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e706572736f6e2e616273656e74 = no person in this journal is named '{ $query }'
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e706572736f6e2e616d626967756f7573 = '{ $query }' names more than one person ({ $people }); use an entity id
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e70726573656e63652e756e617661696c61626c65 = presence check unavailable: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e7365676d656e742e756e617661696c61626c65 = segment summary unavailable: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e74616c656e742e696e76616c6964 = talent '{ $talent }' returned invalid { "JSON" }: { $error }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e74616c656e742e70726570617265 = talent '{ $talent }': { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e74616c656e742e74696d656f75742e6e756d65726963 = configuration '{ $talent }' declares a nonnumeric { "timeout_s" }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e74616c656e742e74696d656f75742e72616e6765 = configuration '{ $talent }' declares { "timeout_s" } outside the supported range
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e74616c656e742e746f6b656e73 = talent '{ $talent }' declares no { "max_output_tokens" }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e74616c656e742e74797065 = unsupported talent type: { $kind }
+
+m6a6f75726e616c2e636c692e73686172652e70726f76696465722e74616c656e742e756e66696e6973686564 = talent '{ $talent }' did not finish: { $outcome }
+
+m6a6f75726e616c2e636c692e73686172652e737461727475702e6661696c6564 = { "share" } failed: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e737461727475702e72756e74696d652e63757272656e74 = could not resolve worker executable: { $error }
+
+m6a6f75726e616c2e636c692e73686172652e737461727475702e72756e74696d652e706172656e74 = worker executable has no parent: { $path }
+
+m6a6f75726e616c2e636c692e73686172652e737461727475702e72756e74696d652e726f6f74 = could not resolve installation root from executable directory: { $path }
+
+m6a6f75726e616c2e636c692e73686172652e737461727475702e7369626c696e672e6d697373696e67 = { "share" } failed: missing sibling executable { $path }
+
+m6a6f75726e616c2e636c692e73686172652e737461727475702e7369626c696e672e706172656e74 = { "share" } failed: current executable has no parent
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e6368696c642e696e7370656374 = inspect child before termination: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e6368696c642e72656170 = reap child: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e6368696c642e7265747279 = retry reap child: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e6368696c642e7465726d696e617465 = terminate child: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e636f6c6c6563746f72 = { $pipe } collector: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e636f6c6c6563746f722e70616e6963 = { $pipe } collector: thread panicked
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e6669656c642e6172726179 = { $field } must be an array or null
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e6669656c642e626f6f6c65616e = { $field } must be a boolean
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e6669656c642e6f7074696f6e616c = { $field } must be a string or null
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e6669656c642e737472696e67 = { $field } must be a string
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e6669656c642e737472696e6773 = { $field } must contain only strings
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e6f626a656374 = record must be a { "JSON" } object
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e6f7574636f6d65 = response outcome is not supported
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e706970652e6d697373696e67 = wire { $pipe } is unavailable
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e726571756573742e656d707479 = { "contents" } must be non-empty
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e726571756573742e6f766572666c6f77 = { "overflow_text" } requires the first content part to be text
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e736368656d61 = record schema is not supported
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e7374646f75742e6c696d6974 = { "stdout" } truncated at { $limit } bytes
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e7573616765 = { "usage" } is required
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e776f726b65722e6368616e6e656c = pipe worker completion channel: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e776f726b65722e6a6f696e = { $pipe } worker join: thread panicked
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e776f726b65722e7374617274 = start { $pipe } worker: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e777269746572 = { "stdin" } writer: { $detail }
+
+m6a6f75726e616c2e636c692e73686172652e7472616e73706f72742e7772697465722e70616e6963 = { "stdin" } writer: thread panicked
+
+m6a6f75726e616c2e636c692e73686172652e75736167652e6d61746368 = usage: { "solstone journal share match [-h] --person PERSON --day YYYYMMDD [--facet FACET]" }
+
+m6a6f75726e616c2e636c692e73686172652e75736167652e7061636b616765 = usage: { "solstone journal share package [-h] --person PERSON --day YYYYMMDD --facet FACET --activity ID" }
+
+m6a6f75726e616c2e636c692e73686172652e75736167652e726f6f74 = usage: { "solstone journal share [-h] {match,package} ..." }
+
 m6a6f75726e616c2e636c692e736f6c2e68656c702e61707073 = Apps ({ "solstone call <app>" }):
 
 m6a6f75726e616c2e636c692e736f6c2e68656c702e636f6d7075746572 = This computer

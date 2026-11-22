@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for provider talent timeout numeric.",
+  "context": "Journal command-line text for provider talent timeout numeric.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9e3b40b4a3350a51c548b6dbe3432498cd41cbbda74255d6694227c2d415f090",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "timeout_s_field",
+      "kind": "accepted-input",
+      "value": "timeout_s"
+    }
+  ]
+}

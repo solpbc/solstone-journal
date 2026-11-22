@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for transport pipe missing.",
+  "context": "Journal command-line text for transport pipe missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "pipe",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c71692edfa60cbd1eb8c79025f317b992d77e583386ddb8769f3dbf81f128e99",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

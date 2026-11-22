@@ -18,6 +18,7 @@ use solstone_core_system_health::{DataState, read_segment_data_state};
 pub mod activity_contract;
 pub mod assemble;
 mod browser_reading;
+mod client_diagnostics;
 pub mod conditional_segment;
 pub mod contract;
 mod daily_execution;
@@ -62,7 +63,7 @@ mod test_support;
 
 use contract::{CommitDisposition, GateDecision, PrePostState, resolve_hook};
 pub use terminal_reading::{ShownLines, terminal_shown_lines};
-pub use transcript::{activity_span_transcript, agent_speakers, voice_names};
+pub use transcript::{activity_span_transcript, agent_speakers, voice_names, voice_names_in};
 
 /// Config key honored by the speaker_attribution and possible-names pre-steps,
 /// which then write nothing. Not a general per-stage dry-run flag.
@@ -86,6 +87,7 @@ pub struct PreparedTalent {
     pub name: String,
     pub config: Map<String, Value>,
     preview_language: Option<PreviewLanguage>,
+    diagnostic_locale: Option<String>,
     /// Bound to the exact loaded text, before sparse notes or request fitting.
     pub(crate) passage_layout: Option<([u8; 32], solstone_core_transcripts::TranscriptLayout)>,
     pub(crate) topic_input_kinds:
@@ -117,6 +119,12 @@ struct PreviewLanguage {
 }
 
 impl PreparedTalent {
+    fn diagnostic_locale(&self) -> &str {
+        self.diagnostic_locale
+            .as_deref()
+            .unwrap_or(solstone_core_cli_copy::ENGLISH)
+    }
+
     fn stage_locale(&self) -> &str {
         self.preview_language
             .as_ref()
@@ -135,6 +143,7 @@ impl PreparedTalent {
             name,
             config,
             preview_language: None,
+            diagnostic_locale: None,
             passage_layout: None,
             topic_input_kinds: None,
             entry_sources: Vec::new(),
@@ -416,7 +425,7 @@ pub struct StageError {
 }
 
 impl StageError {
-    fn display_in(&self, locale: &str) -> String {
+    pub fn display_in(&self, locale: &str) -> String {
         solstone_core_cli_copy::display_for(
             locale,
             "journal.cli.talent.hook.failure",
@@ -589,22 +598,36 @@ fn configure_generate_client(client: OneShotClient) -> OneShotClient {
 
 /// The installed talent, app and template roots beside the running executable.
 pub fn runtime_paths_from_current_executable() -> Result<prepare::RuntimePaths, String> {
-    let executable = std::env::current_exe()
-        .map_err(|error| format!("could not resolve worker executable: {error}"))?;
-    let executable_dir = executable
-        .parent()
-        .ok_or_else(|| format!("worker executable has no parent: {}", executable.display()))?;
+    resolve_runtime_paths().map_err(|error| error.to_string())
+}
+
+/// Preserve the diagnostic fields for a terminal that renders startup failures.
+pub fn resolve_runtime_paths()
+-> Result<prepare::RuntimePaths, solstone_core_cli_copy::MessageDetail> {
+    use solstone_core_cli_copy::MessageDetail;
+    let executable = std::env::current_exe().map_err(|error| {
+        MessageDetail::message(
+            "journal.cli.share.startup.runtime.current",
+            [("error", &error)],
+        )
+    })?;
+    let executable_dir = executable.parent().ok_or_else(|| {
+        MessageDetail::message(
+            "journal.cli.share.startup.runtime.parent",
+            [("path", &executable.display())],
+        )
+    })?;
     runtime_paths_from_executable_dir(executable_dir)
 }
 
 pub(crate) fn runtime_paths_from_executable_dir(
     executable_dir: &Path,
-) -> Result<prepare::RuntimePaths, String> {
+) -> Result<prepare::RuntimePaths, solstone_core_cli_copy::MessageDetail> {
     let root = solstone_core_journal::resolve_installation_root_from_executable_dir(executable_dir)
         .ok_or_else(|| {
-            format!(
-                "could not resolve installation root from executable directory: {}",
-                executable_dir.display()
+            solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.share.startup.runtime.root",
+                [("path", &executable_dir.display())],
             )
         })?;
     Ok(prepare::RuntimePaths {
@@ -691,7 +714,10 @@ pub fn execute_request(
     }
     let Some(value) = request.get("_work_unit") else {
         let outcome = execute_unclaimed(
-            request,
+            UnclaimedRequest {
+                input: request,
+                diagnostic_locale: None,
+            },
             paths,
             context,
             generate,
@@ -789,7 +815,10 @@ pub fn execute_request(
     applicability_request.remove(conditional_segment::DETECTION_INPUT_KEY);
     let mut conditional_binding = None;
     let outcome = execute_unclaimed(
-        request,
+        UnclaimedRequest {
+            input: request,
+            diagnostic_locale: None,
+        },
         paths,
         context,
         generate,
@@ -859,8 +888,53 @@ pub fn execute_request(
     outcome
 }
 
+/// Run a talent over a supplied transcript, with a language for its diagnostics.
+/// There is no destination in this request and no event output.
+pub fn execute_transcript(
+    diagnostic_locale: &str,
+    talent: &str,
+    transcript: &str,
+    paths: &prepare::RuntimePaths,
+    context: &ExecutionContext,
+    generate: &dyn solstone_core_generate::GenerateExecutor,
+    cancellation: &solstone_core_generate::Cancellation,
+) -> RuntimeOutcome {
+    if cancellation.is_cancelled() {
+        return RuntimeOutcome::Cancelled;
+    }
+    let input = Map::from_iter([
+        ("name".to_owned(), Value::String(talent.to_owned())),
+        (
+            "transcript".to_owned(),
+            Value::String(transcript.to_owned()),
+        ),
+    ]);
+    let outcome = execute_unclaimed(
+        UnclaimedRequest {
+            input,
+            diagnostic_locale: Some(diagnostic_locale),
+        },
+        paths,
+        context,
+        generate,
+        &mut std::io::sink(),
+        cancellation,
+        &mut None,
+    );
+    if cancellation.is_cancelled() {
+        RuntimeOutcome::Cancelled
+    } else {
+        outcome
+    }
+}
+
+struct UnclaimedRequest<'a> {
+    input: Map<String, Value>,
+    diagnostic_locale: Option<&'a str>,
+}
+
 fn execute_unclaimed(
-    request: Map<String, Value>,
+    request: UnclaimedRequest<'_>,
     paths: &prepare::RuntimePaths,
     context: &ExecutionContext,
     generate: &dyn solstone_core_generate::GenerateExecutor,
@@ -868,13 +942,18 @@ fn execute_unclaimed(
     cancellation: &solstone_core_generate::Cancellation,
     conditional_binding: &mut Option<String>,
 ) -> RuntimeOutcome {
-    let mut validation_request = request.clone();
-    let mut prepared =
-        match prepare::prepare(request, paths, context, prepare::PrepareMode::Execute) {
-            Ok(prepared) => prepared,
-            Err(_) if cancellation.is_cancelled() => return RuntimeOutcome::Cancelled,
-            Err(error) => return RuntimeOutcome::PrepareFailed(error),
-        };
+    let mut validation_request = request.input.clone();
+    let mut prepared = match prepare::prepare_in(
+        request.diagnostic_locale,
+        request.input,
+        paths,
+        context,
+        prepare::PrepareMode::Execute,
+    ) {
+        Ok(prepared) => prepared,
+        Err(_) if cancellation.is_cancelled() => return RuntimeOutcome::Cancelled,
+        Err(error) => return RuntimeOutcome::PrepareFailed(error),
+    };
     if cancellation.is_cancelled() {
         return RuntimeOutcome::Cancelled;
     }
@@ -882,6 +961,7 @@ fn execute_unclaimed(
     // Never trust a caller's value, including one copied from an older use.
     let binding_key = conditional_segment::DETECTION_INPUT_KEY;
     validation_request.remove(binding_key);
+    prepared.diagnostic_locale = request.diagnostic_locale.map(str::to_owned);
     prepared.config.remove(binding_key);
     if prepared.name == "entities:detection" && prepared.config.get("skip_reason").is_none() {
         match entities::detection::no_candidates_input_binding(&prepared, context) {
@@ -925,7 +1005,11 @@ fn execute_unclaimed(
             "type",
             "runtime",
             &prepared,
-            format!("unsupported talent type: {talent_type}"),
+            solstone_core_cli_copy::display_for(
+                prepared.diagnostic_locale(),
+                "journal.cli.share.provider.talent.type",
+                [("kind", &talent_type)],
+            ),
         ));
     }
     let hook = prepared
@@ -1403,7 +1487,12 @@ fn native_generate_response(
                 log_input,
                 |_attempt, request| {
                     let response = generate.execute(request).map_err(|error| {
-                        stage_error("generate", "runtime", prepared, format!("{error}"))
+                        stage_error(
+                            "generate",
+                            "runtime",
+                            prepared,
+                            client_diagnostics::describe(&error, prepared.diagnostic_locale()),
+                        )
                     })?;
                     Ok(response)
                 },
@@ -1874,27 +1963,36 @@ fn generate_request(prepared: &PreparedTalent) -> Result<GenerateRequest, String
 }
 
 fn native_generate_request(prepared: &PreparedTalent) -> Result<GenerateRequest, String> {
+    let locale = prepared.diagnostic_locale();
     let max_output_tokens = prepared
         .config
         .get("max_output_tokens")
         .and_then(Value::as_u64)
         .filter(|tokens| *tokens > 0)
-        .ok_or_else(|| format!("talent '{}' declares no max_output_tokens", prepared.name))?;
+        .ok_or_else(|| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.share.provider.talent.tokens",
+                [("talent", &prepared.name)],
+            )
+        })?;
     let timeout_s = match prepared.config.get("timeout_s") {
         None | Some(Value::Null) => None,
         Some(value) => {
             let seconds = value.as_f64().ok_or_else(|| {
-                format!(
-                    "configuration '{}' declares a nonnumeric timeout_s",
-                    prepared.name
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.share.provider.talent.timeout.numeric",
+                    [("talent", &prepared.name)],
                 )
             })?;
             // Keep existing nonpositive wire behavior. Positive values must fit
             // the transport's Duration before they can reach its conversion.
             if seconds > 0.0 && std::time::Duration::try_from_secs_f64(seconds).is_err() {
-                return Err(format!(
-                    "configuration '{}' declares timeout_s outside the supported range",
-                    prepared.name
+                return Err(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.share.provider.talent.timeout.range",
+                    [("talent", &prepared.name)],
                 ));
             }
             Some(seconds)

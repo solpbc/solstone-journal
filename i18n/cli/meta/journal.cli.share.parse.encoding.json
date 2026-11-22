@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for parse encoding.",
+  "context": "Journal command-line text for parse encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "046c8aeb43bb726d2fe690c2a5fa68bbdee5c2e88cebdd12254ce998cfd6861e",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal share"
+    },
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

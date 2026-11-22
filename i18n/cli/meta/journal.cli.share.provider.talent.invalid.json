@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for provider talent invalid.",
+  "context": "Journal command-line text for provider talent invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0524b1a56b6f925ffc0061e43f3750f7cd07ab32a4a8e47ca31a45863c903934",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

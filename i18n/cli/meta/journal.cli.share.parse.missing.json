@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for parse missing.",
+  "context": "Journal command-line text for parse missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81c0cd5fa6c8a320511d32c11b12c3e099885a4bfa46a4e21a7299f75912f442",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal share"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for provider child truncated.",
+  "context": "Journal command-line text for provider child truncated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "bytes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ba296275516473a0d3b942cb0dfc07dbd86d93b82c8c4eb354c699d96870dd0f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

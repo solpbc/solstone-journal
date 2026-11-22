@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for provider talent timeout range.",
+  "context": "Journal command-line text for provider talent timeout range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f9c3a5ced984e9bbec140244e69f2725949736b351fb13d431a5a47ef70c7ab0",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "timeout_s_field",
+      "kind": "accepted-input",
+      "value": "timeout_s"
+    }
+  ]
+}

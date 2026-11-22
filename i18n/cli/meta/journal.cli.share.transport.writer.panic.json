@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for transport writer panic.",
+  "context": "Journal command-line text for transport writer panic.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e6a8a8f50261009d9907719286151c532ad5a23c8204b675aec3dad4c1d25c1",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stdin",
+      "kind": "accepted-input",
+      "value": "stdin"
+    }
+  ]
+}

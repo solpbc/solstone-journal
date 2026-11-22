@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for transport collector.",
+  "context": "Journal command-line text for transport collector.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "pipe",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e2bae99d7904d1816c65bb5c2c3ffcecad0516cac42a795949b67e84b0e6cf9a",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

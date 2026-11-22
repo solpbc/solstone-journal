@@ -6,7 +6,8 @@
 use std::path::Path;
 
 use serde_json::Value;
-use solstone_core_entity::{JournalEntity, is_admissible_person, load_all_journal_entities};
+use solstone_core_cli_copy::MessageDetail;
+use solstone_core_entity::{JournalEntity, is_admissible_person, load_all_journal_entities_in};
 
 use crate::names::{PersonRef, normalize};
 
@@ -36,8 +37,13 @@ impl Owner {
     /// The display name is identity `preferred`, then `name`, then the
     /// principal's own name.
     pub fn load(journal: &Path) -> Result<Self, String> {
-        let principals = load_all_journal_entities(journal)
-            .map_err(|error| error.to_string())?
+        Self::load_detail(journal, solstone_core_cli_copy::ENGLISH)
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn load_detail(journal: &Path, locale: &str) -> Result<Self, MessageDetail> {
+        let principals = load_all_journal_entities_in(journal, locale)
+            .map_err(|error| error.identity_read_detail())?
             .into_iter()
             .filter(|entity| entity.is_principal() && is_admissible_person(entity))
             .collect::<Vec<_>>();
@@ -85,15 +91,28 @@ impl Owner {
 /// Resolve `--person`: an admissible person's entity id exactly, else the one
 /// person whose name or alias is the query. The owner is never a candidate.
 pub fn resolve_person(journal: &Path, query: &str) -> Result<PersonRef, String> {
-    let people = load_all_journal_entities(journal)
-        .map_err(|error| format!("could not read entities: {error}"))?
+    resolve_person_detail(journal, query, solstone_core_cli_copy::ENGLISH)
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) fn resolve_person_detail(
+    journal: &Path,
+    query: &str,
+    locale: &str,
+) -> Result<PersonRef, MessageDetail> {
+    let people = load_all_journal_entities_in(journal, locale)
+        .map_err(|error| {
+            error
+                .identity_read_detail()
+                .context("journal.cli.share.provider.entities.read")
+        })?
         .into_iter()
         .filter(|entity| is_admissible_person(entity) && !entity.is_principal())
         .collect::<Vec<_>>();
     resolve_among(&people, query)
 }
 
-fn resolve_among(people: &[JournalEntity], query: &str) -> Result<PersonRef, String> {
+fn resolve_among(people: &[JournalEntity], query: &str) -> Result<PersonRef, MessageDetail> {
     if let Some(entity) = people.iter().find(|entity| entity.id == query) {
         return Ok(PersonRef::from_entity(entity));
     }
@@ -111,14 +130,45 @@ fn resolve_among(people: &[JournalEntity], query: &str) -> Result<PersonRef, Str
         .collect::<Vec<_>>();
     match matches.as_slice() {
         [person] => Ok(person.clone()),
-        [] => Err(format!("no person in this journal is named '{query}'")),
-        many => Err(format!(
-            "'{query}' names more than one person ({}); use an entity id",
-            many.iter()
+        [] => Err(MessageDetail::message(
+            "journal.cli.share.provider.person.absent",
+            [("query", &query)],
+        )),
+        many => {
+            let ids = many
+                .iter()
                 .map(|person| person.entity_id.as_str())
                 .collect::<Vec<_>>()
-                .join(", ")
-        )),
+                .join(", ");
+            Err(MessageDetail::message(
+                "journal.cli.share.provider.person.ambiguous",
+                [("query", &query), ("people", &ids)],
+            ))
+        }
+    }
+}
+
+/// Listing declarations only traverses the directory. Reading activity rows only
+/// resolves their path and reads the file. Other variants describe write operations.
+pub(crate) fn facet_list_detail(error: &solstone_core_facets::FacetStoreError) -> MessageDetail {
+    use solstone_core_facets::FacetStoreError as E;
+    use solstone_core_journal_io::cli_diagnostics::{path_message, read_message};
+    match error {
+        E::Read(e) => read_message(e),
+        E::Path(e) => path_message(e),
+        other => other.to_string().into(),
+    }
+}
+
+pub(crate) fn activity_read_detail(
+    error: &solstone_core_facets::ActivityRecordStoreError,
+) -> MessageDetail {
+    use solstone_core_facets::ActivityRecordStoreError as E;
+    use solstone_core_journal_io::cli_diagnostics::{path_message, read_message};
+    match error {
+        E::Read(e) => read_message(e),
+        E::Path(e) => path_message(e),
+        other => other.to_string().into(),
     }
 }
 

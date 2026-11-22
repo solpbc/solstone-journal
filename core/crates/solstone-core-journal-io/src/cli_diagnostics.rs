@@ -66,21 +66,29 @@ pub fn segment_identity(locale: &str, error: &SegmentIdentityError) -> String {
 }
 
 pub fn read_detail(locale: &str, error: &crate::ReadError) -> String {
+    read_message(error).render(locale)
+}
+
+pub fn read_message(error: &crate::ReadError) -> solstone_core_cli_copy::MessageDetail {
     use crate::ReadError;
+    use solstone_core_cli_copy::MessageDetail;
     match error {
         ReadError::Malformed(error) => match error.line {
-            Some(line) => solstone_core_cli_copy::display_for(
-                locale,
+            Some(line) => MessageDetail::message(
                 "journal.cli.talent.facet.malformed.line",
                 [("path", &(error.path.display())), ("line", &(line))],
             ),
-            None => solstone_core_cli_copy::display_for(
-                locale,
+            None => MessageDetail::message(
                 "journal.cli.talent.facet.malformed",
                 [("path", &(error.path.display()))],
             ),
         },
-        ReadError::Io { .. } => error.to_string(),
+        ReadError::Io { path, source } => io_message(source)
+            .unwrap_or_else(|| source.to_string().into())
+            .context_with(
+                "journal.cli.describe.pipeline.publish.path",
+                [("path", &path.display())],
+            ),
     }
 }
 

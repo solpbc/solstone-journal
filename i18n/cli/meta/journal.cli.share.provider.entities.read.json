@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for provider entities read.",
+  "context": "Journal command-line text for provider entities read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c88dc6fa976be7062b4021456ab753817139789379fd67343dc9cf5f24157044",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

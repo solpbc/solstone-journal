@@ -153,6 +153,13 @@ pub(super) type IdentityGroups = BTreeMap<String, Vec<(String, IdentitySnapshot)
 pub(super) fn identity_groups(
     journal_root: &Path,
 ) -> Result<(IdentityGroups, Vec<IdentityMapLoser>), EntityStoreError> {
+    identity_groups_in(journal_root, solstone_core_cli_copy::ENGLISH)
+}
+
+pub(super) fn identity_groups_in(
+    journal_root: &Path,
+    diagnostic_locale: &str,
+) -> Result<(IdentityGroups, Vec<IdentityMapLoser>), EntityStoreError> {
     let entities_dir = contained_path(journal_root, "entities")?;
     #[cfg(any(test, feature = "test-hooks"))]
     super::test_counters::test_instrumentation::increment_entities_dir_listing();
@@ -172,7 +179,7 @@ pub(super) fn identity_groups(
             Err(error) => losers.push(IdentityMapLoser {
                 entity_dir,
                 reason: IdentityMapLoserReason::Malformed {
-                    message: error.to_string(),
+                    message: error.identity_read_detail().render(diagnostic_locale),
                 },
             }),
         }

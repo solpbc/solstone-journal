@@ -7139,3 +7139,155 @@ journal.cli.journal.resolution.home = native journal resolution failed: home una
 journal.cli.journal.root.inspect = native journal project root resolution failed: could not inspect current executable: { $error }
 
 journal.cli.journal.root.package = native journal project root resolution failed: could not locate source checkout or installed { $product } package from { $path }
+
+journal.cli.share.activities = could not read { $facet } activities for { $day }: { $detail }
+
+journal.cli.share.activity.missing = no activity '{ $activity }' in { $facet } on { $day }
+
+journal.cli.share.activity.unmatched = activity '{ $activity }' does not match { $person }
+
+journal.cli.share.facets = could not list facets: { $detail }
+
+journal.cli.share.failure = { $command }: { $detail }
+
+journal.cli.share.help.match = usage: { $syntax }{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $person_option }{ $gap_3 }entity id, or a unique name or alias of a person{ $line_break }{ $indent_2 }{ $day_option }{ $gap_4 }the day to read{ $line_break }{ $indent_2 }{ $facet_option }{ $gap_5 }only this facet (default: every facet)
+
+journal.cli.share.help.package = usage: { $syntax }{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $person_option }{ $gap_3 }entity id, or a unique name or alias of a person{ $line_break }{ $indent_2 }{ $day_option }{ $gap_4 }the activity's day{ $line_break }{ $indent_2 }{ $facet_option }{ $gap_5 }the activity's facet{ $line_break }{ $indent_2 }{ $activity_option }{ $gap_5 }the activity id
+
+journal.cli.share.help.root = usage: { $syntax }{ $line_break }{ $line_break }Find activities shared with a linked person and preview what would be shared.{ $line_break }Both subcommands only read the journal.{ $line_break }{ $line_break }commands:{ $line_break }{ $match_command }List the day's activities that match a person, one { $json } line each{ $line_break }{ $package_command }Print the scoped summary package for one matching activity
+
+journal.cli.share.parse.argument = { $command }: error: unrecognized argument '{ $argument }'
+
+journal.cli.share.parse.duplicate = { $command }: error: { $flag } given more than once
+
+journal.cli.share.parse.encoding = { $command }: error: arguments must be valid { $encoding }
+
+journal.cli.share.parse.missing = { $command }: error: a subcommand is required
+
+journal.cli.share.parse.required = { $command }: error: { $option } is required
+
+journal.cli.share.parse.unknown = { $command }: error: unknown subcommand '{ $argument }'
+
+journal.cli.share.parse.value = { $command }: error: { $flag } needs a value
+
+journal.cli.share.provider.activity.unavailable = activity summary unavailable: { $detail }
+
+journal.cli.share.provider.child.cleanup = { $primary } (cleanup: { $cleanup })
+
+journal.cli.share.provider.child.exit = exit { $code }
+
+journal.cli.share.provider.child.exit.signal = exit { $code } signal { $signal }
+
+journal.cli.share.provider.child.invalid = invalid child response ({ $status }): { $detail }; { $stdin_closed_early_field }{ $early }; { $stdout_field }{ $out }; { $stderr_field }{ $err }
+
+journal.cli.share.provider.child.process = process I/O failed: { $primary }; { $status_field }{ $status }; { $stdin_closed_early_field }{ $early }; { $stdout_field }{ $out }; { $stderr_field }{ $err }
+
+journal.cli.share.provider.child.process.cleanup = process I/O failed: { $primary }; { $status_field }{ $status }; { $stdin_closed_early_field }{ $early }; { $stdout_field }{ $out }; { $stderr_field }{ $err }; { $cleanup_field }{ $cleanup }
+
+journal.cli.share.provider.child.protocol = protocol { $reason } ({ $status }): { $detail }; { $stdin_closed_early_field }{ $early }; { $stdout_field }{ $out }; { $stderr_field }{ $err }
+
+journal.cli.share.provider.child.signal = signal { $signal }
+
+journal.cli.share.provider.child.status.unknown = status unknown
+
+journal.cli.share.provider.child.truncated = { $bytes } [truncated]
+
+journal.cli.share.provider.child.unavailable = unavailable
+
+journal.cli.share.provider.child.unexpected = unexpected child ({ $status }); { $stdin_closed_early_field }{ $early }; { $stdout_field }{ $out }; { $stderr_field }{ $err }
+
+journal.cli.share.provider.entities.read = could not read entities: { $detail }
+
+journal.cli.share.provider.entity.invalid = failed to load journal entity { $entity }: { $detail }
+
+journal.cli.share.provider.matching = matching { $facet }/{ $day }/{ $activity } for { $entity }
+
+journal.cli.share.provider.model.unconfigured = No model is chosen yet. Choose one in Thinking.
+
+journal.cli.share.provider.person.absent = no person in this journal is named '{ $query }'
+
+journal.cli.share.provider.person.ambiguous = '{ $query }' names more than one person ({ $people }); use an entity id
+
+journal.cli.share.provider.presence.unavailable = presence check unavailable: { $detail }
+
+journal.cli.share.provider.segment.unavailable = segment summary unavailable: { $detail }
+
+journal.cli.share.provider.talent.invalid = talent '{ $talent }' returned invalid { $json }: { $error }
+
+journal.cli.share.provider.talent.prepare = talent '{ $talent }': { $detail }
+
+journal.cli.share.provider.talent.timeout.numeric = configuration '{ $talent }' declares a nonnumeric { $timeout_s_field }
+
+journal.cli.share.provider.talent.timeout.range = configuration '{ $talent }' declares { $timeout_s_field } outside the supported range
+
+journal.cli.share.provider.talent.tokens = talent '{ $talent }' declares no { $max_output_tokens_field }
+
+journal.cli.share.provider.talent.type = unsupported talent type: { $kind }
+
+journal.cli.share.provider.talent.unfinished = talent '{ $talent }' did not finish: { $outcome }
+
+journal.cli.share.startup.failed = { $command } failed: { $detail }
+
+journal.cli.share.startup.runtime.current = could not resolve worker executable: { $error }
+
+journal.cli.share.startup.runtime.parent = worker executable has no parent: { $path }
+
+journal.cli.share.startup.runtime.root = could not resolve installation root from executable directory: { $path }
+
+journal.cli.share.startup.sibling.missing = { $command } failed: missing sibling executable { $path }
+
+journal.cli.share.startup.sibling.parent = { $command } failed: current executable has no parent
+
+journal.cli.share.transport.child.inspect = inspect child before termination: { $detail }
+
+journal.cli.share.transport.child.reap = reap child: { $detail }
+
+journal.cli.share.transport.child.retry = retry reap child: { $detail }
+
+journal.cli.share.transport.child.terminate = terminate child: { $detail }
+
+journal.cli.share.transport.collector = { $pipe } collector: { $detail }
+
+journal.cli.share.transport.collector.panic = { $pipe } collector: thread panicked
+
+journal.cli.share.transport.field.array = { $field } must be an array or null
+
+journal.cli.share.transport.field.boolean = { $field } must be a boolean
+
+journal.cli.share.transport.field.optional = { $field } must be a string or null
+
+journal.cli.share.transport.field.string = { $field } must be a string
+
+journal.cli.share.transport.field.strings = { $field } must contain only strings
+
+journal.cli.share.transport.object = record must be a { $json } object
+
+journal.cli.share.transport.outcome = response outcome is not supported
+
+journal.cli.share.transport.pipe.missing = wire { $pipe } is unavailable
+
+journal.cli.share.transport.request.empty = { $contents } must be non-empty
+
+journal.cli.share.transport.request.overflow = { $overflow } requires the first content part to be text
+
+journal.cli.share.transport.schema = record schema is not supported
+
+journal.cli.share.transport.stdout.limit = { $stdout } truncated at { $limit } bytes
+
+journal.cli.share.transport.usage = { $usage } is required
+
+journal.cli.share.transport.worker.channel = pipe worker completion channel: { $detail }
+
+journal.cli.share.transport.worker.join = { $pipe } worker join: thread panicked
+
+journal.cli.share.transport.worker.start = start { $pipe } worker: { $detail }
+
+journal.cli.share.transport.writer = { $stdin } writer: { $detail }
+
+journal.cli.share.transport.writer.panic = { $stdin } writer: thread panicked
+
+journal.cli.share.usage.match = usage: { $syntax }
+
+journal.cli.share.usage.package = usage: { $syntax }
+
+journal.cli.share.usage.root = usage: { $syntax }

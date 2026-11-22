@@ -95,6 +95,22 @@ impl fmt::Display for EntityStoreError {
     }
 }
 
+impl EntityStoreError {
+    /// Diagnostic returned by a read-only enumeration of entity identities.
+    pub fn identity_read_detail(&self) -> solstone_core_cli_copy::MessageDetail {
+        use solstone_core_journal_io::cli_diagnostics::{path_message, read_message};
+        match self {
+            Self::Read(error) => read_message(error),
+            Self::Path(error) => path_message(error),
+            Self::IdentityNotObject { path } => solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.talent.hook.identity.object",
+                [("path", &path.display())],
+            ),
+            other => other.to_string().into(),
+        }
+    }
+}
+
 impl Error for EntityStoreError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {

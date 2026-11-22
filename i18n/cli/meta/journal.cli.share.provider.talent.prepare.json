@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for provider talent prepare.",
+  "context": "Journal command-line text for provider talent prepare.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a35c2336186e65d78c208fb313858fb6ea64a6fa18e213e45f435f04d2ff7aea",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

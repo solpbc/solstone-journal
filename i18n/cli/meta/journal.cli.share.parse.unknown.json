@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for parse unknown.",
+  "context": "Journal command-line text for parse unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "argument",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2914cd0c7a42d68e331a99cc59d24545aecd8d442d7c376715927a51f0a68613",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal share"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for transport schema.",
+  "context": "Journal command-line text for transport schema.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ec4bb6146cdd8078966bf8dbd17477c2a0f277f712ad6b8cdc68639216d19fb5",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

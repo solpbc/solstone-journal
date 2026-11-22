@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for transport outcome.",
+  "context": "Journal command-line text for transport outcome.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64db486bd23f43530b25b18d18faec7db400aaa1faafc8beac6fd4fe54f97f65",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for transport collector panic.",
+  "context": "Journal command-line text for transport collector panic.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "pipe",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "69a1a529c250fc4d15b2331591d5475f453357a9c43665274c4f67267e6e84bc",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

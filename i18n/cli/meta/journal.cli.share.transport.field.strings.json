@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for transport field strings.",
+  "context": "Journal command-line text for transport field strings.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5301e6a2578cb3cab5cc834086c6b37f24d4405437cc75bf96efdd0144e0d474",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

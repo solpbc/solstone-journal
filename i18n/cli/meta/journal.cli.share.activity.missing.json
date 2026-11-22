@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for activity missing.",
+  "context": "Journal command-line text for activity missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "activity",
+      "type": "string"
+    },
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b03806b83d4404fe3dfbdc395767b736496d4d36e9c339ebfa474cb26ffb59ca",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

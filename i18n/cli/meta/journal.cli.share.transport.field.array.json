@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for transport field array.",
+  "context": "Journal command-line text for transport field array.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d78df5d3a0dbf64c01ec5284d8a6551017995450e0fb46d22b4210ff97ce1b02",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

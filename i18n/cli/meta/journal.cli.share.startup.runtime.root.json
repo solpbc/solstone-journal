@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for startup runtime root.",
+  "context": "Journal command-line text for startup runtime root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e9c3fd4a752b8ec0240b1142f234581d42c1eba052f72015294f6d4c270cd259",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "description": "Journal command-line text for provider child process cleanup.",
+  "context": "Journal command-line text for provider child process cleanup.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "primary",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    },
+    {
+      "name": "early",
+      "type": "string"
+    },
+    {
+      "name": "out",
+      "type": "string"
+    },
+    {
+      "name": "err",
+      "type": "string"
+    },
+    {
+      "name": "cleanup",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "025a704c66d23cd63cfe08a34c5eb5b75f9ba4e2f6961f9dee22e5bfc0da6f9b",
+  "max_length": 221,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stdin_closed_early_field",
+      "kind": "accepted-input",
+      "value": "stdin_closed_early="
+    },
+    {
+      "name": "cleanup_field",
+      "kind": "accepted-input",
+      "value": "cleanup="
+    },
+    {
+      "name": "stdout_field",
+      "kind": "accepted-input",
+      "value": "stdout="
+    },
+    {
+      "name": "stderr_field",
+      "kind": "accepted-input",
+      "value": "stderr="
+    },
+    {
+      "name": "status_field",
+      "kind": "accepted-input",
+      "value": "status="
+    }
+  ]
+}

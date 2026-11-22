@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for parse duplicate.",
+  "context": "Journal command-line text for parse duplicate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "flag",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0a3cb9ea3944d1a0895d4e02b1268fd7176bda051767de2e787583bc32a7a210",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal share"
+    }
+  ]
+}

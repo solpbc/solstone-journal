@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for transport request overflow.",
+  "context": "Journal command-line text for transport request overflow.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e3002b686ee1ecd6ead465a401effb6815478aa80e047c459a524c8e6b616e8",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "overflow",
+      "kind": "accepted-input",
+      "value": "overflow_text"
+    }
+  ]
+}

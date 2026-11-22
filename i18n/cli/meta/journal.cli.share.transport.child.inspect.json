@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for transport child inspect.",
+  "context": "Journal command-line text for transport child inspect.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1832a241e26dbb3769246b35f4a4581acbd52fce3e9cc9543e3beeee693f2f80",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

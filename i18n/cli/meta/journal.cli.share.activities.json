@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for activities.",
+  "context": "Journal command-line text for activities.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ade1e2d16dbeb59282aeeeaa1e5e46f8ceeeadc73f57ba94c82f43fb7e4c82db",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

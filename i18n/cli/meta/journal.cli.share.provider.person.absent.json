@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for provider person absent.",
+  "context": "Journal command-line text for provider person absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "query",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "90d9e8a5202deca6c8dd92d4e8ae7db472a328639320cfca7887efbb797a2097",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

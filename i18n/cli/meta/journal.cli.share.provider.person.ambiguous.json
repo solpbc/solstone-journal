@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for provider person ambiguous.",
+  "context": "Journal command-line text for provider person ambiguous.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "query",
+      "type": "string"
+    },
+    {
+      "name": "people",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7384a0f8dbabd8512d8e16602499032c8c3421ba02fceee97e1d516787e1cc96",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

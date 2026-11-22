@@ -116,11 +116,19 @@ pub fn match_activity(
 ) -> Option<ActivityMatch> {
     let activity = ActivityRef::from_record(record);
     log::debug!(
-        "matching {facet}/{day}/{} for {}",
-        activity.id,
-        person.entity_id
+        "{}",
+        solstone_core_cli_copy::display_for(
+            talents.diagnostic_locale(),
+            "journal.cli.share.provider.matching",
+            [
+                ("facet", &facet),
+                ("day", &day),
+                ("activity", &activity.id),
+                ("entity", &person.entity_id)
+            ]
+        )
     );
-    let sources = read_sources(journal, day, &activity);
+    let sources = read_sources(journal, day, &activity, talents.diagnostic_locale());
     match_sources(&sources, person, owner, talents)
 }
 
@@ -128,8 +136,9 @@ pub(crate) fn read_sources(
     journal: &Path,
     day: &str,
     activity: &ActivityRef,
+    locale: &str,
 ) -> Vec<SegmentSource> {
-    let voices = solstone_core_talent_runtime::voice_names(journal);
+    let voices = solstone_core_talent_runtime::voice_names_in(journal, locale);
     load_activity_sources(
         journal,
         day,
@@ -354,7 +363,14 @@ fn ask_presence(
             (presence, partial)
         }
         Err(error) => {
-            log::warn!("presence check unavailable: {error}");
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    talents.diagnostic_locale(),
+                    "journal.cli.share.provider.presence.unavailable",
+                    [("detail", &error)]
+                )
+            );
             (Presence::Unclear, None)
         }
     }

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for provider child status unknown.",
+  "context": "Journal command-line text for provider child status unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aa1d7846d492194497bd494eee12da0ecc87fbcc47e2be555b056739d0ffff51",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

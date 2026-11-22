@@ -7,41 +7,61 @@ use std::ffi::OsString;
 use std::path::Path;
 
 use serde_json::json;
+use solstone_core_cli_copy::{Diagnostic, ENGLISH, MessageDetail, render_for};
 
 use crate::matching::{ActivityRef, match_activity};
 use crate::names::PersonRef;
-use crate::people::{Owner, resolve_person};
+use crate::people::{Owner, activity_read_detail, facet_list_detail, resolve_person_detail};
 use crate::summary::build_package;
-use crate::talents::TalentCaller;
+use crate::talents::{PartialTrackingTalents, TalentCaller};
 
+// These public constants are the source-English usage strings for library callers.
 pub const SHARE_USAGE: &str = "usage: solstone journal share [-h] {match,package} ...\n";
 pub const MATCH_USAGE: &str =
     "usage: solstone journal share match [-h] --person PERSON --day YYYYMMDD [--facet FACET]\n";
 pub const PACKAGE_USAGE: &str = "usage: solstone journal share package [-h] --person PERSON --day YYYYMMDD --facet FACET --activity ID\n";
 
-const SHARE_HELP: &str = concat!(
-    "usage: solstone journal share [-h] {match,package} ...\n\n",
-    "Find activities shared with a linked person and preview what would be shared.\n",
-    "Both subcommands only read the journal.\n\n",
-    "commands:\n",
-    "    match     List the day's activities that match a person, one JSON line each\n",
-    "    package   Print the scoped summary package for one matching activity\n",
-);
-const MATCH_HELP: &str = concat!(
-    "usage: solstone journal share match [-h] --person PERSON --day YYYYMMDD [--facet FACET]\n\n",
-    "options:\n",
-    "  --person PERSON   entity id, or a unique name or alias of a person\n",
-    "  --day YYYYMMDD    the day to read\n",
-    "  --facet FACET     only this facet (default: every facet)\n",
-);
-const PACKAGE_HELP: &str = concat!(
-    "usage: solstone journal share package [-h] --person PERSON --day YYYYMMDD --facet FACET --activity ID\n\n",
-    "options:\n",
-    "  --person PERSON   entity id, or a unique name or alias of a person\n",
-    "  --day YYYYMMDD    the activity's day\n",
-    "  --facet FACET     the activity's facet\n",
-    "  --activity ID     the activity id\n",
-);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CommandPage {
+    Root,
+    Match,
+    Package,
+}
+
+impl CommandPage {
+    fn help(self, locale: &str) -> String {
+        let id = match self {
+            Self::Root => "journal.cli.share.help.root",
+            Self::Match => "journal.cli.share.help.match",
+            Self::Package => "journal.cli.share.help.package",
+        };
+        render_for(locale, id, &[])
+    }
+
+    fn usage(self, locale: &str) -> String {
+        let id = match self {
+            Self::Root => "journal.cli.share.usage.root",
+            Self::Match => "journal.cli.share.usage.match",
+            Self::Package => "journal.cli.share.usage.package",
+        };
+        render_for(locale, id, &[])
+    }
+
+    fn refuse<const N: usize>(
+        self,
+        id: &'static str,
+        args: [(&'static str, &dyn std::fmt::Display); N],
+    ) -> ShareCommand {
+        ShareCommand::Usage {
+            page: self,
+            error: Diagnostic::new(id, args),
+        }
+    }
+
+    fn required(self, option: &str) -> ShareCommand {
+        self.refuse("journal.cli.share.parse.required", [("option", &option)])
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CliRun {
@@ -52,10 +72,10 @@ pub struct CliRun {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ShareCommand {
-    Help(&'static str),
+    Help(CommandPage),
     Usage {
-        usage: &'static str,
-        error: String,
+        page: CommandPage,
+        error: Diagnostic,
     },
     Match {
         person: String,
@@ -85,16 +105,19 @@ pub(crate) fn parse(args: &[OsString]) -> ShareCommand {
         .map(|arg| arg.to_str().map(str::to_owned))
         .collect::<Option<Vec<_>>>()
     else {
-        return usage(SHARE_USAGE, "arguments must be valid UTF-8");
+        return CommandPage::Root.refuse("journal.cli.share.parse.encoding", []);
     };
     let Some((command, rest)) = args.split_first() else {
-        return usage(SHARE_USAGE, "a subcommand is required");
+        return CommandPage::Root.refuse("journal.cli.share.parse.missing", []);
     };
-    let (help, usage_text) = match command.as_str() {
-        "-h" | "--help" => return ShareCommand::Help(SHARE_HELP),
-        "match" => (MATCH_HELP, MATCH_USAGE),
-        "package" => (PACKAGE_HELP, PACKAGE_USAGE),
-        other => return usage(SHARE_USAGE, &format!("unknown subcommand '{other}'")),
+    let page = match command.as_str() {
+        "-h" | "--help" => return ShareCommand::Help(CommandPage::Root),
+        "match" => CommandPage::Match,
+        "package" => CommandPage::Package,
+        other => {
+            return CommandPage::Root
+                .refuse("journal.cli.share.parse.unknown", [("argument", &other)]);
+        }
     };
     let mut person = None;
     let mut day = None;
@@ -103,35 +126,37 @@ pub(crate) fn parse(args: &[OsString]) -> ShareCommand {
     let mut values = rest.iter();
     while let Some(flag) = values.next() {
         let slot = match flag.as_str() {
-            "-h" | "--help" => return ShareCommand::Help(help),
+            "-h" | "--help" => return ShareCommand::Help(page),
             "--person" => &mut person,
             "--day" => &mut day,
             "--facet" => &mut facet,
             "--activity" if command == "package" => &mut activity,
-            other => return usage(usage_text, &format!("unrecognized argument '{other}'")),
+            other => {
+                return page.refuse("journal.cli.share.parse.argument", [("argument", &other)]);
+            }
         };
         match values.next() {
             Some(value) if !value.is_empty() && slot.is_none() => *slot = Some(value.clone()),
             Some(_) if slot.is_some() => {
-                return usage(usage_text, &format!("{flag} given more than once"));
+                return page.refuse("journal.cli.share.parse.duplicate", [("flag", flag)]);
             }
-            _ => return usage(usage_text, &format!("{flag} needs a value")),
+            _ => return page.refuse("journal.cli.share.parse.value", [("flag", flag)]),
         }
     }
     let Some(person) = person else {
-        return usage(usage_text, "--person is required");
+        return page.required("--person");
     };
     let Some(day) = day.filter(|day| solstone_core_format::segment::is_date_key(day)) else {
-        return usage(usage_text, "--day YYYYMMDD is required");
+        return page.required("--day YYYYMMDD");
     };
     if command == "match" {
         return ShareCommand::Match { person, day, facet };
     }
     let Some(facet) = facet else {
-        return usage(usage_text, "--facet is required");
+        return page.required("--facet");
     };
     let Some(activity) = activity else {
-        return usage(usage_text, "--activity is required");
+        return page.required("--activity");
     };
     ShareCommand::Package {
         person,
@@ -141,50 +166,45 @@ pub(crate) fn parse(args: &[OsString]) -> ShareCommand {
     }
 }
 
-fn usage(usage: &'static str, error: &str) -> ShareCommand {
-    ShareCommand::Usage {
-        usage,
-        error: error.to_owned(),
-    }
-}
-
-/// Run one `share` invocation. Nothing here writes to the journal.
+/// Run a read-only share preview using the source language for API callers.
 pub fn run_cli(args: &[OsString], journal: &Path, talents: &dyn TalentCaller) -> CliRun {
-    let partial = std::cell::Cell::new(false);
-    let tracked = |talent: &str, transcript: &str| {
-        let result = talents.call(talent, transcript);
-        if result
-            .as_ref()
-            .ok()
-            .and_then(|v| v.get("partial_input"))
-            .is_some_and(serde_json::Value::is_object)
-        {
-            partial.set(true);
-        }
-        result
-    };
-    let mut result = run_cli_inner(args, journal, &tracked);
-    if partial.get() {
-        result
-            .stderr
-            .push_str(solstone_core_format::content::PARTIAL_INPUT_NOTICE);
-        result.stderr.push('\n');
-    }
-    result
+    run_cli_for_locale(ENGLISH, args, journal, talents)
 }
 
-fn run_cli_inner(args: &[OsString], journal: &Path, talents: &dyn TalentCaller) -> CliRun {
+/// Run the same preview with terminal diagnostics in the caller's language.
+pub fn run_cli_for_locale(
+    locale: &str,
+    args: &[OsString],
+    journal: &Path,
+    talents: &dyn TalentCaller,
+) -> CliRun {
+    let tracked = PartialTrackingTalents::new(talents, locale);
+    let mut run = run_cli_inner(locale, args, journal, &tracked);
+    if tracked.saw_partial() {
+        run.stderr
+            .push_str(&solstone_core_format::stored_markdown::Message::PartialInput.render(locale));
+        run.stderr.push('\n');
+    }
+    run
+}
+
+fn run_cli_inner(
+    locale: &str,
+    args: &[OsString],
+    journal: &Path,
+    talents: &dyn TalentCaller,
+) -> CliRun {
     match parse(args) {
-        ShareCommand::Help(text) => finished(text.to_owned(), String::new(), 0),
-        ShareCommand::Usage { usage, error } => finished(
+        ShareCommand::Help(page) => finished(format!("{}\n", page.help(locale)), String::new(), 0),
+        ShareCommand::Usage { page, error } => finished(
             String::new(),
-            format!("{usage}solstone journal share: error: {error}\n"),
+            format!("{}\n{}\n", page.usage(locale), error.render(locale)),
             2,
         ),
         ShareCommand::Match { person, day, facet } => {
             match run_match(journal, &person, &day, facet.as_deref(), talents) {
                 Ok(stdout) => finished(stdout, String::new(), 0),
-                Err(error) => failed(&error),
+                Err(error) => failed(locale, error),
             }
         }
         ShareCommand::Package {
@@ -194,7 +214,7 @@ fn run_cli_inner(args: &[OsString], journal: &Path, talents: &dyn TalentCaller) 
             activity,
         } => match run_package(journal, &person, &day, &facet, &activity, talents) {
             Ok(stdout) => finished(stdout, String::new(), 0),
-            Err(error) => failed(&error),
+            Err(error) => failed(locale, error),
         },
     }
 }
@@ -207,16 +227,26 @@ fn finished(stdout: String, stderr: String, exit_code: i32) -> CliRun {
     }
 }
 
-fn failed(error: &str) -> CliRun {
+fn failed(locale: &str, error: MessageDetail) -> CliRun {
     finished(
         String::new(),
-        format!("solstone journal share: {error}\n"),
+        format!(
+            "{}\n",
+            error.context("journal.cli.share.failure").render(locale)
+        ),
         1,
     )
 }
 
-fn subjects(journal: &Path, person: &str) -> Result<(PersonRef, Owner), String> {
-    Ok((resolve_person(journal, person)?, Owner::load(journal)?))
+fn subjects(
+    journal: &Path,
+    person: &str,
+    locale: &str,
+) -> Result<(PersonRef, Owner), MessageDetail> {
+    Ok((
+        resolve_person_detail(journal, person, locale)?,
+        Owner::load_detail(journal, locale)?,
+    ))
 }
 
 fn run_match(
@@ -225,17 +255,22 @@ fn run_match(
     day: &str,
     facet: Option<&str>,
     talents: &dyn TalentCaller,
-) -> Result<String, String> {
-    let (person, owner) = subjects(journal, person)?;
+) -> Result<String, MessageDetail> {
+    let (person, owner) = subjects(journal, person, talents.diagnostic_locale())?;
     let facets = match facet {
         Some(facet) => vec![facet.to_owned()],
         None => solstone_core_facets::list_declared_facet_names(journal)
-            .map_err(|error| format!("could not list facets: {error}"))?,
+            .map_err(|error| facet_list_detail(&error).context("journal.cli.share.facets"))?,
     };
     let mut stdout = String::new();
     for facet in facets {
         let records = solstone_core_facets::load_activity_records(journal, &facet, day, false)
-            .map_err(|error| format!("could not read {facet} activities for {day}: {error}"))?;
+            .map_err(|error| {
+                activity_read_detail(&error).context_with(
+                    "journal.cli.share.activities",
+                    [("facet", &facet), ("day", &day)],
+                )
+            })?;
         for record in records {
             let Some(matched) =
                 match_activity(journal, &facet, day, &record, &person, &owner, talents)
@@ -270,18 +305,33 @@ fn run_package(
     facet: &str,
     activity: &str,
     talents: &dyn TalentCaller,
-) -> Result<String, String> {
-    let (person, owner) = subjects(journal, person)?;
+) -> Result<String, MessageDetail> {
+    let (person, owner) = subjects(journal, person, talents.diagnostic_locale())?;
     let record = solstone_core_facets::get_activity_record(journal, facet, day, activity)
-        .map_err(|error| format!("could not read {facet} activities for {day}: {error}"))?
+        .map_err(|error| {
+            activity_read_detail(&error).context_with(
+                "journal.cli.share.activities",
+                [("facet", &facet), ("day", &day)],
+            )
+        })?
         .filter(|record| {
             !record
                 .get("hidden")
                 .is_some_and(solstone_core_facets::activity_value_truthy)
         })
-        .ok_or_else(|| format!("no activity '{activity}' in {facet} on {day}"))?;
+        .ok_or_else(|| {
+            MessageDetail::message(
+                "journal.cli.share.activity.missing",
+                [("activity", &activity), ("facet", &facet), ("day", &day)],
+            )
+        })?;
     let package = build_package(journal, facet, day, &record, &person, &owner, talents)
-        .ok_or_else(|| format!("activity '{activity}' does not match {}", person.name))?;
+        .ok_or_else(|| {
+            MessageDetail::message(
+                "journal.cli.share.activity.unmatched",
+                [("activity", &activity), ("person", &person.name)],
+            )
+        })?;
     let mut stdout = serde_json::to_string(&package).map_err(|error| error.to_string())?;
     stdout.push('\n');
     Ok(stdout)

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for provider child unavailable.",
+  "context": "Journal command-line text for provider child unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d7d6eca0ae3dc604cbe3adf1139a4860a3314a82068e6f82289272ebbf93af1e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

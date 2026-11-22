@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for provider talent type.",
+  "context": "Journal command-line text for provider talent type.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "01aec33321dfd37f68f3fa54dbb4b12e246357a66801b8c60343e1b78ac83c1f",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

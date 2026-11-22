@@ -5,32 +5,33 @@ use std::collections::HashSet;
 
 use serde_json::{Map, Value, json};
 
+use crate::TransportDiagnostic as Diagnostic;
 use crate::fixture::{request_allows_field, request_default, schema};
 use crate::types::{
     ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, ProtocolError,
     ReasonCodeValue, RefusalReason, RefusedResponse, SessionTerminal,
 };
 
-fn object(value: Value) -> Result<Map<String, Value>, String> {
-    value
-        .as_object()
-        .cloned()
-        .ok_or_else(|| "record must be a JSON object".to_owned())
+fn object(value: Value) -> Result<Map<String, Value>, Diagnostic> {
+    value.as_object().cloned().ok_or(Diagnostic::Object)
 }
 
-fn string(object: &Map<String, Value>, name: &str) -> Result<String, String> {
+fn string(object: &Map<String, Value>, name: &'static str) -> Result<String, Diagnostic> {
     object
         .get(name)
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
-        .ok_or_else(|| format!("{name} must be a string"))
+        .ok_or(Diagnostic::StringField { field: name })
 }
 
-fn optional_string(object: &Map<String, Value>, name: &str) -> Result<Option<String>, String> {
+fn optional_string(
+    object: &Map<String, Value>,
+    name: &'static str,
+) -> Result<Option<String>, Diagnostic> {
     match object.get(name) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
-        _ => Err(format!("{name} must be a string or null")),
+        _ => Err(Diagnostic::OptionalString { field: name }),
     }
 }
 
@@ -38,7 +39,10 @@ fn optional_value(object: &Map<String, Value>, name: &str) -> Option<Value> {
     object.get(name).filter(|value| !value.is_null()).cloned()
 }
 
-fn optional_string_array(object: &Map<String, Value>, name: &str) -> Result<Vec<String>, String> {
+fn optional_string_array(
+    object: &Map<String, Value>,
+    name: &'static str,
+) -> Result<Vec<String>, Diagnostic> {
     match object.get(name) {
         None | Some(Value::Null) => Ok(Vec::new()),
         Some(Value::Array(values)) => values
@@ -47,10 +51,10 @@ fn optional_string_array(object: &Map<String, Value>, name: &str) -> Result<Vec<
                 value
                     .as_str()
                     .map(ToOwned::to_owned)
-                    .ok_or_else(|| format!("{name} must contain only strings"))
+                    .ok_or(Diagnostic::StringItems { field: name })
             })
             .collect(),
-        _ => Err(format!("{name} must be an array or null")),
+        _ => Err(Diagnostic::OptionalArray { field: name }),
     }
 }
 
@@ -89,19 +93,26 @@ fn optional_f64_value(value: &Value, name: &str) -> Result<Option<f64>, String> 
     }
 }
 
-fn require_schema(object: &Map<String, Value>, expected: &str) -> Result<(), String> {
+fn require_schema(object: &Map<String, Value>, expected: &str) -> Result<(), Diagnostic> {
     if object.get("schema").and_then(Value::as_str) == Some(expected) {
         Ok(())
     } else {
-        Err("record schema is not supported".to_owned())
+        Err(Diagnostic::Schema)
     }
 }
 
 pub fn encode_one_shot_request(request: &GenerateRequest) -> Result<String, String> {
+    encode_one_shot_request_with(request, &String::from)
+}
+
+pub(crate) fn encode_one_shot_request_with(
+    request: &GenerateRequest,
+    render: &dyn Fn(Diagnostic) -> String,
+) -> Result<String, String> {
     if request.contents.is_empty() {
-        return Err("contents must be non-empty".to_owned());
+        return Err(render(Diagnostic::EmptyContents));
     }
-    validate_overflow_text(&request.contents, request.overflow_text.as_deref())?;
+    validate_overflow_text(&request.contents, request.overflow_text.as_deref()).map_err(render)?;
     let contents = request
         .contents
         .iter()
@@ -203,60 +214,72 @@ pub fn decode_one_shot_request(input: &str) -> Result<GenerateRequest, String> {
     })
 }
 
-fn validate_overflow_text(contents: &[ContentPart], overflow: Option<&str>) -> Result<(), String> {
+fn validate_overflow_text(
+    contents: &[ContentPart],
+    overflow: Option<&str>,
+) -> Result<(), Diagnostic> {
     if overflow.is_some() && !matches!(contents.first(), Some(ContentPart::Text { .. })) {
-        return Err("overflow_text requires the first content part to be text".to_owned());
+        return Err(Diagnostic::OverflowRequiresText);
     }
     Ok(())
 }
 
 pub fn decode_one_shot_response(input: &str) -> Result<GenerateResponse, String> {
-    let object = object(serde_json::from_str(input).map_err(|error| error.to_string())?)?;
-    require_schema(&object, schema("response"))?;
-    match string(&object, "outcome")?.as_str() {
+    decode_one_shot_response_with(input, &String::from)
+}
+
+pub(crate) fn decode_one_shot_response_with(
+    input: &str,
+    render: &dyn Fn(Diagnostic) -> String,
+) -> Result<GenerateResponse, String> {
+    let object =
+        object(serde_json::from_str(input).map_err(|error| error.to_string())?).map_err(render)?;
+    require_schema(&object, schema("response")).map_err(render)?;
+    match string(&object, "outcome").map_err(render)?.as_str() {
         "generated" => Ok(GenerateResponse::Generated(Box::new(GeneratedResponse {
-            id: optional_string(&object, "id")?,
-            text: string(&object, "text")?,
-            model: string(&object, "model")?,
+            id: optional_string(&object, "id").map_err(render)?,
+            text: string(&object, "text").map_err(render)?,
+            model: string(&object, "model").map_err(render)?,
             usage: object
                 .get("usage")
                 .cloned()
-                .ok_or_else(|| "usage is required".to_owned())?,
-            finish_reason: string(&object, "finish_reason")?,
+                .ok_or_else(|| render(Diagnostic::Usage))?,
+            finish_reason: string(&object, "finish_reason").map_err(render)?,
             thinking: optional_value(&object, "thinking"),
             schema_validation: optional_value(&object, "schema_validation"),
             input_budget: optional_value(&object, "input_budget"),
             request_budget: optional_value(&object, "request_budget"),
             inference: optional_value(&object, "inference"),
-            hints_applied: optional_string_array(&object, "hints_applied")?,
+            hints_applied: optional_string_array(&object, "hints_applied").map_err(render)?,
         }))),
         "refused" => {
-            let reason_code =
-                optional_string(&object, "reason_code")?.map(ReasonCodeValue::from_wire);
+            let reason_code = optional_string(&object, "reason_code")
+                .map_err(render)?
+                .map(ReasonCodeValue::from_wire);
             let mut retryable = object
                 .get("retryable")
                 .and_then(Value::as_bool)
-                .ok_or_else(|| "retryable must be a boolean".to_owned())?;
+                .ok_or_else(|| render(Diagnostic::Boolean { field: "retryable" }))?;
             let mut blocking = object
                 .get("blocking")
                 .and_then(Value::as_bool)
-                .ok_or_else(|| "blocking must be a boolean".to_owned())?;
+                .ok_or_else(|| render(Diagnostic::Boolean { field: "blocking" }))?;
             if matches!(reason_code, Some(ReasonCodeValue::Unknown(_))) {
                 retryable = false;
                 blocking = true;
             }
             Ok(GenerateResponse::Refused(RefusedResponse {
-                id: optional_string(&object, "id")?,
-                reason: RefusalReason::from_wire(&string(&object, "reason")?),
+                id: optional_string(&object, "id").map_err(render)?,
+                reason: RefusalReason::from_wire(&string(&object, "reason").map_err(render)?),
                 reason_code,
                 retryable,
                 blocking,
                 reset_at_ms: object.get("reset_at_ms").and_then(Value::as_u64),
-                provider: optional_string(&object, "provider")?,
-                detail: string(&object, "detail")?,
+                provider: optional_string(&object, "provider").map_err(render)?,
+                detail: string(&object, "detail").map_err(render)?,
             }))
         }
-        _ => Err("response outcome is not supported".to_owned()),
+        _ => Err(render(Diagnostic::Outcome)),
     }
 }
 

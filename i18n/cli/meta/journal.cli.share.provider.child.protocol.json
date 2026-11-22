@@ -1,0 +1,58 @@
+{
+  "description": "Journal command-line text for provider child protocol.",
+  "context": "Journal command-line text for provider child protocol.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "early",
+      "type": "string"
+    },
+    {
+      "name": "out",
+      "type": "string"
+    },
+    {
+      "name": "err",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4198fc27c10a46d5b7b6078db64b38b09d66d4e7716d3673b86bd4d86e696c7b",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stdin_closed_early_field",
+      "kind": "accepted-input",
+      "value": "stdin_closed_early="
+    },
+    {
+      "name": "stdout_field",
+      "kind": "accepted-input",
+      "value": "stdout="
+    },
+    {
+      "name": "stderr_field",
+      "kind": "accepted-input",
+      "value": "stderr="
+    }
+  ]
+}

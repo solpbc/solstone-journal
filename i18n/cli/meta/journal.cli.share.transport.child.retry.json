@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for transport child retry.",
+  "context": "Journal command-line text for transport child retry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ca2977ac2e61937e6ca826df96fd7bf11880f375818b5c8630013a91d7063fb0",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

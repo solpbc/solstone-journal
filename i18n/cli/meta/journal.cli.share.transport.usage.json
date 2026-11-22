@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for transport usage.",
+  "context": "Journal command-line text for transport usage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "20e4962a60c2c71c1d97149f9f2df6324943bd4d0fc0be19ab6d962d6c98dfcb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "usage",
+      "kind": "accepted-input",
+      "value": "usage"
+    }
+  ]
+}

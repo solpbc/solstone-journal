@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for transport child terminate.",
+  "context": "Journal command-line text for transport child terminate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a43f0bc8fce902a9855601de49c6a0f6c9ff4d315e97fa8c402810108977a88b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

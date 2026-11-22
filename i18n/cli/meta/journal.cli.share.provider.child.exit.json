@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for provider child exit.",
+  "context": "Journal command-line text for provider child exit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cfc919f77a0358b5c66153e4a2b06a0d4dfb14aba4d2965d69570210f396c3ec",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

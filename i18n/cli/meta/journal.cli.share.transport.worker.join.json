@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for transport worker join.",
+  "context": "Journal command-line text for transport worker join.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "pipe",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9ed018fbe8a8b67f1a2ce47db624ce444475c0cb8e14d41c882b55bcba7eab25",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

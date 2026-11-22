@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for usage match.",
+  "context": "Journal command-line text for usage match.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6ded81f9571f0cedd45f361f8e3355b68941d9484132c7499112f9e3254b2bb8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal share match [-h] --person PERSON --day YYYYMMDD [--facet FACET]"
+    }
+  ]
+}

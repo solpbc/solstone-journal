@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for transport writer.",
+  "context": "Journal command-line text for transport writer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d6678681eae2d6102a4e72cf368f155ed1de3602f04abf39d02264c17d1b2556",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stdin",
+      "kind": "accepted-input",
+      "value": "stdin"
+    }
+  ]
+}

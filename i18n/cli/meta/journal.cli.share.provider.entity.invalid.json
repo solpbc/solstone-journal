@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for provider entity invalid.",
+  "context": "Journal command-line text for provider entity invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "83e2a9ff026592e8f59febb5a4261098fa9f07852ca03f1121f4a7756a353d2c",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

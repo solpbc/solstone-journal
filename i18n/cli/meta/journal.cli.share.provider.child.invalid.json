@@ -1,0 +1,54 @@
+{
+  "description": "Journal command-line text for provider child invalid.",
+  "context": "Journal command-line text for provider child invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "early",
+      "type": "string"
+    },
+    {
+      "name": "out",
+      "type": "string"
+    },
+    {
+      "name": "err",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f797fb9f8b6feec900abdbc6d9ac35ac8c0cd3267852042e9401f938b47e44b3",
+  "max_length": 176,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stdin_closed_early_field",
+      "kind": "accepted-input",
+      "value": "stdin_closed_early="
+    },
+    {
+      "name": "stdout_field",
+      "kind": "accepted-input",
+      "value": "stdout="
+    },
+    {
+      "name": "stderr_field",
+      "kind": "accepted-input",
+      "value": "stderr="
+    }
+  ]
+}

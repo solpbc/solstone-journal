@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for transport child reap.",
+  "context": "Journal command-line text for transport child reap.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7080a3fcdcf8ab3f41f1c03783a6f80270a85c3dff38ba574fdd9c319fe9a66a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

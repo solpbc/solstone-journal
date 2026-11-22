@@ -78,7 +78,16 @@ pub fn is_placeholder_name(name: &str) -> bool {
 pub fn load_all_journal_entities(
     journal_root: &Path,
 ) -> Result<Vec<JournalEntity>, EntityStoreError> {
-    Ok(live_journal_entities(journal_root)?
+    load_all_journal_entities_in(journal_root, solstone_core_cli_copy::ENGLISH)
+}
+
+/// Enumerate the same identities, reporting unreadable folders in the calling
+/// command's language.
+pub fn load_all_journal_entities_in(
+    journal_root: &Path,
+    locale: &str,
+) -> Result<Vec<JournalEntity>, EntityStoreError> {
+    Ok(live_journal_entities_in(journal_root, locale)?
         .into_iter()
         .map(|(_, entity)| entity)
         .collect())
@@ -88,12 +97,23 @@ pub fn load_all_journal_entities(
 pub fn live_journal_entities(
     journal_root: &Path,
 ) -> Result<Vec<(String, JournalEntity)>, EntityStoreError> {
-    let (groups, losers) = super::map::identity_groups(journal_root)?;
+    live_journal_entities_in(journal_root, solstone_core_cli_copy::ENGLISH)
+}
+
+fn live_journal_entities_in(
+    journal_root: &Path,
+    locale: &str,
+) -> Result<Vec<(String, JournalEntity)>, EntityStoreError> {
+    let (groups, losers) = super::map::identity_groups_in(journal_root, locale)?;
     for loser in losers {
         if let super::map::IdentityMapLoserReason::Malformed { message } = loser.reason {
             log::warn!(
-                "failed to load journal entity {}: {message}",
-                loser.entity_dir
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.share.provider.entity.invalid",
+                    [("entity", &loser.entity_dir), ("detail", &message)],
+                )
             );
         }
     }

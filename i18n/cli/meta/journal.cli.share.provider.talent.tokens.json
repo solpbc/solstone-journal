@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for provider talent tokens.",
+  "context": "Journal command-line text for provider talent tokens.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e68d00c9154eca76750d06185e1809a86b0ff39e472caa3c23b602bcd9b50b83",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "max_output_tokens_field",
+      "kind": "accepted-input",
+      "value": "max_output_tokens"
+    }
+  ]
+}

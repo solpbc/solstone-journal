@@ -20,11 +20,15 @@ mod people;
 mod source;
 mod summary;
 mod talents;
+mod transport;
+pub use transport::transport_diagnostic;
 
 #[cfg(test)]
 mod tests;
 
-pub use cli::{CliRun, MATCH_USAGE, PACKAGE_USAGE, SHARE_USAGE, reads_journal, run_cli};
+pub use cli::{
+    CliRun, MATCH_USAGE, PACKAGE_USAGE, SHARE_USAGE, reads_journal, run_cli, run_cli_for_locale,
+};
 pub use live::ActivityWindow;
 pub use matching::{ActivityMatch, Basis, Shape, match_activity};
 pub use names::{PersonRef, normalize};

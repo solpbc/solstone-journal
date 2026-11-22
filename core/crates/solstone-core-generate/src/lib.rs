@@ -6,6 +6,8 @@
 mod cancellation;
 mod client;
 mod codec;
+mod diagnostic;
+pub use diagnostic::TransportDiagnostic;
 mod fixture;
 mod session;
 mod session_adapter;

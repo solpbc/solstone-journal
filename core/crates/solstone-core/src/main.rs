@@ -1758,34 +1758,61 @@ fn run_talent(args: Vec<OsString>) -> ExitCode {
 /// `journal share`: read-only matching and packaging. Talents run in process
 /// through the installed talent tree and the sibling generate client.
 fn run_share(args: Vec<OsString>) -> ExitCode {
+    use solstone_core_cli_copy::{ENGLISH, MessageDetail, terminal_locale};
+    use solstone_core_generate::SiblingError;
+    solstone_core_cli_copy::begin_terminal_output();
+    let locale = terminal_locale().unwrap_or(ENGLISH);
     let run = if !solstone_core_linked_share::reads_journal(&args) {
-        solstone_core_linked_share::run_cli(&args, Path::new(""), &|_: &str, _: &str| {
-            Err("help and usage read nothing".to_owned())
-        })
+        solstone_core_linked_share::run_cli_for_locale(
+            locale,
+            &args,
+            Path::new(""),
+            &|_: &str, _: &str| Err("help and usage read nothing".to_owned()),
+        )
     } else {
         let journal = match resolve_process_journal_path() {
             Ok(journal) => journal.path,
             Err(error) => {
-                eprint_journal_path_error(error);
+                eprint_journal_path_error_in(locale, error);
                 return ExitCode::from(EXIT_TEMPFAIL);
             }
         };
-        let paths = match solstone_core_talent_runtime::runtime_paths_from_current_executable() {
+        let paths = match solstone_core_talent_runtime::resolve_runtime_paths() {
             Ok(paths) => paths,
             Err(error) => {
-                eprintln!("share failed: {error}");
+                eprintln!(
+                    "{}",
+                    error
+                        .context("journal.cli.share.startup.failed")
+                        .render(locale)
+                );
                 return ExitCode::from(EXIT_TEMPFAIL);
             }
         };
-        let generate = match solstone_core_generate::OneShotClient::sibling() {
-            Ok(generate) => generate,
+        let generate = match solstone_core_generate::OneShotClient::resolve_sibling() {
+            Ok(generate) => generate.with_diagnostic_renderer(move |detail| {
+                solstone_core_linked_share::transport_diagnostic(locale, detail)
+            }),
             Err(error) => {
-                eprintln!("share failed: {error}");
+                let message = match error {
+                    SiblingError::Current(error) => MessageDetail::message(
+                        "journal.cli.share.startup.failed",
+                        [("detail", &error)],
+                    ),
+                    SiblingError::NoParent => {
+                        MessageDetail::message("journal.cli.share.startup.sibling.parent", [])
+                    }
+                    SiblingError::Missing(path) => MessageDetail::message(
+                        "journal.cli.share.startup.sibling.missing",
+                        [("path", &path.display())],
+                    ),
+                };
+                eprintln!("{}", message.render(locale));
                 return ExitCode::from(EXIT_TEMPFAIL);
             }
         };
         let talents = solstone_core_linked_share::RuntimeTalents::new(&journal, paths, &generate);
-        solstone_core_linked_share::run_cli(&args, &journal, &talents)
+        solstone_core_linked_share::run_cli_for_locale(locale, &args, &journal, &talents)
     };
     print!("{}", run.stdout);
     eprint!("{}", run.stderr);

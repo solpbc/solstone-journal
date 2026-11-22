@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for transport object.",
+  "context": "Journal command-line text for transport object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "364018850df43809823678d7d80db3b05ed88e9cfdc206a7acbf3a526634c503",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

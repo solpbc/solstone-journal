@@ -1,0 +1,68 @@
+{
+  "description": "Journal command-line text for help package.",
+  "context": "Journal command-line text for help package.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "12f9df9d6a66bccdf672f0c7b2197e7414f770045b14b3616e01973924325ff9",
+  "max_length": 411,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal share package [-h] --person PERSON --day YYYYMMDD --facet FACET --activity ID"
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "person_option",
+      "kind": "accepted-input",
+      "value": "--person PERSON"
+    },
+    {
+      "name": "gap_3",
+      "kind": "whitespace",
+      "value": "   "
+    },
+    {
+      "name": "day_option",
+      "kind": "accepted-input",
+      "value": "--day YYYYMMDD"
+    },
+    {
+      "name": "gap_4",
+      "kind": "whitespace",
+      "value": "    "
+    },
+    {
+      "name": "facet_option",
+      "kind": "accepted-input",
+      "value": "--facet FACET"
+    },
+    {
+      "name": "gap_5",
+      "kind": "whitespace",
+      "value": "     "
+    },
+    {
+      "name": "activity_option",
+      "kind": "accepted-input",
+      "value": "--activity ID"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

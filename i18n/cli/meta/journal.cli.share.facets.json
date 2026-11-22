@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facets.",
+  "context": "Journal command-line text for facets.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "179629bc0b53027e693b894976a4727d1e3d935c09ec0cc7ed02a0705fc54eb8",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

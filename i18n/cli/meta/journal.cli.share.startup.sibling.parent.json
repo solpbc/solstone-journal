@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for startup sibling parent.",
+  "context": "Journal command-line text for startup sibling parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "32d3718e85b5b299a11e75d792fb1736af502bbb0f5aef6429538d5096cf78f9",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "share"
+    }
+  ]
+}

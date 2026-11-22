@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for parse required.",
+  "context": "Journal command-line text for parse required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "option",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eeaa8b91fabcb0f9e78fe9bd7dcf3a3f92d9557d7d695de8d604396d27d3ccf7",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal share"
+    }
+  ]
+}

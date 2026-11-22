@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for help root.",
+  "context": "Journal command-line text for help root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7a5e674e7f2c075483c6db4f386b48e905ec62597b28473c7d39fe5d2addcb95",
+  "max_length": 446,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal share [-h] {match,package} ..."
+    },
+    {
+      "name": "match_command",
+      "kind": "command",
+      "value": "    match     "
+    },
+    {
+      "name": "json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    },
+    {
+      "name": "package_command",
+      "kind": "command",
+      "value": "    package   "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

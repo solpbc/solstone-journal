@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for provider talent unfinished.",
+  "context": "Journal command-line text for provider talent unfinished.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "talent",
+      "type": "string"
+    },
+    {
+      "name": "outcome",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cee68b7b7d4772c65047070e3b8191264690e7af06670f5688dfec672ddf0e48",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

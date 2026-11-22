@@ -1,0 +1,50 @@
+{
+  "description": "Journal command-line text for provider child unexpected.",
+  "context": "Journal command-line text for provider child unexpected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    },
+    {
+      "name": "early",
+      "type": "string"
+    },
+    {
+      "name": "out",
+      "type": "string"
+    },
+    {
+      "name": "err",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eebfaa83aa2c3c6cc5ba6a2d52bf49eab4aac6859682dfe8adf6f8eb27791e69",
+  "max_length": 157,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stdin_closed_early_field",
+      "kind": "accepted-input",
+      "value": "stdin_closed_early="
+    },
+    {
+      "name": "stdout_field",
+      "kind": "accepted-input",
+      "value": "stdout="
+    },
+    {
+      "name": "stderr_field",
+      "kind": "accepted-input",
+      "value": "stderr="
+    }
+  ]
+}

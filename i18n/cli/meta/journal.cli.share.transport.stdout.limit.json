@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for transport stdout limit.",
+  "context": "Journal command-line text for transport stdout limit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "limit",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8d04c5e339cd367a2efed2b6944991dbf1ada1434de583b4c7cba4364569b1bd",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stdout",
+      "kind": "accepted-input",
+      "value": "stdout"
+    }
+  ]
+}

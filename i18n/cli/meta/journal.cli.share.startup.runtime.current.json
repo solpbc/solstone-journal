@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for startup runtime current.",
+  "context": "Journal command-line text for startup runtime current.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a59988f200e39395dff48c258d070c43904cee4eec565bb1a9eeb082147f4431",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

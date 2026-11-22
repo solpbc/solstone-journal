@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 
 use serde_json::{Map, Value};
+use solstone_core_cli_copy::ENGLISH;
 use solstone_core_generate::GenerateExecutor;
 use solstone_core_talent_runtime::prepare::RuntimePaths;
 use solstone_core_talent_runtime::{ExecutionContext, RuntimeOutcome};
@@ -19,6 +20,16 @@ pub const ACTIVITY_TALENT: &str = "linked_share_activity";
 /// Runs one talent over prepared text and returns its JSON output.
 pub trait TalentCaller {
     fn call(&self, talent: &str, transcript: &str) -> Result<Value, String>;
+
+    /// Third-party callers supply opaque errors. The in-process runtime knows
+    /// which of its diagnostics can be rendered for a terminal.
+    fn call_for(&self, _locale: &str, talent: &str, transcript: &str) -> Result<Value, String> {
+        self.call(talent, transcript)
+    }
+
+    fn diagnostic_locale(&self) -> &str {
+        ENGLISH
+    }
 }
 
 impl<F> TalentCaller for F
@@ -27,6 +38,45 @@ where
 {
     fn call(&self, talent: &str, transcript: &str) -> Result<Value, String> {
         self(talent, transcript)
+    }
+}
+
+pub(crate) struct PartialTrackingTalents<'a> {
+    caller: &'a dyn TalentCaller,
+    locale: &'a str,
+    partial: std::cell::Cell<bool>,
+}
+
+impl<'a> PartialTrackingTalents<'a> {
+    pub(crate) fn new(caller: &'a dyn TalentCaller, locale: &'a str) -> Self {
+        Self {
+            caller,
+            locale,
+            partial: std::cell::Cell::new(false),
+        }
+    }
+
+    pub(crate) fn saw_partial(&self) -> bool {
+        self.partial.get()
+    }
+}
+
+impl TalentCaller for PartialTrackingTalents<'_> {
+    fn diagnostic_locale(&self) -> &str {
+        self.locale
+    }
+
+    fn call(&self, talent: &str, transcript: &str) -> Result<Value, String> {
+        let result = self.caller.call_for(self.locale, talent, transcript);
+        if result
+            .as_ref()
+            .ok()
+            .and_then(|value| value.get("partial_input"))
+            .is_some_and(Value::is_object)
+        {
+            self.partial.set(true);
+        }
+        result
     }
 }
 
@@ -64,34 +114,65 @@ impl<'a> RuntimeTalents<'a> {
 
 impl TalentCaller for RuntimeTalents<'_> {
     fn call(&self, talent: &str, transcript: &str) -> Result<Value, String> {
+        self.call_for(ENGLISH, talent, transcript)
+    }
+
+    fn call_for(&self, locale: &str, talent: &str, transcript: &str) -> Result<Value, String> {
         let never = || false;
         let cancellation =
             solstone_core_generate::Cancellation::from_fn(self.cancelled.unwrap_or(&never));
         if cancellation.is_cancelled() {
-            return Err("cancelled".to_owned());
+            return Err(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.transcribe.error.writer.npz.cancelled",
+                &[],
+            ));
         }
-        let request = Map::from_iter([
-            ("name".to_owned(), Value::String(talent.to_owned())),
-            (
-                "transcript".to_owned(),
-                Value::String(transcript.to_owned()),
-            ),
-        ]);
-        let outcome = solstone_core_talent_runtime::execute_request(
-            request,
+        let outcome = solstone_core_talent_runtime::execute_transcript(
+            locale,
+            talent,
+            transcript,
             &self.paths,
             &self.context,
             self.generate,
-            &mut std::io::sink(),
             &cancellation,
         );
-        match outcome {
-            RuntimeOutcome::Finished { output, .. } => serde_json::from_str(&output)
-                .map_err(|error| format!("talent '{talent}' returned invalid JSON: {error}")),
-            RuntimeOutcome::StageFailed(error) => Err(error.to_string()),
-            RuntimeOutcome::PrepareFailed(error) => Err(format!("talent '{talent}': {error}")),
-            other => Err(format!("talent '{talent}' did not finish: {other:?}")),
+        outcome_for(locale, talent, outcome)
+    }
+}
+
+fn outcome_for(locale: &str, talent: &str, outcome: RuntimeOutcome) -> Result<Value, String> {
+    use solstone_core_cli_copy::display_for;
+    use solstone_core_talent_runtime::prepare::PrepareFailure;
+    match outcome {
+        RuntimeOutcome::Finished { output, .. } => serde_json::from_str(&output).map_err(|error| {
+            display_for(
+                locale,
+                "journal.cli.share.provider.talent.invalid",
+                [("talent", &talent), ("error", &error)],
+            )
+        }),
+        RuntimeOutcome::StageFailed(error) => Err(error.display_in(locale)),
+        RuntimeOutcome::PrepareFailed(error) => {
+            let detail = match error {
+                PrepareFailure::Refusal(message) => message,
+                PrepareFailure::NoBrainConfigured => solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.share.provider.model.unconfigured",
+                    &[],
+                ),
+            };
+            Err(display_for(
+                locale,
+                "journal.cli.share.provider.talent.prepare",
+                [("talent", &talent), ("detail", &detail)],
+            ))
         }
+        other => Err(display_for(
+            locale,
+            "journal.cli.share.provider.talent.unfinished",
+            [("talent", &talent), ("outcome", &format!("{other:?}"))],
+        )),
     }
 }
 
@@ -218,8 +299,26 @@ mod tests {
         };
         let generate = |_: &GenerateRequest| Ok(generated("{}"));
         let talents = RuntimeTalents::new(journal.path(), paths, &generate);
-        // No model is configured for this journal.
-        assert!(talents.call(SEGMENT_TALENT, "text").is_err());
+        // Only the runtime knows this is the journal's refusal; an injected caller
+        // can return exactly the same words from the model or another service.
+        let raw = talents.call(SEGMENT_TALENT, "text").unwrap_err();
+        let locale = "en-XA";
+        let opaque = |_: &str, _: &str| Err(raw.clone());
+        assert_eq!(opaque.call_for(locale, SEGMENT_TALENT, "text"), Err(raw));
+        let detail = solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.share.provider.model.unconfigured",
+            &[],
+        );
+        let expected = solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.share.provider.talent.prepare",
+            [("talent", &SEGMENT_TALENT), ("detail", &detail)],
+        );
+        assert_eq!(
+            talents.call_for(locale, SEGMENT_TALENT, "text"),
+            Err(expected)
+        );
         assert!(talents.call("no_such_talent", "text").is_err());
     }
 }
