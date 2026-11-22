@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for ready local.",
+  "context": "Journal command-line text for ready local.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1d76a4128c1f44073fb68de074b18f0ad9742b5e7c9b1f79853e2fe1cf48f5d1",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

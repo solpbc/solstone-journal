@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation unknown field.",
+  "context": "Journal command-line text for validation unknown field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cce1ddb18c0d181effdbda50fe9d137eaa232824be01f60d1abddab66becaa98",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

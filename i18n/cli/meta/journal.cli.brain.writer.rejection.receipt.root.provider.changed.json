@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer rejection receipt root provider changed.",
+  "context": "Journal command-line text for writer rejection receipt root provider changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "329d1846cdfc02c9f6c87d4302d0ef5ee44278eed7e13907620d344b903be095",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer brain refresh checking marker is absent.",
+  "context": "Journal command-line text for writer brain refresh checking marker is absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "86fc3d22ef65e6258c5fd5d164e78efb63d5e94c4fbcaa827759a4bec724a2b9",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

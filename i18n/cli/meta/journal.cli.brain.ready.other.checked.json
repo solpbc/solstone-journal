@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for ready other checked.",
+  "context": "Journal command-line text for ready other checked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "lane",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "89fe0aae8672bb22f77038a3fa95ec4e2bafc885c9e56be6951fbdaae70de7df",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

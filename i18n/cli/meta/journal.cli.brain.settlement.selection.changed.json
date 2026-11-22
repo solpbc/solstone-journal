@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for settlement selection changed.",
+  "context": "Journal command-line text for settlement selection changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06bcf91d2d2e7cff9e0ed05e0272cb340e3474c3f216ac04fd93b813725bb4a1",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

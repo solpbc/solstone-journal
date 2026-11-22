@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for validation not attempted reason must repeat causal prerequisite reason.",
+  "context": "Journal command-line text for validation not attempted reason must repeat causal prerequisite reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "11c4630ca16767b63dfd38e1472151758984bcf45b5a20b7c978fb9fcbdcd0f3",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_not_attempted",
+      "kind": "accepted-input",
+      "value": "not_attempted"
+    }
+  ]
+}

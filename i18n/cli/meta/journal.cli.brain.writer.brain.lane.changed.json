@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer brain lane changed.",
+  "context": "Journal command-line text for writer brain lane changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3be40d3f9d9849704fe6fca3be505ef35aee690c965c098edc407e7505c8a2b7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for validation must be an iso 8601 timestamp.",
+  "context": "Journal command-line text for validation must be an iso 8601 timestamp.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d7bd233d301677df24ac0c081b54844d7b3b753ad6764a06c48901936978e2d",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_iso_8601",
+      "kind": "accepted-input",
+      "value": "ISO-8601"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer brain abandon reason is not recordable evidence.",
+  "context": "Journal command-line text for writer brain abandon reason is not recordable evidence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "db2d7de578f60f96978844ef6db520ed44687650c2cef3bd8aed6040a3920a38",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -5350,6 +5350,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-callosum",
  "solstone-core-chatgpt-auth",
+ "solstone-core-cli-copy",
  "solstone-core-installed-payload",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
@@ -5368,6 +5369,7 @@ dependencies = [
  "solstone-core-brain",
  "solstone-core-callosum",
  "solstone-core-chatgpt-auth",
+ "solstone-core-cli-copy",
  "solstone-core-generate",
  "solstone-core-generate-wire",
  "solstone-core-journal-config",
@@ -5376,6 +5378,7 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-spp-ratls",
  "solstone-core-time",
+ "solstone-core-window-catalog",
 ]
 
 [[package]]

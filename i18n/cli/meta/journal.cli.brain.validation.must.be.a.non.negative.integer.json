@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation must be a non negative integer.",
+  "context": "Journal command-line text for validation must be a non negative integer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5399ffef03f099717fdbd2c9f7e5d6fe82676592bbe38a7a4213968aa6540d22",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

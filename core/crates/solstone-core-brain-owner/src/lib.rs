@@ -3,6 +3,9 @@
 
 //! Owner-facing brain inspection and fenced refresh orchestration.
 
+mod owner_copy;
+pub use owner_copy::{config_failure_in, human_text_in};
+
 use std::collections::BTreeMap;
 use std::env;
 use std::path::Path;
@@ -83,6 +86,10 @@ pub enum OwnerRefreshOutcome {
 }
 
 pub trait OwnerProbe {
+    fn diagnostic_locale(&self) -> &str {
+        solstone_core_cli_copy::ENGLISH
+    }
+
     fn process_overrides(&self) -> bool {
         true
     }
@@ -236,7 +243,7 @@ fn refresh_inner(
         Ok(read) => read.config.unwrap_or_default(),
         Err(error) => {
             return OwnerRefreshOutcome::OperationalFailure {
-                message: format!("thinking check failed: could not read journal config: {error}"),
+                message: config_failure_in(error, probe.diagnostic_locale()),
             };
         }
     };
@@ -277,9 +284,7 @@ fn refresh_inner(
             Ok(read) => read.config.unwrap_or_default(),
             Err(error) => {
                 return OwnerRefreshOutcome::OperationalFailure {
-                    message: format!(
-                        "thinking check failed: could not read journal config: {error}"
-                    ),
+                    message: config_failure_in(error, probe.diagnostic_locale()),
                 };
             }
         };
@@ -327,11 +332,11 @@ fn refresh_inner(
                     target.target(),
                     validation_entry(&config, target.provider()),
                 )
-                .map_err(|error| error.to_string())
+                .map_err(|error| owner_copy::writer_detail(&error, probe.diagnostic_locale()))
             });
         if let Err(error) = admission {
             return OwnerRefreshOutcome::OperationalFailure {
-                message: format!("thinking check failed: {error}"),
+                message: owner_copy::check_failure(&error, probe.diagnostic_locale()),
             };
         }
     }
@@ -367,9 +372,19 @@ fn refresh_inner(
         Err(BeginRefreshError::Writer(WriterError::Cancelled(_))) => {
             return OwnerRefreshOutcome::Cancelled;
         }
-        Err(error) => {
+        Err(BeginRefreshError::Writer(error)) => {
+            let locale = probe.diagnostic_locale();
             return OwnerRefreshOutcome::OperationalFailure {
-                message: format!("thinking check failed: {error}"),
+                message: owner_copy::check_failure(
+                    &owner_copy::writer_detail(&error, locale),
+                    locale,
+                ),
+            };
+        }
+        Err(BeginRefreshError::InvalidArgument(detail)) => {
+            let locale = probe.diagnostic_locale();
+            return OwnerRefreshOutcome::OperationalFailure {
+                message: owner_copy::check_failure(&detail.render(locale), locale),
             };
         }
     };
@@ -445,7 +460,10 @@ fn refresh_inner(
                 Ok(witness) => Some(witness),
                 Err(error) => {
                     return OwnerRefreshOutcome::OperationalFailure {
-                        message: format!("thinking check failed: {error}"),
+                        message: owner_copy::check_failure(
+                            &owner_copy::writer_detail(&error, probe.diagnostic_locale()),
+                            probe.diagnostic_locale(),
+                        ),
                     };
                 }
             }
@@ -550,11 +568,7 @@ fn refresh_inner(
                 let missing = matches!(target,
                     RefreshCredential::Endpoint { credential, .. } if credential.is_empty());
                 return OwnerRefreshOutcome::OperationalFailure {
-                    message: if missing {
-                        "the provider needs a key, and your journal couldn't confirm the result was saved."
-                    } else {
-                        "the provider rejected this key, and your journal couldn't confirm the result was saved."
-                    }.to_owned(),
+                    message: owner_copy::credential_failure(missing, probe.diagnostic_locale()),
                 };
             }
         }
@@ -613,6 +627,7 @@ fn refresh_inner(
             outcome.probe_reason,
             probe.process_overrides(),
             needs_credential_retirement,
+            probe.diagnostic_locale(),
             &admit,
         )
     {
@@ -622,7 +637,7 @@ fn refresh_inner(
             ObservationFailure::CredentialSettlementFailed,
         );
         return OwnerRefreshOutcome::OperationalFailure {
-            message: format!("thinking check failed: {error}"),
+            message: owner_copy::check_failure(&error, probe.diagnostic_locale()),
         };
     }
     let committed_config =
@@ -630,7 +645,7 @@ fn refresh_inner(
             Ok(read) => read.config.unwrap_or_default(),
             Err(error) => {
                 return OwnerRefreshOutcome::OperationalFailure {
-                    message: format!("thinking check failed: {error}"),
+                    message: owner_copy::config_check_failure_in(error, probe.diagnostic_locale()),
                 };
             }
         };
@@ -760,7 +775,7 @@ fn renew_prerequisites_inner(
         Ok(read) => read.config.unwrap_or_default(),
         Err(error) => {
             return OwnerRefreshOutcome::OperationalFailure {
-                message: format!("thinking check failed: could not read journal config: {error}"),
+                message: config_failure_in(error, probe.diagnostic_locale()),
             };
         }
     };
@@ -1049,6 +1064,7 @@ fn settle_refresh_credential(
     probe_reason: Option<&str>,
     process_overrides: bool,
     needs_credential_retirement: bool,
+    locale: &str,
     publication_checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), String> {
     let root = witness.admitted_root();
@@ -1070,7 +1086,11 @@ fn settle_refresh_credential(
             .identity()
             != root.identity()
         {
-            return Err("admitted journal path changed".to_owned());
+            return Err(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.brain.settlement.root.changed",
+                &[],
+            ));
         }
         Ok(())
     };
@@ -1084,29 +1104,37 @@ fn settle_refresh_credential(
             if !target.matches(&current, process_overrides)
                 || validation_entry(&current, provider) != prior_validation
             {
-                return Err("credential validation changed after refresh".to_owned());
+                return Err(solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.brain.settlement.validation.changed",
+                    &[],
+                ));
             }
             Ok(())
         };
         witness
             .retire_after_validation(key, &owner_checkpoint)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| owner_copy::writer_detail(&error, locale))?;
         return Ok(());
     }
     witness
         .prepare_successful_validation(&mut entry)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| owner_copy::writer_detail(&error, locale))?;
     let checkpoint = || {
         root_checkpoint()?;
         witness
             .checkpoint_with_binding_key(key)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| owner_copy::writer_detail(&error, locale))?;
         let current = solstone_core_journal_config::read_journal_config_bound(&root)
             .map_err(|error| error.to_string())?
             .config
             .unwrap_or_default();
         if !target.matches(&current, process_overrides) {
-            return Err("credential selection changed during refresh".to_owned());
+            return Err(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.brain.settlement.selection.changed",
+                &[],
+            ));
         }
         Ok(())
     };
@@ -1118,7 +1146,7 @@ fn settle_refresh_credential(
             &|| {
                 witness
                     .begin_positive_config_publication(key)
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| owner_copy::writer_detail(&error, locale))
             },
             |config| {
                 if !target.matches(config, process_overrides)
@@ -1157,7 +1185,11 @@ fn settle_refresh_credential(
         solstone_core_journal_config_write::BoundConfigOutcome::Published(facts)
             if facts.durability_uncertainty.is_some() || facts.observation_uncertainty.is_some() || facts.confirmation_refusal.is_some())
     {
-        return Err("credential validation publication was not confirmed".to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.brain.settlement.unconfirmed",
+            &[],
+        ));
     }
     let owner_checkpoint = || {
         root_checkpoint()?;
@@ -1168,19 +1200,27 @@ fn settle_refresh_credential(
         if !target.matches(&current, process_overrides)
             || validation_entry(&current, provider) != Some(&entry)
         {
-            return Err("credential validation changed after publication".to_owned());
+            return Err(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.brain.settlement.publication.changed",
+                &[],
+            ));
         }
         if solstone_core_brain::read_fingerprint_key_material_bound(root.clone(), journal)
             .map_err(|error| error.to_string())?
             != solstone_core_brain::FingerprintKeyMaterial::Ready(*key)
         {
-            return Err("protected fingerprint key changed after validation".to_owned());
+            return Err(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.brain.settlement.fingerprint.changed",
+                &[],
+            ));
         }
         Ok(())
     };
     witness
         .retire_after_validation(key, &owner_checkpoint)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| owner_copy::writer_detail(&error, locale))?;
     Ok(())
 }
 
@@ -1681,38 +1721,7 @@ pub fn json_text(view: &OwnerView) -> String {
 }
 
 pub fn human_text(view: &OwnerView) -> String {
-    if view.transient == Some("busy") {
-        return format!(
-            "Thinking busy: {}",
-            solstone_core_brain::brain_reason_text(Some("busy"))
-        );
-    }
-    if view.aggregate_state == "ready" {
-        let identity = match (&view.provider, &view.model, &view.lane) {
-            (Some(provider), Some(model), lane) => format!(
-                "{} {}",
-                lane.as_deref()
-                    .map(solstone_core_brain::lane_label)
-                    .unwrap_or("unknown"),
-                solstone_core_brain::provider_model_text(provider, model)
-            ),
-            (_, _, Some(lane)) => solstone_core_brain::lane_label(lane).to_owned(),
-            _ => "unknown".to_owned(),
-        };
-        let age = view
-            .checked_age
-            .as_ref()
-            .map(|value| format!(", checked {value} ago"))
-            .unwrap_or_default();
-        return format!("Thinking ready: {identity}{age}");
-    }
-    let reason = solstone_core_brain::brain_reason_text(view.reason_code.as_deref());
-    let component = view
-        .failing_component
-        .as_ref()
-        .map(|value| format!(" ({value})"))
-        .unwrap_or_default();
-    format!("Thinking {}: {reason}{component}", view.aggregate_state)
+    human_text_in(view, solstone_core_cli_copy::ENGLISH)
 }
 
 pub fn owner_exit_code(view: &OwnerView) -> u8 {

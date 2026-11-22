@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer brain fingerprint changed.",
+  "context": "Journal command-line text for writer brain fingerprint changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e6bc6915293e4f1437915559b40d2c99a78f10d767f639ea5e21dc0b2213539",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

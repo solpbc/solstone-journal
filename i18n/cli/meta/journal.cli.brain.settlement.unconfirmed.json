@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for settlement unconfirmed.",
+  "context": "Journal command-line text for settlement unconfirmed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "540e6f5d9d85003d34ef49c9687b08bfe05425bac4713772e5cd8a27e80a43bd",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

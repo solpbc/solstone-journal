@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for ready unknown checked.",
+  "context": "Journal command-line text for ready unknown checked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ec1cf2e53818f556d88af0fc5170efca35a940500bacba99ca8905823d60014",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for ready spp.",
+  "context": "Journal command-line text for ready spp.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba957dfca9b82400c09448ccaea14d1834936512127ee3c7abf9104099f1340b",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

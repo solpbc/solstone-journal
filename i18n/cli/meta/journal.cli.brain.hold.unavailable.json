@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for hold unavailable.",
+  "context": "Journal command-line text for hold unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "beb2864f978d69d8322463110ec327f2b0c8604aa34926df2017d49697fabd35",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

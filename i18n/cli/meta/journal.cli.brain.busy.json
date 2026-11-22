@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for busy.",
+  "context": "Journal command-line text for busy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f40140a3a4c26116e7573a6061c7c7920b8e655fa16075fbb342765f017f352f",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

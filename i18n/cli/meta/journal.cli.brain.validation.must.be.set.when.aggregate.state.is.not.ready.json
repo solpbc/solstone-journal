@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for validation must be set when aggregate state is not ready.",
+  "context": "Journal command-line text for validation must be set when aggregate state is not ready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "259c32c74e98322f5e9b9c5d238439a05c9d3a1b1151db0f6d30566ebde24d13",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_aggregate_state",
+      "kind": "accepted-input",
+      "value": "aggregate_state"
+    }
+  ]
+}

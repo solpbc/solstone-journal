@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation diagnostic value must be an enum string.",
+  "context": "Journal command-line text for validation diagnostic value must be an enum string.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bead37aefb533dbe48dc9cf997591e768bf8eeb18eb3ede1f5bcfb972202fab5",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

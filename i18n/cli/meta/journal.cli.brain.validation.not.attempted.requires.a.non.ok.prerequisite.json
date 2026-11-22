@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for validation not attempted requires a non ok prerequisite.",
+  "context": "Journal command-line text for validation not attempted requires a non ok prerequisite.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "846b75d17b732fea139b9d03ea5bdcd912579cb6ecd53a44add24a1b74af573e",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_not_attempted",
+      "kind": "accepted-input",
+      "value": "not_attempted"
+    }
+  ]
+}

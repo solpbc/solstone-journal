@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for heading blocked.",
+  "context": "Journal command-line text for heading blocked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bd9251e89001e609c1f59837bae4a87bfd38c597a83ec3c44512cf610f0344af",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

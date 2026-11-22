@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation record aggregate reason does not match evidence.",
+  "context": "Journal command-line text for validation record aggregate reason does not match evidence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "955a039b646f7984c2509488d8dbee984b313a504a53fea5b8b87a9f49f0c44b",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

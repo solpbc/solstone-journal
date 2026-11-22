@@ -70,15 +70,25 @@ pub enum CredentialHoldError {
     Superseded,
 }
 
+impl CredentialHoldError {
+    pub(crate) fn message_id(&self) -> &'static str {
+        match self {
+            Self::InvalidProvider => "journal.cli.brain.hold.invalid.provider",
+            Self::Capacity => "journal.cli.brain.hold.capacity",
+            Self::Unavailable => "journal.cli.brain.hold.unavailable",
+            Self::RootChanged => "journal.cli.brain.hold.root.changed",
+            Self::Superseded => "journal.cli.brain.hold.superseded",
+        }
+    }
+}
+
 impl fmt::Display for CredentialHoldError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::InvalidProvider => "unsupported credential hold provider",
-            Self::Capacity => "credential hold capacity is unavailable",
-            Self::Unavailable => "credential hold state is unavailable",
-            Self::RootChanged => "admitted journal root changed",
-            Self::Superseded => "credential validation was superseded",
-        })
+        formatter.write_str(&solstone_core_cli_copy::render_for(
+            solstone_core_cli_copy::ENGLISH,
+            self.message_id(),
+            &[],
+        ))
     }
 }
 

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for ready other model.",
+  "context": "Journal command-line text for ready other model.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "lane",
+      "type": "string"
+    },
+    {
+      "name": "model",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "86768b8262d6cd5e7613bdb475fbb57491092955370c3dd9c2feb251aa34af7f",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

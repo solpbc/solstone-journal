@@ -149,9 +149,10 @@ impl RefreshCredentialAuthority {
         if credential_config_authority(root, &self.provider)? != self.config
             || credential_observation_for_provider(root, &self.provider)? != self.observation
         {
-            return Err(WriterError::Conflict(
-                "credential observation changed during refresh".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.credential.observation.changed.during.refresh",
+                [],
+            )));
         }
         Ok(())
     }
@@ -176,20 +177,20 @@ impl fmt::Debug for BrainWriteRoot {
 impl BrainWriteRoot {
     fn open(journal: &Path) -> Result<Self, WriterError> {
         let root = Arc::new(
-            JournalRoot::open(journal).map_err(|error| WriterError::Io(error.to_string()))?,
+            JournalRoot::open(journal).map_err(|error| WriterError::io(error.to_string()))?,
         );
         Self::open_bound(root, journal)
     }
 
     fn open_bound(root: Arc<JournalRoot>, journal: &Path) -> Result<Self, WriterError> {
         let admitted_path =
-            std::path::absolute(journal).map_err(|error| WriterError::Io(error.to_string()))?;
+            std::path::absolute(journal).map_err(|error| WriterError::io(error.to_string()))?;
         let context = Self {
             root,
             admitted_path,
             health: OnceLock::new(),
         };
-        context.check().map_err(WriterError::Io)?;
+        context.check().map_err(WriterError::io)?;
         Ok(context)
     }
 
@@ -230,11 +231,11 @@ impl BrainWriteRoot {
             OsStr::new("health"),
             self.root.canonical_path(),
         );
-        result.map_err(|error| WriterError::Io(error.to_string()))
+        result.map_err(WriterError::io)
     }
 
     fn health(&self, create: bool) -> Result<Option<&BrainHealth>, WriterError> {
-        self.check().map_err(WriterError::Io)?;
+        self.check().map_err(WriterError::io)?;
         if self.health.get().is_none() {
             let opened = self.open_health()?;
             let opened = match (opened, create) {
@@ -254,14 +255,14 @@ impl BrainWriteRoot {
                         OsStr::new("health"),
                         self.root.canonical_path(),
                     );
-                    Some(result.map_err(|error| WriterError::Io(error.to_string()))?)
+                    Some(result.map_err(WriterError::io)?)
                 }
             };
             if let Some(health) = opened {
                 let _ = self.health.set(health);
             }
         }
-        self.check().map_err(WriterError::Io)?;
+        self.check().map_err(WriterError::io)?;
         Ok(self.health.get())
     }
 
@@ -274,9 +275,9 @@ impl BrainWriteRoot {
         #[cfg(windows)]
         let result = read_windows_observed_file_bounded(health, name, usize::MAX);
         let bytes = result
-            .map_err(|error| WriterError::Io(error.to_string()))?
+            .map_err(WriterError::io)?
             .map(|observation| observation.bytes);
-        self.check().map_err(WriterError::Io)?;
+        self.check().map_err(WriterError::io)?;
         Ok(bytes)
     }
 
@@ -303,7 +304,7 @@ impl BrainWriteRoot {
         name: &OsStr,
         checkpoint: &dyn Fn() -> Result<(), String>,
     ) -> Result<BoundParentLock, WriterError> {
-        checkpoint().map_err(WriterError::Io)?;
+        checkpoint().map_err(WriterError::io)?;
         let health = self.health(true)?.expect("created Brain health parent");
         let options = LockOptions::default();
         let check = || {
@@ -317,14 +318,14 @@ impl BrainWriteRoot {
             options.poll_interval,
             &check,
         )
-        .map_err(|error| WriterError::Io(error.to_string()))
+        .map_err(|error| WriterError::io(error.to_string()))
     }
 
     fn acquire_lease(
         &self,
         checkpoint: &dyn Fn() -> Result<(), String>,
     ) -> Result<Option<FileLease>, WriterError> {
-        checkpoint().map_err(WriterError::Io)?;
+        checkpoint().map_err(WriterError::io)?;
         let health = self.health(true)?.expect("created Brain health parent");
         let check = || {
             self.check()?;
@@ -343,7 +344,7 @@ impl BrainWriteRoot {
     ) -> Result<(), WriterError> {
         let health = self
             .health(false)?
-            .ok_or_else(|| WriterError::Io("Brain health parent is absent".to_owned()))?;
+            .ok_or_else(|| WriterError::io("Brain health parent is absent"))?;
         let check = || {
             self.check()?;
             checkpoint()?;
@@ -352,7 +353,7 @@ impl BrainWriteRoot {
         };
         #[cfg(unix)]
         match atomic_replace_bound_checked(health, name, bytes, BRAIN_FILE_MODE, &check)
-            .map_err(|error| WriterError::Io(error.to_string()))?
+            .map_err(|error| WriterError::io(error.to_string()))?
         {
             BoundAtomicOutcome::Published { .. } => {}
             BoundAtomicOutcome::PublishedDurabilityUncertain { source, .. }
@@ -369,7 +370,7 @@ impl BrainWriteRoot {
             BRAIN_FILE_MODE,
             &check,
         )
-        .map_err(|error| WriterError::Io(error.to_string()))?
+        .map_err(|error| WriterError::io(error.to_string()))?
         {
             DetailedAtomicOutcome::Published => {}
             outcome => return Err(WriterError::PublicationUncertain(format!("{outcome:?}"))),
@@ -465,16 +466,15 @@ impl BrainRefreshPermit {
 #[derive(Debug)]
 pub enum BeginRefreshError {
     ExpectedFingerprintStale(String),
-    InvalidArgument(String),
+    InvalidArgument(WriterDetail),
     Writer(WriterError),
 }
 
 impl fmt::Display for BeginRefreshError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ExpectedFingerprintStale(message) | Self::InvalidArgument(message) => {
-                formatter.write_str(message)
-            }
+            Self::ExpectedFingerprintStale(message) => formatter.write_str(message),
+            Self::InvalidArgument(detail) => detail.fmt(formatter),
             Self::Writer(error) => error.fmt(formatter),
         }
     }
@@ -506,27 +506,78 @@ pub struct RuntimeFailureResult {
     pub error: Option<String>,
 }
 
+#[derive(Debug)]
+pub enum WriterDetail {
+    Message(solstone_core_cli_copy::Diagnostic),
+    Other(String),
+}
+
+impl WriterDetail {
+    fn message<const N: usize>(
+        id: &'static str,
+        args: [(&'static str, &dyn fmt::Display); N],
+    ) -> Self {
+        Self::Message(solstone_core_cli_copy::Diagnostic::new(id, args))
+    }
+
+    pub fn render(&self, locale: &str) -> String {
+        match self {
+            Self::Message(diagnostic) => diagnostic.render(locale),
+            Self::Other(detail) => detail.clone(),
+        }
+    }
+}
+
+impl From<crate::CredentialHoldError> for WriterDetail {
+    fn from(error: crate::CredentialHoldError) -> Self {
+        Self::message(error.message_id(), [])
+    }
+}
+
+impl From<String> for WriterDetail {
+    fn from(detail: String) -> Self {
+        Self::Other(detail)
+    }
+}
+
+impl fmt::Display for WriterDetail {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.render(solstone_core_cli_copy::ENGLISH))
+    }
+}
+
+impl PartialEq<String> for WriterDetail {
+    fn eq(&self, other: &String) -> bool {
+        &self.to_string() == other
+    }
+}
+
 /// Writer failure outside runtime-failure's returned rejection taxonomy.
 #[derive(Debug)]
 pub enum WriterError {
-    Io(String),
+    Io(std::io::Error),
     PublicationUncertain(String),
-    Config(String),
+    Config(solstone_core_journal_config::ConfigLoadError),
     Validation(ValidationError),
-    Conflict(String),
-    Fingerprint(String),
+    Conflict(WriterDetail),
+    Fingerprint(WriterDetail),
     Random,
     Cancelled(String),
+}
+
+impl WriterError {
+    pub(crate) fn io(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self::Io(std::io::Error::other(source))
+    }
 }
 
 impl fmt::Display for WriterError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io(message)
-            | Self::PublicationUncertain(message)
-            | Self::Config(message)
-            | Self::Conflict(message)
-            | Self::Fingerprint(message) => formatter.write_str(message),
+            Self::Io(error) => error.fmt(formatter),
+            Self::PublicationUncertain(message) => formatter.write_str(message),
+            Self::Config(error) => error.fmt(formatter),
+            Self::Conflict(detail) | Self::Fingerprint(detail) => detail.fmt(formatter),
             Self::Validation(error) => error.fmt(formatter),
             Self::Random => formatter.write_str("could not generate secure random bytes"),
             Self::Cancelled(message) => formatter.write_str(message),
@@ -538,9 +589,9 @@ impl Error for WriterError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Validation(error) => Some(error),
-            Self::Io(_)
-            | Self::PublicationUncertain(_)
-            | Self::Config(_)
+            Self::Io(error) => Some(error),
+            Self::Config(error) => Some(error),
+            Self::PublicationUncertain(_)
             | Self::Conflict(_)
             | Self::Fingerprint(_)
             | Self::Random
@@ -566,51 +617,52 @@ pub fn classify_credential_admission_bound(
 ) -> Result<StoredCredentialBinding, WriterError> {
     let root = BrainWriteRoot::open_bound(admitted, journal)?;
     let session = CredentialHoldSession::open_bound(root.root.clone(), target)
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     let provider = target
         .provider_name()
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     let memory = session
         .memory_snapshot()
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     let snapshot = CredentialAuthoritySnapshot::read(&root, provider)?;
     let expected = match snapshot.material {
         FingerprintKeyMaterial::Ready(key) => Some(
             target
                 .binding_hmac(&key)
-                .map_err(|error| WriterError::Conflict(error.to_string()))?,
+                .map_err(|error| WriterError::Conflict(error.into()))?,
         ),
         _ => None,
     };
     if snapshot.correction_proven(&memory, &session, expected.as_deref()) {
         session
             .reconcile(&memory)
-            .map_err(|error| WriterError::Conflict(error.to_string()))?;
+            .map_err(|error| WriterError::Conflict(error.into()))?;
     }
     if session
         .is_held()
-        .map_err(|error| WriterError::Conflict(error.to_string()))?
+        .map_err(|error| WriterError::Conflict(error.into()))?
     {
         return Ok(StoredCredentialBinding::Matches);
     }
     let provider = target
         .provider_name()
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     let material = root.key_material();
     let key = match material {
         FingerprintKeyMaterial::Ready(key) => Some(key),
         FingerprintKeyMaterial::Absent | FingerprintKeyMaterial::Unavailable => None,
     };
     if key.is_none() && credential_observation_for_provider(&root, provider)?.is_some() {
-        return Err(WriterError::Fingerprint(
-            "protected fingerprint key is absent while credential authority exists".to_owned(),
-        ));
+        return Err(WriterError::Fingerprint(WriterDetail::message(
+            "journal.cli.brain.writer.protected.fingerprint.key.is.absent.while.credential.authority.exists",
+            [],
+        )));
     }
     let expected = key
         .as_ref()
         .map(|key| target.binding_hmac(key))
         .transpose()
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     let holds = read_credential_hold_authority(&root)?;
     let entry = holds
         .as_ref()
@@ -643,20 +695,22 @@ pub fn classify_credential_admission_bound(
             StoredCredentialBinding::Matches | StoredCredentialBinding::Corrupt
         )
     {
-        return Err(WriterError::Fingerprint(
-            "protected fingerprint key is unavailable".to_owned(),
-        ));
+        return Err(WriterError::Fingerprint(WriterDetail::message(
+            "journal.cli.brain.writer.protected.fingerprint.key.is.unavailable",
+            [],
+        )));
     }
-    root.check().map_err(WriterError::Io)?;
+    root.check().map_err(WriterError::io)?;
     if root.key_material() != material {
-        return Err(WriterError::Conflict(
-            "protected fingerprint key changed during admission".to_owned(),
-        ));
+        return Err(WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.protected.fingerprint.key.changed.during.admission",
+            [],
+        )));
     }
     // A rejection registered during the durable read also refuses this call.
     if session
         .is_held()
-        .map_err(|error| WriterError::Conflict(error.to_string()))?
+        .map_err(|error| WriterError::Conflict(error.into()))?
     {
         return Ok(StoredCredentialBinding::Matches);
     }
@@ -679,7 +733,8 @@ pub(crate) fn read_brain_inspection_inputs_bound(
     let root = BrainWriteRoot::open_bound(admitted, journal)?;
     let record = root.read(record_name())?;
     let material = root.key_material();
-    root.check().map_err(WriterError::Conflict)?;
+    root.check()
+        .map_err(|detail| WriterError::Conflict(detail.into()))?;
     Ok(BoundBrainInspection {
         root,
         record,
@@ -694,25 +749,27 @@ pub(crate) fn inspect_credential_binding_bound(
 ) -> Result<StoredCredentialBinding, WriterError> {
     let root = &inputs.root;
     if root.read(record_name())? != inputs.record {
-        return Err(WriterError::Conflict(
-            "Brain record changed during inspection".to_owned(),
-        ));
+        return Err(WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.brain.record.changed.during.inspection",
+            [],
+        )));
     }
     let session = CredentialHoldSession::existing_bound(root.root.clone(), target)
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     let memory = session
         .as_ref()
         .map(CredentialHoldSession::memory_snapshot)
         .transpose()
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     let provider = target
         .provider_name()
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     let snapshot = CredentialAuthoritySnapshot::read(root, provider)?;
     if snapshot.material != inputs.material {
-        return Err(WriterError::Conflict(
-            "protected fingerprint key changed during inspection".to_owned(),
-        ));
+        return Err(WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.protected.fingerprint.key.changed.during.inspection",
+            [],
+        )));
     }
     let key = match snapshot.material {
         FingerprintKeyMaterial::Ready(key) => Some(key),
@@ -722,7 +779,7 @@ pub(crate) fn inspect_credential_binding_bound(
         .as_ref()
         .map(|key| target.binding_hmac(key))
         .transpose()
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     let brain_entry = snapshot.hold.as_ref().map(|hold| {
         json!({
             "binding_version":1,"credential_hmac":hold.credential_hmac,
@@ -754,34 +811,39 @@ pub(crate) fn inspect_credential_binding_bound(
     ) && (snapshot.material == FingerprintKeyMaterial::Unavailable
         || (key.is_none() && snapshot.observation.is_some()))
     {
-        return Err(WriterError::Fingerprint(
-            "protected fingerprint key is unavailable".to_owned(),
-        ));
+        return Err(WriterError::Fingerprint(WriterDetail::message(
+            "journal.cli.brain.writer.protected.fingerprint.key.is.unavailable",
+            [],
+        )));
     }
     // A new P, positive reservation or partial publication cannot hide behind
     // an unchanged accepted epoch. This reader retires no process state.
     if snapshot != CredentialAuthoritySnapshot::read(root, provider)? {
-        return Err(WriterError::Conflict(
-            "credential authority changed during inspection".to_owned(),
-        ));
+        return Err(WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.credential.authority.changed.during.inspection",
+            [],
+        )));
     }
     let after = CredentialHoldSession::existing_bound(root.root.clone(), target)
-        .map_err(|error| WriterError::Conflict(error.to_string()))?
+        .map_err(|error| WriterError::Conflict(error.into()))?
         .as_ref()
         .map(CredentialHoldSession::memory_snapshot)
         .transpose()
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     if memory != after {
-        return Err(WriterError::Conflict(
-            "credential process state changed during inspection".to_owned(),
-        ));
+        return Err(WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.credential.process.state.changed.during.inspection",
+            [],
+        )));
     }
     if root.read(record_name())? != inputs.record {
-        return Err(WriterError::Conflict(
-            "Brain record changed during inspection".to_owned(),
-        ));
+        return Err(WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.brain.record.changed.during.inspection",
+            [],
+        )));
     }
-    root.check().map_err(WriterError::Conflict)?;
+    root.check()
+        .map_err(|detail| WriterError::Conflict(detail.into()))?;
     Ok(result)
 }
 
@@ -822,25 +884,26 @@ pub fn capture_credential_validation_bound(
     let root = BrainWriteRoot::open_bound(admitted, journal)?;
     let provider = target
         .provider_name()
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     let session = CredentialHoldSession::open_bound(root.root.clone(), target)
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     let memory = session
         .memory_snapshot()
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     let snapshot = CredentialAuthoritySnapshot::read(&root, provider)?;
     let material = snapshot.material;
     let target_hmac = match material {
         FingerprintKeyMaterial::Ready(key) => Some(
             target
                 .binding_hmac(&key)
-                .map_err(|error| WriterError::Conflict(error.to_string()))?,
+                .map_err(|error| WriterError::Conflict(error.into()))?,
         ),
         FingerprintKeyMaterial::Absent => None,
         FingerprintKeyMaterial::Unavailable => {
-            return Err(WriterError::Fingerprint(
-                "protected fingerprint key is unavailable".to_owned(),
-            ));
+            return Err(WriterError::Fingerprint(WriterDetail::message(
+                "journal.cli.brain.writer.protected.fingerprint.key.is.unavailable",
+                [],
+            )));
         }
     };
     let reconcile = snapshot.correction_proven(&memory, &session, target_hmac.as_deref());
@@ -850,7 +913,7 @@ pub fn capture_credential_validation_bound(
             reconcile,
             &snapshot.ids(target_hmac.as_deref()),
         )
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
+        .map_err(|error| WriterError::Conflict(error.into()))?;
     let CredentialAuthoritySnapshot {
         hold: observed_hold,
         config: observed_config,
@@ -858,9 +921,10 @@ pub fn capture_credential_validation_bound(
         ..
     } = snapshot;
     if target_hmac.is_none() && (observed_hold.is_some() || observed_observation.is_some()) {
-        return Err(WriterError::Fingerprint(
-            "protected fingerprint key is absent while credential authority exists".to_owned(),
-        ));
+        return Err(WriterError::Fingerprint(WriterDetail::message(
+            "journal.cli.brain.writer.protected.fingerprint.key.is.absent.while.credential.authority.exists",
+            [],
+        )));
     }
     let witness = CredentialValidationWitness {
         root,
@@ -949,9 +1013,10 @@ fn credential_config_authority(
         .and_then(|entry| entry.get("credential_observation_id"))
         .is_some_and(|id| !id.as_str().is_some_and(crate::record::is_sha256))
     {
-        return Err(WriterError::Conflict(
-            "credential observation identity is invalid".to_owned(),
-        ));
+        return Err(WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.credential.observation.identity.is.invalid",
+            [],
+        )));
     }
     Ok(config_authority_projection(entry))
 }
@@ -977,7 +1042,8 @@ struct CredentialAuthoritySnapshot {
 impl CredentialAuthoritySnapshot {
     fn read(root: &BrainWriteRoot, provider: &str) -> Result<Self, WriterError> {
         let once = || -> Result<Self, WriterError> {
-            root.check().map_err(WriterError::Conflict)?;
+            root.check()
+                .map_err(|detail| WriterError::Conflict(detail.into()))?;
             Ok(Self {
                 material: root.key_material(),
                 config: credential_config_authority(root, provider)?,
@@ -987,11 +1053,13 @@ impl CredentialAuthoritySnapshot {
         };
         let snapshot = once()?;
         if snapshot != once()? {
-            return Err(WriterError::Conflict(
-                "credential authority changed during observation".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.credential.authority.changed.during.observation",
+                [],
+            )));
         }
-        root.check().map_err(WriterError::Conflict)?;
+        root.check()
+            .map_err(|detail| WriterError::Conflict(detail.into()))?;
         Ok(snapshot)
     }
 
@@ -1084,7 +1152,10 @@ impl CredentialValidationWitness {
     /// identity. This creates no durable authority and retires no rejection.
     pub fn prepare_successful_validation(&self, result: &mut Value) -> Result<(), WriterError> {
         let object = result.as_object_mut().ok_or_else(|| {
-            WriterError::Conflict("validation result is not an object".to_owned())
+            WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.validation.result.is.not.an.object",
+                [],
+            ))
         })?;
         if object.get("valid").and_then(Value::as_bool) != Some(true)
             || object.get("binding_version").and_then(Value::as_u64) != Some(1)
@@ -1096,9 +1167,10 @@ impl CredentialValidationWitness {
                 object.get("credential_hmac").and_then(Value::as_str) != Some(expected)
             })
         {
-            return Err(WriterError::Conflict(
-                "validation result does not match its credential".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.validation.result.does.not.match.its.credential",
+                [],
+            )));
         }
         object.insert(
             "credential_observation_id".to_owned(),
@@ -1139,9 +1211,10 @@ impl CredentialValidationWitness {
                     .and_then(Value::as_str),
             )
         {
-            return Err(WriterError::Conflict(
-                "credential observation changed during work".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.credential.observation.changed.during.work",
+                [],
+            )));
         }
         let observed = credential_observation_for_provider(&self.root, self.provider)?;
         if observed != self.observed_observation
@@ -1158,9 +1231,10 @@ impl CredentialValidationWitness {
                     .map(|entry| entry.credential_hmac.as_str()),
             )
         {
-            return Err(WriterError::Conflict(
-                "settled credential observation changed during work".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.settled.credential.observation.changed.during.work",
+                [],
+            )));
         }
         Ok(())
     }
@@ -1216,7 +1290,7 @@ impl CredentialValidationWitness {
                 &snapshot.ids(self.target_hmac.as_deref()),
                 &session.binding_material_id(key),
             )
-            .map_err(|error| WriterError::Conflict(error.to_string()))?;
+            .map_err(|error| WriterError::Conflict(error.into()))?;
         *self.positive_publication.borrow_mut() = Some(guard);
         Ok(())
     }
@@ -1243,18 +1317,21 @@ impl CredentialValidationWitness {
     }
 
     fn check(&self, initialized: Option<&[u8; 32]>) -> Result<(), WriterError> {
-        self.root.check().map_err(WriterError::Conflict)?;
+        self.root
+            .check()
+            .map_err(|detail| WriterError::Conflict(detail.into()))?;
         check_publication_deadline(self.publication_deadline.get())
-            .map_err(WriterError::Conflict)?;
+            .map_err(|detail| WriterError::Conflict(detail.into()))?;
         self.volatile
             .ensure_current()
-            .map_err(|error| WriterError::Conflict(error.to_string()))?;
+            .map_err(|error| WriterError::Conflict(error.into()))?;
         self.check_durable_authority(None)?;
         let hold = credential_hold_for_provider(&self.root, self.provider)?;
         if hold != self.observed_hold && !(self.retiring_hold.get() && hold.is_none()) {
-            return Err(WriterError::Conflict(
-                "credential rejection changed during validation".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.credential.rejection.changed.during.validation",
+                [],
+            )));
         }
         let material = self.root.key_material();
         let key_matches = match (self.material, initialized, material) {
@@ -1272,11 +1349,14 @@ impl CredentialValidationWitness {
             _ => false,
         };
         if !key_matches {
-            return Err(WriterError::Fingerprint(
-                "protected fingerprint key changed during validation".to_owned(),
-            ));
+            return Err(WriterError::Fingerprint(WriterDetail::message(
+                "journal.cli.brain.writer.protected.fingerprint.key.changed.during.validation",
+                [],
+            )));
         }
-        self.root.check().map_err(WriterError::Conflict)
+        self.root
+            .check()
+            .map_err(|detail| WriterError::Conflict(detail.into()))
     }
 
     /// Settle only after this mutating owner's fresh credential-valid probe and
@@ -1295,11 +1375,11 @@ impl CredentialValidationWitness {
             self.checkpoint_with_binding_key(key)
                 .map_err(|error| error.to_string())
         };
-        check().map_err(WriterError::Conflict)?;
+        check().map_err(|detail| WriterError::Conflict(detail.into()))?;
         // Config publishers take this same interlock after their config lock.
         // Under it, settlement only reads config and never acquires its lock.
         let lock = self.root.lock(record_name(), &check)?;
-        check().map_err(WriterError::Conflict)?;
+        check().map_err(|detail| WriterError::Conflict(detail.into()))?;
         let remove = self
             .observed_hold
             .as_ref()
@@ -1308,35 +1388,46 @@ impl CredentialValidationWitness {
         if brain_observation {
             self.begin_positive_publication(key, ObservationCarrier::Brain)?;
         } else if self.positive_publication.borrow().is_none() {
-            return Err(WriterError::Conflict(
-                "credential publication reservation is absent".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.credential.publication.reservation.is.absent",
+                [],
+            )));
         }
         if remove || brain_observation {
             let mut record = match self.root.read(record_name())? {
                 Some(bytes) => serde_json::from_slice::<Value>(&bytes).map_err(|_| {
-                    WriterError::Conflict("credential authority is unreadable".to_owned())
+                    WriterError::Conflict(WriterDetail::message(
+                        "journal.cli.brain.writer.credential.authority.is.unreadable",
+                        [],
+                    ))
                 })?,
                 None => Value::Object(Map::new()),
             };
             let object = record.as_object_mut().ok_or_else(|| {
-                WriterError::Conflict("credential authority is not an object".to_owned())
+                WriterError::Conflict(WriterDetail::message(
+                    "journal.cli.brain.writer.credential.authority.is.not.an.object",
+                    [],
+                ))
             })?;
             if remove {
                 object
                     .get_mut("credential_holds")
                     .and_then(Value::as_object_mut)
                     .ok_or_else(|| {
-                        WriterError::Conflict("credential hold authority changed".to_owned())
+                        WriterError::Conflict(WriterDetail::message(
+                            "journal.cli.brain.writer.credential.hold.authority.changed",
+                            [],
+                        ))
                     })?
                     .remove(self.provider);
                 self.retiring_hold.set(true);
             }
             if brain_observation {
                 let credential_hmac = self.target_hmac.clone().ok_or_else(|| {
-                    WriterError::Fingerprint(
-                        "credential observation lacks original binding".to_owned(),
-                    )
+                    WriterError::Fingerprint(WriterDetail::message(
+                        "journal.cli.brain.writer.credential.observation.lacks.original.binding",
+                        [],
+                    ))
                 })?;
                 let observation = CredentialObservation {
                     credential_hmac,
@@ -1347,9 +1438,10 @@ impl CredentialValidationWitness {
                     .or_insert_with(|| json!({}))
                     .as_object_mut()
                     .ok_or_else(|| {
-                        WriterError::Conflict(
-                            "credential observations are not an object".to_owned(),
-                        )
+                        WriterError::Conflict(WriterDetail::message(
+                            "journal.cli.brain.writer.credential.observations.are.not.an.object",
+                            [],
+                        ))
                     })?;
                 observations.insert(
                     self.provider.to_owned(),
@@ -1370,18 +1462,20 @@ impl CredentialValidationWitness {
                     sort_keys: true,
                 },
             )
-            .map_err(|error| WriterError::Io(error.to_string()))?;
+            .map_err(|error| WriterError::io(error.to_string()))?;
             self.root.publish(&lock, record_name(), &bytes, &check)?;
             // Keep the Brain lock until this operation has conditionally
             // retired its volatile marker. A newer rejection wins either way.
-            checkpoint().map_err(WriterError::Conflict)?;
-            self.root.check().map_err(WriterError::Conflict)?;
+            checkpoint().map_err(|detail| WriterError::Conflict(detail.into()))?;
+            self.root
+                .check()
+                .map_err(|detail| WriterError::Conflict(detail.into()))?;
         }
-        check().map_err(WriterError::Conflict)?;
+        check().map_err(|detail| WriterError::Conflict(detail.into()))?;
         self.volatile
             .retire()
             .map(|memory| memory || remove)
-            .map_err(|error| WriterError::Conflict(error.to_string()))
+            .map_err(|error| WriterError::Conflict(error.into()))
     }
 }
 
@@ -1445,14 +1539,14 @@ fn record_credential_hold_with_transition(
         }
         Ok(())
     };
-    check().map_err(WriterError::Conflict)?;
+    check().map_err(|detail| WriterError::Conflict(detail.into()))?;
     let lock = root.lock(record_name(), &check)?;
-    check().map_err(WriterError::Conflict)?;
+    check().map_err(|detail| WriterError::Conflict(detail.into()))?;
     let health = root.health.get().expect("held Brain record parent");
     lock.revalidate_bound(health, &sidecar_name(record_name()))
-        .map_err(|error| WriterError::Conflict(error.to_string()))?;
-    transition().map_err(WriterError::Conflict)?;
-    check().map_err(WriterError::Conflict)?;
+        .map_err(|error| WriterError::Conflict(error.to_string().into()))?;
+    transition().map_err(|detail| WriterError::Conflict(detail.into()))?;
+    check().map_err(|detail| WriterError::Conflict(detail.into()))?;
     let mut holds = read_credential_hold_authority(root)?
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
@@ -1460,13 +1554,19 @@ fn record_credential_hold_with_transition(
     let mut record = match root.read(record_name())? {
         None => Value::Object(Map::new()),
         Some(bytes) => serde_json::from_slice::<Value>(&bytes).map_err(|error| {
-            WriterError::Conflict(format!("credential hold authority is unreadable: {error}"))
+            WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.credential.hold.authority.is.unreadable.error",
+                [("error", &error)],
+            ))
         })?,
     };
     record
         .as_object_mut()
         .ok_or_else(|| {
-            WriterError::Conflict("credential hold authority is not an object".to_owned())
+            WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.credential.hold.authority.is.not.an.object",
+                [],
+            ))
         })?
         .insert("credential_holds".to_owned(), Value::Object(holds));
     // A hold is independent authority, not evidence that a refresh ran. Keep
@@ -1481,7 +1581,7 @@ fn record_credential_hold_with_transition(
             sort_keys: true,
         },
     )
-    .map_err(|error| WriterError::Io(error.to_string()))?;
+    .map_err(|error| WriterError::io(error.to_string()))?;
     root.publish(&lock, record_name(), &bytes, &check)
 }
 
@@ -1532,19 +1632,24 @@ impl CredentialRejectionReceipt {
             || witness.provider != self.provider
             || !self.generation.same_target(&witness.volatile)
         {
-            return Err(WriterError::Conflict(
-                "rejection receipt root/provider changed".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.rejection.receipt.root.provider.changed",
+                [],
+            )));
         }
-        witness.root.check().map_err(WriterError::Conflict)?;
+        witness
+            .root
+            .check()
+            .map_err(|detail| WriterError::Conflict(detail.into()))?;
         self.generation
             .ensure_current()
-            .map_err(|error| WriterError::Conflict(error.to_string()))?;
+            .map_err(|error| WriterError::Conflict(error.into()))?;
         self.authority.checkpoint(&witness.root)?;
         if witness.root.key_material() != FingerprintKeyMaterial::Ready(self.binding_key) {
-            return Err(WriterError::Fingerprint(
-                "protected fingerprint key changed after rejection".to_owned(),
-            ));
+            return Err(WriterError::Fingerprint(WriterDetail::message(
+                "journal.cli.brain.writer.protected.fingerprint.key.changed.after.rejection",
+                [],
+            )));
         }
         let expected = if self.carrier == CredentialRejectionCarrier::Brain {
             Some(&self.hold)
@@ -1552,9 +1657,10 @@ impl CredentialRejectionReceipt {
             witness.observed_hold.as_ref()
         };
         if credential_hold_for_provider(&witness.root, self.provider)?.as_ref() != expected {
-            return Err(WriterError::Conflict(
-                "credential rejection changed after publication".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.credential.rejection.changed.after.publication",
+                [],
+            )));
         }
         if self.carrier == CredentialRejectionCarrier::Config {
             let current = config(&witness.root)?;
@@ -1581,9 +1687,10 @@ impl CredentialRejectionReceipt {
                     .and_then(Value::as_str)
                     != Some("provider_key_invalid")
             {
-                return Err(WriterError::Conflict(
-                    "configuration rejection changed after publication".to_owned(),
-                ));
+                return Err(WriterError::Conflict(WriterDetail::message(
+                    "journal.cli.brain.writer.configuration.rejection.changed.after.publication",
+                    [],
+                )));
             }
         }
         Ok(())
@@ -1941,7 +2048,7 @@ pub fn read_fingerprint_key_material_bound(
 ) -> Result<FingerprintKeyMaterial, WriterError> {
     let root = BrainWriteRoot::open_bound(admitted, journal)?;
     let material = root.key_material();
-    root.check().map_err(WriterError::Io)?;
+    root.check().map_err(WriterError::io)?;
     Ok(material)
 }
 
@@ -1984,21 +2091,22 @@ fn generate_fingerprint_key_bound(
     let key = match material {
         FingerprintKeyMaterial::Ready(key) => key,
         FingerprintKeyMaterial::Unavailable => {
-            return Err(WriterError::Fingerprint(
-                "protected fingerprint key is unavailable".to_owned(),
-            ));
+            return Err(WriterError::Fingerprint(WriterDetail::message(
+                "journal.cli.brain.writer.protected.fingerprint.key.is.unavailable",
+                [],
+            )));
         }
         FingerprintKeyMaterial::Absent => {
             if binding_authority(root)? {
-                return Err(WriterError::Fingerprint(
-                    "protected fingerprint key is absent while a credential binding exists"
-                        .to_owned(),
-                ));
+                return Err(WriterError::Fingerprint(WriterDetail::message(
+                    "journal.cli.brain.writer.protected.fingerprint.key.is.absent.while.a.credential.binding.exists",
+                    [],
+                )));
             }
             secure_key()?
         }
     };
-    checkpoint().map_err(WriterError::Fingerprint)?;
+    checkpoint().map_err(|detail| WriterError::Fingerprint(detail.into()))?;
     let publish_checkpoint = || {
         checkpoint()?;
         match (material, root.key_material()) {
@@ -2023,8 +2131,9 @@ fn generate_fingerprint_key_bound(
 
 fn binding_authority(root: &BrainWriteRoot) -> Result<bool, WriterError> {
     let config = config(root).map_err(|error| {
-        WriterError::Fingerprint(format!(
-            "credential binding authority could not be read: {error}"
+        WriterError::Fingerprint(WriterDetail::message(
+            "journal.cli.brain.writer.credential.binding.authority.could.not.be.read.error",
+            [("error", &error)],
         ))
     })?;
     let holds = read_credential_hold_authority(root)?;
@@ -2098,7 +2207,7 @@ pub fn begin_refresh_checked(
             publication_checkpoint()?;
             root.checkpoint(journal_path)
         };
-        checkpoint().map_err(|error| BeginRefreshError::Writer(WriterError::Io(error)))?;
+        checkpoint().map_err(|error| BeginRefreshError::Writer(WriterError::io(error)))?;
         let config = match config(&root) {
             Ok(config) => config,
             Err(_) => return Ok(None),
@@ -2355,14 +2464,15 @@ pub fn finish_refresh_rejected_checked(
                 .as_ref()
                 .is_none_or(|generation| !generation.same_target(&receipt.generation))
         {
-            return Err(WriterError::Conflict(
-                "rejected refresh receipt does not match its probe".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.rejected.refresh.receipt.does.not.match.its.probe",
+                [],
+            )));
         }
         receipt
             .generation
             .ensure_current()
-            .map_err(|error| WriterError::Conflict(error.to_string()))?;
+            .map_err(|error| WriterError::Conflict(error.into()))?;
         receipt.authority.checkpoint(&permit.root)?;
         permit.credential_generation = Some(Box::new(receipt.generation.provider_generation()));
         permit.credential_authority_seen = Some(Box::new(receipt.authority));
@@ -2418,23 +2528,28 @@ pub fn finish_refresh_checked(
             publication_checkpoint()?;
             permit.checkpoint(journal_path)
         };
-        checkpoint().map_err(WriterError::Io)?;
+        checkpoint().map_err(WriterError::io)?;
         parse_evidence(Some(&outcome), now)?;
         let loaded = fingerprint_for_write(&permit.root, bundled_runtime_fingerprint_sha256)?
             .ok_or_else(|| {
-                WriterError::Conflict("brain fingerprint key is unavailable".to_owned())
+                WriterError::Conflict(WriterDetail::message(
+                    "journal.cli.brain.writer.brain.fingerprint.key.is.unavailable",
+                    [],
+                ))
             })?;
         let lock = permit.root.lock(record_name(), &checkpoint)?;
         let Some((_, current)) = read_current(&permit.root, now)? else {
-            return Err(WriterError::Conflict(
-                "brain refresh checking marker is absent".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.brain.refresh.checking.marker.is.absent",
+                [],
+            )));
         };
         assert_finish_allowed(&permit, &current, now)?;
         if loaded.sha256 != permit.fingerprint_sha256 {
-            return Err(WriterError::Conflict(
-                "brain fingerprint changed".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.brain.fingerprint.changed",
+                [],
+            )));
         }
         let record = compose_record_from_evidence(
             outcome,
@@ -2480,15 +2595,19 @@ pub fn abandon_refresh_checked(
             publication_checkpoint()?;
             permit.checkpoint(journal_path)
         };
-        checkpoint().map_err(WriterError::Io)?;
+        checkpoint().map_err(WriterError::io)?;
         let component = target_component(reason_code).ok_or_else(|| {
-            WriterError::Conflict("brain abandon reason is not recordable evidence".to_owned())
+            WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.brain.abandon.reason.is.not.recordable.evidence",
+                [],
+            ))
         })?;
         let lock = permit.root.lock(record_name(), &checkpoint)?;
         let Some((raw, current)) = read_current(&permit.root, now)? else {
-            return Err(WriterError::Conflict(
-                "brain refresh checking marker is absent".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.brain.refresh.checking.marker.is.absent",
+                [],
+            )));
         };
         assert_finish_allowed(&permit, &current, now)?;
         let mut evidence = object_field(&raw, "evidence")?.clone();
@@ -2553,37 +2672,46 @@ pub fn finish_prerequisite_renewal_checked(
             publication_checkpoint()?;
             permit.checkpoint(journal_path)
         };
-        checkpoint().map_err(WriterError::Io)?;
+        checkpoint().map_err(WriterError::io)?;
         let component = parse_component("lane_prerequisites", &lane_prerequisites, now)?;
         if component.status == "not_attempted" {
-            return Err(WriterError::Validation(ValidationError {
-                path: "lane_prerequisites.status".to_owned(),
-                reason: "prerequisite renewal requires ok or declared failure".to_owned(),
-            }));
+            return Err(WriterError::Validation(crate::record::failure(
+                "lane_prerequisites.status",
+                "journal.cli.brain.validation.prerequisite.renewal.requires.ok.or.declared.failure",
+            )));
         }
         let loaded = fingerprint_for_write(&permit.root, bundled_runtime_fingerprint_sha256)?
             .ok_or_else(|| {
-                WriterError::Conflict("brain fingerprint key is unavailable".to_owned())
+                WriterError::Conflict(WriterDetail::message(
+                    "journal.cli.brain.writer.brain.fingerprint.key.is.unavailable",
+                    [],
+                ))
             })?;
         let lock = permit.root.lock(record_name(), &checkpoint)?;
         let Some((raw, current)) = read_current(&permit.root, now)? else {
-            return Err(WriterError::Conflict(
-                "brain refresh checking marker is absent".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.brain.refresh.checking.marker.is.absent",
+                [],
+            )));
         };
         assert_finish_allowed(&permit, &current, now)?;
         if loaded.sha256 != permit.fingerprint_sha256 {
-            return Err(WriterError::Conflict(
-                "brain fingerprint changed".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.brain.fingerprint.changed",
+                [],
+            )));
         }
         if loaded.resolution.lane.as_deref() != Some("spp") {
-            return Err(WriterError::Conflict("brain lane changed".to_owned()));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.brain.lane.changed",
+                [],
+            )));
         }
         let Some(mut evidence) = safe_prerequisite_evidence(&raw, &current, now) else {
-            return Err(WriterError::Conflict(
-                "brain prerequisite evidence is unsafe".to_owned(),
-            ));
+            return Err(WriterError::Conflict(WriterDetail::message(
+                "journal.cli.brain.writer.brain.prerequisite.evidence.is.unsafe",
+                [],
+            )));
         };
         evidence.insert("lane_prerequisites".to_owned(), lane_prerequisites);
         let record = compose_record_from_evidence(
@@ -2746,14 +2874,14 @@ fn record_runtime_failure_locked(
         bundled_runtime_fingerprint_sha256,
     } = observation;
     let checkpoint = || root.check();
-    checkpoint().map_err(WriterError::Io)?;
+    checkpoint().map_err(WriterError::io)?;
     let (current_raw, current, current_readable) = match read_current(root, now) {
         Ok(Some((raw, record))) => (Some(raw), Some(record), true),
         Ok(None) => (None, None, true),
         Err(WriterError::Io(error)) => {
             return Err(RuntimeFailureInternal::Rejected(
                 "state_unavailable",
-                Some(error),
+                Some(error.to_string()),
             ));
         }
         Err(_) => (None, None, false),
@@ -3052,7 +3180,7 @@ fn begin_refresh_under_lease(
             .revalidate_bound(root.health.get().expect("leased health"), lease_name())
             .map_err(|error| error.to_string())
     };
-    checkpoint().map_err(|error| BeginRefreshError::Writer(WriterError::Io(error)))?;
+    checkpoint().map_err(|error| BeginRefreshError::Writer(WriterError::io(error)))?;
     let config = match config(&root) {
         Ok(config) => config,
         Err(_) => return Ok(None),
@@ -3148,9 +3276,7 @@ fn begin_refresh_under_lease(
                             .trim(),
                     },
                 )
-                .map_err(|error| {
-                    BeginRefreshError::Writer(WriterError::Conflict(error.to_string()))
-                })?,
+                .map_err(|error| BeginRefreshError::Writer(WriterError::Conflict(error.into())))?,
             )
         }
         Some("byo-endpoint") => {
@@ -3163,9 +3289,7 @@ fn begin_refresh_under_lease(
                         credential: &credential,
                     },
                 )
-                .map_err(|error| {
-                    BeginRefreshError::Writer(WriterError::Conflict(error.to_string()))
-                })?,
+                .map_err(|error| BeginRefreshError::Writer(WriterError::Conflict(error.into())))?,
             )
         }
         _ => None,
@@ -3273,9 +3397,12 @@ fn fingerprint_for_write(
         bundled_runtime.map(Value::String),
         Some(&root.admitted_path),
     )
-    .map_err(|error| WriterError::Fingerprint(error.to_string()))?
+    .map_err(|error| WriterError::Fingerprint(error.to_string().into()))?
     .ok_or_else(|| {
-        WriterError::Fingerprint("active brain fingerprint is unavailable".to_owned())
+        WriterError::Fingerprint(WriterDetail::message(
+            "journal.cli.brain.writer.active.brain.fingerprint.is.unavailable",
+            [],
+        ))
     })?;
     Ok(Some(LoadedFingerprint { resolution, sha256 }))
 }
@@ -3524,38 +3651,47 @@ fn assert_finish_allowed(
     now: Timestamp,
 ) -> Result<(), WriterError> {
     if current.credential_holds != permit.credential_holds_seen {
-        return Err(WriterError::Conflict(
-            "credential rejection changed during refresh".to_owned(),
-        ));
+        return Err(WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.credential.rejection.changed.during.refresh",
+            [],
+        )));
     }
     // Ownership is represented by the unforgeable, still-live FileLease field.
     if now >= permit.expires_at {
-        return Err(WriterError::Conflict(
-            "brain refresh permit expired".to_owned(),
-        ));
+        return Err(WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.brain.refresh.permit.expired",
+            [],
+        )));
     }
     let checking = current.checking.as_ref().ok_or_else(|| {
-        WriterError::Conflict("brain refresh checking marker is absent".to_owned())
+        WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.brain.refresh.checking.marker.is.absent",
+            [],
+        ))
     })?;
     if current.revision != permit.checking_revision {
-        return Err(WriterError::Conflict(
-            "brain refresh record revision changed".to_owned(),
-        ));
+        return Err(WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.brain.refresh.record.revision.changed",
+            [],
+        )));
     }
     if checking.run_id != permit.run_id {
-        return Err(WriterError::Conflict(
-            "brain refresh run id changed".to_owned(),
-        ));
+        return Err(WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.brain.refresh.run.id.changed",
+            [],
+        )));
     }
     if u64::try_from(checking.checking_revision).ok() != Some(permit.checking_revision) {
-        return Err(WriterError::Conflict(
-            "brain refresh revision changed".to_owned(),
-        ));
+        return Err(WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.brain.refresh.revision.changed",
+            [],
+        )));
     }
     if checking.runtime_failure_marker_seen != permit.runtime_failure_marker_seen {
-        return Err(WriterError::Conflict(
-            "brain runtime failure marker changed".to_owned(),
-        ));
+        return Err(WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.brain.runtime.failure.marker.changed",
+            [],
+        )));
     }
     Ok(())
 }
@@ -3576,8 +3712,12 @@ fn component_for_reason(
     diagnostic: Map<String, Value>,
     now: Timestamp,
 ) -> Result<Value, WriterError> {
-    let component = target_component(reason_code)
-        .ok_or_else(|| WriterError::Conflict("reason is not recordable evidence".to_owned()))?;
+    let component = target_component(reason_code).ok_or_else(|| {
+        WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.reason.is.not.recordable.evidence",
+            [],
+        ))
+    })?;
     component_for_reason_in(component, reason_code, diagnostic, now)
 }
 
@@ -3615,7 +3755,7 @@ fn write_record(
     now: Timestamp,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Value, WriterError> {
-    checkpoint().map_err(WriterError::Io)?;
+    checkpoint().map_err(WriterError::io)?;
     let mut record = record.clone();
     if record.get("credential_holds").is_none()
         && let Some(holds) = read_credential_hold_authority(root)?
@@ -3642,7 +3782,7 @@ fn write_record(
             sort_keys: true,
         },
     )
-    .map_err(|error| WriterError::Io(error.to_string()))?;
+    .map_err(|error| WriterError::io(error.to_string()))?;
     root.publish(lock, record_name(), &bytes, checkpoint)?;
     Ok(record)
 }
@@ -3652,10 +3792,16 @@ fn read_credential_hold_authority(root: &BrainWriteRoot) -> Result<Option<Value>
         return Ok(None);
     };
     let value: Value = serde_json::from_slice(&bytes).map_err(|error| {
-        WriterError::Conflict(format!("credential hold authority is unreadable: {error}"))
+        WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.credential.hold.authority.is.unreadable.error",
+            [("error", &error)],
+        ))
     })?;
     let object = value.as_object().ok_or_else(|| {
-        WriterError::Conflict("credential hold authority is not an object".to_owned())
+        WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.credential.hold.authority.is.not.an.object",
+            [],
+        ))
     })?;
     crate::record::parse_credential_holds(object.get("credential_holds"))?;
     Ok(object.get("credential_holds").cloned())
@@ -3668,10 +3814,16 @@ fn read_credential_observation_authority(
         return Ok(None);
     };
     let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
-        WriterError::Conflict("credential observation authority is unreadable".to_owned())
+        WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.credential.observation.authority.is.unreadable",
+            [],
+        ))
     })?;
     let object = value.as_object().ok_or_else(|| {
-        WriterError::Conflict("credential observation authority is not an object".to_owned())
+        WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.credential.observation.authority.is.not.an.object",
+            [],
+        ))
     })?;
     crate::record::parse_credential_observations(object.get("credential_observations"))?;
     Ok(object.get("credential_observations").cloned())
@@ -3688,6 +3840,7 @@ fn read_current(
         WriterError::Validation(ValidationError {
             path: "record".to_owned(),
             reason: error.to_string(),
+            reason_id: None,
         })
     })?;
     let parsed = validate_brain_state_record(&value, now)?;
@@ -3695,10 +3848,10 @@ fn read_current(
 }
 
 fn config(root: &BrainWriteRoot) -> Result<Map<String, Value>, WriterError> {
-    root.check().map_err(WriterError::Io)?;
+    root.check().map_err(WriterError::io)?;
     let read = solstone_core_journal_config::read_journal_config_bound(&root.root)
-        .map_err(|error| WriterError::Config(error.to_string()))?;
-    root.check().map_err(WriterError::Io)?;
+        .map_err(WriterError::Config)?;
+    root.check().map_err(WriterError::io)?;
     Ok(read.config.unwrap_or_default())
 }
 
@@ -3744,9 +3897,10 @@ fn validate_expected(expected: Option<&str>, expect_absent: bool) -> Result<(), 
         ));
     }
     if expected.is_some() && expect_absent {
-        return Err(BeginRefreshError::InvalidArgument(
-            "expected active fingerprint and expected absence are mutually exclusive".to_owned(),
-        ));
+        return Err(BeginRefreshError::InvalidArgument(WriterDetail::message(
+            "journal.cli.brain.check.fingerprint.options",
+            [],
+        )));
     }
     Ok(())
 }
@@ -3779,10 +3933,12 @@ fn random_observation_id() -> Result<String, WriterError> {
 }
 
 fn object_field<'a>(value: &'a Value, field: &str) -> Result<&'a Map<String, Value>, WriterError> {
-    value
-        .get(field)
-        .and_then(Value::as_object)
-        .ok_or_else(|| WriterError::Conflict(format!("{field} must be an object")))
+    value.get(field).and_then(Value::as_object).ok_or_else(|| {
+        WriterError::Conflict(WriterDetail::message(
+            "journal.cli.brain.writer.field.must.be.an.object",
+            [("field", &field)],
+        ))
+    })
 }
 
 fn rejected(reason: &str, error: Option<String>) -> RuntimeFailureResult {
@@ -3795,11 +3951,11 @@ fn rejected(reason: &str, error: Option<String>) -> RuntimeFailureResult {
 }
 
 fn lock_error(error: solstone_core_journal_io::LockError) -> WriterError {
-    WriterError::Io(error.to_string())
+    WriterError::io(error.to_string())
 }
 
 fn lease_error(error: solstone_core_journal_io::LeaseError) -> WriterError {
-    WriterError::Io(error.to_string())
+    WriterError::io(error.to_string())
 }
 
 #[cfg(test)]

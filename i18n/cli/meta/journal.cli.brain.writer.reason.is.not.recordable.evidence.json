@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer reason is not recordable evidence.",
+  "context": "Journal command-line text for writer reason is not recordable evidence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "19ad38ee305a9661a7bdefb266da3825e53d09767934f792c8c38919ad7a4fef",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

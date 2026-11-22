@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for hold invalid provider.",
+  "context": "Journal command-line text for hold invalid provider.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81b4a2a995af91c242ed6458112e8ea4f002eaaa2dc2df8148fc428a2658849e",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

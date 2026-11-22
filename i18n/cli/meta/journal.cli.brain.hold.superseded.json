@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for hold superseded.",
+  "context": "Journal command-line text for hold superseded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c73ffc512183eab8529f3780ba4ddbe7ace668ce9bc714091619175977518d45",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

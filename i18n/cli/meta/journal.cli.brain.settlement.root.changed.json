@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for settlement root changed.",
+  "context": "Journal command-line text for settlement root changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ea615cd1b00208fe2e038a87a85743efe9bb2ab809be914c61e0a6d4551836b",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -202,7 +202,7 @@ pub fn inspect_brain_state_with_clock(
     // record from a replaced directory.
     let inputs = target.as_ref().map(|_| {
         solstone_core_journal_io::JournalRoot::open(journal_path)
-            .map_err(|error| crate::WriterError::Io(error.to_string()))
+            .map_err(|error| crate::WriterError::io(error.to_string()))
             .and_then(|root| {
                 crate::writer::read_brain_inspection_inputs_bound(
                     std::sync::Arc::new(root),
@@ -221,7 +221,7 @@ pub fn inspect_brain_state_with_clock(
             target,
             validation_entry(config, &resolution.provider),
         ),
-        Err(error) => Err(crate::WriterError::Io(error.to_string())),
+        Err(error) => Err(crate::WriterError::io(error.to_string())),
     };
     match binding {
         Ok(StoredCredentialBinding::Matches | StoredCredentialBinding::Corrupt) => {

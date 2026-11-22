@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for heading unhealthy component.",
+  "context": "Journal command-line text for heading unhealthy component.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "component",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "47d9df03ffc760371feb646866e98953556ddd94c67deafb1c83bcf987a4b56d",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

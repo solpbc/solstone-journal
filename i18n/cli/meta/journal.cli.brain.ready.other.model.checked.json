@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for ready other model checked.",
+  "context": "Journal command-line text for ready other model checked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "lane",
+      "type": "string"
+    },
+    {
+      "name": "model",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "11623b23b726ddfb9e4007fb6d8b0986e78d3d7126cdd15335a5569d8406c805",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

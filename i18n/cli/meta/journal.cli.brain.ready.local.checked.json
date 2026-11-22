@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for ready local checked.",
+  "context": "Journal command-line text for ready local checked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7705a4c512859be77a3fbcbdbeaff28cf6c23eb90e3981c83c32df79d9adfe96",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

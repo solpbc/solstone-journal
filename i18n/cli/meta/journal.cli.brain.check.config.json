@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for check config.",
+  "context": "Journal command-line text for check config.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b3ed5a6fdcdb8cc55478634cf18c60cef04bfaeb1efb62a7ff412bfb83dca58f",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

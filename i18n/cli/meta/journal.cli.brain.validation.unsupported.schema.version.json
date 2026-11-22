@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for validation unsupported schema version.",
+  "context": "Journal command-line text for validation unsupported schema version.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d32c434b75c8c1103d0bb11a981afbfabbf81cd648af85f5481eeb5a81174197",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

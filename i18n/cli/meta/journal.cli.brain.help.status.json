@@ -1,0 +1,58 @@
+{
+  "description": "Journal command-line text for help status.",
+  "context": "Journal command-line text for help status.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b881d8d04a4850c21ae7cee32e5c7e3b8c1e9d2efcfdcbd796c95de320ac0ef",
+  "max_length": 272,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal brain status [-h] [--json]"
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "gap_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "json_option",
+      "kind": "accepted-input",
+      "value": "--json"
+    },
+    {
+      "name": "gap_6",
+      "kind": "whitespace",
+      "value": "      "
+    },
+    {
+      "name": "json_format",
+      "kind": "accepted-input",
+      "value": "JSON"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

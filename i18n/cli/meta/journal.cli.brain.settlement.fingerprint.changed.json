@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for settlement fingerprint changed.",
+  "context": "Journal command-line text for settlement fingerprint changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "11d45decc077cf84120c2577e2be30346085ccd2a044088da51709eb693cb70e",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

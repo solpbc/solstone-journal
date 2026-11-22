@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for validation does not match aggregate state.",
+  "context": "Journal command-line text for validation does not match aggregate state.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6f4e0cf661a4d7314af295aeddd71a7bbdd58c6e189f2e163b06763de64434b9",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_aggregate_state",
+      "kind": "accepted-input",
+      "value": "aggregate_state"
+    }
+  ]
+}

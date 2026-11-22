@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for ready byo model checked.",
+  "context": "Journal command-line text for ready byo model checked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "model",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7e73083e782de18058c04c6dd37ddb3fdbd8d7890369f4d9f38168da3da24a81",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

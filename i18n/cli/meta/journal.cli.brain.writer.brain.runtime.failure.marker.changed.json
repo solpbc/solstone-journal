@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for writer brain runtime failure marker changed.",
+  "context": "Journal command-line text for writer brain runtime failure marker changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c877d4c17891fe267605ad91792a84c8cf2d2b83809f5265fa06ceca8a974167",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

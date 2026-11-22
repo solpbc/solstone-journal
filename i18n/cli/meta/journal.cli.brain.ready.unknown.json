@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for ready unknown.",
+  "context": "Journal command-line text for ready unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cb0890e02af857104e75b9da34ed581b4f59c2b8beba2b73571ead8ca8af65dd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

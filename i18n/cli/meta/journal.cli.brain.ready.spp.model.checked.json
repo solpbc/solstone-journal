@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for ready spp model checked.",
+  "context": "Journal command-line text for ready spp model checked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "model",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "edca0e49aac05edded9e844ae1ce2eca31d85e96c423060a5d49d82557f70b9f",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

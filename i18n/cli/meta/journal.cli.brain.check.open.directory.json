@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for check open directory.",
+  "context": "Journal command-line text for check open directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ad3b54af4fd17848509056813fb9c84afd972014b9b2c64a035e1301111f779f",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

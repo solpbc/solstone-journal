@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for ready byo checked.",
+  "context": "Journal command-line text for ready byo checked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b3a74e4f9ec4d8e0c87e65798cbb9aa23f78b7becb6660913c51cc560feb8e34",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

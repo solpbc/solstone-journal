@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for hold root changed.",
+  "context": "Journal command-line text for hold root changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8e3fc091db6d3a9ec91d2c42f215504b9ea4911d1d423efa43aeb1b5843907b9",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

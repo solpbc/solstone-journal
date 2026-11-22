@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for check random.",
+  "context": "Journal command-line text for check random.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5e81b1f94edc7e2f24507d520b5a0ddb5ed3fbb9669543fc26883a2b3c343b0f",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

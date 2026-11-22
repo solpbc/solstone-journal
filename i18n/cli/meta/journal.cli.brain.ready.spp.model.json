@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for ready spp model.",
+  "context": "Journal command-line text for ready spp model.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "model",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "969c8871eee73f42dba4ee81081dfc53cb28ea4d82d8d6756c8baf9c613daf23",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
