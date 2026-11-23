@@ -279,6 +279,10 @@ pub struct DeclaredFix {
     pub id: &'static str,
     pub reason: &'static str,
     pub introduced: &'static str,
+    /// When `Some`, scopes the fix to `Unit::Raw` records for this handler
+    /// (for example `"transcribe"`) and permits one re-entry even on a data
+    /// verdict when the classifier itself changed.
+    pub raw_handler: Option<&'static str>,
 }
 
 /// A change that fixes a failure class declares it here, keyed on the reason
@@ -293,13 +297,35 @@ pub const DECLARED_FIXES: &[DeclaredFix] = &[
         id: "screen-terminal-reading",
         reason: "incomplete_json_length",
         introduced: "2.0.61",
+        raw_handler: None,
     },
     DeclaredFix {
         id: "spp-proof-before-appraisal",
         reason: "attestation_failed",
         introduced: "2.0.64",
+        raw_handler: None,
+    },
+    DeclaredFix {
+        // Empty and header-only audio stubs previously failed as corrupt_input;
+        // transcribe now publishes empty/no_decodable_audio for them.
+        id: "transcribe-empty-audio-stubs",
+        reason: "corrupt_input",
+        introduced: "2.0.88",
+        raw_handler: Some("transcribe"),
     },
 ];
+
+impl DeclaredFix {
+    fn applies_to(&self, unit: &Unit, reason: &str) -> bool {
+        if self.reason != reason || !fix_available(self) {
+            return false;
+        }
+        match self.raw_handler {
+            Some(expected) => matches!(unit, Unit::Raw { handler, .. } if handler == expected),
+            None => !data_verdict(reason),
+        }
+    }
+}
 
 fn fix_available(fix: &DeclaredFix) -> bool {
     let version = |text: &str| -> Option<[u64; 3]> {
@@ -331,24 +357,22 @@ impl Record {
             return None;
         }
         let changed = input != self.input;
-        if data_verdict(&self.reason) && !changed {
-            return None;
-        }
+        let data = data_verdict(&self.reason);
         let mut causes = Vec::new();
-        if let Some(owner) = &self.owner {
-            causes.push(format!("owner:{owner}"));
+        if !data || changed {
+            if let Some(owner) = &self.owner {
+                causes.push(format!("owner:{owner}"));
+            }
+            if changed {
+                causes.push(input_cause(input));
+            }
         }
-        if changed {
-            causes.push(input_cause(input));
-        }
-        if !data_verdict(&self.reason) {
-            causes.extend(
-                fixes
-                    .iter()
-                    .filter(|fix| fix.reason == self.reason && fix_available(fix))
-                    .map(|fix| format!("fix:{}", fix.id)),
-            );
-        }
+        causes.extend(
+            fixes
+                .iter()
+                .filter(|fix| fix.applies_to(&self.unit, &self.reason))
+                .map(|fix| format!("fix:{}", fix.id)),
+        );
         causes
             .into_iter()
             .find(|cause| !self.consumed.contains(cause))
@@ -695,7 +719,7 @@ fn consume_checked_in(
             record.consumed.insert(input_cause(input));
             for fix in fixes
                 .iter()
-                .filter(|fix| fix.reason == reason && fix_available(fix))
+                .filter(|fix| fix.applies_to(&record.unit, reason))
             {
                 record.consumed.insert(format!("fix:{}", fix.id));
             }
@@ -932,16 +956,26 @@ mod tests {
     #[test]
     fn declared_fixes_give_held_work_one_attempt_on_this_build() {
         let root = tempfile::tempdir().unwrap();
-        let unit = Unit::Segment {
-            day: "20261028".into(),
-            stream: "terminal".into(),
-            segment: "104713_300".into(),
-            talent: "screen".into(),
-            direct: false,
-        };
-        let id = unit.id().unwrap();
         for fix in DECLARED_FIXES {
             assert!(fix_available(fix), "{} is not available", fix.id);
+            let unit = match fix.raw_handler {
+                Some(handler) => Unit::Raw {
+                    day: "20261028".into(),
+                    stream: "watch".into(),
+                    segment: "104713_1".into(),
+                    handler: handler.into(),
+                    output: "audio.jsonl".into(),
+                    direct: false,
+                },
+                None => Unit::Segment {
+                    day: "20261028".into(),
+                    stream: "terminal".into(),
+                    segment: "104713_300".into(),
+                    talent: "screen".into(),
+                    direct: false,
+                },
+            };
+            let id = unit.id().unwrap();
             observe_held(root.path(), &unit, fix.reason, "input").unwrap();
             let grant = read(root.path(), &id)
                 .unwrap()
@@ -965,6 +999,72 @@ mod tests {
         }
     }
 
+    #[test]
+    fn transcribe_scoped_data_verdict_fix_excludes_describe_and_owner_asks() {
+        let root = tempfile::tempdir().unwrap();
+        let transcribe = Unit::Raw {
+            day: "20261122".into(),
+            stream: "watch".into(),
+            segment: "180302_1".into(),
+            handler: "transcribe".into(),
+            output: "audio.jsonl".into(),
+            direct: false,
+        };
+        let describe = Unit::Raw {
+            day: "20261122".into(),
+            stream: "desktop".into(),
+            segment: "180302_300".into(),
+            handler: "describe".into(),
+            output: "screen.jsonl".into(),
+            direct: false,
+        };
+        observe_held(root.path(), &transcribe, "corrupt_input", "input-a").unwrap();
+        observe_held(root.path(), &describe, "corrupt_input", "input-a").unwrap();
+        request(root.path(), &transcribe).unwrap();
+        request(root.path(), &describe).unwrap();
+
+        // Describe corrupt_input stays held and never matches transcribe's fix.
+        let describe_record = read(root.path(), &describe.id().unwrap()).unwrap().unwrap();
+        assert!(
+            describe_record
+                .permission("input-a", DECLARED_FIXES)
+                .is_none()
+        );
+
+        // An unscoped fix cannot punch through a data verdict.
+        let unscoped = [DeclaredFix {
+            id: "unscoped-corrupt",
+            reason: "corrupt_input",
+            introduced: "2.0.0",
+            raw_handler: None,
+        }];
+        let transcribe_record = read(root.path(), &transcribe.id().unwrap())
+            .unwrap()
+            .unwrap();
+        assert!(transcribe_record.permission("input-a", &unscoped).is_none());
+
+        // Transcribe corrupt_input gets the declared fix (not the owner ask), once.
+        let grant = transcribe_record
+            .permission("input-a", DECLARED_FIXES)
+            .unwrap();
+        assert_eq!(grant.cause, "fix:transcribe-empty-audio-stubs");
+        consume(
+            root.path(),
+            &transcribe,
+            &grant,
+            "corrupt_input",
+            "input-a",
+            DECLARED_FIXES,
+        )
+        .unwrap();
+        finish(root.path(), &transcribe, &grant, Some("corrupt_input")).unwrap();
+        let after = read(root.path(), &transcribe.id().unwrap())
+            .unwrap()
+            .unwrap();
+        assert!(after.held);
+        assert!(after.permission("input-a", DECLARED_FIXES).is_none());
+    }
+
     fn unit() -> Unit {
         Unit::Daily {
             day: "20260101".into(),
@@ -976,6 +1076,7 @@ mod tests {
         id: "fixed-parser",
         reason: "schema_invalid",
         introduced: "2.0.0",
+        raw_handler: None,
     }];
 
     #[test]
@@ -1092,11 +1193,13 @@ mod tests {
             id: "future",
             reason: "schema_invalid",
             introduced: "9999.0.0",
+            raw_handler: None,
         }];
         let unrelated = [DeclaredFix {
             id: "other",
             reason: "network",
             introduced: "2.0.0",
+            raw_handler: None,
         }];
         assert!(record.permission("input-a", &future).is_none());
         assert!(record.permission("input-a", &unrelated).is_none());

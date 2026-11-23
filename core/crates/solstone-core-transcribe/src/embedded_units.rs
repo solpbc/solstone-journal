@@ -1428,7 +1428,7 @@ fn record_helper_outdated(job: &EmbeddedJob<'_>) -> Result<(), TranscribeError> 
 }
 
 fn stop_decode(job: &mut EmbeddedJob<'_>, held: bool, error: AudioError) -> WalkStop {
-    if held {
+    if held && !crate::stage::is_empty_audio_decode_error(&error) {
         return WalkStop::Bare(TranscribeError::Decode {
             detail: (&error).into(),
         });
@@ -1437,26 +1437,70 @@ fn stop_decode(job: &mut EmbeddedJob<'_>, held: bool, error: AudioError) -> Walk
         return WalkStop::Bare(error);
     }
     match record_decode(job, &error) {
-        Ok(()) => WalkStop::Recorded(ProcessOutcome::Failed),
+        Ok(outcome) => WalkStop::Recorded(outcome),
         Err(error) => WalkStop::Bare(error),
     }
 }
 
-fn record_decode(job: &EmbeddedJob<'_>, error: &AudioError) -> Result<(), TranscribeError> {
-    let decode_error = TranscribeError::Decode {
-        detail: error.into(),
-    };
+fn record_decode(
+    job: &EmbeddedJob<'_>,
+    error: &AudioError,
+) -> Result<ProcessOutcome, TranscribeError> {
     let checkpoint = || job.embedded.checkpoint();
     let commit = commit_input(&job.observation, &job.claim, job.audio_path, &checkpoint)?;
+    if let Err(error) = checkpoint() {
+        drop(commit);
+        return Err(error);
+    }
     let terminal = decode_failure(&job.facts, job.redo, error, job.context_attempt.as_ref())?;
+    let jsonl_path = job.facts.path.with_extension("jsonl");
+    if terminal == TerminalOutcome::Preserved {
+        finish_context_output_admitted(
+            job.journal_path,
+            &jsonl_path,
+            job.context_attempt.as_ref(),
+            job.audio_path,
+        )?;
+        if checkpoint().is_ok() {
+            finish_voice_only_deletion(
+                solstone_core_cli_copy::ENGLISH,
+                job.journal_path,
+                &job.facts,
+                &job.claim,
+                &commit,
+                Some(job.embedded),
+            );
+        }
+        drop(commit);
+        emit_event(
+            job.audio_path,
+            job.journal_path,
+            TranscribedOutcome::Preserved,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &job.timings,
+            None,
+        );
+        return Ok(ProcessOutcome::Preserved);
+    }
     drop(commit);
     finish_context_output(
         job.journal_path,
-        &job.facts.path.with_extension("jsonl"),
+        &jsonl_path,
         job.context_attempt.as_ref(),
         job.audio_path,
         &checkpoint,
     )?;
+    let decode_error = TranscribeError::Decode {
+        detail: error.into(),
+    };
     emit_event(
         job.audio_path,
         job.journal_path,
@@ -1473,10 +1517,7 @@ fn record_decode(job: &EmbeddedJob<'_>, error: &AudioError) -> Result<(), Transc
         &job.timings,
         None,
     );
-    match terminal {
-        TerminalOutcome::Failed => Ok(()),
-        _ => unreachable!("decode failure publishes a failed record"),
-    }
+    Ok(ProcessOutcome::Failed)
 }
 
 fn apply_stop(

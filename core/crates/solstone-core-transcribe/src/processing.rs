@@ -8,16 +8,19 @@ use serde_json::{Value, json};
 use solstone_core_processing_record::vocab;
 use solstone_core_time::{Precision, utc_z};
 
-/// Why successfully decoded audio produced no transcript.
+/// Why an audio input produced no transcript.
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy)]
 pub(crate) enum EmptyReason {
+    NoDecodableAudio,
     NoSpeech,
     NoTranscript,
 }
 
-/// Preserve the distinction between the VAD and STT terminal outcomes.
+/// Preserve the distinction between decode-empty, VAD, and STT terminal outcomes.
 pub(crate) fn empty_record(input_size: u64, reason: EmptyReason) -> Value {
     let reason_code = match reason {
+        EmptyReason::NoDecodableAudio => vocab::REASON_NO_DECODABLE_AUDIO,
         EmptyReason::NoSpeech => vocab::REASON_NO_SPEECH,
         EmptyReason::NoTranscript => vocab::REASON_NO_TRANSCRIPT,
     };
@@ -90,6 +93,7 @@ mod tests {
     #[test]
     fn records_use_transcribe_vocabulary_without_attempts() {
         let records = [
+            empty_record(3, EmptyReason::NoDecodableAudio),
             empty_record(4, EmptyReason::NoSpeech),
             empty_record(7, EmptyReason::NoTranscript),
             corrupt_input_record(5),
@@ -98,6 +102,7 @@ mod tests {
             analyzed_record(6),
         ];
         let expected = [
+            (vocab::STATE_EMPTY, vocab::REASON_NO_DECODABLE_AUDIO, 3),
             (vocab::STATE_EMPTY, vocab::REASON_NO_SPEECH, 4),
             (vocab::STATE_EMPTY, vocab::REASON_NO_TRANSCRIPT, 7),
             (vocab::STATE_FAILED, vocab::REASON_CORRUPT_INPUT, 5),

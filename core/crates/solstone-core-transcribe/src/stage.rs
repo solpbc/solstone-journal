@@ -671,9 +671,6 @@ pub(crate) fn process_one_with_in(
         Ok(audio) => audio,
         Err(error) => {
             timings.add_ms("decode", elapsed_ms(decoded_at));
-            let decode_error = TranscribeError::Decode {
-                detail: (&error).into(),
-            };
             let write_at = Instant::now();
             #[cfg(all(feature = "embedded", unix))]
             if let Some(runtime) = embedded {
@@ -681,6 +678,18 @@ pub(crate) fn process_one_with_in(
             }
             let commit = commit_input(&observation, &claim, audio_path, &checkpoint)?;
             let terminal = decode_failure(&facts, redo, &error, context_attempt.as_ref())?;
+            if terminal == TerminalOutcome::Preserved {
+                drop(observation);
+                finish_voice_only_deletion(
+                    locale,
+                    journal_path,
+                    &facts,
+                    &claim,
+                    &commit,
+                    #[cfg(all(feature = "embedded", unix))]
+                    embedded,
+                );
+            }
             drop(commit);
             finish_context_output(
                 journal_path,
@@ -690,26 +699,49 @@ pub(crate) fn process_one_with_in(
                 &checkpoint,
             )?;
             timings.add_ms("write", elapsed_ms(write_at));
-            emit_event(
-                audio_path,
-                journal_path,
-                TranscribedOutcome::Failed,
-                None,
-                Some("AudioError"),
-                Some(&decode_error),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                &timings,
-                None,
-            );
-            return Ok(match terminal {
-                TerminalOutcome::Failed => ProcessOutcome::Failed,
-                _ => unreachable!(),
-            });
+            return match terminal {
+                TerminalOutcome::Preserved => {
+                    emit_event(
+                        audio_path,
+                        journal_path,
+                        TranscribedOutcome::Preserved,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        &timings,
+                        None,
+                    );
+                    Ok(ProcessOutcome::Preserved)
+                }
+                TerminalOutcome::Failed => {
+                    let decode_error = TranscribeError::Decode {
+                        detail: (&error).into(),
+                    };
+                    emit_event(
+                        audio_path,
+                        journal_path,
+                        TranscribedOutcome::Failed,
+                        None,
+                        Some("AudioError"),
+                        Some(&decode_error),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        &timings,
+                        None,
+                    );
+                    Ok(ProcessOutcome::Failed)
+                }
+            };
         }
     };
     timings.add_ms("decode", elapsed_ms(decoded_at));
@@ -1779,13 +1811,43 @@ pub(crate) fn stt_zero_statements(
     )
 }
 
-/// Write decode failure proof without removing the original input.
+/// Audio decode errors that prove the input holds no decodable audio rather
+/// than damaged media: a zero-byte file, a header-only container stub, or a
+/// valid container whose audio streams decode to zero samples.
+pub(crate) fn is_empty_audio_decode_error(error: &AudioError) -> bool {
+    matches!(
+        error,
+        AudioError::EmptyInput { .. } | AudioError::NoDecodedAudio { .. }
+    )
+}
+
+/// Write decode terminal proof without removing the original input.
+///
+/// Empty and header-only inputs that hold no decodable audio publish an honest
+/// `empty` / `no_decodable_audio` terminal (`TerminalOutcome::Preserved`)
+/// rather than a `failed` / `corrupt_input` hold.
 pub(crate) fn decode_failure(
     facts: &InputFacts,
     redo: bool,
     error: &AudioError,
     attempt: Option<&solstone_core_system::work_retry::Attempt>,
 ) -> Result<TerminalOutcome, TranscribeError> {
+    if is_empty_audio_decode_error(error) {
+        let (jsonl_path, _) = transcript_paths(&facts.path);
+        return terminal_empty(
+            facts,
+            EmptyReason::NoDecodableAudio,
+            redo || jsonl_path.exists(),
+            None,
+            None,
+            attempt,
+            |bytes| {
+                solstone_core_speaker_id::writer::write_request(bytes)
+                    .map_err(TerminalWriteFailure::Typed)
+            },
+            remove_orphan_npz,
+        );
+    }
     let mut processing = match error {
         AudioError::NoAudioStream { .. } => no_audio_stream_record(facts.input_size),
         _ if error.is_transient_decode() => decode_transient_record(facts.input_size),
@@ -2946,8 +3008,10 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let facts = input(temporary.path());
         let (jsonl_path, _) = transcript_paths(&facts.path);
-        let error = AudioError::EmptyInput {
+        let error = AudioError::CorruptInput {
             path: facts.path.clone(),
+            detail: "invalid data".to_owned(),
+            errno: None,
         };
 
         assert_eq!(
@@ -2959,6 +3023,180 @@ mod tests {
         assert_eq!(record["state"], vocab::STATE_FAILED);
         assert_eq!(record["reason_code"], vocab::REASON_CORRUPT_INPUT);
         assert!(is_failure_exhausted(&record));
+    }
+
+    #[test]
+    fn decode_empty_audio_writes_empty_no_decodable_audio_terminal() {
+        for kind in ["empty_input", "no_decoded_audio"] {
+            let temporary = tempfile::tempdir().unwrap();
+            let facts = input(temporary.path());
+            let (jsonl_path, _) = transcript_paths(&facts.path);
+            let error = match kind {
+                "empty_input" => AudioError::EmptyInput {
+                    path: facts.path.clone(),
+                },
+                _ => AudioError::NoDecodedAudio {
+                    path: facts.path.clone(),
+                },
+            };
+
+            assert_eq!(
+                decode_failure(&facts, false, &error, None).unwrap(),
+                TerminalOutcome::Preserved,
+                "{kind}"
+            );
+            assert!(facts.path.exists());
+            let record = read_header(&jsonl_path)["_solstone_processing"].clone();
+            assert_eq!(record["state"], vocab::STATE_EMPTY, "{kind}");
+            assert_eq!(
+                record["reason_code"],
+                vocab::REASON_NO_DECODABLE_AUDIO,
+                "{kind}"
+            );
+            assert!(record.get("attempts").is_none(), "{kind}");
+        }
+    }
+
+    #[cfg(all(feature = "full-tests", not(windows)))]
+    #[test]
+    fn held_corrupt_watch_stub_reenters_through_declared_fix_and_releases_hold() {
+        use solstone_core_system::work_retry;
+
+        const WATCH_STUB: &[u8] = &[
+            0x00, 0x00, 0x00, 0x1c, b'f', b't', b'y', b'p', b'M', b'4', b'A', b' ', 0x00, 0x00,
+            0x00, 0x00, b'M', b'4', b'A', b' ', b'm', b'p', b'4', b'2', b'i', b's', b'o', b'm',
+        ];
+        let journal = tempfile::tempdir().unwrap();
+        let segment = journal.path().join("chronicle/20261122/watch/180302_1");
+        fs::create_dir_all(&segment).unwrap();
+        let raw = segment.join("audio.m4a");
+        let output = segment.join("audio.jsonl");
+        fs::write(&raw, WATCH_STUB).unwrap();
+        fs::write(
+            &output,
+            format!(
+                "{}\n",
+                json!({
+                    "raw": "audio.m4a",
+                    "_solstone_processing": {
+                        "schema": vocab::SCHEMA,
+                        "state": vocab::STATE_FAILED,
+                        "reason_code": vocab::REASON_CORRUPT_INPUT,
+                        "handler": vocab::HANDLER_TRANSCRIBE,
+                        "input_size": WATCH_STUB.len(),
+                        "attempts": 1,
+                        "attempted_at": "2026-11-22T18:03:05Z",
+                    }
+                })
+            ),
+        )
+        .unwrap();
+
+        let evidence = work_retry::raw::inspect_output(journal.path(), &output)
+            .unwrap()
+            .expect("held corrupt_input output");
+        work_retry::raw::observe(journal.path(), &evidence).unwrap();
+        let context =
+            work_retry::raw::context_for_output(journal.path(), &output, vocab::HANDLER_TRANSCRIBE)
+                .unwrap()
+                .expect("declared fix grants one re-entry attempt");
+        assert_eq!(context.attempt.cause, "fix:transcribe-empty-audio-stubs");
+
+        let config = solstone_core_journal_config::read_journal_config(journal.path()).unwrap();
+        let attestation = solstone_core_spp_ratls::AttestationStateStore::new();
+        let outcome = super::process_one_with(
+            &raw,
+            journal.path(),
+            false,
+            None,
+            &config,
+            &attestation,
+            #[cfg(all(feature = "embedded", unix))]
+            None,
+            Some(&context),
+        )
+        .unwrap();
+        assert_eq!(outcome, super::ProcessOutcome::Preserved);
+
+        let record = read_header(&output)["_solstone_processing"].clone();
+        assert_eq!(record["state"], vocab::STATE_EMPTY);
+        assert_eq!(record["reason_code"], vocab::REASON_NO_DECODABLE_AUDIO);
+        let retry_record = work_retry::read(journal.path(), &context.unit_id)
+            .unwrap()
+            .unwrap();
+        assert!(!retry_record.held);
+
+        // Negative twin: genuinely damaged M4A carrying media bytes inside mdat
+        // consumes the declared fix once and stays held as corrupt_input.
+        let mut damaged_bytes = WATCH_STUB.to_vec();
+        damaged_bytes.extend_from_slice(&[0, 0, 0, 0, b'm', b'd', b'a', b't', 1, 2, 3, 4]);
+        let damaged_segment = journal.path().join("chronicle/20261122/phone/180400_180");
+        fs::create_dir_all(&damaged_segment).unwrap();
+        let damaged_raw = damaged_segment.join("audio.m4a");
+        let damaged_output = damaged_segment.join("audio.jsonl");
+        fs::write(&damaged_raw, &damaged_bytes).unwrap();
+        fs::write(
+            &damaged_output,
+            format!(
+                "{}\n",
+                json!({
+                    "raw": "audio.m4a",
+                    "_solstone_processing": {
+                        "schema": vocab::SCHEMA,
+                        "state": vocab::STATE_FAILED,
+                        "reason_code": vocab::REASON_CORRUPT_INPUT,
+                        "handler": vocab::HANDLER_TRANSCRIBE,
+                        "input_size": damaged_bytes.len(),
+                        "attempts": 1,
+                        "attempted_at": "2026-11-22T18:04:05Z",
+                    }
+                })
+            ),
+        )
+        .unwrap();
+
+        let damaged_evidence = work_retry::raw::inspect_output(journal.path(), &damaged_output)
+            .unwrap()
+            .expect("held corrupt_input damaged output");
+        work_retry::raw::observe(journal.path(), &damaged_evidence).unwrap();
+        let damaged_context = work_retry::raw::context_for_output(
+            journal.path(),
+            &damaged_output,
+            vocab::HANDLER_TRANSCRIBE,
+        )
+        .unwrap()
+        .expect("declared fix grants one check of damaged input");
+
+        let damaged_outcome = super::process_one_with(
+            &damaged_raw,
+            journal.path(),
+            false,
+            None,
+            &config,
+            &attestation,
+            #[cfg(all(feature = "embedded", unix))]
+            None,
+            Some(&damaged_context),
+        )
+        .unwrap();
+        assert_eq!(damaged_outcome, super::ProcessOutcome::Failed);
+
+        let damaged_header = read_header(&damaged_output)["_solstone_processing"].clone();
+        assert_eq!(damaged_header["state"], vocab::STATE_FAILED);
+        assert_eq!(damaged_header["reason_code"], vocab::REASON_CORRUPT_INPUT);
+        let damaged_retry = work_retry::read(journal.path(), &damaged_context.unit_id)
+            .unwrap()
+            .unwrap();
+        assert!(damaged_retry.held);
+        assert!(
+            work_retry::raw::context_for_output(
+                journal.path(),
+                &damaged_output,
+                vocab::HANDLER_TRANSCRIBE,
+            )
+            .unwrap()
+            .is_none()
+        );
     }
 
     #[cfg(all(unix, feature = "full-tests"))]
@@ -4665,5 +4903,143 @@ mod tests {
             .unwrap();
         assert!(record.held);
         assert_eq!(record.attempt.as_ref(), Some(&context.attempt));
+    }
+
+    #[cfg(all(feature = "embedded", unix, feature = "full-tests"))]
+    #[test]
+    fn embedded_held_watch_stub_reenters_to_empty_while_damaged_audio_stays_held() {
+        use solstone_core_system::work_retry;
+
+        const WATCH_STUB: &[u8] = &[
+            0x00, 0x00, 0x00, 0x1c, b'f', b't', b'y', b'p', b'M', b'4', b'A', b' ', 0x00, 0x00,
+            0x00, 0x00, b'M', b'4', b'A', b' ', b'm', b'p', b'4', b'2', b'i', b's', b'o', b'm',
+        ];
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("chronicle/20261122/watch/180302_1");
+        fs::create_dir_all(&segment).unwrap();
+        let raw = segment.join("audio.m4a");
+        let output = segment.join("audio.jsonl");
+        fs::write(&raw, WATCH_STUB).unwrap();
+        fs::write(
+            &output,
+            format!(
+                "{}\n",
+                json!({
+                    "raw": "audio.m4a",
+                    "_solstone_processing": {
+                        "schema": vocab::SCHEMA,
+                        "state": vocab::STATE_FAILED,
+                        "reason_code": vocab::REASON_CORRUPT_INPUT,
+                        "handler": vocab::HANDLER_TRANSCRIBE,
+                        "input_size": WATCH_STUB.len(),
+                        "attempts": 1,
+                        "attempted_at": "2026-11-22T18:03:05Z",
+                    }
+                })
+            ),
+        )
+        .unwrap();
+
+        let evidence = work_retry::raw::inspect_output(root.path(), &output)
+            .unwrap()
+            .expect("held corrupt_input output");
+        work_retry::raw::observe(root.path(), &evidence).unwrap();
+        let context =
+            work_retry::raw::context_for_output(root.path(), &output, vocab::HANDLER_TRANSCRIBE)
+                .unwrap()
+                .expect("declared fix grants one re-entry attempt");
+        let asr = PanicAsr;
+        let cancel = || false;
+        let (embedded, config, attestation) = panicking_embedded(root.path(), &asr, &cancel);
+
+        let outcome = super::process_one_with(
+            &raw,
+            root.path(),
+            false,
+            None,
+            &config,
+            &attestation,
+            Some(&embedded),
+            Some(&context),
+        )
+        .unwrap();
+        assert_eq!(outcome, super::ProcessOutcome::Preserved);
+        let record = read_header(&output)["_solstone_processing"].clone();
+        assert_eq!(record["state"], vocab::STATE_EMPTY);
+        assert_eq!(record["reason_code"], vocab::REASON_NO_DECODABLE_AUDIO);
+        let retry_record = work_retry::read(root.path(), &context.unit_id)
+            .unwrap()
+            .unwrap();
+        assert!(!retry_record.held);
+
+        // Negative twin on the embedded lane: a held damaged M4A consumes the
+        // declared fix once, records failed/corrupt_input, and stays held.
+        let mut damaged_bytes = WATCH_STUB.to_vec();
+        damaged_bytes.extend_from_slice(&[0, 0, 0, 0, b'm', b'd', b'a', b't', 1, 2, 3, 4]);
+        let damaged_segment = root.path().join("chronicle/20261122/phone/180400_180");
+        fs::create_dir_all(&damaged_segment).unwrap();
+        let damaged_raw = damaged_segment.join("audio.m4a");
+        let damaged_output = damaged_segment.join("audio.jsonl");
+        fs::write(&damaged_raw, &damaged_bytes).unwrap();
+        fs::write(
+            &damaged_output,
+            format!(
+                "{}\n",
+                json!({
+                    "raw": "audio.m4a",
+                    "_solstone_processing": {
+                        "schema": vocab::SCHEMA,
+                        "state": vocab::STATE_FAILED,
+                        "reason_code": vocab::REASON_CORRUPT_INPUT,
+                        "handler": vocab::HANDLER_TRANSCRIBE,
+                        "input_size": damaged_bytes.len(),
+                        "attempts": 1,
+                        "attempted_at": "2026-11-22T18:04:05Z",
+                    }
+                })
+            ),
+        )
+        .unwrap();
+
+        let damaged_evidence = work_retry::raw::inspect_output(root.path(), &damaged_output)
+            .unwrap()
+            .expect("held corrupt_input damaged output");
+        work_retry::raw::observe(root.path(), &damaged_evidence).unwrap();
+        let damaged_context = work_retry::raw::context_for_output(
+            root.path(),
+            &damaged_output,
+            vocab::HANDLER_TRANSCRIBE,
+        )
+        .unwrap()
+        .expect("declared fix grants one embedded check of damaged input");
+
+        let damaged_outcome = super::process_one_with(
+            &damaged_raw,
+            root.path(),
+            false,
+            None,
+            &config,
+            &attestation,
+            Some(&embedded),
+            Some(&damaged_context),
+        )
+        .unwrap();
+        assert_eq!(damaged_outcome, super::ProcessOutcome::Failed);
+        let damaged_header = read_header(&damaged_output)["_solstone_processing"].clone();
+        assert_eq!(damaged_header["state"], vocab::STATE_FAILED);
+        assert_eq!(damaged_header["reason_code"], vocab::REASON_CORRUPT_INPUT);
+        let damaged_retry = work_retry::read(root.path(), &damaged_context.unit_id)
+            .unwrap()
+            .unwrap();
+        assert!(damaged_retry.held);
+        assert!(
+            work_retry::raw::context_for_output(
+                root.path(),
+                &damaged_output,
+                vocab::HANDLER_TRANSCRIBE,
+            )
+            .unwrap()
+            .is_none()
+        );
     }
 }

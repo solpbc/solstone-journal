@@ -17,12 +17,139 @@ const MAX_FLUSH_ITERATIONS: usize = 16;
 /// Demuxers this call site reads; every other demuxer compiled into FFmpeg is refused.
 const INPUT_FORMATS: &str = "flac,matroska,mov,mp3,ogg,wav";
 
+/// Maximum file size scanned when checking whether a container open failure is
+/// a header-only ISO-BMFF stub with zero media payload bytes.
+const MAX_HEADER_STUB_BYTES: u64 = 64 * 1024;
+
 /// Opens a local media file, restricted to [`INPUT_FORMATS`] and the `file` protocol.
 fn open_input(path: &Path) -> Result<ffmpeg::format::context::Input, ffmpeg::Error> {
     let mut options = ffmpeg::Dictionary::new();
     options.set("protocol_whitelist", "file");
     options.set("format_whitelist", INPUT_FORMATS);
     ffmpeg::format::input_with_dictionary(path, options)
+}
+
+/// Opens a local audio container, classifying header-only ISO-BMFF stubs that
+/// hold zero media payload bytes as [`AudioError::EmptyInput`] rather than
+/// [`AudioError::CorruptInput`].
+fn open_audio_input(path: &Path) -> Result<ffmpeg::format::context::Input, AudioError> {
+    open_input(path).map_err(|error| {
+        let mapped = corrupt_input(path, error);
+        if !mapped.is_transient_decode() && is_header_only_isobmff_stub(path) {
+            AudioError::EmptyInput {
+                path: path.to_path_buf(),
+            }
+        } else {
+            mapped
+        }
+    })
+}
+
+fn is_header_only_isobmff_stub(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if metadata.len() < 8 || metadata.len() > MAX_HEADER_STUB_BYTES {
+        return false;
+    }
+    let Ok(bytes) = fs::read(path) else {
+        return false;
+    };
+    if bytes.len() as u64 > MAX_HEADER_STUB_BYTES {
+        return false;
+    }
+    is_header_only_isobmff_stub_bytes(&bytes)
+}
+
+/// Returns `true` only when `bytes` is a complete, well-formed sequence of
+/// top-level ISO-BMFF boxes starting with `ftyp`, with no `moov`/`moof` or
+/// unknown boxes and zero `mdat` payload bytes (for example, a 28-byte bare
+/// `ftyp` stub left when a recorder prepared a file without writing any audio).
+fn is_header_only_isobmff_stub_bytes(bytes: &[u8]) -> bool {
+    if bytes.len() < 8 {
+        return false;
+    }
+    let mut offset = 0usize;
+    let mut saw_ftyp = false;
+    while offset < bytes.len() {
+        if bytes.len() - offset < 8 {
+            return false;
+        }
+        let size32 = u32::from_be_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ]);
+        let box_type = [
+            bytes[offset + 4],
+            bytes[offset + 5],
+            bytes[offset + 6],
+            bytes[offset + 7],
+        ];
+        if !box_type.iter().all(|byte| (0x20..=0x7E).contains(byte)) {
+            return false;
+        }
+        let (header_len, box_len) = match size32 {
+            0 => (8usize, bytes.len() - offset),
+            1 => {
+                if bytes.len() - offset < 16 {
+                    return false;
+                }
+                let size64 = u64::from_be_bytes([
+                    bytes[offset + 8],
+                    bytes[offset + 9],
+                    bytes[offset + 10],
+                    bytes[offset + 11],
+                    bytes[offset + 12],
+                    bytes[offset + 13],
+                    bytes[offset + 14],
+                    bytes[offset + 15],
+                ]);
+                let Ok(len) = usize::try_from(size64) else {
+                    return false;
+                };
+                if len < 16 {
+                    return false;
+                }
+                (16usize, len)
+            }
+            2..=7 => return false,
+            n => (8usize, n as usize),
+        };
+        if box_len > bytes.len() - offset {
+            return false;
+        }
+        let payload_len = box_len - header_len;
+        match &box_type {
+            b"ftyp" => {
+                if offset != 0 || payload_len < 8 || !payload_len.is_multiple_of(4) {
+                    return false;
+                }
+                let major = &bytes[offset + header_len..offset + header_len + 4];
+                let compat = &bytes[offset + header_len + 8..offset + box_len];
+                if !major.iter().all(|byte| (0x20..=0x7E).contains(byte))
+                    || !compat.iter().all(|byte| (0x20..=0x7E).contains(byte))
+                {
+                    return false;
+                }
+                saw_ftyp = true;
+            }
+            b"free" | b"skip" | b"wide" => {
+                if !saw_ftyp {
+                    return false;
+                }
+            }
+            b"mdat" => {
+                if !saw_ftyp || payload_len != 0 {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+        offset += box_len;
+    }
+    saw_ftyp
 }
 
 /// Decodes audio into packed mono f32 at [`SAMPLE_RATE`].
@@ -58,7 +185,7 @@ pub fn decode_f32_mono_bounded(path: &Path, max_samples: usize) -> Result<Vec<f3
 }
 
 fn decode_non_m4a(path: &Path, max_samples: usize) -> Result<Vec<f32>, AudioError> {
-    let mut input = open_input(path).map_err(|error| corrupt_input(path, error))?;
+    let mut input = open_audio_input(path)?;
     let stream_index = first_audio_stream_index(&input, path)?;
     let parameters = input
         .stream(stream_index)
@@ -103,16 +230,24 @@ fn decode_non_m4a(path: &Path, max_samples: usize) -> Result<Vec<f32>, AudioErro
     }
 
     if audio.is_empty() {
-        Err(AudioError::NoDecodedAudio {
-            path: path.to_path_buf(),
-        })
+        if decoder.channels() == 0 || decoder.rate() == 0 {
+            Err(AudioError::CorruptInput {
+                path: path.to_path_buf(),
+                detail: "audio stream has invalid codec parameters".to_owned(),
+                errno: None,
+            })
+        } else {
+            Err(AudioError::NoDecodedAudio {
+                path: path.to_path_buf(),
+            })
+        }
     } else {
         Ok(audio)
     }
 }
 
 fn decode_m4a(path: &Path, max_samples: usize) -> Result<Vec<f32>, AudioError> {
-    let input = open_input(path).map_err(|error| corrupt_input(path, error))?;
+    let input = open_audio_input(path)?;
     let stream_indices: Vec<usize> = input
         .streams()
         .filter(|stream| stream.parameters().medium() == ffmpeg::media::Type::Audio)
@@ -126,6 +261,7 @@ fn decode_m4a(path: &Path, max_samples: usize) -> Result<Vec<f32>, AudioError> {
     }
 
     let mut streams = Vec::new();
+    let mut any_valid_params = false;
     let mut remaining_samples = max_samples;
     for stream_index in stream_indices {
         // Python reopens the M4A container for every audio stream. It also
@@ -176,6 +312,9 @@ fn decode_m4a(path: &Path, max_samples: usize) -> Result<Vec<f32>, AudioError> {
             path,
             remaining_samples,
         )?;
+        if decoder.channels() > 0 && decoder.rate() > 0 {
+            any_valid_params = true;
+        }
         if !audio.is_empty() {
             remaining_samples -= audio.len();
             streams.push(audio);
@@ -183,6 +322,11 @@ fn decode_m4a(path: &Path, max_samples: usize) -> Result<Vec<f32>, AudioError> {
     }
 
     match streams.len() {
+        0 if !any_valid_params => Err(AudioError::CorruptInput {
+            path: path.to_path_buf(),
+            detail: "audio stream has invalid codec parameters".to_owned(),
+            errno: None,
+        }),
         0 => Err(AudioError::NoDecodedAudio {
             path: path.to_path_buf(),
         }),
@@ -531,6 +675,7 @@ struct NonM4aDecoder {
     resampler: Option<ffmpeg::software::resampling::Context>,
     cursor: PcmCursor,
     packets_done: bool,
+    emitted_any: bool,
 }
 
 struct M4aStream {
@@ -604,7 +749,7 @@ impl UnitDecoder {
 }
 
 fn open_non_m4a(path: &Path) -> Result<NonM4aDecoder, AudioError> {
-    let input = open_input(path).map_err(|error| corrupt_input(path, error))?;
+    let input = open_audio_input(path)?;
     let stream_index = first_audio_stream_index(&input, path)?;
     let parameters = input
         .stream(stream_index)
@@ -626,11 +771,12 @@ fn open_non_m4a(path: &Path) -> Result<NonM4aDecoder, AudioError> {
             ended: false,
         },
         packets_done: false,
+        emitted_any: false,
     })
 }
 
 fn open_m4a_streams(path: &Path) -> Result<Vec<M4aStream>, AudioError> {
-    let input = open_input(path).map_err(|error| corrupt_input(path, error))?;
+    let input = open_audio_input(path)?;
     let stream_indices = input
         .streams()
         .filter(|stream| stream.parameters().medium() == ffmpeg::media::Type::Audio)
@@ -722,7 +868,25 @@ fn pull_non_m4a(
             Err(error) => return Err(corrupt_input(path, error)),
         }
     }
-    take_pending(&mut decoder.cursor, count)
+    match take_pending(&mut decoder.cursor, count)? {
+        Some(samples) => {
+            decoder.emitted_any = true;
+            Ok(Some(samples))
+        }
+        None => {
+            if !decoder.emitted_any
+                && (decoder.decoder.channels() == 0 || decoder.decoder.rate() == 0)
+            {
+                Err(AudioError::CorruptInput {
+                    path: path.to_path_buf(),
+                    detail: "audio stream has invalid codec parameters".to_owned(),
+                    errno: None,
+                })
+            } else {
+                Ok(None)
+            }
+        }
+    }
 }
 
 fn pull_m4a(
@@ -733,14 +897,25 @@ fn pull_m4a(
 ) -> Result<Option<Vec<f32>>, AudioError> {
     if !*probed {
         let mut keep = Vec::new();
+        let mut any_valid_params = false;
         for mut stream in streams.drain(..) {
             fill_m4a(&mut stream, path, 1)?;
+            if stream.decoder.channels() > 0 && stream.decoder.rate() > 0 {
+                any_valid_params = true;
+            }
             if !stream.cursor.pending.is_empty() {
                 keep.push(stream);
             }
         }
         *streams = keep;
         *probed = true;
+        if streams.is_empty() && !any_valid_params {
+            return Err(AudioError::CorruptInput {
+                path: path.to_path_buf(),
+                detail: "audio stream has invalid codec parameters".to_owned(),
+                errno: None,
+            });
+        }
     }
     if streams.is_empty() {
         return Ok(None);
@@ -962,5 +1137,64 @@ mod tests {
             super::mix_m4a_incremental(&streams, streams.iter().map(Vec::len).max().unwrap()),
             expected
         );
+    }
+
+    #[test]
+    fn header_only_isobmff_stub_detection_separates_stubs_from_corrupt_media() {
+        // Exact 28-byte M4A ftyp header written before any samples exist.
+        const WATCH_STUB: &[u8] = &[
+            0x00, 0x00, 0x00, 0x1c, b'f', b't', b'y', b'p', b'M', b'4', b'A', b' ', 0x00, 0x00,
+            0x00, 0x00, b'M', b'4', b'A', b' ', b'm', b'p', b'4', b'2', b'i', b's', b'o', b'm',
+        ];
+        assert!(super::is_header_only_isobmff_stub_bytes(WATCH_STUB));
+
+        // ftyp + empty mdat (8 bytes) + free box (12 bytes) is still header-only.
+        let mut with_empty_mdat = WATCH_STUB.to_vec();
+        with_empty_mdat.extend_from_slice(&[0, 0, 0, 8, b'm', b'd', b'a', b't']);
+        with_empty_mdat.extend_from_slice(&[0, 0, 0, 12, b'f', b'r', b'e', b'e', 0, 0, 0, 0]);
+        assert!(super::is_header_only_isobmff_stub_bytes(&with_empty_mdat));
+
+        // ftyp + size-0 mdat at EOF with zero payload bytes is header-only.
+        let mut with_eof_empty_mdat = WATCH_STUB.to_vec();
+        with_eof_empty_mdat.extend_from_slice(&[0, 0, 0, 0, b'm', b'd', b'a', b't']);
+        assert!(super::is_header_only_isobmff_stub_bytes(
+            &with_eof_empty_mdat
+        ));
+
+        // ftyp + extended 64-bit empty mdat (16 bytes) is header-only.
+        let mut with_64bit_empty_mdat = WATCH_STUB.to_vec();
+        with_64bit_empty_mdat
+            .extend_from_slice(&[0, 0, 0, 1, b'm', b'd', b'a', b't', 0, 0, 0, 0, 0, 0, 0, 16]);
+        assert!(super::is_header_only_isobmff_stub_bytes(
+            &with_64bit_empty_mdat
+        ));
+
+        // Truncated recording with media payload in mdat must stay corrupt.
+        let mut with_media_payload = WATCH_STUB.to_vec();
+        with_media_payload.extend_from_slice(&[0, 0, 0, 12, b'm', b'd', b'a', b't', 1, 2, 3, 4]);
+        assert!(!super::is_header_only_isobmff_stub_bytes(
+            &with_media_payload
+        ));
+
+        // Open-ended size-0 mdat containing media bytes must stay corrupt.
+        let mut with_eof_media = WATCH_STUB.to_vec();
+        with_eof_media.extend_from_slice(&[0, 0, 0, 0, b'm', b'd', b'a', b't', 0xff]);
+        assert!(!super::is_header_only_isobmff_stub_bytes(&with_eof_media));
+
+        // A file carrying a moov box that FFmpeg failed to open is damaged, not a stub.
+        let mut with_moov = WATCH_STUB.to_vec();
+        with_moov.extend_from_slice(&[0, 0, 0, 8, b'm', b'o', b'o', b'v']);
+        assert!(!super::is_header_only_isobmff_stub_bytes(&with_moov));
+
+        // Truncated ftyp, non-ASCII compatible brands, and arbitrary bytes stay corrupt.
+        assert!(!super::is_header_only_isobmff_stub_bytes(&WATCH_STUB[..20]));
+        assert!(!super::is_header_only_isobmff_stub_bytes(&[
+            0, 0, 0, 0, b'f', b't', b'y', b'p', b'M', b'4', b'A', b' ', 0, 0, 0, 0, 0xff, 0xfe,
+            0xfd, 0xfc,
+        ]));
+        assert!(!super::is_header_only_isobmff_stub_bytes(b"not media"));
+        assert!(!super::is_header_only_isobmff_stub_bytes(&[
+            0, 0, 0, 8, b'f', b'r', b'e', b'e'
+        ]));
     }
 }
