@@ -1,0 +1,16 @@
+{
+  "description": "Grab render error for malformed level 5a payload.",
+  "context": "Grab render error for malformed level 5a payload.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "bbb1ef1f695c178d9d35501c6f0dad4ac98e317fad9001f8ffbe62e377a85198",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

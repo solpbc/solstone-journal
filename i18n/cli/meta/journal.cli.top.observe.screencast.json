@@ -1,0 +1,21 @@
+{
+  "description": "Top Observe screencast mode status.",
+  "context": "Top Observe screencast mode status.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "elapsed",
+      "type": "string"
+    }
+  ],
+  "source_revision": "5447e6dabb7b1ab1eb9b037991e3905b83e58955cd2bbd26d25b6c3695c633a0",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

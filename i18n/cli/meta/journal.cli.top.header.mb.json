@@ -1,0 +1,16 @@
+{
+  "description": "Top table memory column header.",
+  "context": "Top table memory column header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "af54ae3ef7d68579b50d9332152bc82f420e7b61fd407a6a33d24afad5689e9b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

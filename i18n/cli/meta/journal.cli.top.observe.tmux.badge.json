@@ -1,0 +1,16 @@
+{
+  "description": "Top Observe tmux mode badge.",
+  "context": "Top Observe tmux mode badge.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "6cbee4466e6ff1169c5480b02a81543c0405334fc9781e7e613bef74f848f067",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

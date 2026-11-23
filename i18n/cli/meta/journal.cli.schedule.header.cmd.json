@@ -1,0 +1,16 @@
+{
+  "description": "Schedule report table CMD header.",
+  "context": "Schedule report table CMD header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "f6094b8d2f1e0a66b4452d8460b34f7e711708c1d1c74515c0980633d9ae8780",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

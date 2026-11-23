@@ -1,0 +1,25 @@
+{
+  "description": "Top crashed service row showing restart attempts.",
+  "context": "Top crashed service row showing restart attempts.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "attempts",
+      "type": "string"
+    }
+  ],
+  "source_revision": "941d7a8f931462579d5e798ec1600b1e4d0965d0525eb88962a3696019648bc9",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

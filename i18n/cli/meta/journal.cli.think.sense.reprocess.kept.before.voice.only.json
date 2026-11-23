@@ -1,0 +1,30 @@
+{
+  "description": "Sense batch reprocess summary for unfiltered transcripts kept while leave-out-other-voices is enabled.",
+  "context": "Sense batch reprocess summary for unfiltered transcripts kept while leave-out-other-voices is enabled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "fec01dd22dfae186e5038975fc1e94a79376b017eb81fb479635a8c892191fb5",
+  "max_length": 777,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

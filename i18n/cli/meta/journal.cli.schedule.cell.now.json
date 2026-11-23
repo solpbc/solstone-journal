@@ -1,0 +1,16 @@
+{
+  "description": "Schedule report cell label when a schedule is due now.",
+  "context": "Schedule report cell label when a schedule is due now.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "957d0d83df74b66ba4daac3757a68ae14023c7b4de499773ddcfce68e740aebc",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

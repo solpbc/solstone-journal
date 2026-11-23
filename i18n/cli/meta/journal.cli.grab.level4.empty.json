@@ -1,0 +1,16 @@
+{
+  "description": "Grab level 4 notice when no analyzed frames exist.",
+  "context": "Grab level 4 notice when no analyzed frames exist.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "1dbc2f6b1c7820635686ccd449e8f7eca49be053eb6cfa04edb88473d97ac7c8",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

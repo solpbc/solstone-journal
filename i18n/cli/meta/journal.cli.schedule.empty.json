@@ -1,0 +1,25 @@
+{
+  "description": "Schedule report notice when no schedules are configured.",
+  "context": "Schedule report notice when no schedules are configured.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "source_revision": "22ca3983e3895e2853cbebe2fab1a9faafb33348cb10d6a2c7416774429b2c26",
+  "max_length": 243,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

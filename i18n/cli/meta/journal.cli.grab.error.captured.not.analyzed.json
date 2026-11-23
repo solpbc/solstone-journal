@@ -1,0 +1,25 @@
+{
+  "description": "Grab error when requested screen has video but no analysis.",
+  "context": "Grab error when requested screen has video but no analysis.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "screen",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    }
+  ],
+  "source_revision": "dc1bc130b317018776d04702cbec594d70c8d84ea9aebb94b8c12921207d0c6a",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

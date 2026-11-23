@@ -1,0 +1,25 @@
+{
+  "description": "Grab error when original video is missing with a known reason.",
+  "context": "Grab error when original video is missing with a known reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "source_revision": "33ec3810f8b8ed267007bd1d0d6ee336c2e3b0a4baa3a462d9a46f7d74c7e472",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

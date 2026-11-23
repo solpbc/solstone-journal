@@ -1,0 +1,16 @@
+{
+  "description": "Top placeholder while waiting for Observe or Think status.",
+  "context": "Top placeholder while waiting for Observe or Think status.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "da174a7c33f5fcbd8c88982ebde4a5e91ba6cf1ee6aeb024569b60053b259a43",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

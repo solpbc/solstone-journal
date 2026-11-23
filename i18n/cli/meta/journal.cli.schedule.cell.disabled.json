@@ -1,0 +1,16 @@
+{
+  "description": "Schedule report cell label for disabled schedule.",
+  "context": "Schedule report cell label for disabled schedule.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "ee89b27ab355006f1a68d71cc0c5cdf9806e04b127859af2cc20b9997917b459",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

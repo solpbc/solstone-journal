@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for segments count.",
+  "context": "Grab table column header for segments count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "ae73fe4bd5e7081e7fae2bb4ceb5cea9efb9acbb19c4761db3000ad03847dfbb",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

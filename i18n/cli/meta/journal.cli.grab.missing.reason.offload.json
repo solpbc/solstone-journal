@@ -1,0 +1,16 @@
+{
+  "description": "Grab missing-video reason when deleted after backup.",
+  "context": "Grab missing-video reason when deleted after backup.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "8d9535357cf6e74b45eb22d831dee8daec6297e08058621e4cbd53dad5c27bbb",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

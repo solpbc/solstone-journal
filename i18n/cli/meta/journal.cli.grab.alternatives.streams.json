@@ -1,0 +1,21 @@
+{
+  "description": "Grab alternatives header for available streams.",
+  "context": "Grab alternatives header for available streams.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "source_revision": "8e129d12f0b8e9b2b3d7113137d151e768c44e1d6a11c3e6a7a31fd7d17b11d5",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

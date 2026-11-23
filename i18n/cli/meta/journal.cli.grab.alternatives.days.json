@@ -1,0 +1,16 @@
+{
+  "description": "Grab alternatives header for available days.",
+  "context": "Grab alternatives header for available days.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "50d74e446a496ed4f2a7cc9da83c7a6ed3add26abc4fa31e233ed30ae92e221f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

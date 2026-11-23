@@ -1,0 +1,29 @@
+{
+  "description": "Grab alternatives header for available screens.",
+  "context": "Grab alternatives header for available screens.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "stream",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    }
+  ],
+  "source_revision": "90f03ae299b9796f2774bffa993ed01588945b784dcb98c63baafa6b30ab028b",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

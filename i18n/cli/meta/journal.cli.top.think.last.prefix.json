@@ -1,0 +1,21 @@
+{
+  "description": "Top Think last completed run success count prefix.",
+  "context": "Top Think last completed run success count prefix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "success",
+      "type": "string"
+    }
+  ],
+  "source_revision": "53bc54b8234f7371c30e13166d4723d9945b800c2f685c0b7c9b1b3995d7bf9c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

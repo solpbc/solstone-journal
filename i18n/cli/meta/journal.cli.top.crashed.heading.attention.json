@@ -1,0 +1,16 @@
+{
+  "description": "Top crashed section heading when services are retrying.",
+  "context": "Top crashed section heading when services are retrying.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "3514d14b99f6be5111bd577a25214d0883b2b8abee7769a4b36a451de7402c72",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

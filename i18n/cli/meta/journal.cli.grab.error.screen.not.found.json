@@ -1,0 +1,33 @@
+{
+  "description": "Grab error when requested screen does not exist.",
+  "context": "Grab error when requested screen does not exist.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "screen",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "stream",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    }
+  ],
+  "source_revision": "799a5036bc5d27ba9e7cceb258d7f4cb4b6e4973cdeab2ecf88ede822e635ad4",
+  "max_length": 195,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

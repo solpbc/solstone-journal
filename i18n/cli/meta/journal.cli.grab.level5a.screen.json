@@ -1,0 +1,21 @@
+{
+  "description": "Grab frame detail screen field.",
+  "context": "Grab frame detail screen field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "source_revision": "4f3b5539ecbfda18c7cb3885b918b3d37b3cc511aae5e82551db0308b9c80506",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

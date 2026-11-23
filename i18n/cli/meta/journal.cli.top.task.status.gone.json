@@ -1,0 +1,16 @@
+{
+  "description": "Top finished task status when exit code is unknown.",
+  "context": "Top finished task status when exit code is unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "d293d67ca3c58fcf636dd1940e29efccccb64479d441046a00ee3397fb7373b5",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

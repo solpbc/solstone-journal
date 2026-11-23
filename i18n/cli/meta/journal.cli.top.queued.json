@@ -1,0 +1,21 @@
+{
+  "description": "Top queued commands summary line.",
+  "context": "Top queued commands summary line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "commands",
+      "type": "string"
+    }
+  ],
+  "source_revision": "17ac4b06dcfcebbf27bcd40f4f6f8ea2ede8a15da75fbe843a6d184e7ce77546",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -15,23 +15,34 @@ pub(crate) struct SegmentWindow {
 }
 
 pub(crate) fn segment_window(day: &str, segment: &str) -> Result<SegmentWindow, GrabFailure> {
-    let date = solstone_core_time::parse_day(day).ok_or_else(|| {
-        GrabFailure::runtime(format!("segment {segment} is not a valid HHMMSS_LEN key"))
-    })?;
-    let times = segment_parse(segment).ok_or_else(|| {
-        GrabFailure::runtime(format!("segment {segment} is not a valid HHMMSS_LEN key"))
-    })?;
-    let (_, duration) = segment.split_once('_').ok_or_else(|| {
-        GrabFailure::runtime(format!("segment {segment} is not a valid HHMMSS_LEN key"))
-    })?;
+    segment_window_in(solstone_core_cli_copy::ENGLISH, day, segment)
+}
+
+pub(crate) fn segment_window_in(
+    locale: &str,
+    day: &str,
+    segment: &str,
+) -> Result<SegmentWindow, GrabFailure> {
+    let invalid_key = || {
+        GrabFailure::runtime(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.invalid.segment.key",
+            &[
+                ("segment", solstone_core_cli_copy::Value::String(segment)),
+                (
+                    "format",
+                    solstone_core_cli_copy::Value::String("HHMMSS_LEN"),
+                ),
+            ],
+        ))
+    };
+    let date = solstone_core_time::parse_day(day).ok_or_else(invalid_key)?;
+    let times = segment_parse(segment).ok_or_else(invalid_key)?;
+    let (_, duration) = segment.split_once('_').ok_or_else(invalid_key)?;
     if duration.is_empty() || !duration.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(GrabFailure::runtime(format!(
-            "segment {segment} is not a valid HHMMSS_LEN key"
-        )));
+        return Err(invalid_key());
     }
-    let seconds = duration.parse::<i64>().map_err(|_| {
-        GrabFailure::runtime(format!("segment {segment} is not a valid HHMMSS_LEN key"))
-    })?;
+    let seconds = duration.parse::<i64>().map_err(|_| invalid_key())?;
     let start = date.to_datetime(
         Time::new(
             i8::try_from(times.hour).expect("segment_parse validates clock"),
@@ -43,9 +54,7 @@ pub(crate) fn segment_window(day: &str, segment: &str) -> Result<SegmentWindow, 
     );
     let candidate = start
         .checked_add(SignedDuration::from_secs(seconds))
-        .map_err(|_| {
-            GrabFailure::runtime(format!("segment {segment} is not a valid HHMMSS_LEN key"))
-        })?;
+        .map_err(|_| invalid_key())?;
     let end = if candidate.date() > date {
         date.at(23, 59, 59, 0)
     } else {
@@ -54,20 +63,43 @@ pub(crate) fn segment_window(day: &str, segment: &str) -> Result<SegmentWindow, 
     Ok(SegmentWindow { start, end })
 }
 
+#[cfg(test)]
 pub(crate) fn frame_abs_time(start: DateTime, timestamp: &Value) -> Result<String, GrabFailure> {
-    let seconds = python_seconds(timestamp)?;
+    frame_abs_time_in(solstone_core_cli_copy::ENGLISH, start, timestamp)
+}
+
+pub(crate) fn frame_abs_time_in(
+    locale: &str,
+    start: DateTime,
+    timestamp: &Value,
+) -> Result<String, GrabFailure> {
+    let seconds = python_seconds(locale, timestamp)?;
     if !seconds.is_finite() {
-        return Err(GrabFailure::runtime("timestamp must be finite"));
+        return Err(GrabFailure::runtime(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.timestamp.finite",
+            &[],
+        )));
     }
     // Python timedelta rounds fractional seconds to the nearest microsecond using
     // ties-to-even. f64::round_ties_even makes the same contract explicit.
     let micros = (seconds * 1_000_000.0).round_ties_even();
     if !(i64::MIN as f64..=i64::MAX as f64).contains(&micros) {
-        return Err(GrabFailure::runtime("timestamp is out of range"));
+        return Err(GrabFailure::runtime(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.timestamp.range",
+            &[],
+        )));
     }
     let value = start
         .checked_add(SignedDuration::from_micros(micros as i64))
-        .map_err(|_| GrabFailure::runtime("timestamp is out of range"))?;
+        .map_err(|_| {
+            GrabFailure::runtime(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.grab.error.timestamp.range",
+                &[],
+            ))
+        })?;
     if value.subsec_nanosecond() == 0 {
         Ok(value.strftime("%Y-%m-%dT%H:%M:%S").to_string())
     } else {
@@ -75,21 +107,24 @@ pub(crate) fn frame_abs_time(start: DateTime, timestamp: &Value) -> Result<Strin
     }
 }
 
-fn python_seconds(timestamp: &Value) -> Result<f64, GrabFailure> {
+fn python_seconds(locale: &str, timestamp: &Value) -> Result<f64, GrabFailure> {
+    let invalid = || {
+        GrabFailure::runtime(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.timestamp.invalid",
+            &[],
+        ))
+    };
     let value = match timestamp {
         Value::Null => 0.0,
         Value::Bool(false) => 0.0,
         Value::Bool(true) => 1.0,
-        Value::Number(number) => number
-            .as_f64()
-            .ok_or_else(|| GrabFailure::runtime("invalid timestamp"))?,
+        Value::Number(number) => number.as_f64().ok_or_else(invalid)?,
         Value::String(value) if value.is_empty() => 0.0,
         Value::Array(items) if items.is_empty() => 0.0,
         Value::Object(values) if values.is_empty() => 0.0,
-        Value::String(value) => value
-            .parse::<f64>()
-            .map_err(|_| GrabFailure::runtime("invalid timestamp"))?,
-        _ => return Err(GrabFailure::runtime("invalid timestamp")),
+        Value::String(value) => value.parse::<f64>().map_err(|_| invalid())?,
+        _ => return Err(invalid()),
     };
     Ok(value)
 }

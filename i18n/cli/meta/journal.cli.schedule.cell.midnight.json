@@ -1,0 +1,16 @@
+{
+  "description": "Schedule report cell label for default midnight daily schedule.",
+  "context": "Schedule report cell label for default midnight daily schedule.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "be026eb327e1d5ca7dc783c922628f68051aad9cac2f8dce7d435d43b9705cba",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

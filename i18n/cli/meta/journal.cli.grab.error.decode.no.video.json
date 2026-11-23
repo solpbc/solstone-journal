@@ -1,0 +1,16 @@
+{
+  "description": "Grab error when container has no video stream.",
+  "context": "Grab error when container has no video stream.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "d05d767e19c86489afbf72a4bdb4bd2a190ff6cd8a2e2796178035de63b4debf",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Top Observe idle locked status.",
+  "context": "Top Observe idle locked status.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "30d9cb39f119e0cc44b1e7f2a5493ec8c6c35c772714a6cdcb3ca577ac44a50c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

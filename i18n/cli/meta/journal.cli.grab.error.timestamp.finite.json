@@ -1,0 +1,16 @@
+{
+  "description": "Grab error when frame timestamp is non-finite.",
+  "context": "Grab error when frame timestamp is non-finite.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "0808fbdbdabb01d3e8b949de953679d1dd7b6e090bd1b5ee799dbd0e0161eeb0",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

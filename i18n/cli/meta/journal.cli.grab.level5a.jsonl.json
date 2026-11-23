@@ -1,0 +1,21 @@
+{
+  "description": "Grab frame detail JSONL path field.",
+  "context": "Grab frame detail JSONL path field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "source_revision": "583ca8a81726a5ef35edd999b67d98e1d784080b912c15c52c21bcd66519ecdd",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

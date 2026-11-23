@@ -1,0 +1,21 @@
+{
+  "description": "Grab frame error note prefix.",
+  "context": "Grab frame error note prefix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "text",
+      "type": "string"
+    }
+  ],
+  "source_revision": "e13394903191256b3fdd1d973f4217bbca7f5bc91051052abc16f9a160e3b1b1",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

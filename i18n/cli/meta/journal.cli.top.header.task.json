@@ -1,0 +1,16 @@
+{
+  "description": "Top tasks table column header.",
+  "context": "Top tasks table column header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "79ca3039c0342c60c837baef7948ffccd53f42b42113718cb9471d4154abb7a7",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

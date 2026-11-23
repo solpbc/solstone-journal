@@ -1,0 +1,21 @@
+{
+  "description": "Grab usage error when multiple frame IDs are passed without --out.",
+  "context": "Grab usage error when multiple frame IDs are passed without --out.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "out_flag",
+      "type": "string"
+    }
+  ],
+  "source_revision": "1824c221a506f132c60671a3dc5bd414a65f1daf171f4b200a1c3dd16369e91e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

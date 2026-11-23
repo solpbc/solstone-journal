@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for start time.",
+  "context": "Grab table column header for start time.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "47bdd3e1fd57d43740bb1cb835222ae44d90c2b3abea26c229541abf8ef224a9",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

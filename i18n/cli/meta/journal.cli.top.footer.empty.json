@@ -1,0 +1,16 @@
+{
+  "description": "Top footer shortcuts when no services are listed.",
+  "context": "Top footer shortcuts when no services are listed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "c475832dec54624c724c15e659c5757d6c24feae4b2bb46c628db0396e1c0c3e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

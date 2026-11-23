@@ -1,0 +1,16 @@
+{
+  "description": "Grab screen status when analyzed and video is present.",
+  "context": "Grab screen status when analyzed and video is present.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "9882769375b334538c145b7c2cadde900b3529e440e4a143323efccf777f03f1",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

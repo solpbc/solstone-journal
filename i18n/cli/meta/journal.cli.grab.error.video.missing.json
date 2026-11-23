@@ -1,0 +1,25 @@
+{
+  "description": "Grab error when raw video file is missing.",
+  "context": "Grab error when raw video file is missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "screen",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    }
+  ],
+  "source_revision": "eff29bd5092405286a53f6119adcf592bcd620e9ca4fe9c6122d4151771a76d5",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

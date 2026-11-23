@@ -1,0 +1,21 @@
+{
+  "description": "Grab frame detail video path field.",
+  "context": "Grab frame detail video path field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "source_revision": "429dedab8323c2b72c7980834686a3b22c604ed3e400228a99c5a6d49194d926",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

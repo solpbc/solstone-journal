@@ -1,0 +1,21 @@
+{
+  "description": "Schedule report diagnostic when state JSON is malformed.",
+  "context": "Schedule report diagnostic when state JSON is malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "source_revision": "efc6e45769c1879885c79fbed48558033d5cc3803d6b429e2dbbf8e9ac8738f2",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

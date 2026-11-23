@@ -1,0 +1,16 @@
+{
+  "description": "Top table Last Log column header.",
+  "context": "Top table Last Log column header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "ff30f2025b191f6ce177ddc59878a483bb691bbbbf8bf4c7139c9606287d2a4b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

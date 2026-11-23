@@ -12,10 +12,100 @@ use solstone_core_retention::{RawReleaseClass, recorded_original_deletions};
 
 use crate::error::GrabFailure;
 use crate::request::GrabDiagnostics;
-use crate::time::{SegmentWindow, segment_window};
+use crate::time::{SegmentWindow, segment_window, segment_window_in};
 
 /// Deliberately deterministic; Python's source tuple was built from a frozenset.
 pub(crate) const VIDEO_EXTENSIONS: [&str; 3] = [".webm", ".mp4", ".mov"];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MissingVideoCause {
+    InTrash,
+    Policy,
+    Offload,
+    Owner,
+    Unknown,
+}
+
+impl MissingVideoCause {
+    pub(crate) fn json_reason(self) -> &'static str {
+        match self {
+            Self::InTrash => {
+                "the original video is in the trash, where you can recover it in settings"
+            }
+            Self::Policy => {
+                "you deleted the original video after your retention settings marked it"
+            }
+            Self::Offload => "you deleted the original video after your backup copied it",
+            Self::Owner => "you deleted the original video",
+            Self::Unknown => "the original video is no longer in your journal",
+        }
+    }
+
+    pub(crate) fn render_reason_in(self, locale: &str) -> String {
+        let id = match self {
+            Self::InTrash => "journal.cli.grab.missing.reason.trash",
+            Self::Policy => "journal.cli.grab.missing.reason.policy",
+            Self::Offload => "journal.cli.grab.missing.reason.offload",
+            Self::Owner => "journal.cli.grab.missing.reason.owner",
+            Self::Unknown => "journal.cli.grab.missing.reason.unknown",
+        };
+        solstone_core_cli_copy::render_for(locale, id, &[])
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ScreenStatus {
+    CapturedNotAnalyzed,
+    Analyzed,
+    AnalyzedMissingVideo(MissingVideoCause),
+}
+
+impl ScreenStatus {
+    pub(crate) fn json_label(self) -> &'static str {
+        match self {
+            Self::CapturedNotAnalyzed => "captured but not analyzed",
+            Self::Analyzed => "analyzed",
+            Self::AnalyzedMissingVideo(MissingVideoCause::InTrash) => {
+                "analyzed; the original video is in the trash"
+            }
+            Self::AnalyzedMissingVideo(MissingVideoCause::Policy) => {
+                "analyzed; you deleted the original video after your retention settings marked it"
+            }
+            Self::AnalyzedMissingVideo(MissingVideoCause::Offload) => {
+                "analyzed; you deleted the original video after your backup copied it"
+            }
+            Self::AnalyzedMissingVideo(MissingVideoCause::Owner) => {
+                "analyzed; you deleted the original video"
+            }
+            Self::AnalyzedMissingVideo(MissingVideoCause::Unknown) => {
+                "analyzed; the original video is no longer in your journal"
+            }
+        }
+    }
+
+    pub(crate) fn render_in(self, locale: &str) -> String {
+        let id = match self {
+            Self::CapturedNotAnalyzed => "journal.cli.grab.status.captured",
+            Self::Analyzed => "journal.cli.grab.status.analyzed",
+            Self::AnalyzedMissingVideo(MissingVideoCause::InTrash) => {
+                "journal.cli.grab.status.missing.trash"
+            }
+            Self::AnalyzedMissingVideo(MissingVideoCause::Policy) => {
+                "journal.cli.grab.status.missing.policy"
+            }
+            Self::AnalyzedMissingVideo(MissingVideoCause::Offload) => {
+                "journal.cli.grab.status.missing.offload"
+            }
+            Self::AnalyzedMissingVideo(MissingVideoCause::Owner) => {
+                "journal.cli.grab.status.missing.owner"
+            }
+            Self::AnalyzedMissingVideo(MissingVideoCause::Unknown) => {
+                "journal.cli.grab.status.missing.unknown"
+            }
+        };
+        solstone_core_cli_copy::render_for(locale, id, &[])
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct ScreenBundle {
@@ -26,12 +116,22 @@ pub(crate) struct ScreenBundle {
     pub frame_index: HashMap<i64, Value>,
     pub legacy_schema: bool,
     pub header_only: bool,
-    pub status: &'static str,
+    pub status: ScreenStatus,
     /// Why the original video is gone, when the analysis refers to one that is
     /// no longer on disk. Named only from a recorded deletion; `None` when the
     /// video is present.
-    pub missing_video_reason: Option<&'static str>,
+    pub missing_video_cause: Option<MissingVideoCause>,
     pub window: SegmentWindow,
+}
+
+impl ScreenBundle {
+    pub(crate) fn status_json(&self) -> &'static str {
+        self.status.json_label()
+    }
+
+    pub(crate) fn missing_video_reason_json(&self) -> Option<&'static str> {
+        self.missing_video_cause.map(MissingVideoCause::json_reason)
+    }
 }
 
 pub(crate) fn is_screen_token(stem: &str) -> bool {
@@ -77,52 +177,88 @@ pub(crate) fn closest_days(day: &str, days: &[String]) -> Vec<String> {
     values
 }
 
-pub(crate) fn require_day(journal: &Path, day: &str) -> Result<PathBuf, GrabFailure> {
+pub(crate) fn require_day(locale: &str, journal: &Path, day: &str) -> Result<PathBuf, GrabFailure> {
     let path = journal.join("chronicle").join(day);
     if path.is_dir() {
         return Ok(path);
     }
+    let message = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.grab.error.day.not.found",
+        &[("day", solstone_core_cli_copy::Value::String(day))],
+    );
+    let header =
+        solstone_core_cli_copy::render_for(locale, "journal.cli.grab.alternatives.days", &[]);
     Err(GrabFailure::runtime(format!(
-        "day {day} not found{}",
-        format_alternatives(
-            "Available days (closest 5):",
-            &closest_days(day, &available_days(journal)?)
-        ),
+        "{message}{}",
+        format_alternatives(&header, &closest_days(day, &available_days(journal)?)),
     )))
 }
 
 pub(crate) fn require_stream(
+    locale: &str,
     journal: &Path,
     day: &str,
     stream: &str,
 ) -> Result<PathBuf, GrabFailure> {
-    let day_path = require_day(journal, day)?;
+    let day_path = require_day(locale, journal, day)?;
     let path = day_path.join(stream);
     if path.is_dir() {
         return Ok(path);
     }
     let streams = streams_except_health(&day_path)?;
+    let message = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.grab.error.stream.not.found",
+        &[
+            ("stream", solstone_core_cli_copy::Value::String(stream)),
+            ("day", solstone_core_cli_copy::Value::String(day)),
+        ],
+    );
+    let header = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.grab.alternatives.streams",
+        &[("day", solstone_core_cli_copy::Value::String(day))],
+    );
     Err(GrabFailure::runtime(format!(
-        "stream {stream} not found in {day}{}",
-        format_alternatives(&format!("Available streams in {day}:"), &streams),
+        "{message}{}",
+        format_alternatives(&header, &streams),
     )))
 }
 
 pub(crate) fn require_segment(
+    locale: &str,
     journal: &Path,
     day: &str,
     stream: &str,
     segment: &str,
 ) -> Result<PathBuf, GrabFailure> {
-    let stream_path = require_stream(journal, day, stream)?;
+    let stream_path = require_stream(locale, journal, day, stream)?;
     let path = segment_path(journal, day, segment, stream, false).map_err(path_error)?;
     if path.is_dir() {
         return Ok(path);
     }
     let segments = truncate_segments(&available_segments(&stream_path)?);
+    let message = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.grab.error.segment.not.found",
+        &[
+            ("segment", solstone_core_cli_copy::Value::String(segment)),
+            ("day", solstone_core_cli_copy::Value::String(day)),
+            ("stream", solstone_core_cli_copy::Value::String(stream)),
+        ],
+    );
+    let header = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.grab.alternatives.segments",
+        &[
+            ("day", solstone_core_cli_copy::Value::String(day)),
+            ("stream", solstone_core_cli_copy::Value::String(stream)),
+        ],
+    );
     Err(GrabFailure::runtime(format!(
-        "segment {segment} not found in {day}/{stream}{}",
-        format_alternatives(&format!("Available segments in {day}/{stream}:"), &segments),
+        "{message}{}",
+        format_alternatives(&header, &segments),
     )))
 }
 
@@ -197,38 +333,24 @@ fn missing_video_cause(segment_path: &Path, header_raw: Option<&str>) -> Option<
     recorded_original_deletions(segment_path).get(name).copied()
 }
 
-fn missing_video_reason(cause: Option<RawReleaseClass>) -> &'static str {
+fn classify_missing_cause(cause: Option<RawReleaseClass>, in_trash: bool) -> MissingVideoCause {
+    if in_trash {
+        return MissingVideoCause::InTrash;
+    }
     match cause {
-        Some(RawReleaseClass::Policy) => {
-            "you deleted the original video after your retention settings marked it"
-        }
-        Some(RawReleaseClass::Offload) => {
-            "you deleted the original video after your backup copied it"
-        }
-        Some(RawReleaseClass::Owner) => "you deleted the original video",
+        Some(RawReleaseClass::Policy) => MissingVideoCause::Policy,
+        Some(RawReleaseClass::Offload) => MissingVideoCause::Offload,
+        Some(RawReleaseClass::Owner) => MissingVideoCause::Owner,
         // Voice-only filtering never deletes video.
         Some(RawReleaseClass::OwnerVoice | RawReleaseClass::Import) | None => {
-            "the original video is no longer in your journal"
+            MissingVideoCause::Unknown
         }
     }
 }
 
-fn missing_video_status(cause: Option<RawReleaseClass>) -> &'static str {
-    match cause {
-        Some(RawReleaseClass::Policy) => {
-            "analyzed; you deleted the original video after your retention settings marked it"
-        }
-        Some(RawReleaseClass::Offload) => {
-            "analyzed; you deleted the original video after your backup copied it"
-        }
-        Some(RawReleaseClass::Owner) => "analyzed; you deleted the original video",
-        Some(RawReleaseClass::OwnerVoice | RawReleaseClass::Import) | None => {
-            "analyzed; the original video is no longer in your journal"
-        }
-    }
-}
-
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn load_bundle(
+    locale: &str,
     journal: &Path,
     day: &str,
     stream: &str,
@@ -237,7 +359,7 @@ pub(crate) fn load_bundle(
     keep_errors: bool,
     diagnostics: &mut dyn GrabDiagnostics,
 ) -> Result<ScreenBundle, GrabFailure> {
-    let segment_path = require_segment(journal, day, stream, segment)?;
+    let segment_path = require_segment(locale, journal, day, stream, segment)?;
     let stem = screen_stem(token);
     let candidate_jsonl = segment_path.join(format!("{stem}.jsonl"));
     let (jsonl_path, records) = if candidate_jsonl.is_file() {
@@ -300,22 +422,40 @@ pub(crate) fn load_bundle(
                     raw,
                 )
             });
+    let missing_video_cause = cause.map(|raw_cause| classify_missing_cause(raw_cause, in_trash));
     let status = match (jsonl_path.is_some(), video_path.is_some()) {
-        (false, true) => "captured but not analyzed",
-        (true, false) if in_trash => "analyzed; the original video is in the trash",
-        (true, false) => missing_video_status(cause.flatten()),
-        (true, true) => "analyzed",
+        (false, true) => ScreenStatus::CapturedNotAnalyzed,
+        (true, false) => ScreenStatus::AnalyzedMissingVideo(
+            missing_video_cause.unwrap_or(MissingVideoCause::Unknown),
+        ),
+        (true, true) => ScreenStatus::Analyzed,
         (false, false) => {
+            let message = solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.grab.error.screen.not.found",
+                &[
+                    ("screen", solstone_core_cli_copy::Value::String(token)),
+                    ("day", solstone_core_cli_copy::Value::String(day)),
+                    ("stream", solstone_core_cli_copy::Value::String(stream)),
+                    ("segment", solstone_core_cli_copy::Value::String(segment)),
+                ],
+            );
+            let header = solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.grab.alternatives.screens",
+                &[
+                    ("day", solstone_core_cli_copy::Value::String(day)),
+                    ("stream", solstone_core_cli_copy::Value::String(stream)),
+                    ("segment", solstone_core_cli_copy::Value::String(segment)),
+                ],
+            );
             return Err(GrabFailure::runtime(format!(
-                "screen {token} not found in {day}/{stream}/{segment}{}",
-                format_alternatives(
-                    &format!("Available screens in {day}/{stream}/{segment}:"),
-                    &available_screen_tokens(&segment_path)?
-                ),
+                "{message}{}",
+                format_alternatives(&header, &available_screen_tokens(&segment_path)?),
             )));
         }
     };
-    let window = segment_window(day, segment)?;
+    let window = segment_window_in(locale, day, segment)?;
     Ok(ScreenBundle {
         video_path: video_path.as_ref().map(PathBuf::from),
         jsonl_rel: jsonl_path
@@ -329,11 +469,7 @@ pub(crate) fn load_bundle(
         legacy_schema,
         header_only,
         status,
-        missing_video_reason: if in_trash {
-            Some("the original video is in the trash, where you can recover it in settings")
-        } else {
-            cause.map(missing_video_reason)
-        },
+        missing_video_cause,
         window,
     })
 }
@@ -480,6 +616,7 @@ mod tests {
         .unwrap();
         let mut diagnostics = RecordingDiagnostics::default();
         let bundle = load_bundle(
+            solstone_core_cli_copy::ENGLISH,
             temp.path(),
             "20260809",
             "work",
@@ -489,10 +626,11 @@ mod tests {
             &mut diagnostics,
         )
         .unwrap();
-        assert!(bundle.video_path.unwrap().ends_with("other.mov"));
-        assert_eq!(bundle.status, "analyzed");
+        assert!(bundle.video_path.as_ref().unwrap().ends_with("other.mov"));
+        assert_eq!(bundle.status_json(), "analyzed");
         fs::write(path.join("legacy_screen.jsonl"), "{\"old\": true}\n").unwrap();
         let legacy = load_bundle(
+            solstone_core_cli_copy::ENGLISH,
             temp.path(),
             "20260809",
             "work",
@@ -509,6 +647,7 @@ mod tests {
         )
         .unwrap();
         let empty = load_bundle(
+            solstone_core_cli_copy::ENGLISH,
             temp.path(),
             "20260809",
             "work",
@@ -521,6 +660,7 @@ mod tests {
         assert!(empty.header_only);
         fs::write(path.join("captured_screen.webm"), b"raw").unwrap();
         let captured = load_bundle(
+            solstone_core_cli_copy::ENGLISH,
             temp.path(),
             "20260809",
             "work",
@@ -530,13 +670,14 @@ mod tests {
             &mut diagnostics,
         )
         .unwrap();
-        assert_eq!(captured.status, "captured but not analyzed");
+        assert_eq!(captured.status_json(), "captured but not analyzed");
         fs::write(
             path.join("purged_screen.jsonl"),
             "{\"raw\": \"purged_screen.webm\"}\n{\"frame_id\": 1}\n",
         )
         .unwrap();
         let purged = load_bundle(
+            solstone_core_cli_copy::ENGLISH,
             temp.path(),
             "20260809",
             "work",
@@ -547,11 +688,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            purged.status, "analyzed; the original video is no longer in your journal",
+            purged.status_json(),
+            "analyzed; the original video is no longer in your journal",
             "with no deletion record, grab names no cause"
         );
         assert_eq!(
-            purged.missing_video_reason,
+            purged.missing_video_reason_json(),
             Some("the original video is no longer in your journal")
         );
     }
@@ -580,6 +722,7 @@ mod tests {
         }
         let mut diagnostics = RecordingDiagnostics::default();
         let bundle = load_bundle(
+            solstone_core_cli_copy::ENGLISH,
             temp.path(),
             "20260809",
             "work",
@@ -589,7 +732,10 @@ mod tests {
             &mut diagnostics,
         )
         .unwrap();
-        (bundle.status.to_owned(), bundle.missing_video_reason)
+        (
+            bundle.status_json().to_owned(),
+            bundle.missing_video_reason_json(),
+        )
     }
 
     #[test]
@@ -634,6 +780,7 @@ mod tests {
         .unwrap();
         let mut diagnostics = RecordingDiagnostics::default();
         let bundle = load_bundle(
+            solstone_core_cli_copy::ENGLISH,
             temp.path(),
             "20260809",
             "work",
@@ -644,7 +791,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            bundle.status,
+            bundle.status_json(),
             "analyzed; the original video is no longer in your journal"
         );
     }
@@ -666,6 +813,7 @@ mod tests {
         .unwrap();
         let mut diagnostics = RecordingDiagnostics::default();
         let bundle = load_bundle(
+            solstone_core_cli_copy::ENGLISH,
             temp.path(),
             "20260809",
             "work",
@@ -675,8 +823,8 @@ mod tests {
             &mut diagnostics,
         )
         .unwrap();
-        assert_eq!(bundle.status, "analyzed");
-        assert_eq!(bundle.missing_video_reason, None);
+        assert_eq!(bundle.status_json(), "analyzed");
+        assert_eq!(bundle.missing_video_reason_json(), None);
     }
 
     #[test]

@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for screens count.",
+  "context": "Grab table column header for screens count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "f5f0db2ec71bb03f1db9bef1a78f31d6052dabcae2fe8341e9e2bc2bedcb3d2b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

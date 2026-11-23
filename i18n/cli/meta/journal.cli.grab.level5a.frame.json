@@ -1,0 +1,21 @@
+{
+  "description": "Grab frame detail frame ID field.",
+  "context": "Grab frame detail frame ID field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "source_revision": "5f03f7be794f3cb93bfc201aafd923ca906ae3388026187ff922d1977f6c35a6",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

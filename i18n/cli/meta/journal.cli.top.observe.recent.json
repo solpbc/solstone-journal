@@ -1,0 +1,21 @@
+{
+  "description": "Top Observe recent segments line.",
+  "context": "Top Observe recent segments line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "source_revision": "13362d0829e5d24a4223456208dd0681e26f59026f5264d96a20bef40cdf945e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

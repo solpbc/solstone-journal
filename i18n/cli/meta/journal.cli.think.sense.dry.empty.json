@@ -1,0 +1,16 @@
+{
+  "description": "Sense batch dry-run notice when no unprocessed files exist.",
+  "context": "Sense batch dry-run notice when no unprocessed files exist.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "1ccf9ae0777fdc1d9e45817e7357d619d01de92ab0d619e751fcfdcff07f7bfa",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

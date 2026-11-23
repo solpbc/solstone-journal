@@ -1,0 +1,21 @@
+{
+  "description": "Grab error when video decoding fails for specific frame IDs.",
+  "context": "Grab error when video decoding fails for specific frame IDs.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "ids",
+      "type": "string"
+    }
+  ],
+  "source_revision": "d7e96e1e25753a42be792be0a4874dff9ec4a9181ed04059727897f9d13eacd0",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Grab error when requested stream does not exist.",
+  "context": "Grab error when requested stream does not exist.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "source_revision": "9cf4cdebd723fed927fa1cc32e6b9d66095a2fcbfe16ba2f56c8219cd2a5e275",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Grab I/O error accessing a path.",
+  "context": "Grab I/O error accessing a path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "source_revision": "39687179e31066d5417607bed64a37d895452998926fde617227988026d4f95a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

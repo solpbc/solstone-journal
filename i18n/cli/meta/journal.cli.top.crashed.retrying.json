@@ -1,0 +1,25 @@
+{
+  "description": "Top crashed service row while retrying in backoff.",
+  "context": "Top crashed service row while retrying in backoff.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "attempts",
+      "type": "string"
+    }
+  ],
+  "source_revision": "fe738930ee424967ab60428b4d41e4539ce85319bdf44e9c287de3b76a24c220",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

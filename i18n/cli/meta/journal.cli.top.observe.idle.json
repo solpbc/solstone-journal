@@ -1,0 +1,16 @@
+{
+  "description": "Top Observe idle status.",
+  "context": "Top Observe idle status.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "38bc0d8234f3c497f8005062140666174c248b3eeb09e75e136b5660dc9fde91",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

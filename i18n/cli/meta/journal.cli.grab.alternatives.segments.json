@@ -1,0 +1,25 @@
+{
+  "description": "Grab alternatives header for available segments.",
+  "context": "Grab alternatives header for available segments.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "stream",
+      "type": "string"
+    }
+  ],
+  "source_revision": "83a2cae58987cf3ce27c7f9d8091c91430aace98a27ef4f8588dfcef4d45c3c0",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Grab level 4 footer explaining inspection and batch frame extraction.",
+  "context": "Grab level 4 footer explaining inspection and batch frame extraction.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "inspect_command",
+      "type": "string"
+    },
+    {
+      "name": "save_one_command",
+      "type": "string"
+    },
+    {
+      "name": "save_many_command",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "source_revision": "d0d0c68da15980da5f84ae7dc988a8b8dcc24bf35a759b31cd33730bbe5cd890",
+  "max_length": 1623,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

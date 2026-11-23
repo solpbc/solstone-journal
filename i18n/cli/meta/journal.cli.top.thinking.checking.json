@@ -1,0 +1,16 @@
+{
+  "description": "Top Thinking Health checking placeholder.",
+  "context": "Top Thinking Health checking placeholder.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "3b1fd53f39c21a21ab8f35e5935db882df694e0f6b45c82c39265e86ee41b331",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

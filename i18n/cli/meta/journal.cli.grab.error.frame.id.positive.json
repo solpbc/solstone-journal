@@ -1,0 +1,21 @@
+{
+  "description": "Grab error when frame ID token is not a positive integer.",
+  "context": "Grab error when frame ID token is not a positive integer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "token",
+      "type": "string"
+    }
+  ],
+  "source_revision": "d1b2def9d8cde6d996896570750b72740b34c3782d6db16a2851ece4a3585229",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

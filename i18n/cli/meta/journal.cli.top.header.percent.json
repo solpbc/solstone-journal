@@ -1,0 +1,16 @@
+{
+  "description": "Top table CPU percent column header.",
+  "context": "Top table CPU percent column header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "9d2277e119d5d785929716458bdcff0e6a3dfe326a86199faef3a62f1accf6da",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

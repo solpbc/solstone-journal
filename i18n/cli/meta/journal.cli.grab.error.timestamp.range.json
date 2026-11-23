@@ -1,0 +1,16 @@
+{
+  "description": "Grab error when frame timestamp overflows supported range.",
+  "context": "Grab error when frame timestamp overflows supported range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "7be55cbed825382fc8e557fa42b6456d9d1856730beaa69b2c1458bfa3ef5953",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

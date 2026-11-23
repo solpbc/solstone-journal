@@ -1,0 +1,16 @@
+{
+  "description": "Top error when terminal width is zero.",
+  "context": "Top error when terminal width is zero.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "44041222e1dffd56c08b99ce0e128ca1ec3a3d290c0d88af011b6f4daf46c429",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

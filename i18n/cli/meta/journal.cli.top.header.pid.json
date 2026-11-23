@@ -1,0 +1,16 @@
+{
+  "description": "Top table PID column header.",
+  "context": "Top table PID column header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "c2ac1a39358378a5795477d38e40bd06fc927c889a9297f4644924f66b7e0ffb",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

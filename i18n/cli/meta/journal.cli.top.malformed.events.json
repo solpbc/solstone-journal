@@ -1,0 +1,25 @@
+{
+  "description": "Top warning line showing count and latest malformed event reason.",
+  "context": "Top warning line showing count and latest malformed event reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "source_revision": "cd2dec5bfbd85864e082571a28820d78c2a09f318d0d20cdc0d55d62a7aadeda",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

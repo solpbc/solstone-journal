@@ -1,0 +1,16 @@
+{
+  "description": "Grab render error for malformed table payload.",
+  "context": "Grab render error for malformed table payload.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "c83fb5959a774d5355852bad313cedb4575116e7d785e0df8151afb6f1277986",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

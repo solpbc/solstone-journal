@@ -1,0 +1,25 @@
+{
+  "description": "Top crashed service row when other services are retrying.",
+  "context": "Top crashed service row when other services are retrying.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "attempts",
+      "type": "string"
+    }
+  ],
+  "source_revision": "f2c6197cb0273fb85d71ead997be709c9bae23b261986b026d631cfb9a423256",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

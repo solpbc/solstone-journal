@@ -1,0 +1,21 @@
+{
+  "description": "Schedule report diagnostic for malformed schedule entry.",
+  "context": "Schedule report diagnostic for malformed schedule entry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "source_revision": "aa528ca86be96fcbab2afbf67070211f99e22f1f5bfe5bb2a79683ebe7fea13c",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

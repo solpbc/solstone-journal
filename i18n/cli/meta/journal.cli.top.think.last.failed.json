@@ -1,0 +1,21 @@
+{
+  "description": "Top Think last completed run failed count label.",
+  "context": "Top Think last completed run failed count label.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "failed",
+      "type": "string"
+    }
+  ],
+  "source_revision": "8cea4ae7714c004f9dea14fd19837fd6f0608e94277a0d32c30f235825466712",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

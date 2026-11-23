@@ -1,0 +1,16 @@
+{
+  "description": "Top services table column header.",
+  "context": "Top services table column header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "608ae897a36a4363dfd5404eb0f0c8a6fa5c856deac65f10bcc19859d1b406ff",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

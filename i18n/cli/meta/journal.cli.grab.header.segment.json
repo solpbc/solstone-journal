@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for segment key.",
+  "context": "Grab table column header for segment key.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "2245d29567a2f30143ed2ef9990e2ee2effdedfc2881f8a74ed2cd53731848df",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

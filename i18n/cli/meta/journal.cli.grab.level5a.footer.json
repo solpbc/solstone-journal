@@ -1,0 +1,29 @@
+{
+  "description": "Grab frame detail save and batch command hints.",
+  "context": "Grab frame detail save and batch command hints.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "save_command",
+      "type": "string"
+    },
+    {
+      "name": "batch_command",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "source_revision": "a4548883b5daeaf9aa9b4c38c714e4b17f997a24e7d75220103f9773671a047a",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

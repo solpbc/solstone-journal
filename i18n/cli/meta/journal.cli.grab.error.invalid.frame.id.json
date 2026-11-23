@@ -1,0 +1,16 @@
+{
+  "description": "Grab error for invalid frame ID in analysis record.",
+  "context": "Grab error for invalid frame ID in analysis record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "afee3ab49a43a76556f2d91f4343b3e31575c8904de67e31dbd26b7f5171a730",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

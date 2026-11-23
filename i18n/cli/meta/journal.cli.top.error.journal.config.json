@@ -1,0 +1,21 @@
+{
+  "description": "Top error reading journal config.",
+  "context": "Top error reading journal config.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "source_revision": "9c0df52cab09486eaf8610ad0fd78ae6e4628855b812f1b393ccd37ba97f113d",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

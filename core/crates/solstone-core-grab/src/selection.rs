@@ -7,10 +7,12 @@ use crate::error::GrabFailure;
 
 pub(crate) const SUPPORTED_OUTPUT_SUFFIXES: [&str; 4] = [".png", ".jpg", ".jpeg", ".webp"];
 
-pub(crate) fn parse_frame_id_token(token: &str) -> Result<Vec<i64>, GrabFailure> {
+pub(crate) fn parse_frame_id_token_in(locale: &str, token: &str) -> Result<Vec<i64>, GrabFailure> {
     let invalid = || {
-        GrabFailure::runtime(format!(
-            "frame ids must be positive integers: got '{token}'"
+        GrabFailure::runtime(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.grab.error.frame.id.positive",
+            [("token", &token)],
         ))
     };
     let mut ids = Vec::new();
@@ -23,8 +25,10 @@ pub(crate) fn parse_frame_id_token(token: &str) -> Result<Vec<i64>, GrabFailure>
             return Err(invalid());
         }
         if ids.contains(&id) {
-            return Err(GrabFailure::runtime(format!(
-                "frame ids must be unique: {id}"
+            return Err(GrabFailure::runtime(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.grab.error.frame.id.unique",
+                [("frame_id", &id)],
             )));
         }
         ids.push(id);
@@ -33,7 +37,13 @@ pub(crate) fn parse_frame_id_token(token: &str) -> Result<Vec<i64>, GrabFailure>
     Ok(ids)
 }
 
-pub(crate) fn resolve_output_paths(
+#[cfg(test)]
+pub(crate) fn parse_frame_id_token(token: &str) -> Result<Vec<i64>, GrabFailure> {
+    parse_frame_id_token_in(solstone_core_cli_copy::ENGLISH, token)
+}
+
+pub(crate) fn resolve_output_paths_in(
+    locale: &str,
     target: &Path,
     ids: &[i64],
 ) -> Result<Vec<PathBuf>, GrabFailure> {
@@ -43,9 +53,17 @@ pub(crate) fn resolve_output_paths(
         .map(|extension| format!(".{}", extension.to_ascii_lowercase()))
         .unwrap_or_default();
     if !SUPPORTED_OUTPUT_SUFFIXES.contains(&suffix.as_str()) {
-        return Err(GrabFailure::Usage(
-            "--out must end in .png, .jpg, .jpeg, or .webp".to_owned(),
-        ));
+        return Err(GrabFailure::Usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.out.extension",
+            &[
+                ("out_flag", solstone_core_cli_copy::Value::String("--out")),
+                (
+                    "extensions",
+                    solstone_core_cli_copy::Value::String(".png, .jpg, .jpeg, or .webp"),
+                ),
+            ],
+        )));
     }
     if ids.len() == 1 {
         return Ok(vec![target.to_path_buf()]);
@@ -53,7 +71,13 @@ pub(crate) fn resolve_output_paths(
     let stem = target
         .file_stem()
         .and_then(|value| value.to_str())
-        .ok_or_else(|| GrabFailure::runtime("output path has no valid filename"))?;
+        .ok_or_else(|| {
+            GrabFailure::runtime(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.grab.error.out.filename",
+                &[],
+            ))
+        })?;
     let extension = target
         .extension()
         .and_then(|value| value.to_str())
@@ -63,6 +87,14 @@ pub(crate) fn resolve_output_paths(
         .iter()
         .map(|id| parent.join(format!("{stem}_{id}.{extension}")))
         .collect())
+}
+
+#[cfg(test)]
+pub(crate) fn resolve_output_paths(
+    target: &Path,
+    ids: &[i64],
+) -> Result<Vec<PathBuf>, GrabFailure> {
+    resolve_output_paths_in(solstone_core_cli_copy::ENGLISH, target, ids)
 }
 
 #[cfg(test)]

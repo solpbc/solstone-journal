@@ -1,0 +1,16 @@
+{
+  "description": "Grab screen status when analyzed and original video is in trash.",
+  "context": "Grab screen status when analyzed and original video is in trash.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "485926fa7538e6f40054d9aac29c351592e72195d7795f8b2414dd35213cda81",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Top terminal error when stdin is not a TTY.",
+  "context": "Top terminal error when stdin is not a TTY.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "a5a3fd6e56dd584846334f8d34dd7646c969bc78a69e9e2977288cea34e557d7",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

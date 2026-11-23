@@ -1,0 +1,16 @@
+{
+  "description": "Grab missing-video reason when deleted by owner.",
+  "context": "Grab missing-video reason when deleted by owner.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "23421afedf8e9edf660cd6507d4f8fc91e8290a9943e5827e415f0fe836c3984",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

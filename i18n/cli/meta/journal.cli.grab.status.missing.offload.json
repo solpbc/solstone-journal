@@ -1,0 +1,16 @@
+{
+  "description": "Grab screen status when analyzed and original video deleted after backup.",
+  "context": "Grab screen status when analyzed and original video deleted after backup.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "2df6eb0776b6afd64722bd0bab8d8dfa27f7063e34bbecb27bdd07ac81c17419",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

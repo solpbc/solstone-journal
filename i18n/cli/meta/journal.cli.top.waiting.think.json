@@ -1,0 +1,16 @@
+{
+  "description": "Top placeholder while waiting for Think.",
+  "context": "Top placeholder while waiting for Think.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "8d1f4e9b24ffcac056057bc8c021bd158dfe335b13554e079960bac46f7e3c9b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

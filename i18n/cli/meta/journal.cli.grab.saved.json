@@ -1,0 +1,21 @@
+{
+  "description": "Grab confirmation line after saving a frame image.",
+  "context": "Grab confirmation line after saving a frame image.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "source_revision": "6d5b6043bd649994cdce32d628036e14670a4bd2cb1cda7140362d7421fede4c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

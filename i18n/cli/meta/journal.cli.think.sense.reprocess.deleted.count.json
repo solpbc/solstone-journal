@@ -1,0 +1,30 @@
+{
+  "description": "Sense batch reprocess summary of deleted output files.",
+  "context": "Sense batch reprocess summary of deleted output files.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "44564f8886b44c0c2d738584bd4e3f5bb9c825a48616aeba425dc7183f7755c2",
+  "max_length": 318,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Top Observe section heading.",
+  "context": "Top Observe section heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "6c5c3396284fab71fe416c8170071a743df794b2e3ed79d59c22f9592037217d",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

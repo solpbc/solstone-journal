@@ -1,0 +1,16 @@
+{
+  "description": "Top Thinking Health unavailable placeholder.",
+  "context": "Top Thinking Health unavailable placeholder.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "9e6d4cb1e50289c2e964e834b4d89d17217d0adcdd30bb020c6ae97f6defcd02",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

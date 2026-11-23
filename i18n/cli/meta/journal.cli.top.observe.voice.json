@@ -1,0 +1,21 @@
+{
+  "description": "Top Observe audio voice-hit indicator.",
+  "context": "Top Observe audio voice-hit indicator.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "hits",
+      "type": "string"
+    }
+  ],
+  "source_revision": "8f0d3c56ff88382fe02f7425cc0d9afe99cbaad24bdfa5becb1d456286ce7741",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

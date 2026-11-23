@@ -1,0 +1,16 @@
+{
+  "description": "Grab render error for missing payload level.",
+  "context": "Grab render error for missing payload level.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "00108a1ea0dcf3877d4f5ad2c1b9b9dd1b9aa768af29933b529b111c3b303440",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

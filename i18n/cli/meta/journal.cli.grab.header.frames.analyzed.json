@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for frames analyzed.",
+  "context": "Grab table column header for frames analyzed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "8b42275c4494f74189a37762517b7102c6eab6033cce367fa6891cc9fbc0171a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Schedule report diagnostic when config JSON is malformed.",
+  "context": "Schedule report diagnostic when config JSON is malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "source_revision": "5387cd3cad81a16161ef3cd1d82942be2a28cb1ebb80d202e26674b42fe6fa42",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

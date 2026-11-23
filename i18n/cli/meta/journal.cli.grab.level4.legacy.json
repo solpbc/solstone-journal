@@ -1,0 +1,16 @@
+{
+  "description": "Grab level 4 notice when screen file uses legacy schema.",
+  "context": "Grab level 4 notice when screen file uses legacy schema.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "4628b91211dfa2cff8c0c1475f2b46eccfdd99bdce594629c2724a040501a10a",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

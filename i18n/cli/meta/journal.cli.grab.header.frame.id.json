@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for frame ID.",
+  "context": "Grab table column header for frame ID.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "e2a5387d6dba22bc448ad4b94f0cf3df7189196e94d87926d419ae3b617cc2ca",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

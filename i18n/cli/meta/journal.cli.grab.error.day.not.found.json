@@ -1,0 +1,21 @@
+{
+  "description": "Grab error when requested day directory does not exist.",
+  "context": "Grab error when requested day directory does not exist.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "source_revision": "084e8681d7f269e818961c6d5d15018bbf0f857cc4bc6639661da95aa967d4c9",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

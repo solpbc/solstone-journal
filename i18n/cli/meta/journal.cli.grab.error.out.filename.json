@@ -1,0 +1,16 @@
+{
+  "description": "Grab error when --out path has no filename stem.",
+  "context": "Grab error when --out path has no filename stem.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "cb2062447c5f636b900498671448e639373bef2af48fc4893ec38f449f0d8fbe",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

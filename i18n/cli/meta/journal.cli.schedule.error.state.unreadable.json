@@ -1,0 +1,21 @@
+{
+  "description": "Schedule report diagnostic when state file is unreadable.",
+  "context": "Schedule report diagnostic when state file is unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "source_revision": "40d5ba7568245ed04e5359efdef0c6cf5ba3cef16f0b2362a4b5468d2829385c",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

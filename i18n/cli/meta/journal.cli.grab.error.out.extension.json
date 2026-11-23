@@ -1,0 +1,25 @@
+{
+  "description": "Grab error when --out path uses an unsupported file extension.",
+  "context": "Grab error when --out path uses an unsupported file extension.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "out_flag",
+      "type": "string"
+    },
+    {
+      "name": "extensions",
+      "type": "string"
+    }
+  ],
+  "source_revision": "9896bc75ae3146eea3106fc58986e6a648a631d9a4c8865dc5b84299a7777051",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

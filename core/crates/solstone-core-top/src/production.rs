@@ -22,7 +22,7 @@ use crossterm::{execute, queue};
 use jiff::Timestamp;
 use jiff::tz::Offset;
 use serde_json::{Map, Value, json};
-use solstone_core_brain::{inspect_brain_state, present_brain_inspection, read_journal_config};
+use solstone_core_brain::{inspect_brain_state, present_brain_inspection_in, read_journal_config};
 use solstone_core_callosum::{CallosumReceiveEvent, CallosumSocketConnection};
 use solstone_core_journal::{discover_home, read_config_journal, resolve_journal_path};
 use solstone_core_system_health::sanitize_os_bytes_for_terminal;
@@ -30,11 +30,11 @@ use solstone_core_time::civil_display;
 
 use crate::{
     TopBrainSource, TopClock, TopInput, TopReceiveTransport, TopRenderOp, TopState, TopTerminal,
-    TrustedToken, platform_observer, run_top_with,
+    TrustedToken, platform_observer, run_top_with_in,
 };
 
-pub(super) fn run(verbose: bool, debug: bool) -> Result<(), String> {
-    let journal = resolve_process_journal_path()?;
+pub(super) fn run_in(locale: &str, verbose: bool, debug: bool) -> Result<(), String> {
+    let journal = resolve_process_journal_path_in(locale)?;
     if verbose || debug {
         eprintln!(
             "solstone-core top: journal={}",
@@ -43,11 +43,12 @@ pub(super) fn run(verbose: bool, debug: bool) -> Result<(), String> {
     }
     let shared = ProductionCallosum::new(journal.join("health/callosum.sock"))?;
     let mut receive = ProductionReceive::new(Arc::clone(&shared));
-    let mut terminal = ProductionTerminal::new();
+    let mut terminal = ProductionTerminal::new_in(locale);
     let mut clock = ProductionClock::new();
     let mut observer = platform_observer();
-    let mut brain = ProductionBrain::new(journal);
-    run_top_with_outer_panic_cleanup(
+    let mut brain = ProductionBrain::new_in(locale, journal);
+    run_top_with_outer_panic_cleanup_in(
+        locale,
         &mut TopState::default(),
         &mut clock,
         &mut terminal,
@@ -55,7 +56,7 @@ pub(super) fn run(verbose: bool, debug: bool) -> Result<(), String> {
         &mut observer,
         &mut brain,
     )
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.render_in(locale))
 }
 
 /// The concrete composition owns the panic boundary outside the pure runner.
@@ -69,8 +70,30 @@ pub fn run_top_with_outer_panic_cleanup(
     observer: &mut dyn crate::ProcessObserver,
     brain: &mut dyn TopBrainSource,
 ) -> Result<(), crate::TopLoopError> {
+    run_top_with_outer_panic_cleanup_in(
+        solstone_core_cli_copy::ENGLISH,
+        state,
+        clock,
+        terminal,
+        receive,
+        observer,
+        brain,
+    )
+}
+
+/// Same panic-safe composition as [`run_top_with_outer_panic_cleanup`],
+/// rendering frames in `locale`.
+pub fn run_top_with_outer_panic_cleanup_in(
+    locale: &str,
+    state: &mut TopState,
+    clock: &mut dyn TopClock,
+    terminal: &mut dyn TopTerminal,
+    receive: &mut dyn TopReceiveTransport,
+    observer: &mut dyn crate::ProcessObserver,
+    brain: &mut dyn TopBrainSource,
+) -> Result<(), crate::TopLoopError> {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run_top_with(state, clock, terminal, receive, observer, brain)
+        run_top_with_in(locale, state, clock, terminal, receive, observer, brain)
     })) {
         Ok(result) => result,
         Err(payload) => {
@@ -87,14 +110,20 @@ pub fn run_top_with_outer_panic_cleanup(
     }
 }
 
-fn resolve_process_journal_path() -> Result<PathBuf, String> {
+fn resolve_process_journal_path_in(locale: &str) -> Result<PathBuf, String> {
     let env_journal = std::env::var_os("SOLSTONE_JOURNAL");
     let home_env = std::env::var_os("HOME");
     let fallback = std::env::home_dir();
     let home = discover_home(home_env.as_deref(), fallback.as_deref())
         .map_err(|error| format!("{error:?}"))?;
-    let config =
-        read_config_journal(&home).map_err(|error| format!("journal config: {error:?}"))?;
+    let config = read_config_journal(&home).map_err(|error| {
+        let detail = format!("{error:?}");
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.top.error.journal.config",
+            &[("detail", solstone_core_cli_copy::Value::String(&detail))],
+        )
+    })?;
     Ok(resolve_journal_path(env_journal.as_deref(), config.as_deref(), None, &home).path)
 }
 
@@ -128,10 +157,14 @@ impl TopClock for ProductionClock {
 
 pub(crate) struct ProductionBrain {
     journal: PathBuf,
+    locale: String,
 }
 impl ProductionBrain {
-    pub(crate) fn new(journal: PathBuf) -> Self {
-        Self { journal }
+    pub(crate) fn new_in(locale: &str, journal: PathBuf) -> Self {
+        Self {
+            journal,
+            locale: locale.to_owned(),
+        }
     }
 }
 impl TopBrainSource for ProductionBrain {
@@ -141,7 +174,7 @@ impl TopBrainSource for ProductionBrain {
             .config
             .unwrap_or_default();
         let inspection = inspect_brain_state(&self.journal, &config, Timestamp::now());
-        let presentation = present_brain_inspection(&inspection, Timestamp::now());
+        let presentation = present_brain_inspection_in(&inspection, Timestamp::now(), &self.locale);
         let mut lines = vec![presentation.headline];
         if !presentation.reason_text.is_empty() {
             lines.push(format!("  {}", presentation.reason_text));
@@ -272,6 +305,38 @@ pub enum TerminalOwnerError {
     Screen(String),
 }
 
+impl TerminalOwnerError {
+    pub fn render_in(&self, locale: &str) -> String {
+        match self {
+            Self::StdinNotTty => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.top.error.stdin.not.tty",
+                &[],
+            ),
+            Self::StdoutNotTty => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.top.error.stdout.not.tty",
+                &[],
+            ),
+            Self::Apply(detail) => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.top.error.apply",
+                &[("detail", solstone_core_cli_copy::Value::String(detail))],
+            ),
+            Self::Width(detail) => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.top.error.width",
+                &[("detail", solstone_core_cli_copy::Value::String(detail))],
+            ),
+            Self::Screen(detail) => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.top.error.screen",
+                &[("detail", solstone_core_cli_copy::Value::String(detail))],
+            ),
+        }
+    }
+}
+
 /// Owns native terminal mutation after acquiring raw mode, the alternate screen,
 /// and a hidden cursor. Cleanup is idempotent and is also attempted by Drop.
 pub struct TerminalOwner<S: TerminalSyscalls> {
@@ -388,7 +453,17 @@ fn with_cleanup(primary: String, cleanup: Option<String>) -> String {
     })
 }
 
-pub(crate) struct SystemTerminalSyscalls;
+pub(crate) struct SystemTerminalSyscalls {
+    locale: String,
+}
+
+impl SystemTerminalSyscalls {
+    fn new(locale: &str) -> Self {
+        Self {
+            locale: locale.to_owned(),
+        }
+    }
+}
 
 fn execute_cmd(command: impl crossterm::Command) -> Result<(), String> {
     let mut out = std::io::stdout().lock();
@@ -476,9 +551,13 @@ impl TerminalSyscalls for SystemTerminalSyscalls {
     fn stdout_width(&mut self) -> Result<usize, String> {
         let (columns, _) = size().map_err(|error| error.to_string())?;
         let width = usize::from(columns);
-        (width > 0)
-            .then_some(width)
-            .ok_or_else(|| "terminal width unavailable".to_owned())
+        (width > 0).then_some(width).ok_or_else(|| {
+            solstone_core_cli_copy::render_for(
+                &self.locale,
+                "journal.cli.top.error.width.unavailable",
+                &[],
+            )
+        })
     }
 
     fn write_ops(&mut self, ops: &[TopRenderOp]) -> Result<(), String> {
@@ -510,20 +589,27 @@ enum InputSource {
 pub struct ProductionTerminal {
     owner: TerminalOwner<SystemTerminalSyscalls>,
     events: InputSource,
+    locale: String,
 }
 impl ProductionTerminal {
     pub fn from_events(events: VecDeque<Event>) -> Self {
         Self {
-            owner: TerminalOwner::new(SystemTerminalSyscalls),
+            owner: TerminalOwner::new(SystemTerminalSyscalls::new(solstone_core_cli_copy::ENGLISH)),
             events: InputSource::Scripted(events),
+            locale: solstone_core_cli_copy::ENGLISH.to_owned(),
         }
     }
 
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
+        Self::new_in(solstone_core_cli_copy::ENGLISH)
+    }
+
+    pub fn new_in(locale: &str) -> Self {
         Self {
-            owner: TerminalOwner::new(SystemTerminalSyscalls),
+            owner: TerminalOwner::new(SystemTerminalSyscalls::new(locale)),
             events: InputSource::Live(Box::new(CrosstermEventSource)),
+            locale: locale.to_owned(),
         }
     }
 }
@@ -558,7 +644,9 @@ pub(crate) fn map_event(event: Event) -> TopInput {
 
 impl TopTerminal for ProductionTerminal {
     fn enter(&mut self) -> Result<(), String> {
-        self.owner.enter().map_err(|error| error.to_string())
+        self.owner
+            .enter()
+            .map_err(|error| error.render_in(&self.locale))
     }
     fn restore(&mut self) -> Result<(), String> {
         self.owner.restore_once()
@@ -696,8 +784,9 @@ mod tests {
 
     fn live_terminal(source: FakeEventSource) -> ProductionTerminal {
         ProductionTerminal {
-            owner: TerminalOwner::new(SystemTerminalSyscalls),
+            owner: TerminalOwner::new(SystemTerminalSyscalls::new(solstone_core_cli_copy::ENGLISH)),
             events: InputSource::Live(Box::new(source)),
+            locale: solstone_core_cli_copy::ENGLISH.to_owned(),
         }
     }
 

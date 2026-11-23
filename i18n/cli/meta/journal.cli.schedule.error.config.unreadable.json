@@ -1,0 +1,21 @@
+{
+  "description": "Schedule report diagnostic when config file is unreadable.",
+  "context": "Schedule report diagnostic when config file is unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "source_revision": "61062cef982570ac46705dfaecd34180f61220245c85ef33301849ee9ca33c32",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Schedule report next-due weekly time on Saturday.",
+  "context": "Schedule report next-due weekly time on Saturday.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "source_revision": "ac1eb6df3292cbbd29f80dffce2bcac0cab62520f6e87dd496b5e165b287ccc2",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

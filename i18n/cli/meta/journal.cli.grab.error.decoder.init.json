@@ -1,0 +1,21 @@
+{
+  "description": "Grab error when FFmpeg decoder initialization fails.",
+  "context": "Grab error when FFmpeg decoder initialization fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "source_revision": "fcfefbb13c546b0968377bcc1b36e35254283405f20e63912bf17d7c064e3d0f",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

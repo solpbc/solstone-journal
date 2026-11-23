@@ -1,0 +1,21 @@
+{
+  "description": "Top loop transport failure wrapper.",
+  "context": "Top loop transport failure wrapper.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "source_revision": "94781850e3397e256f0e8c850bc437862b88b84b0e691d6844ab2728bd46b368",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Schedule report cell label for invalid timestamp or state.",
+  "context": "Schedule report cell label for invalid timestamp or state.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "d2c78e643a22ed0088d31cd6102c36a4dc4841112ab0f32e13c033fe53a5fe8d",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

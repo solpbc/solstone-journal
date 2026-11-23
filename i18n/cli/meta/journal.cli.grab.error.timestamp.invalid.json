@@ -1,0 +1,16 @@
+{
+  "description": "Grab error when frame timestamp cannot be parsed.",
+  "context": "Grab error when frame timestamp cannot be parsed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "83118a31d6ee8b8fdedbc68d2d5b3f6b3e2aaf7211500ef3edde4fbfbd40abcb",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

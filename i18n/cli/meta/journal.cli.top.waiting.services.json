@@ -1,0 +1,16 @@
+{
+  "description": "Top placeholder while waiting for services.",
+  "context": "Top placeholder while waiting for services.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "2b05efed0d4db7fddfe19289a37600679b2be0cffca0d6bebb00b7ae7925a6bd",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

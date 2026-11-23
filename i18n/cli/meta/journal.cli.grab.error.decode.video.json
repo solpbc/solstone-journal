@@ -1,0 +1,21 @@
+{
+  "description": "Grab error when video decoding fails.",
+  "context": "Grab error when video decoding fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "source_revision": "1917b8958d193b6d4b266d24a53ad869c432dbd7de73df6e7c486f007230d90e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

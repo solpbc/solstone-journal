@@ -1,0 +1,16 @@
+{
+  "description": "Top activity manager header title.",
+  "context": "Top activity manager header title.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "5b766f189ea168ec428b1d7e693457223ea794d1f32344147cb463fdbe3b453f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

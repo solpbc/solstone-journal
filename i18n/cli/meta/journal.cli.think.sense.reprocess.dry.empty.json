@@ -1,0 +1,16 @@
+{
+  "description": "Sense batch reprocess dry-run notice when no files would be deleted.",
+  "context": "Sense batch reprocess dry-run notice when no files would be deleted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "d09b36ef6dd1e71f15bff50a53b61a39374b58215b7615304c24fe1f0c1cc485",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

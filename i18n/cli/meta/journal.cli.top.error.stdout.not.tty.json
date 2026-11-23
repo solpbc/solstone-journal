@@ -1,0 +1,16 @@
+{
+  "description": "Top terminal error when stdout is not a TTY.",
+  "context": "Top terminal error when stdout is not a TTY.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "fe40b1513fbb0fa292f61ff0067ad9711585fdc6aced77d5bec03319228cec7c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

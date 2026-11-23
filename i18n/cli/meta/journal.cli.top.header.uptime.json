@@ -1,0 +1,16 @@
+{
+  "description": "Top table Uptime column header.",
+  "context": "Top table Uptime column header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "493d527fead1295b3d794ee1f7e373035e1fa70054e8b7fae9ddb481e4061099",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

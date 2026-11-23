@@ -5,85 +5,126 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 
-use crate::encode::{refuse_conflicts, save_frame};
+use crate::encode::{refuse_conflicts_in, save_frame_in};
 use crate::error::GrabFailure;
-use crate::extract::decode_frames;
+use crate::extract::decode_frames_in;
 use crate::reader::{
-    ScreenBundle, available_days, available_screen_tokens, available_segments, frame_id,
-    load_bundle, normalize_screen_token, require_day, require_stream, screen_stem,
+    ScreenBundle, ScreenStatus, available_days, available_screen_tokens, available_segments,
+    frame_id, load_bundle, normalize_screen_token, require_day, require_stream, screen_stem,
     streams_except_health,
 };
-use crate::render::{frame_notes, render};
+use crate::render::{HumanHints, frame_notes, raw_frame_error_text, render_in};
 use crate::request::{GrabDiagnostics, GrabOutput, GrabRequest};
-use crate::selection::{parse_frame_id_token, resolve_output_paths};
-use crate::time::{frame_abs_time, segment_window};
+use crate::selection::{parse_frame_id_token_in, resolve_output_paths_in};
+use crate::time::{frame_abs_time_in, segment_window_in};
 
-pub(crate) fn run(
+pub(crate) fn run_in(
+    locale: &str,
     journal: &Path,
     request: GrabRequest,
     diagnostics: &mut dyn GrabDiagnostics,
 ) -> Result<GrabOutput, GrabFailure> {
     if request.tokens.len() > 5 {
-        return Err(GrabFailure::Usage(
-            "grab accepts at most 5 positional tokens: day stream segment screen frame-id"
-                .to_owned(),
-        ));
+        return Err(GrabFailure::Usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.too.many.tokens",
+            &[],
+        )));
     }
     if request.force && request.out.is_none() {
-        return Err(GrabFailure::Usage("--force requires --out".to_owned()));
+        return Err(GrabFailure::Usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.force.requires.out",
+            &[
+                (
+                    "force_flag",
+                    solstone_core_cli_copy::Value::String("--force"),
+                ),
+                ("out_flag", solstone_core_cli_copy::Value::String("--out")),
+            ],
+        )));
     }
     if request.out.is_some() && request.tokens.len() != 5 {
-        return Err(GrabFailure::Usage(
-            "--out requires day stream segment screen and frame-id".to_owned(),
-        ));
+        return Err(GrabFailure::Usage(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.out.requires.five.tokens",
+            &[("out_flag", solstone_core_cli_copy::Value::String("--out"))],
+        )));
     }
     if let Some(out) = &request.out {
-        let _ = resolve_output_paths(out, &[1])?;
+        let _ = resolve_output_paths_in(locale, out, &[1])?;
     }
-    let payload = match request.tokens.as_slice() {
-        [] => list_available_days(journal, diagnostics)?,
-        [day] => list_day_streams(journal, day, diagnostics)?,
-        [day, stream] => list_stream_segments(journal, day, stream, diagnostics)?,
-        [day, stream, segment] => list_segment_screens(journal, day, stream, segment, diagnostics)?,
+    let (payload, hints) = match request.tokens.as_slice() {
+        [] => (
+            list_available_days(locale, journal, diagnostics)?,
+            HumanHints::default(),
+        ),
+        [day] => (
+            list_day_streams(locale, journal, day, diagnostics)?,
+            HumanHints::default(),
+        ),
+        [day, stream] => (
+            list_stream_segments(locale, journal, day, stream, diagnostics)?,
+            HumanHints::default(),
+        ),
+        [day, stream, segment] => {
+            list_segment_screens(locale, journal, day, stream, segment, diagnostics)?
+        }
         [day, stream, segment, screen] => {
-            list_screen_frames(journal, day, stream, segment, screen, diagnostics)?
+            list_screen_frames(locale, journal, day, stream, segment, screen, diagnostics)?
         }
         [day, stream, segment, screen, token] => {
-            let ids = parse_frame_id_token(token)?;
+            let ids = parse_frame_id_token_in(locale, token)?;
             if ids.len() > 1 && request.out.is_none() {
-                return Err(GrabFailure::Usage(
-                    "multiple frame ids require --out".to_owned(),
-                ));
+                return Err(GrabFailure::Usage(solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.grab.error.multiple.ids.require.out",
+                    &[("out_flag", solstone_core_cli_copy::Value::String("--out"))],
+                )));
             }
             if let Some(out) = request.out {
-                save_frame_images(
+                (
+                    save_frame_images(
+                        locale,
+                        journal,
+                        day,
+                        stream,
+                        segment,
+                        screen,
+                        &ids,
+                        &out,
+                        request.force,
+                        diagnostics,
+                    )?,
+                    HumanHints::default(),
+                )
+            } else {
+                show_frame_metadata(
+                    locale,
                     journal,
                     day,
                     stream,
                     segment,
                     screen,
-                    &ids,
-                    &out,
-                    request.force,
+                    ids[0],
                     diagnostics,
                 )?
-            } else {
-                show_frame_metadata(journal, day, stream, segment, screen, ids[0], diagnostics)?
             }
         }
         _ => unreachable!("length checked above"),
     };
-    let human = render(&payload)?;
+    let human = render_in(locale, &payload, &hints)?;
     Ok(GrabOutput { payload, human })
 }
 
 fn list_available_days(
+    locale: &str,
     journal: &Path,
     diagnostics: &mut dyn GrabDiagnostics,
 ) -> Result<Value, GrabFailure> {
     let mut days = Vec::new();
     for day in available_days(journal)? {
-        let streams = list_day_streams(journal, &day, diagnostics)?
+        let streams = list_day_streams(locale, journal, &day, diagnostics)?
             .get("data")
             .and_then(|data| data.get("streams"))
             .and_then(Value::as_array)
@@ -98,14 +139,15 @@ fn list_available_days(
 }
 
 fn list_day_streams(
+    locale: &str,
     journal: &Path,
     day: &str,
     diagnostics: &mut dyn GrabDiagnostics,
 ) -> Result<Value, GrabFailure> {
-    let day_path = require_day(journal, day)?;
+    let day_path = require_day(locale, journal, day)?;
     let mut streams = Vec::new();
     for stream in streams_except_health(&day_path)? {
-        let segments = list_stream_segments(journal, day, &stream, diagnostics)?
+        let segments = list_stream_segments(locale, journal, day, &stream, diagnostics)?
             .get("data")
             .and_then(|data| data.get("segments"))
             .and_then(Value::as_array)
@@ -120,19 +162,22 @@ fn list_day_streams(
 }
 
 fn list_stream_segments(
+    locale: &str,
     journal: &Path,
     day: &str,
     stream: &str,
     diagnostics: &mut dyn GrabDiagnostics,
 ) -> Result<Value, GrabFailure> {
-    let stream_path = require_stream(journal, day, stream)?;
+    let stream_path = require_stream(locale, journal, day, stream)?;
     let mut rows = Vec::new();
     for segment in available_segments(&stream_path)? {
-        let window = match segment_window(day, &segment) {
+        let window = match segment_window_in(locale, day, &segment) {
             Ok(window) => window,
             Err(_) => continue,
         };
-        let screens = list_segment_screens(journal, day, stream, &segment, diagnostics)?
+        let (segment_payload, _) =
+            list_segment_screens(locale, journal, day, stream, &segment, diagnostics)?;
+        let screens = segment_payload
             .get("data")
             .and_then(|data| data.get("screens"))
             .and_then(Value::as_array)
@@ -147,51 +192,84 @@ fn list_stream_segments(
 }
 
 fn list_segment_screens(
+    locale: &str,
     journal: &Path,
     day: &str,
     stream: &str,
     segment: &str,
     diagnostics: &mut dyn GrabDiagnostics,
-) -> Result<Value, GrabFailure> {
-    let segment_path = crate::reader::require_segment(journal, day, stream, segment)?;
+) -> Result<(Value, HumanHints), GrabFailure> {
+    let segment_path = crate::reader::require_segment(locale, journal, day, stream, segment)?;
     let mut stems: Vec<_> = available_screen_tokens(&segment_path)?
         .into_iter()
         .map(|token| screen_stem(&token))
         .collect();
     stems.sort();
     let mut screens = Vec::new();
+    let mut statuses = Vec::new();
     for stem in stems {
-        let bundle = load_bundle(journal, day, stream, segment, &stem, true, diagnostics)?;
+        let bundle = load_bundle(
+            locale,
+            journal,
+            day,
+            stream,
+            segment,
+            &stem,
+            true,
+            diagnostics,
+        )?;
         let (position, connector) = parse_screen_filename(&stem);
-        screens.push(json!({"screen":normalize_screen_token(&stem), "position":position, "connector":connector, "frames_analyzed":bundle.frame_records.len(), "jsonl":bundle.jsonl_rel, "video":bundle.video_rel, "status":bundle.status}));
+        statuses.push(bundle.status);
+        screens.push(json!({"screen":normalize_screen_token(&stem), "position":position, "connector":connector, "frames_analyzed":bundle.frame_records.len(), "jsonl":bundle.jsonl_rel, "video":bundle.video_rel, "status":bundle.status_json()}));
     }
-    Ok(
+    Ok((
         json!({"level":"3", "scope":{"day":day,"stream":stream,"segment":segment}, "data":{"screens":screens}}),
-    )
+        HumanHints {
+            screen_statuses: statuses,
+            ..HumanHints::default()
+        },
+    ))
 }
 
 fn list_screen_frames(
+    locale: &str,
     journal: &Path,
     day: &str,
     stream: &str,
     segment: &str,
     screen: &str,
     diagnostics: &mut dyn GrabDiagnostics,
-) -> Result<Value, GrabFailure> {
-    let bundle = load_bundle(journal, day, stream, segment, screen, true, diagnostics)?;
-    if bundle.status == "captured but not analyzed" {
-        return Err(GrabFailure::runtime(format!(
-            "screen {screen} in {segment} is captured but not analyzed"
+) -> Result<(Value, HumanHints), GrabFailure> {
+    let bundle = load_bundle(
+        locale,
+        journal,
+        day,
+        stream,
+        segment,
+        screen,
+        true,
+        diagnostics,
+    )?;
+    if bundle.status == ScreenStatus::CapturedNotAnalyzed {
+        return Err(GrabFailure::runtime(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.captured.not.analyzed",
+            &[
+                ("screen", solstone_core_cli_copy::Value::String(screen)),
+                ("segment", solstone_core_cli_copy::Value::String(segment)),
+            ],
         )));
     }
-    let frames = if bundle.legacy_schema || bundle.header_only {
-        Vec::new()
+    let (frames, frame_error_texts) = if bundle.legacy_schema || bundle.header_only {
+        (Vec::new(), Vec::new())
     } else {
-        bundle
-            .frame_records
-            .iter()
-            .map(|frame| frame_view(&bundle, frame))
-            .collect::<Result<Vec<_>, _>>()?
+        let mut frames = Vec::with_capacity(bundle.frame_records.len());
+        let mut errors_text = Vec::with_capacity(bundle.frame_records.len());
+        for frame in &bundle.frame_records {
+            frames.push(frame_view(locale, &bundle, frame)?);
+            errors_text.push(raw_frame_error_text(frame));
+        }
+        (frames, errors_text)
     };
     let errors = if bundle.legacy_schema || bundle.header_only {
         0
@@ -205,15 +283,23 @@ fn list_screen_frames(
     let mut summary = json!({"frames_analyzed":bundle.frame_records.len(),"error_frames":errors,"legacy_schema":bundle.legacy_schema,"video_present":bundle.video_path.is_some()});
     // The key appears only when there is a recorded cause to name, so a present
     // video keeps the payload it has always had.
-    if let (Some(reason), Some(map)) = (bundle.missing_video_reason, summary.as_object_mut()) {
+    if let (Some(reason), Some(map)) = (bundle.missing_video_reason_json(), summary.as_object_mut())
+    {
         map.insert("video_missing_reason".into(), Value::from(reason));
     }
-    Ok(
+    Ok((
         json!({"level":"4", "scope":scope(day,stream,segment,screen), "data":{"summary":summary,"frames":frames}}),
-    )
+        HumanHints {
+            missing_video_cause: bundle.missing_video_cause,
+            frame_error_texts,
+            ..HumanHints::default()
+        },
+    ))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn show_frame_metadata(
+    locale: &str,
     journal: &Path,
     day: &str,
     stream: &str,
@@ -221,20 +307,34 @@ fn show_frame_metadata(
     screen: &str,
     id: i64,
     diagnostics: &mut dyn GrabDiagnostics,
-) -> Result<Value, GrabFailure> {
-    let bundle = load_analyzed_bundle(journal, day, stream, segment, screen, diagnostics)?;
+) -> Result<(Value, HumanHints), GrabFailure> {
+    let bundle = load_analyzed_bundle(locale, journal, day, stream, segment, screen, diagnostics)?;
     let frame = bundle.frame_index.get(&id).ok_or_else(|| {
-        GrabFailure::runtime(format!("frame id {id} not found in {screen} for {segment}"))
+        GrabFailure::runtime(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.grab.error.frame.not.found",
+            [
+                ("frame_id", &id),
+                ("screen", &screen),
+                ("segment", &segment),
+            ],
+        ))
     })?;
-    Ok(
-        json!({"level":"5a", "scope":scope_with_frame(day,stream,segment,screen,id), "data":{"source":source(&bundle),"frame":frame,"computed":{"abs_time":frame_abs_time(bundle.window.start, frame.get("timestamp").unwrap_or(&Value::from(0.0)))?,"notes":frame_notes(frame)}}}),
-    )
+    let single_frame_error_text = raw_frame_error_text(frame);
+    Ok((
+        json!({"level":"5a", "scope":scope_with_frame(day,stream,segment,screen,id), "data":{"source":source(&bundle),"frame":frame,"computed":{"abs_time":frame_abs_time_in(locale, bundle.window.start, frame.get("timestamp").unwrap_or(&Value::from(0.0)))?,"notes":frame_notes(frame)}}}),
+        HumanHints {
+            single_frame_error_text,
+            ..HumanHints::default()
+        },
+    ))
 }
 
 // This directly mirrors the five-token grab selection plus save options; a
 // one-use carrier type would obscure rather than simplify the payload boundary.
 #[allow(clippy::too_many_arguments)]
 fn save_frame_images(
+    locale: &str,
     journal: &Path,
     day: &str,
     stream: &str,
@@ -245,38 +345,77 @@ fn save_frame_images(
     force: bool,
     diagnostics: &mut dyn GrabDiagnostics,
 ) -> Result<Value, GrabFailure> {
-    let bundle = load_analyzed_bundle(journal, day, stream, segment, screen, diagnostics)?;
-    let video = bundle.video_path.as_ref().ok_or_else(|| GrabFailure::runtime(match bundle.missing_video_reason { Some(reason) => format!("{reason}; metadata-only access remains via: solstone journal grab {day} {stream} {segment} {screen} {}", ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")), None => format!("raw video not found for screen {screen} in {segment}") }))?;
+    let bundle = load_analyzed_bundle(locale, journal, day, stream, segment, screen, diagnostics)?;
+    let video = bundle.video_path.as_ref().ok_or_else(|| {
+        GrabFailure::runtime(match bundle.missing_video_cause {
+            Some(cause) => {
+                let reason = cause.render_reason_in(locale);
+                let id_list = ids
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let command =
+                    format!("solstone journal grab {day} {stream} {segment} {screen} {id_list}");
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.grab.error.video.missing.with.reason",
+                    &[
+                        ("reason", solstone_core_cli_copy::Value::String(&reason)),
+                        ("command", solstone_core_cli_copy::Value::String(&command)),
+                    ],
+                )
+            }
+            None => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.grab.error.video.missing",
+                &[
+                    ("screen", solstone_core_cli_copy::Value::String(screen)),
+                    ("segment", solstone_core_cli_copy::Value::String(segment)),
+                ],
+            ),
+        })
+    })?;
     let selected: Vec<_> = ids
         .iter()
         .map(|id| {
             bundle.frame_index.get(id).cloned().ok_or_else(|| {
-                GrabFailure::runtime(format!("frame id {id} not found in {screen} for {segment}"))
+                GrabFailure::runtime(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.grab.error.frame.not.found",
+                    [("frame_id", id), ("screen", &screen), ("segment", &segment)],
+                ))
             })
         })
         .collect::<Result<_, _>>()?;
-    let targets = resolve_output_paths(out, ids)?;
-    refuse_conflicts(&targets, force)?;
-    let decoded = decode_frames(video, ids)?;
+    let targets = resolve_output_paths_in(locale, out, ids)?;
+    refuse_conflicts_in(locale, &targets, force)?;
+    let decoded = decode_frames_in(locale, video, ids)?;
     let missing: Vec<_> = ids
         .iter()
         .zip(&decoded)
         .filter_map(|(id, image)| image.is_none().then_some(*id))
         .collect();
     if !missing.is_empty() {
-        return Err(GrabFailure::runtime(format!(
-            "failed to decode frame ids: {}",
-            missing
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
+        let missing_ids = missing
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(GrabFailure::runtime(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.decode.failed.ids",
+            &[("ids", solstone_core_cli_copy::Value::String(&missing_ids))],
         )));
     }
     let mut saved = Vec::new();
     for ((frame, image), target) in selected.iter().zip(decoded.iter()).zip(&targets) {
-        save_frame(image.as_ref().expect("checked missing frames"), target)?;
-        let mut view = frame_view(&bundle, frame)?;
+        save_frame_in(
+            locale,
+            image.as_ref().expect("checked missing frames"),
+            target,
+        )?;
+        let mut view = frame_view(locale, &bundle, frame)?;
         view.as_object_mut().expect("frame view object").insert(
             "path".to_owned(),
             Value::String(target.display().to_string()),
@@ -294,6 +433,7 @@ fn save_frame_images(
 }
 
 fn load_analyzed_bundle(
+    locale: &str,
     journal: &Path,
     day: &str,
     stream: &str,
@@ -301,23 +441,39 @@ fn load_analyzed_bundle(
     screen: &str,
     diagnostics: &mut dyn GrabDiagnostics,
 ) -> Result<ScreenBundle, GrabFailure> {
-    let bundle = load_bundle(journal, day, stream, segment, screen, true, diagnostics)?;
-    if bundle.status == "captured but not analyzed" {
-        return Err(GrabFailure::runtime(format!(
-            "screen {screen} in {segment} is captured but not analyzed"
+    let bundle = load_bundle(
+        locale,
+        journal,
+        day,
+        stream,
+        segment,
+        screen,
+        true,
+        diagnostics,
+    )?;
+    if bundle.status == ScreenStatus::CapturedNotAnalyzed {
+        return Err(GrabFailure::runtime(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.captured.not.analyzed",
+            &[
+                ("screen", solstone_core_cli_copy::Value::String(screen)),
+                ("segment", solstone_core_cli_copy::Value::String(segment)),
+            ],
         )));
     }
     if bundle.legacy_schema {
-        return Err(GrabFailure::runtime(
-            "screen file uses pre-frame_id schema; frame selection is unavailable",
-        ));
+        return Err(GrabFailure::runtime(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.legacy.schema",
+            &[],
+        )));
     }
     Ok(bundle)
 }
 
-fn frame_view(bundle: &ScreenBundle, frame: &Value) -> Result<Value, GrabFailure> {
+fn frame_view(locale: &str, bundle: &ScreenBundle, frame: &Value) -> Result<Value, GrabFailure> {
     Ok(
-        json!({"frame_id":frame_id(frame).ok_or_else(|| GrabFailure::runtime("invalid frame id"))?,"timestamp":frame.get("timestamp").cloned().unwrap_or_else(|| json!(0.0)),"abs_time":frame_abs_time(bundle.window.start, frame.get("timestamp").unwrap_or(&json!(0.0)))?,"primary":frame.get("analysis").and_then(|value| value.get("primary")).and_then(Value::as_str).unwrap_or_default(),"notes":frame_notes(frame)}),
+        json!({"frame_id":frame_id(frame).ok_or_else(|| GrabFailure::runtime(solstone_core_cli_copy::render_for(locale, "journal.cli.grab.error.invalid.frame.id", &[])))?,"timestamp":frame.get("timestamp").cloned().unwrap_or_else(|| json!(0.0)),"abs_time":frame_abs_time_in(locale, bundle.window.start, frame.get("timestamp").unwrap_or(&json!(0.0)))?,"primary":frame.get("analysis").and_then(|value| value.get("primary")).and_then(Value::as_str).unwrap_or_default(),"notes":frame_notes(frame)}),
     )
 }
 

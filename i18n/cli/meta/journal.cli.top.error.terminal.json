@@ -1,0 +1,21 @@
+{
+  "description": "Top loop terminal failure wrapper.",
+  "context": "Top loop terminal failure wrapper.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "source_revision": "92368a001adf373834c455ed83679d6d76bcec918975e6f100ccdf2a8eb9f539",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

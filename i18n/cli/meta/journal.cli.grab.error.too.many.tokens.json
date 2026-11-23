@@ -1,0 +1,16 @@
+{
+  "description": "Grab usage error for too many positional tokens.",
+  "context": "Grab usage error for too many positional tokens.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "b5ac9e0f33b3fda189c3c14a18fb0ce1a627e5411fa6903bbecce00b982efc73",
+  "max_length": 228,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

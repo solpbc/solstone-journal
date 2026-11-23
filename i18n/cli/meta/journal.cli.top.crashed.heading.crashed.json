@@ -1,0 +1,16 @@
+{
+  "description": "Top crashed section heading when services crashed.",
+  "context": "Top crashed section heading when services crashed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "5c6c3ed3cfbed24452b4b4cb501b38211a093bcba78b61d6e3281c7b17749b50",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for stream name.",
+  "context": "Grab table column header for stream name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "5c4c87d5465b060ada10097a99470e25143cf6cb7d63addcd7bd6dc6d1e8ed17",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

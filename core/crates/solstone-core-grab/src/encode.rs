@@ -13,7 +13,11 @@ use image::{
 use crate::error::GrabFailure;
 use crate::extract::RgbFrame;
 
-pub(crate) fn refuse_conflicts(paths: &[PathBuf], force: bool) -> Result<(), GrabFailure> {
+pub(crate) fn refuse_conflicts_in(
+    locale: &str,
+    paths: &[PathBuf],
+    force: bool,
+) -> Result<(), GrabFailure> {
     let conflicts: Vec<_> = paths
         .iter()
         .filter(|path| path.exists() && !force)
@@ -22,14 +26,31 @@ pub(crate) fn refuse_conflicts(paths: &[PathBuf], force: bool) -> Result<(), Gra
     if conflicts.is_empty() {
         Ok(())
     } else {
-        Err(GrabFailure::runtime(format!(
-            "output path exists (use --force): {}",
-            conflicts.join(", ")
+        let joined = conflicts.join(", ");
+        Err(GrabFailure::runtime(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.out.exists",
+            &[
+                (
+                    "force_flag",
+                    solstone_core_cli_copy::Value::String("--force"),
+                ),
+                ("paths", solstone_core_cli_copy::Value::String(&joined)),
+            ],
         )))
     }
 }
 
-pub(crate) fn save_frame(frame: &RgbFrame, target: &Path) -> Result<(), GrabFailure> {
+#[cfg(test)]
+pub(crate) fn refuse_conflicts(paths: &[PathBuf], force: bool) -> Result<(), GrabFailure> {
+    refuse_conflicts_in(solstone_core_cli_copy::ENGLISH, paths, force)
+}
+
+pub(crate) fn save_frame_in(
+    locale: &str,
+    frame: &RgbFrame,
+    target: &Path,
+) -> Result<(), GrabFailure> {
     let suffix = target
         .extension()
         .and_then(|value| value.to_str())
@@ -59,12 +80,31 @@ pub(crate) fn save_frame(frame: &RgbFrame, target: &Path) -> Result<(), GrabFail
             color,
         ),
         _ => {
-            return Err(GrabFailure::runtime(
-                "--out must end in .png, .jpg, .jpeg, or .webp",
-            ));
+            return Err(GrabFailure::runtime(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.grab.error.out.extension",
+                &[
+                    ("out_flag", solstone_core_cli_copy::Value::String("--out")),
+                    (
+                        "extensions",
+                        solstone_core_cli_copy::Value::String(".png, .jpg, .jpeg, or .webp"),
+                    ),
+                ],
+            )));
         }
     }
-    .map_err(|error| GrabFailure::runtime(format!("failed to save image: {error}")))
+    .map_err(|error| {
+        GrabFailure::runtime(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.grab.error.save.image",
+            [("error", &error)],
+        ))
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn save_frame(frame: &RgbFrame, target: &Path) -> Result<(), GrabFailure> {
+    save_frame_in(solstone_core_cli_copy::ENGLISH, frame, target)
 }
 
 #[cfg(test)]

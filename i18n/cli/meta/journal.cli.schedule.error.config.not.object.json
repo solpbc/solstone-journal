@@ -1,0 +1,21 @@
+{
+  "description": "Schedule report diagnostic when config JSON is not an object.",
+  "context": "Schedule report diagnostic when config JSON is not an object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "source_revision": "bfad8e6544c9a5496d7599f43ae7ee4bece25ef07961e40cfdbaabc721e5a3d0",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

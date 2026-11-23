@@ -1,0 +1,16 @@
+{
+  "description": "Grab screen status when analyzed and original video deleted by retention policy.",
+  "context": "Grab screen status when analyzed and original video deleted by retention policy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "a2eabc7b6f45d106709b066082ca1203a968718cbf634e5959f22d918f9a530d",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -304,12 +304,14 @@ pub fn run_batch_in(
     ))?;
     check_deadline(deadline)?;
 
+    let locale = terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
     if let Some(reprocess) = request.reprocess {
         let DeletedOutputs {
             deleted,
             kept_voice_only,
             kept_while_voice_only_on,
-        } = delete_outputs_counted(
+        } = delete_outputs_counted_in(
+            terminal_locale,
             journal,
             &day_dir,
             reprocess,
@@ -319,27 +321,94 @@ pub fn run_batch_in(
         )?;
         check_deadline(deadline)?;
         if kept_voice_only > 0 {
+            let count = kept_voice_only.to_string();
             println!(
-                "Kept {kept_voice_only} voice-only output file(s): a voice-only result is not reprocessed"
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.think.sense.reprocess.kept.voice.only",
+                    &[
+                        (
+                            "quantity",
+                            solstone_core_cli_copy::Value::Cardinal(
+                                i64::try_from(kept_voice_only).unwrap_or(i64::MAX),
+                            ),
+                        ),
+                        ("count", solstone_core_cli_copy::Value::String(&count)),
+                    ],
+                )
             );
         }
         if kept_while_voice_only_on > 0 {
+            let count = kept_while_voice_only_on.to_string();
             println!(
-                "Kept {kept_while_voice_only_on} transcript(s) made before \"leave out other voices\" was on: turn it off to reprocess them"
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.think.sense.reprocess.kept.before.voice.only",
+                    &[
+                        (
+                            "quantity",
+                            solstone_core_cli_copy::Value::Cardinal(
+                                i64::try_from(kept_while_voice_only_on).unwrap_or(i64::MAX),
+                            ),
+                        ),
+                        ("count", solstone_core_cli_copy::Value::String(&count)),
+                    ],
+                )
             );
         }
         if request.dry_run {
             if deleted.is_empty() {
-                println!("No files to delete");
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.think.sense.reprocess.dry.empty",
+                        &[],
+                    )
+                );
             } else {
-                println!("Would delete {} output file(s):", deleted.len());
+                let count = deleted.len().to_string();
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.think.sense.reprocess.dry.would.delete",
+                        &[
+                            (
+                                "quantity",
+                                solstone_core_cli_copy::Value::Cardinal(
+                                    i64::try_from(deleted.len()).unwrap_or(i64::MAX),
+                                ),
+                            ),
+                            ("count", solstone_core_cli_copy::Value::String(&count)),
+                        ],
+                    )
+                );
                 for path in deleted {
                     println!("  {}", journal_relative_path(journal, &path));
                 }
             }
             return Ok(());
         }
-        println!("Deleted {} output file(s)", deleted.len());
+        let count = deleted.len().to_string();
+        println!(
+            "{}",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.think.sense.reprocess.deleted.count",
+                &[
+                    (
+                        "quantity",
+                        solstone_core_cli_copy::Value::Cardinal(
+                            i64::try_from(deleted.len()).unwrap_or(i64::MAX),
+                        ),
+                    ),
+                    ("count", solstone_core_cli_copy::Value::String(&count)),
+                ],
+            )
+        );
     }
 
     let modality = match request.reprocess {
@@ -357,7 +426,7 @@ pub fn run_batch_in(
             modality,
         )?;
         check_deadline(deadline)?;
-        print_dry_run(journal, &work);
+        print_dry_run(terminal_locale, journal, &work);
         return Ok(());
     }
 
@@ -596,6 +665,28 @@ pub fn delete_outputs_counted(
     stream_filter: Option<&str>,
     dry_run: bool,
 ) -> Result<DeletedOutputs, BatchError> {
+    delete_outputs_counted_in(
+        None,
+        journal,
+        day_dir,
+        reprocess,
+        segment_filter,
+        stream_filter,
+        dry_run,
+    )
+}
+
+/// [`delete_outputs_counted`], rendering progress lines in `terminal_locale`.
+pub fn delete_outputs_counted_in(
+    terminal_locale: Option<&str>,
+    journal: &Path,
+    day_dir: &Path,
+    reprocess: ReprocessKind,
+    segment_filter: Option<&str>,
+    stream_filter: Option<&str>,
+    dry_run: bool,
+) -> Result<DeletedOutputs, BatchError> {
+    let locale = terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
     let mut outcome = DeletedOutputs::default();
     if !day_dir.exists() {
         return Ok(outcome);
@@ -744,7 +835,14 @@ pub fn delete_outputs_counted(
                         detail: details.join("; "),
                     });
                 }
-                println!("Deleted: {}", path.display());
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.think.sense.reprocess.deleted.file",
+                        [("path", &path.display())],
+                    )
+                );
             }
         }
     }
@@ -1309,13 +1407,37 @@ fn group_by_segment(work: &[BatchWork]) -> Vec<(Option<String>, String, Vec<Stri
         .collect()
 }
 
-fn print_dry_run(journal: &Path, work: &[BatchWork]) {
+fn print_dry_run(terminal_locale: Option<&str>, journal: &Path, work: &[BatchWork]) {
+    let locale = terminal_locale.unwrap_or(solstone_core_cli_copy::ENGLISH);
     if work.is_empty() {
-        println!("No unprocessed files found");
+        println!(
+            "{}",
+            solstone_core_cli_copy::render_for(locale, "journal.cli.think.sense.dry.empty", &[])
+        );
         return;
     }
     let breakdown = extension_breakdown(work);
-    println!("Would process {} file(s) ({breakdown}):", work.len());
+    let count = work.len().to_string();
+    println!(
+        "{}",
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.think.sense.dry.would.process",
+            &[
+                (
+                    "quantity",
+                    solstone_core_cli_copy::Value::Cardinal(
+                        i64::try_from(work.len()).unwrap_or(i64::MAX),
+                    ),
+                ),
+                ("count", solstone_core_cli_copy::Value::String(&count)),
+                (
+                    "breakdown",
+                    solstone_core_cli_copy::Value::String(&breakdown),
+                ),
+            ],
+        )
+    );
     for item in work {
         println!("  {}", journal_relative_path(journal, &item.path));
     }

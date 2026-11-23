@@ -1,0 +1,29 @@
+{
+  "description": "Grab error when requested segment does not exist.",
+  "context": "Grab error when requested segment does not exist.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "segment",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "stream",
+      "type": "string"
+    }
+  ],
+  "source_revision": "46b25f5f18052c91a80fa7aa0451a55841512cb51c1db7968df9017501c08fcd",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

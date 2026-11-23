@@ -1,0 +1,16 @@
+{
+  "description": "Top table Runtime column header.",
+  "context": "Top table Runtime column header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "d7240c98a7b6ed01d10d14e7a73c6c9bae53ccd083dce715480f7ff93274247a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

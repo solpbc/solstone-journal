@@ -6,7 +6,7 @@ use solstone_core_system_health::sanitize_for_terminal;
 
 use crate::{
     BrainHealthState, FrameSample, ProcessObserver, ReductionSample, TopRenderOp, TopState,
-    apply_receive_event, cleanup_processes, render_ops,
+    apply_receive_event, cleanup_processes, render_ops_in,
 };
 
 /// Input accepted by the native top loop.
@@ -29,6 +29,21 @@ pub enum TopLoopError {
 }
 
 impl TopLoopError {
+    pub fn render_in(&self, locale: &str) -> String {
+        match self {
+            Self::Terminal(detail) => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.top.error.terminal",
+                &[("detail", solstone_core_cli_copy::Value::String(detail))],
+            ),
+            Self::Transport(detail) => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.top.error.transport",
+                &[("detail", solstone_core_cli_copy::Value::String(detail))],
+            ),
+        }
+    }
+
     fn with_cleanup(self, diagnostics: Vec<String>) -> Self {
         if diagnostics.is_empty() {
             return self;
@@ -77,6 +92,27 @@ pub fn run_top_with(
     observer: &mut dyn ProcessObserver,
     brain: &mut dyn TopBrainSource,
 ) -> Result<(), TopLoopError> {
+    run_top_with_in(
+        solstone_core_cli_copy::ENGLISH,
+        state,
+        clock,
+        terminal,
+        receive,
+        observer,
+        brain,
+    )
+}
+
+/// Run one deterministic event-loop session, rendering frames in `locale`.
+pub fn run_top_with_in(
+    locale: &str,
+    state: &mut TopState,
+    clock: &mut dyn TopClock,
+    terminal: &mut dyn TopTerminal,
+    receive: &mut dyn TopReceiveTransport,
+    observer: &mut dyn ProcessObserver,
+    brain: &mut dyn TopBrainSource,
+) -> Result<(), TopLoopError> {
     receive.start().map_err(TopLoopError::Transport)?;
     let mut entered = false;
     let mut last_cleanup = clock.monotonic_seconds();
@@ -106,7 +142,8 @@ pub fn run_top_with(
                 }
             }
             let width = terminal.width().map_err(TopLoopError::Terminal)?;
-            let ops = render_ops(
+            let ops = render_ops_in(
+                locale,
                 state,
                 FrameSample {
                     wall_seconds: frame_wall,

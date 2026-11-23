@@ -35,4 +35,15 @@ impl GrabFailure {
     pub(crate) fn runtime(message: impl Into<String>) -> Self {
         Self::Runtime(message.into())
     }
+
+    pub fn render_in(&self, locale: &str) -> String {
+        match self {
+            Self::Usage(message) | Self::Runtime(message) => message.clone(),
+            Self::Io { path, source } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.grab.error.io",
+                [("path", &path.display()), ("error", source)],
+            ),
+        }
+    }
 }

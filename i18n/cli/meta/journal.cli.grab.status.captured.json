@@ -1,0 +1,16 @@
+{
+  "description": "Grab screen status when video is captured but not analyzed.",
+  "context": "Grab screen status when video is captured but not analyzed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "c0ccb1041acba8c75382b086ee85a3afe9d831729689e73b2e6f609ac076beac",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

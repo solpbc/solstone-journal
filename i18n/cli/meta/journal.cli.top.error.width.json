@@ -1,0 +1,21 @@
+{
+  "description": "Top terminal error querying terminal width.",
+  "context": "Top terminal error querying terminal width.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "source_revision": "b840d9407f018b9c01606aae3f25246b9cfeb1f0d7cc752a480ab580a09631d4",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

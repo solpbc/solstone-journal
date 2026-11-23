@@ -1,0 +1,16 @@
+{
+  "description": "Schedule report table NAME header.",
+  "context": "Schedule report table NAME header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "ef31cf12932aabe5e943923d69df119e4f821b738cd6f84c5ca520853c681947",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

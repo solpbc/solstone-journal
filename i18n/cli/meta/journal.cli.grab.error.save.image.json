@@ -1,0 +1,21 @@
+{
+  "description": "Grab error when image encoding fails.",
+  "context": "Grab error when image encoding fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "source_revision": "078fadc6ba8ba42beadfd5de1880455ab45dcc0e9b50d1f198c65a326488deff",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

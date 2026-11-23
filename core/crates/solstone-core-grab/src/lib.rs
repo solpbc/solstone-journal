@@ -50,11 +50,27 @@ pub mod test_hooks {
 
 use std::path::Path;
 
-/// Execute one fully-parsed grab request against `journal_root`.
+/// Execute one fully-parsed grab request against `journal_root` using English copy.
 pub fn run(
     journal_root: &Path,
     request: GrabRequest,
     diagnostics: &mut dyn GrabDiagnostics,
 ) -> Result<GrabOutput, GrabFailure> {
-    payload::run(journal_root, request, diagnostics)
+    run_in(
+        solstone_core_cli_copy::ENGLISH,
+        journal_root,
+        request,
+        diagnostics,
+    )
+}
+
+/// Execute one fully-parsed grab request against `journal_root`, rendering
+/// human output and errors in `locale` while keeping the JSON payload English.
+pub fn run_in(
+    locale: &str,
+    journal_root: &Path,
+    request: GrabRequest,
+    diagnostics: &mut dyn GrabDiagnostics,
+) -> Result<GrabOutput, GrabFailure> {
+    payload::run_in(locale, journal_root, request, diagnostics)
 }

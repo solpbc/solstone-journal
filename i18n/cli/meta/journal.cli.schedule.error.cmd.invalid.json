@@ -1,0 +1,21 @@
+{
+  "description": "Schedule report diagnostic for invalid command in schedule entry.",
+  "context": "Schedule report diagnostic for invalid command in schedule entry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "source_revision": "7c99129ef3cf0f328a55efc16c5eb9a0174cd186ffb3d13b72f2dc53f9d30f60",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -4,108 +4,279 @@
 use serde_json::Value;
 
 use crate::error::GrabFailure;
+use crate::reader::{MissingVideoCause, ScreenStatus};
 
-const LEVEL_4_FOOTER: &str = "Inspect:    solstone journal grab <day> <stream> <segment> <screen> <id>\nSave one:   solstone journal grab <day> <stream> <segment> <screen> <id> --out PATH\nSave many:  solstone journal grab <day> <stream> <segment> <screen> <id1>,<id2>,... --out PATH\n\nHow extraction works:\n  Decoding walks the video linearly from frame 0 — seeking is unsafe at the\n  1 Hz capture rate. Cost is dominated by the highest requested frame_id, not\n  the count. Asking for ids 7,12,23 costs the same as asking for 23 alone.\n  Prefer batch mode when you want more than one frame from the same screen.";
-const LEVEL_4_MISSING_VIDEO_TAIL: &str = "Frame metadata above is still readable.\n\nInspect: solstone journal grab <day> <stream> <segment> <screen> <id>";
+#[derive(Clone, Debug, Default)]
+pub(crate) struct HumanHints {
+    pub screen_statuses: Vec<ScreenStatus>,
+    pub missing_video_cause: Option<MissingVideoCause>,
+    pub frame_error_texts: Vec<Option<String>>,
+    pub single_frame_error_text: Option<String>,
+}
+
+fn level_4_footer(locale: &str) -> String {
+    solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.grab.level4.footer",
+        &[
+            (
+                "inspect_command",
+                solstone_core_cli_copy::Value::String(
+                    "solstone journal grab <day> <stream> <segment> <screen> <id>",
+                ),
+            ),
+            (
+                "save_one_command",
+                solstone_core_cli_copy::Value::String(
+                    "solstone journal grab <day> <stream> <segment> <screen> <id> --out PATH",
+                ),
+            ),
+            (
+                "save_many_command",
+                solstone_core_cli_copy::Value::String(
+                    "solstone journal grab <day> <stream> <segment> <screen> <id1>,<id2>,... --out PATH",
+                ),
+            ),
+            ("line_break", solstone_core_cli_copy::Value::String("\n")),
+        ],
+    )
+}
 
 /// The save-mode footer for a screen whose video is gone.
 ///
-/// ⛔ The reason comes from the payload, which names a cause only from a
-/// recorded deletion. A missing reason says the video is gone and nothing more.
-fn missing_video_footer(summary: &serde_json::Map<String, Value>) -> String {
-    let reason = summary
-        .get("video_missing_reason")
-        .and_then(Value::as_str)
-        .unwrap_or("the original video is no longer in your journal");
-    format!("Save mode unavailable: {reason}.\n{LEVEL_4_MISSING_VIDEO_TAIL}")
+/// ⛔ The reason comes from the typed cause (or English fallback), which names a
+/// cause only from a recorded deletion. A missing reason says the video is gone
+/// and nothing more.
+fn missing_video_footer_in(
+    locale: &str,
+    summary: &serde_json::Map<String, Value>,
+    cause: Option<MissingVideoCause>,
+) -> String {
+    let reason = if let Some(cause) = cause {
+        cause.render_reason_in(locale)
+    } else if let Some(reason) = summary.get("video_missing_reason").and_then(Value::as_str) {
+        reason.to_owned()
+    } else {
+        MissingVideoCause::Unknown.render_reason_in(locale)
+    };
+    solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.grab.level4.missing.video",
+        &[
+            ("reason", solstone_core_cli_copy::Value::String(&reason)),
+            (
+                "command",
+                solstone_core_cli_copy::Value::String(
+                    "solstone journal grab <day> <stream> <segment> <screen> <id>",
+                ),
+            ),
+            ("line_break", solstone_core_cli_copy::Value::String("\n")),
+        ],
+    )
 }
 
-pub(crate) fn frame_notes(frame: &Value) -> String {
+#[cfg(test)]
+fn missing_video_footer(summary: &serde_json::Map<String, Value>) -> String {
+    missing_video_footer_in(solstone_core_cli_copy::ENGLISH, summary, None)
+}
+
+pub(crate) fn raw_frame_error_text(frame: &Value) -> Option<String> {
     let error = frame
         .get("error")
         .and_then(Value::as_str)
         .unwrap_or_default();
     let line = error.lines().next().unwrap_or_default().trim();
     if line.is_empty() {
-        return String::new();
+        return None;
     }
-    let text = if line.chars().count() <= 60 {
+    Some(if line.chars().count() <= 60 {
         line.to_owned()
     } else {
         format!("{}...", line.chars().take(57).collect::<String>())
-    };
-    format!("error: {text}")
+    })
 }
 
+pub(crate) fn frame_notes(frame: &Value) -> String {
+    match raw_frame_error_text(frame) {
+        Some(text) => format!("error: {text}"),
+        None => String::new(),
+    }
+}
+
+fn format_frame_note_in(locale: &str, text: &str) -> String {
+    solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.grab.frame.note.error",
+        &[("text", solstone_core_cli_copy::Value::String(text))],
+    )
+}
+
+fn header_label(locale: &str, column: &str) -> String {
+    let id = match column {
+        "day" => "journal.cli.grab.header.day",
+        "streams" => "journal.cli.grab.header.streams",
+        "segments" => "journal.cli.grab.header.segments",
+        "screens" => "journal.cli.grab.header.screens",
+        "frames_analyzed" => "journal.cli.grab.header.frames.analyzed",
+        "stream" => "journal.cli.grab.header.stream",
+        "segment" => "journal.cli.grab.header.segment",
+        "start" => "journal.cli.grab.header.start",
+        "end" => "journal.cli.grab.header.end",
+        "screen" => "journal.cli.grab.header.screen",
+        "position" => "journal.cli.grab.header.position",
+        "connector" => "journal.cli.grab.header.connector",
+        "status" => "journal.cli.grab.header.status",
+        "frame_id" => "journal.cli.grab.header.frame.id",
+        "timestamp" => "journal.cli.grab.header.timestamp",
+        "abs_time" => "journal.cli.grab.header.abs.time",
+        "primary" => "journal.cli.grab.header.primary",
+        "notes" => "journal.cli.grab.header.notes",
+        other => return other.to_owned(),
+    };
+    solstone_core_cli_copy::render_for(locale, id, &[])
+}
+
+#[cfg(test)]
 pub(crate) fn print_table(columns: &[&str], rows: &[Value]) -> String {
+    let headers: Vec<String> = columns.iter().map(|column| (*column).to_owned()).collect();
+    print_table_with_headers(columns, &headers, rows, |_, _, row, column| {
+        cell(row, column)
+    })
+}
+
+fn print_table_in(
+    locale: &str,
+    columns: &[&str],
+    rows: &[Value],
+    cell_fn: impl Fn(usize, usize, &Value, &str) -> String,
+) -> String {
+    let headers: Vec<String> = columns
+        .iter()
+        .map(|column| header_label(locale, column))
+        .collect();
+    print_table_with_headers(columns, &headers, rows, cell_fn)
+}
+
+fn print_table_with_headers(
+    columns: &[&str],
+    headers: &[String],
+    rows: &[Value],
+    cell_fn: impl Fn(usize, usize, &Value, &str) -> String,
+) -> String {
     if rows.is_empty() {
         return String::new();
     }
-    let widths: Vec<_> = columns
+    let rendered_rows: Vec<Vec<String>> = rows
         .iter()
-        .map(|column| {
-            rows.iter().fold(column.chars().count(), |width, row| {
-                width.max(cell(row, column).chars().count())
-            })
+        .enumerate()
+        .map(|(row_idx, row)| {
+            columns
+                .iter()
+                .enumerate()
+                .map(|(col_idx, column)| cell_fn(row_idx, col_idx, row, column))
+                .collect()
+        })
+        .collect();
+    let widths: Vec<_> = headers
+        .iter()
+        .enumerate()
+        .map(|(col_idx, header)| {
+            rendered_rows
+                .iter()
+                .fold(header.chars().count(), |width, row| {
+                    width.max(row[col_idx].chars().count())
+                })
         })
         .collect();
     let mut output = String::new();
     append_row(
         &mut output,
-        columns
+        headers
             .iter()
             .zip(&widths)
-            .map(|(column, width)| (column.to_string(), *width)),
+            .map(|(header, width)| (header.clone(), *width)),
     );
     append_row(
         &mut output,
         widths.iter().map(|width| ("-".repeat(*width), *width)),
     );
-    for row in rows {
-        append_row(
-            &mut output,
-            columns
-                .iter()
-                .zip(&widths)
-                .map(|(column, width)| (cell(row, column), *width)),
-        );
+    for row in rendered_rows {
+        append_row(&mut output, row.into_iter().zip(widths.iter().copied()));
     }
     output
 }
 
-pub(crate) fn render(payload: &Value) -> Result<String, GrabFailure> {
+fn next_hint(locale: &str, command: &str) -> String {
+    solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.grab.next",
+        &[("command", solstone_core_cli_copy::Value::String(command))],
+    )
+}
+
+pub(crate) fn render_in(
+    locale: &str,
+    payload: &Value,
+    hints: &HumanHints,
+) -> Result<String, GrabFailure> {
     let level = payload
         .get("level")
         .and_then(Value::as_str)
-        .ok_or_else(|| GrabFailure::runtime("unsupported output level"))?;
-    let data = payload
-        .get("data")
-        .ok_or_else(|| GrabFailure::runtime("unsupported output level"))?;
+        .ok_or_else(|| {
+            GrabFailure::runtime(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.grab.error.unsupported.level",
+                &[],
+            ))
+        })?;
+    let data = payload.get("data").ok_or_else(|| {
+        GrabFailure::runtime(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.unsupported.level",
+            &[],
+        ))
+    })?;
     let mut output = String::new();
     match level {
         "0" => {
-            output.push_str(&print_table(
+            output.push_str(&print_table_in(
+                locale,
                 &["day", "streams", "segments", "screens", "frames_analyzed"],
-                array(data, "days")?,
+                array(locale, data, "days")?,
+                |_, _, row, column| cell(row, column),
             ));
-            output.push_str("\nNext: solstone journal grab <day>\n");
+            output.push('\n');
+            output.push_str(&next_hint(locale, "solstone journal grab <day>"));
+            output.push('\n');
         }
         "1" => {
-            output.push_str(&print_table(
+            output.push_str(&print_table_in(
+                locale,
                 &["stream", "segments", "screens", "frames_analyzed"],
-                array(data, "streams")?,
+                array(locale, data, "streams")?,
+                |_, _, row, column| cell(row, column),
             ));
-            output.push_str("\nNext: solstone journal grab <day> <stream>\n");
+            output.push('\n');
+            output.push_str(&next_hint(locale, "solstone journal grab <day> <stream>"));
+            output.push('\n');
         }
         "2" => {
-            output.push_str(&print_table(
+            output.push_str(&print_table_in(
+                locale,
                 &["segment", "start", "end", "screens", "frames_analyzed"],
-                array(data, "segments")?,
+                array(locale, data, "segments")?,
+                |_, _, row, column| cell(row, column),
             ));
-            output.push_str("\nNext: solstone journal grab <day> <stream> <segment>\n");
+            output.push('\n');
+            output.push_str(&next_hint(
+                locale,
+                "solstone journal grab <day> <stream> <segment>",
+            ));
+            output.push('\n');
         }
         "3" => {
-            output.push_str(&print_table(
+            output.push_str(&print_table_in(
+                locale,
                 &[
                     "screen",
                     "position",
@@ -113,31 +284,75 @@ pub(crate) fn render(payload: &Value) -> Result<String, GrabFailure> {
                     "frames_analyzed",
                     "status",
                 ],
-                array(data, "screens")?,
+                array(locale, data, "screens")?,
+                |row_idx, _, row, column| {
+                    if column == "status"
+                        && let Some(status) = hints.screen_statuses.get(row_idx)
+                    {
+                        status.render_in(locale)
+                    } else {
+                        cell(row, column)
+                    }
+                },
             ));
-            output.push_str("\nNext: solstone journal grab <day> <stream> <segment> <screen>\n");
+            output.push('\n');
+            output.push_str(&next_hint(
+                locale,
+                "solstone journal grab <day> <stream> <segment> <screen>",
+            ));
+            output.push('\n');
         }
         "4" => {
             let summary = data
                 .get("summary")
                 .and_then(Value::as_object)
-                .ok_or_else(|| GrabFailure::runtime("invalid level 4 payload"))?;
+                .ok_or_else(|| {
+                    GrabFailure::runtime(solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.grab.error.invalid.level4",
+                        &[],
+                    ))
+                })?;
             if summary.get("legacy_schema").and_then(Value::as_bool) == Some(true) {
-                output.push_str("0 frames analyzed: file uses pre-frame_id schema\n");
+                output.push_str(&solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.grab.level4.legacy",
+                    &[],
+                ));
+                output.push('\n');
             } else if summary.get("frames_analyzed").and_then(Value::as_i64) == Some(0)
-                && array(data, "frames")?.is_empty()
+                && array(locale, data, "frames")?.is_empty()
             {
-                output.push_str("No qualified frames in this screen's analysis.\n");
+                output.push_str(&solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.grab.level4.empty",
+                    &[],
+                ));
+                output.push('\n');
             } else {
-                output.push_str(&print_table(
+                output.push_str(&print_table_in(
+                    locale,
                     &["frame_id", "timestamp", "abs_time", "primary", "notes"],
-                    array(data, "frames")?,
+                    array(locale, data, "frames")?,
+                    |row_idx, _, row, column| {
+                        if column == "notes"
+                            && let Some(Some(text)) = hints.frame_error_texts.get(row_idx)
+                        {
+                            format_frame_note_in(locale, text)
+                        } else {
+                            cell(row, column)
+                        }
+                    },
                 ));
                 output.push('\n');
                 if summary.get("video_present").and_then(Value::as_bool) == Some(true) {
-                    output.push_str(LEVEL_4_FOOTER);
+                    output.push_str(&level_4_footer(locale));
                 } else {
-                    output.push_str(&missing_video_footer(summary));
+                    output.push_str(&missing_video_footer_in(
+                        locale,
+                        summary,
+                        hints.missing_video_cause,
+                    ));
                 }
                 output.push('\n');
             }
@@ -146,46 +361,108 @@ pub(crate) fn render(payload: &Value) -> Result<String, GrabFailure> {
             let scope = payload
                 .get("scope")
                 .and_then(Value::as_object)
-                .ok_or_else(|| GrabFailure::runtime("invalid level 5a payload"))?;
+                .ok_or_else(|| {
+                    GrabFailure::runtime(solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.grab.error.invalid.level5a",
+                        &[],
+                    ))
+                })?;
             let source = data
                 .get("source")
                 .and_then(Value::as_object)
-                .ok_or_else(|| GrabFailure::runtime("invalid level 5a payload"))?;
+                .ok_or_else(|| {
+                    GrabFailure::runtime(solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.grab.error.invalid.level5a",
+                        &[],
+                    ))
+                })?;
             let computed = data
                 .get("computed")
                 .and_then(Value::as_object)
-                .ok_or_else(|| GrabFailure::runtime("invalid level 5a payload"))?;
-            for (label, value) in [
-                ("Screen", scope.get("screen")),
-                ("JSONL", source.get("jsonl")),
-                ("Video", source.get("video")),
-                ("Frame", scope.get("frame_id")),
-                ("Time", computed.get("abs_time")),
+                .ok_or_else(|| {
+                    GrabFailure::runtime(solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.grab.error.invalid.level5a",
+                        &[],
+                    ))
+                })?;
+            for (id, value) in [
+                ("journal.cli.grab.level5a.screen", scope.get("screen")),
+                ("journal.cli.grab.level5a.jsonl", source.get("jsonl")),
+                ("journal.cli.grab.level5a.video", source.get("video")),
+                ("journal.cli.grab.level5a.frame", scope.get("frame_id")),
+                ("journal.cli.grab.level5a.time", computed.get("abs_time")),
             ] {
-                output.push_str(&format!("{label}: {}\n", display(value)));
+                let formatted = display(value);
+                output.push_str(&solstone_core_cli_copy::render_for(
+                    locale,
+                    id,
+                    &[("value", solstone_core_cli_copy::Value::String(&formatted))],
+                ));
+                output.push('\n');
             }
-            if let Some(notes) = computed
-                .get("notes")
-                .and_then(Value::as_str)
-                .filter(|value| !value.is_empty())
-            {
-                output.push_str(&format!("Notes: {notes}\n"));
+            let rendered_notes = if let Some(text) = &hints.single_frame_error_text {
+                Some(format_frame_note_in(locale, text))
+            } else {
+                computed
+                    .get("notes")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned)
+            };
+            if let Some(notes) = rendered_notes {
+                output.push_str(&solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.grab.level5a.notes",
+                    &[("value", solstone_core_cli_copy::Value::String(&notes))],
+                ));
+                output.push('\n');
             }
             output.push('\n');
             output.push_str(
                 &serde_json::to_string_pretty(data.get("frame").unwrap())
                     .expect("serializable payload"),
             );
-            output.push_str("\n\nSave: solstone journal grab <day> <stream> <segment> <screen> <id> --out PATH\nBatch: solstone journal grab <day> <stream> <segment> <screen> <id1>,<id2>,... --out PATH\n");
+            output.push_str("\n\n");
+            output.push_str(&solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.grab.level5a.footer",
+                &[
+                    (
+                        "save_command",
+                        solstone_core_cli_copy::Value::String(
+                            "solstone journal grab <day> <stream> <segment> <screen> <id> --out PATH",
+                        ),
+                    ),
+                    (
+                        "batch_command",
+                        solstone_core_cli_copy::Value::String(
+                            "solstone journal grab <day> <stream> <segment> <screen> <id1>,<id2>,... --out PATH",
+                        ),
+                    ),
+                    ("line_break", solstone_core_cli_copy::Value::String("\n")),
+                ],
+            ));
+            output.push('\n');
         }
         "5b" | "5c" => {
-            for item in array(data, "saved")? {
-                output.push_str(&format!("saved {}\n", display(item.get("path"))));
+            for item in array(locale, data, "saved")? {
+                let path = display(item.get("path"));
+                output.push_str(&solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.grab.saved",
+                    &[("path", solstone_core_cli_copy::Value::String(&path))],
+                ));
+                output.push('\n');
             }
         }
         _ => {
-            return Err(GrabFailure::runtime(format!(
-                "unsupported output level: {level}"
+            return Err(GrabFailure::runtime(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.grab.error.unsupported.level.named",
+                &[("level", solstone_core_cli_copy::Value::String(level))],
             )));
         }
     }
@@ -222,12 +499,18 @@ fn display(value: Option<&Value>) -> String {
         })
         .unwrap_or_default()
 }
-fn array<'a>(value: &'a Value, key: &str) -> Result<&'a [Value], GrabFailure> {
+fn array<'a>(locale: &str, value: &'a Value, key: &str) -> Result<&'a [Value], GrabFailure> {
     value
         .get(key)
         .and_then(Value::as_array)
         .map(Vec::as_slice)
-        .ok_or_else(|| GrabFailure::runtime("invalid render payload"))
+        .ok_or_else(|| {
+            GrabFailure::runtime(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.grab.error.invalid.render.payload",
+                &[],
+            ))
+        })
 }
 
 #[cfg(test)]

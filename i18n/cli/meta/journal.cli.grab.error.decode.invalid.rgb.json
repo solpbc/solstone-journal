@@ -1,0 +1,16 @@
+{
+  "description": "Grab error when decoded RGB frame is invalid.",
+  "context": "Grab error when decoded RGB frame is invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "7a63893fadc66b6be2bd22b037431a8eb9641584b92e1e1efef380f6ead7f4aa",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

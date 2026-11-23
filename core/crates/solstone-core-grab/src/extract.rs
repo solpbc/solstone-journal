@@ -25,7 +25,16 @@ pub(crate) struct RgbFrame {
     pub pixels: Vec<u8>,
 }
 
+#[cfg(feature = "test-hooks")]
 pub(crate) fn decode_frames(
+    path: &Path,
+    ids: &[i64],
+) -> Result<Vec<Option<RgbFrame>>, GrabFailure> {
+    decode_frames_in(solstone_core_cli_copy::ENGLISH, path, ids)
+}
+
+pub(crate) fn decode_frames_in(
+    locale: &str,
     path: &Path,
     ids: &[i64],
 ) -> Result<Vec<Option<RgbFrame>>, GrabFailure> {
@@ -33,20 +42,24 @@ pub(crate) fn decode_frames(
         return Ok(Vec::new());
     }
     ffmpeg::init().map_err(|error| {
-        GrabFailure::runtime(format!("failed to initialize video decoder: {error}"))
+        GrabFailure::runtime(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.grab.error.decoder.init",
+            [("error", &error)],
+        ))
     })?;
-    let input = open_input(path).map_err(decode_error)?;
+    let input = open_input(path).map_err(|error| decode_error(locale, error))?;
     let mut scaler = None;
     let mut results = vec![None; ids.len()];
     let mut decoded_index = 0_i64;
-    visit_frames(input, |frame, _| {
+    visit_frames(locale, input, |frame, _| {
         decoded_index += 1;
         for (position, _) in ids
             .iter()
             .enumerate()
             .filter(|(_, id)| **id == decoded_index)
         {
-            results[position] = Some(to_rgb(&frame, &mut scaler)?);
+            results[position] = Some(to_rgb(locale, &frame, &mut scaler)?);
         }
         Ok(results.iter().all(Option::is_some))
     })?;
@@ -60,18 +73,26 @@ pub fn frame_at(
     file: std::fs::File,
     offset_ms: u32,
 ) -> Result<Option<(u64, image::RgbImage)>, GrabFailure> {
-    ffmpeg::init().map_err(decode_error)?;
-    let io = ffmpeg::format::context::StreamIo::from_read_seek(file).map_err(decode_error)?;
+    let locale = solstone_core_cli_copy::ENGLISH;
+    ffmpeg::init().map_err(|error| decode_error(locale, error))?;
+    let io = ffmpeg::format::context::StreamIo::from_read_seek(file)
+        .map_err(|error| decode_error(locale, error))?;
     let mut options = ffmpeg::Dictionary::new();
     options.set("format_whitelist", INPUT_FORMATS);
     options.set("protocol_whitelist", "");
-    let mut input =
-        ffmpeg::format::input_from_stream(io, None, Some(options)).map_err(decode_error)?;
+    let mut input = ffmpeg::format::input_from_stream(io, None, Some(options))
+        .map_err(|error| decode_error(locale, error))?;
     let wanted_us = i64::from(offset_ms) * 1000;
     let video = input
         .streams()
         .best(ffmpeg::media::Type::Video)
-        .ok_or_else(|| GrabFailure::runtime("failed to decode video: no video stream"))?;
+        .ok_or_else(|| {
+            GrabFailure::runtime(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.grab.error.decode.no.video",
+                &[],
+            ))
+        })?;
     let duration_us = if video.duration() > 0 {
         use ffmpeg::Rescale;
         let start_pts = video.start_time().max(0);
@@ -91,7 +112,7 @@ pub fn frame_at(
         let _ = input.seek(wanted_us, ..wanted_us);
     }
     let mut selected = None;
-    visit_frames(input, |frame, base| {
+    visit_frames(locale, input, |frame, base| {
         let seconds = frame.pts().expect("visit_frames checks pts") as f64 * f64::from(base);
         if seconds * 1000.0 > f64::from(offset_ms) + 0.000_001 {
             return Ok(true);
@@ -102,38 +123,52 @@ pub fn frame_at(
     let Some((actual, frame)) = selected else {
         return Ok(None);
     };
-    let rgb = to_rgb(&frame, &mut None)?;
+    let rgb = to_rgb(locale, &frame, &mut None)?;
     let image = image::RgbImage::from_raw(rgb.width, rgb.height, rgb.pixels)
         .ok_or_else(|| GrabFailure::runtime("invalid RGB frame"))?;
     Ok(Some((actual, image)))
 }
 
 fn visit_frames(
+    locale: &str,
     mut input: ffmpeg::format::context::Input,
     mut visit: impl FnMut(ffmpeg::frame::Video, ffmpeg::Rational) -> Result<bool, GrabFailure>,
 ) -> Result<(), GrabFailure> {
     let stream = input
         .streams()
         .best(ffmpeg::media::Type::Video)
-        .ok_or_else(|| GrabFailure::runtime("failed to decode video: no video stream"))?;
+        .ok_or_else(|| {
+            GrabFailure::runtime(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.grab.error.decode.no.video",
+                &[],
+            ))
+        })?;
     let index = stream.index();
     let base = stream.time_base();
     let context = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
-        .map_err(decode_error)?;
-    let mut decoder = context.decoder().video().map_err(decode_error)?;
+        .map_err(|error| decode_error(locale, error))?;
+    let mut decoder = context
+        .decoder()
+        .video()
+        .map_err(|error| decode_error(locale, error))?;
     loop {
         let mut packet = ffmpeg::Packet::empty();
         let eof = match packet.read(&mut input) {
             Ok(()) if packet.stream() != index => continue,
             Ok(()) => {
-                decoder.send_packet(&packet).map_err(decode_error)?;
+                decoder
+                    .send_packet(&packet)
+                    .map_err(|error| decode_error(locale, error))?;
                 false
             }
             Err(ffmpeg::Error::Eof) => {
-                decoder.send_eof().map_err(decode_error)?;
+                decoder
+                    .send_eof()
+                    .map_err(|error| decode_error(locale, error))?;
                 true
             }
-            Err(error) => return Err(decode_error(error)),
+            Err(error) => return Err(decode_error(locale, error)),
         };
         loop {
             let mut frame = ffmpeg::frame::Video::empty();
@@ -145,7 +180,7 @@ fn visit_frames(
                 }
                 Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::error::EAGAIN => break,
                 Err(ffmpeg::Error::Eof) => return Ok(()),
-                Err(error) => return Err(decode_error(error)),
+                Err(error) => return Err(decode_error(locale, error)),
             }
         }
         if eof {
@@ -155,14 +190,21 @@ fn visit_frames(
 }
 
 fn to_rgb(
+    locale: &str,
     frame: &ffmpeg::frame::Video,
     scaler: &mut Option<ffmpeg::software::scaling::context::Context>,
 ) -> Result<RgbFrame, GrabFailure> {
     let mut rgb = ffmpeg::frame::Video::empty();
     rgb_scaler_for(scaler, frame)
         .and_then(|s| s.run(frame, &mut rgb))
-        .map_err(decode_error)?;
-    copy_rgb(&rgb).ok_or_else(|| GrabFailure::runtime("failed to decode video: invalid RGB frame"))
+        .map_err(|error| decode_error(locale, error))?;
+    copy_rgb(&rgb).ok_or_else(|| {
+        GrabFailure::runtime(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.grab.error.decode.invalid.rgb",
+            &[],
+        ))
+    })
 }
 
 fn rgb_scaler_for<'a>(
@@ -212,6 +254,10 @@ fn copy_rgb(frame: &ffmpeg::frame::Video) -> Option<RgbFrame> {
     })
 }
 
-fn decode_error(error: ffmpeg::Error) -> GrabFailure {
-    GrabFailure::runtime(format!("failed to decode video: {error}"))
+fn decode_error(locale: &str, error: ffmpeg::Error) -> GrabFailure {
+    GrabFailure::runtime(solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.grab.error.decode.video",
+        [("error", &error)],
+    ))
 }

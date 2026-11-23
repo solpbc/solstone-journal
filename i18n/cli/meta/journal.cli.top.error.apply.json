@@ -1,0 +1,21 @@
+{
+  "description": "Top terminal error applying raw mode.",
+  "context": "Top terminal error applying raw mode.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "source_revision": "759ee921f7865eae998329ebbc640c81c5ac6763a35fbcadd11cf9aaf2a814f5",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

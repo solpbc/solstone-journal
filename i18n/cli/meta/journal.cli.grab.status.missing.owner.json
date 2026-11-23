@@ -1,0 +1,16 @@
+{
+  "description": "Grab screen status when analyzed and original video deleted by owner.",
+  "context": "Grab screen status when analyzed and original video deleted by owner.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "7ab1cfe5610b37be3eddfb655017a60cd6d07db41c2a1b4a10782eb6f26fc5ea",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

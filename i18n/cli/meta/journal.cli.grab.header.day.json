@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for day.",
+  "context": "Grab table column header for day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "4e8b6fb45ffc09724eb4fd8db91d111e778f7145e9844145b7b31030a14bed05",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

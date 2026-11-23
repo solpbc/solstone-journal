@@ -1,0 +1,30 @@
+{
+  "description": "Sense batch reprocess summary for voice-only outputs kept without deleting.",
+  "context": "Sense batch reprocess summary for voice-only outputs kept without deleting.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "274e7bdaf428bd6b559698e80cc02d7dad10f4a737e4a430969925c74e67949b",
+  "max_length": 606,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Sense batch reprocess line naming each deleted file.",
+  "context": "Sense batch reprocess line naming each deleted file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "source_revision": "660ef2d2a30432687fd11d8d7f900cd40ec426eb29fed421088df075d8983510",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

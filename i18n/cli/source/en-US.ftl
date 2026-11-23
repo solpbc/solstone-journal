@@ -12119,3 +12119,372 @@ journal.cli.speakers.backfill.error.not.found = backfill operation not found: { 
 journal.cli.speakers.backfill.error.lock = backfill execution lock failed: { $error }
 
 journal.cli.speakers.backfill.error.scan = backfill scan failed: { $error }
+
+journal.cli.grab.status.captured = captured but not analyzed
+
+journal.cli.grab.status.analyzed = analyzed
+
+journal.cli.grab.status.missing.trash = analyzed; the original video is in the trash
+
+journal.cli.grab.status.missing.policy = analyzed; you deleted the original video after your retention settings marked it
+
+journal.cli.grab.status.missing.offload = analyzed; you deleted the original video after your backup copied it
+
+journal.cli.grab.status.missing.owner = analyzed; you deleted the original video
+
+journal.cli.grab.status.missing.unknown = analyzed; the original video is no longer in your journal
+
+journal.cli.grab.missing.reason.trash = the original video is in the trash, where you can recover it in settings
+
+journal.cli.grab.missing.reason.policy = you deleted the original video after your retention settings marked it
+
+journal.cli.grab.missing.reason.offload = you deleted the original video after your backup copied it
+
+journal.cli.grab.missing.reason.owner = you deleted the original video
+
+journal.cli.grab.missing.reason.unknown = the original video is no longer in your journal
+
+journal.cli.grab.header.day = day
+
+journal.cli.grab.header.streams = streams
+
+journal.cli.grab.header.segments = segments
+
+journal.cli.grab.header.screens = screens
+
+journal.cli.grab.header.frames.analyzed = frames_analyzed
+
+journal.cli.grab.header.stream = stream
+
+journal.cli.grab.header.segment = segment
+
+journal.cli.grab.header.start = start
+
+journal.cli.grab.header.end = end
+
+journal.cli.grab.header.screen = screen
+
+journal.cli.grab.header.position = position
+
+journal.cli.grab.header.connector = connector
+
+journal.cli.grab.header.status = status
+
+journal.cli.grab.header.frame.id = frame_id
+
+journal.cli.grab.header.timestamp = timestamp
+
+journal.cli.grab.header.abs.time = abs_time
+
+journal.cli.grab.header.primary = primary
+
+journal.cli.grab.header.notes = notes
+
+journal.cli.grab.next = Next: { $command }
+
+journal.cli.grab.level4.legacy = 0 frames analyzed: file uses pre-frame_id schema
+
+journal.cli.grab.level4.empty = No qualified frames in this screen's analysis.
+
+journal.cli.grab.level4.footer = Inspect:    { $inspect_command }{ $line_break }Save one:   { $save_one_command }{ $line_break }Save many:  { $save_many_command }{ $line_break }{ $line_break }How extraction works:{ $line_break }  Decoding walks the video linearly from frame 0 — seeking is unsafe at the{ $line_break }  1 Hz capture rate. Cost is dominated by the highest requested frame_id, not{ $line_break }  the count. Asking for ids 7,12,23 costs the same as asking for 23 alone.{ $line_break }  Prefer batch mode when you want more than one frame from the same screen.
+
+journal.cli.grab.level4.missing.video = Save mode unavailable: { $reason }.{ $line_break }Frame metadata above is still readable.{ $line_break }{ $line_break }Inspect: { $command }
+
+journal.cli.grab.level5a.screen = Screen: { $value }
+
+journal.cli.grab.level5a.jsonl = JSONL: { $value }
+
+journal.cli.grab.level5a.video = Video: { $value }
+
+journal.cli.grab.level5a.frame = Frame: { $value }
+
+journal.cli.grab.level5a.time = Time: { $value }
+
+journal.cli.grab.level5a.notes = Notes: { $value }
+
+journal.cli.grab.level5a.footer = Save: { $save_command }{ $line_break }Batch: { $batch_command }
+
+journal.cli.grab.saved = saved { $path }
+
+journal.cli.grab.frame.note.error = error: { $text }
+
+journal.cli.grab.error.too.many.tokens = grab accepts at most 5 positional tokens: day stream segment screen frame-id
+
+journal.cli.grab.error.force.requires.out = { $force_flag } requires { $out_flag }
+
+journal.cli.grab.error.out.requires.five.tokens = { $out_flag } requires day stream segment screen and frame-id
+
+journal.cli.grab.error.multiple.ids.require.out = multiple frame ids require { $out_flag }
+
+journal.cli.grab.error.captured.not.analyzed = screen { $screen } in { $segment } is captured but not analyzed
+
+journal.cli.grab.error.frame.not.found = frame id { $frame_id } not found in { $screen } for { $segment }
+
+journal.cli.grab.error.video.missing.with.reason = { $reason }; metadata-only access remains via: { $command }
+
+journal.cli.grab.error.video.missing = raw video not found for screen { $screen } in { $segment }
+
+journal.cli.grab.error.decode.failed.ids = failed to decode frame ids: { $ids }
+
+journal.cli.grab.error.legacy.schema = screen file uses pre-frame_id schema; frame selection is unavailable
+
+journal.cli.grab.error.invalid.frame.id = invalid frame id
+
+journal.cli.grab.error.day.not.found = day { $day } not found
+
+journal.cli.grab.alternatives.days = Available days (closest 5):
+
+journal.cli.grab.error.stream.not.found = stream { $stream } not found in { $day }
+
+journal.cli.grab.alternatives.streams = Available streams in { $day }:
+
+journal.cli.grab.error.segment.not.found = segment { $segment } not found in { $day }/{ $stream }
+
+journal.cli.grab.alternatives.segments = Available segments in { $day }/{ $stream }:
+
+journal.cli.grab.error.screen.not.found = screen { $screen } not found in { $day }/{ $stream }/{ $segment }
+
+journal.cli.grab.alternatives.screens = Available screens in { $day }/{ $stream }/{ $segment }:
+
+journal.cli.grab.error.frame.id.positive = frame ids must be positive integers: got '{ $token }'
+
+journal.cli.grab.error.frame.id.unique = frame ids must be unique: { $frame_id }
+
+journal.cli.grab.error.out.extension = { $out_flag } must end in { $extensions }
+
+journal.cli.grab.error.out.filename = output path has no valid filename
+
+journal.cli.grab.error.out.exists = output path exists (use { $force_flag }): { $paths }
+
+journal.cli.grab.error.save.image = failed to save image: { $error }
+
+journal.cli.grab.error.io = failed to access { $path }: { $error }
+
+journal.cli.grab.error.decoder.init = failed to initialize video decoder: { $error }
+
+journal.cli.grab.error.decode.no.video = failed to decode video: no video stream
+
+journal.cli.grab.error.decode.invalid.rgb = failed to decode video: invalid RGB frame
+
+journal.cli.grab.error.decode.video = failed to decode video: { $error }
+
+journal.cli.grab.error.invalid.segment.key = segment { $segment } is not a valid { $format } key
+
+journal.cli.grab.error.timestamp.finite = timestamp must be finite
+
+journal.cli.grab.error.timestamp.range = timestamp is out of range
+
+journal.cli.grab.error.timestamp.invalid = invalid timestamp
+
+journal.cli.grab.error.unsupported.level = unsupported output level
+
+journal.cli.grab.error.unsupported.level.named = unsupported output level: { $level }
+
+journal.cli.grab.error.invalid.level4 = invalid level 4 payload
+
+journal.cli.grab.error.invalid.level5a = invalid level 5a payload
+
+journal.cli.grab.error.invalid.render.payload = invalid render payload
+
+journal.cli.top.title = solstone activity manager
+
+journal.cli.top.malformed.events = malformed events: { $count } ({ $reason })
+
+journal.cli.top.unknown = unknown
+
+journal.cli.top.header.service = Service
+
+journal.cli.top.header.task = Task
+
+journal.cli.top.header.pid = PID
+
+journal.cli.top.header.uptime = Uptime
+
+journal.cli.top.header.runtime = Runtime
+
+journal.cli.top.header.mb = MB
+
+journal.cli.top.header.percent = %
+
+journal.cli.top.header.last.log = Last Log
+
+journal.cli.top.waiting.services = (waiting for services)
+
+journal.cli.top.queued = queued: { $commands }
+
+journal.cli.top.section.thinking.health = Thinking Health
+
+journal.cli.top.thinking.checking = (checking)
+
+journal.cli.top.thinking.unavailable = (status unavailable)
+
+journal.cli.top.footer.empty = q: Quit
+
+journal.cli.top.footer.single = r: Restart  q: Quit
+
+journal.cli.top.footer.multi = ↑/↓: Navigate  r: Restart  q: Quit
+
+journal.cli.top.task.status.gone = gone
+
+journal.cli.top.task.status.ok = ok
+
+journal.cli.top.task.status.failed = failed
+
+journal.cli.top.section.observe = Observe
+
+journal.cli.top.waiting.status = (waiting for status)
+
+journal.cli.top.observe.live.badge = [LIVE]
+
+journal.cli.top.observe.screencast = screencast { $elapsed }
+
+journal.cli.top.observe.tmux.badge = [TMUX]
+
+journal.cli.top.observe.tmux.captures = { $quantity ->
+    [one] { $count } capture
+    *[other] { $count } captures
+    }
+
+journal.cli.top.observe.idle.locked = [IDLE] locked
+
+journal.cli.top.observe.idle = [IDLE]
+
+journal.cli.top.observe.voice = voice { $hits }
+
+journal.cli.top.observe.describe = describe
+
+journal.cli.top.observe.transcribe = transcribe
+
+journal.cli.top.observe.recent = Recent: { $segments }
+
+journal.cli.top.section.think = Think
+
+journal.cli.top.think.segments = seg { $completed }/{ $total }
+
+journal.cli.top.think.agents = { $total_quantity ->
+    [one] { $completed }/{ $total } agent
+    *[other] { $completed }/{ $total } agents
+    }
+
+journal.cli.top.think.last.prefix = Last: { $success } ok
+
+journal.cli.top.think.last.failed = { $failed } failed
+
+journal.cli.top.waiting.think = (waiting for think)
+
+journal.cli.top.crashed.heading.attention = Services needing attention:
+
+journal.cli.top.crashed.heading.crashed = Crashed:
+
+journal.cli.top.crashed.retrying = { $name } (Retrying; attempts: { $attempts })
+
+journal.cli.top.crashed.crashed = { $name } (Crashed; attempts: { $attempts })
+
+journal.cli.top.crashed.attempts = { $name } (attempts: { $attempts })
+
+journal.cli.top.reconnecting = (reconnecting)
+
+journal.cli.top.error.stdin.not.tty = stdin is not a terminal
+
+journal.cli.top.error.stdout.not.tty = stdout is not a terminal
+
+journal.cli.top.error.apply = terminal apply failed: { $detail }
+
+journal.cli.top.error.width = terminal width failed: { $detail }
+
+journal.cli.top.error.screen = terminal screen entry failed: { $detail }
+
+journal.cli.top.error.terminal = terminal failure: { $detail }
+
+journal.cli.top.error.transport = transport failure: { $detail }
+
+journal.cli.top.error.journal.config = journal config: { $detail }
+
+journal.cli.top.error.width.unavailable = terminal width unavailable
+
+journal.cli.schedule.empty = No schedules configured.{ $line_break }{ $line_break }Add schedules to: { $path }
+
+journal.cli.schedule.header.name = NAME
+
+journal.cli.schedule.header.every = EVERY
+
+journal.cli.schedule.header.last.run = LAST RUN
+
+journal.cli.schedule.header.next.due = NEXT DUE
+
+journal.cli.schedule.header.cmd = CMD
+
+journal.cli.schedule.tag.disabled = [disabled]
+
+journal.cli.schedule.config = Config: { $path }
+
+journal.cli.schedule.error.entry.invalid = schedule '{ $name }' is not a valid entry
+
+journal.cli.schedule.error.cmd.invalid = schedule '{ $name }' has invalid cmd
+
+journal.cli.schedule.error.config.unreadable = schedules config at { $path } is unreadable
+
+journal.cli.schedule.error.config.not.object = schedules config at { $path } must be a JSON object
+
+journal.cli.schedule.error.config.malformed = schedules config at { $path } is malformed
+
+journal.cli.schedule.error.state.unreadable = scheduler state at { $path } is unreadable
+
+journal.cli.schedule.error.state.not.object = scheduler state at { $path } must be a JSON object
+
+journal.cli.schedule.error.state.malformed = scheduler state at { $path } is malformed
+
+journal.cli.schedule.cell.invalid = invalid
+
+journal.cli.schedule.cell.disabled = disabled
+
+journal.cli.schedule.cell.never = never
+
+journal.cli.schedule.cell.now = now
+
+journal.cli.schedule.cell.midnight = midnight
+
+journal.cli.schedule.weekly.monday = Monday { $time }
+
+journal.cli.schedule.weekly.tuesday = Tuesday { $time }
+
+journal.cli.schedule.weekly.wednesday = Wednesday { $time }
+
+journal.cli.schedule.weekly.thursday = Thursday { $time }
+
+journal.cli.schedule.weekly.friday = Friday { $time }
+
+journal.cli.schedule.weekly.saturday = Saturday { $time }
+
+journal.cli.schedule.weekly.sunday = Sunday { $time }
+
+journal.cli.think.sense.reprocess.kept.voice.only = { $quantity ->
+    [one] Kept { $count } voice-only output file: a voice-only result is not reprocessed
+    *[other] Kept { $count } voice-only output files: a voice-only result is not reprocessed
+    }
+
+journal.cli.think.sense.reprocess.kept.before.voice.only = { $quantity ->
+    [one] Kept { $count } transcript made before "leave out other voices" was on: turn it off to reprocess that transcript
+    *[other] Kept { $count } transcripts made before "leave out other voices" was on: turn it off to reprocess them
+    }
+
+journal.cli.think.sense.reprocess.dry.empty = No files to delete
+
+journal.cli.think.sense.reprocess.dry.would.delete = { $quantity ->
+    [one] Would delete { $count } output file:
+    *[other] Would delete { $count } output files:
+    }
+
+journal.cli.think.sense.reprocess.deleted.count = { $quantity ->
+    [one] Deleted { $count } output file
+    *[other] Deleted { $count } output files
+    }
+
+journal.cli.think.sense.reprocess.deleted.file = Deleted: { $path }
+
+journal.cli.think.sense.dry.empty = No unprocessed files found
+
+journal.cli.think.sense.dry.would.process = { $quantity ->
+    [one] Would process { $count } file ({ $breakdown }):
+    *[other] Would process { $count } files ({ $breakdown }):
+    }

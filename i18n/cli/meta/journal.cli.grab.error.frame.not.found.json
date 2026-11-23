@@ -1,0 +1,29 @@
+{
+  "description": "Grab error when requested frame ID is not found.",
+  "context": "Grab error when requested frame ID is not found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "frame_id",
+      "type": "string"
+    },
+    {
+      "name": "screen",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    }
+  ],
+  "source_revision": "cb625b86301e4308c62c2be4757f89d755e00f0088d58aa4da2a68325c8d4a28",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

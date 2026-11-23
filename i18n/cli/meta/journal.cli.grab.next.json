@@ -1,0 +1,21 @@
+{
+  "description": "Grab next-command hint line.",
+  "context": "Grab next-command hint line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "source_revision": "041e247784b26080041143b2c29a4c245febafc38ad611e9584ea393aca4b8d3",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

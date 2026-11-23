@@ -1,0 +1,25 @@
+{
+  "description": "Top Think segment progress count.",
+  "context": "Top Think segment progress count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "completed",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "source_revision": "d0029715722e9378f3cde1aa67591ee2b708d1e029aad525ee701de321e88cd5",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

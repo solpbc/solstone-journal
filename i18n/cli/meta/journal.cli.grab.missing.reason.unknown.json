@@ -1,0 +1,16 @@
+{
+  "description": "Grab missing-video reason when video is absent without deletion record.",
+  "context": "Grab missing-video reason when video is absent without deletion record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "32b3ec94dad6c60310ea8294b763747368b42c38f9c7051b6d1d9a63e45e709f",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

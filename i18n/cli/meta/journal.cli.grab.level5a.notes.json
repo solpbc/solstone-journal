@@ -1,0 +1,21 @@
+{
+  "description": "Grab frame detail notes field.",
+  "context": "Grab frame detail notes field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "source_revision": "7bb6de7bbb438f8f9d0380e0916286738a3e3485109729fb9f73463f2ba8933e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

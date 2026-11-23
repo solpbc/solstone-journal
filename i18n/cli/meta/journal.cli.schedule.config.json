@@ -1,0 +1,21 @@
+{
+  "description": "Schedule report footer showing config file path.",
+  "context": "Schedule report footer showing config file path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "source_revision": "7700aa61eb1f349e3463ca24ea309237b217ad9e97c468f287438465e586ac73",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

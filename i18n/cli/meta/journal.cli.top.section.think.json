@@ -1,0 +1,16 @@
+{
+  "description": "Top Think section heading.",
+  "context": "Top Think section heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "2004a6ff482514354cd8e54eb6377953f2660c06d18eff5594da03aad6742a48",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

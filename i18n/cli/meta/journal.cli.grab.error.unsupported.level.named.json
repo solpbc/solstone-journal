@@ -1,0 +1,21 @@
+{
+  "description": "Grab render error for unknown payload level.",
+  "context": "Grab render error for unknown payload level.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "level",
+      "type": "string"
+    }
+  ],
+  "source_revision": "c25070940b45cf13d898a063c4e50183652a1a0857d824e689dbaa7ae1fc86c9",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

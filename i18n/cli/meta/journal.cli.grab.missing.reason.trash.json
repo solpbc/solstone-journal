@@ -1,0 +1,16 @@
+{
+  "description": "Grab missing-video reason when original video is in trash.",
+  "context": "Grab missing-video reason when original video is in trash.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "cb0417a80edc69259a919c026c783e289cfab5b1722e2bc0293260cc3e6b0202",
+  "max_length": 216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

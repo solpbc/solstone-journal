@@ -1,0 +1,21 @@
+{
+  "description": "Schedule report diagnostic when state JSON is not an object.",
+  "context": "Schedule report diagnostic when state JSON is not an object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "source_revision": "672355be6605ccc03fcd3a7b0aabcef959abe8cd940819649df103cc4101ab02",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

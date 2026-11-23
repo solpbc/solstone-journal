@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for screen connector.",
+  "context": "Grab table column header for screen connector.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "090e3591587a46e90da8d1ff2cbb5199b9ec400f8dcc44a8069422d24e112b7e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Grab usage error when --force is passed without --out.",
+  "context": "Grab usage error when --force is passed without --out.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "force_flag",
+      "type": "string"
+    },
+    {
+      "name": "out_flag",
+      "type": "string"
+    }
+  ],
+  "source_revision": "002de6c7bff80c67e4369475c3b00afd21557fd9472a787b8523318f7d556cd3",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

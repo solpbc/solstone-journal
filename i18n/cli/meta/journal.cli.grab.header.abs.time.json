@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for absolute frame time.",
+  "context": "Grab table column header for absolute frame time.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "a4be765b07a986dcd9e8bc696e2c7d6e52aebc985b7168f0e094f15dec851a8e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

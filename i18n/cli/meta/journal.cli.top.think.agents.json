@@ -1,0 +1,34 @@
+{
+  "description": "Top Think completed/total agent count.",
+  "context": "Top Think completed/total agent count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "completed",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9aa6fccb3ed49b303e41df465cc9af0b92a3e1e02a33d50dab6dbbf4c7c48394",
+  "max_length": 342,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Top terminal error entering alternate screen.",
+  "context": "Top terminal error entering alternate screen.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "source_revision": "65f17de07f10ef654a65b228cb536a5ac737ebbb067a5afc4954cf83d5fc7fca",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

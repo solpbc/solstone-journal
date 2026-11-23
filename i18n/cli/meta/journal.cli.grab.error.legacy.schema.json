@@ -1,0 +1,16 @@
+{
+  "description": "Grab error when screen file uses legacy schema without frame IDs.",
+  "context": "Grab error when screen file uses legacy schema without frame IDs.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "74763a3f2904751776bb469c5cb58ada1997eaa8c674c58b91deeb3e7ad371c3",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

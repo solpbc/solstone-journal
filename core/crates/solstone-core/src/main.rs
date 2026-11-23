@@ -1261,16 +1261,18 @@ fn main() -> ExitCode {
             );
             ExitCode::SUCCESS
         }
-        Ok(Command::Top { verbose, debug }) => match solstone_core_top::run(verbose, debug) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!(
-                    "{}",
-                    host_display("journal.cli.host.top.failure", [("error", &(error))])
-                );
-                ExitCode::from(EXIT_UNAVAILABLE)
+        Ok(Command::Top { verbose, debug }) => {
+            match solstone_core_top::run_in(locale, verbose, debug) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        host_display("journal.cli.host.top.failure", [("error", &(error))])
+                    );
+                    ExitCode::from(EXIT_UNAVAILABLE)
+                }
             }
-        },
+        }
         Ok(Command::TopUsage) => {
             render_usage_error(locale, "journal.cli.host.top.usage", "solstone journal top")
         }
@@ -1631,7 +1633,8 @@ fn run_grab_request(options: GrabOptions) -> ExitCode {
         out: options.out.map(PathBuf::from),
         force: options.force,
     };
-    match solstone_core_grab::run(&journal.path, request, &mut diagnostics) {
+    let locale = host_locale();
+    match solstone_core_grab::run_in(locale, &journal.path, request, &mut diagnostics) {
         Ok(output) => {
             if json {
                 match serde_json::to_string_pretty(&output.payload) {
@@ -1647,7 +1650,7 @@ fn run_grab_request(options: GrabOptions) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("{error}");
+            eprintln!("{}", error.render_in(locale));
             match error.class() {
                 solstone_core_grab::GrabFailureClass::Usage => ExitCode::from(2),
                 solstone_core_grab::GrabFailureClass::Runtime => ExitCode::from(1),
@@ -2464,6 +2467,7 @@ fn run_convey(
 }
 
 fn run_schedule(_options: ScheduleOptions) -> ExitCode {
+    let locale = host_locale();
     let journal = match resolve_journal_config_path(None) {
         Ok(line) => line.path,
         Err(error) => {
@@ -2471,7 +2475,8 @@ fn run_schedule(_options: ScheduleOptions) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
-    let report = solstone_core_system::schedule::build_schedule_report(
+    let report = solstone_core_system::schedule::build_schedule_report_in(
+        locale,
         journal.join("config/schedules.json"),
         journal.join("health/scheduler.json"),
         solstone_core_system::schedule::ScheduleNow::in_zone(
@@ -2479,7 +2484,7 @@ fn run_schedule(_options: ScheduleOptions) -> ExitCode {
             solstone_core_journal_config::owner_zone(&journal),
         ),
     );
-    print!("{}", report.render());
+    print!("{}", report.render_in(locale));
     for diagnostic in report.diagnostics {
         eprintln!("{diagnostic}");
     }

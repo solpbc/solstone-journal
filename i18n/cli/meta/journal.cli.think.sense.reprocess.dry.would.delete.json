@@ -1,0 +1,30 @@
+{
+  "description": "Sense batch reprocess dry-run header listing files that would be deleted.",
+  "context": "Sense batch reprocess dry-run header listing files that would be deleted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1469106f73af88f7cf1200f4155b4daa6c0898f0ccc8b24560d42a557aff7f41",
+  "max_length": 354,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

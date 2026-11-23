@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for frame timestamp.",
+  "context": "Grab table column header for frame timestamp.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "7fa9e1529320f9d7ce23d912ce2b1d4a386eb99a37be802253ddb0ae85b4a650",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

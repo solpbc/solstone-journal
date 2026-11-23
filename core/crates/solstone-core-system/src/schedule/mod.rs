@@ -31,7 +31,9 @@ pub use config::{
 };
 pub use due::{daily_mark, hour_mark, is_due, weekly_mark};
 pub use engine::{CatchUpReport, CheckReport, ScheduleEngine};
-pub use report::{ScheduleReport, ScheduleReportRow, build_schedule_report};
+pub use report::{
+    ScheduleReport, ScheduleReportRow, build_schedule_report, build_schedule_report_in,
+};
 pub use status::ScheduleStatus;
 pub use submission::ScheduleSubmissionSink;
 

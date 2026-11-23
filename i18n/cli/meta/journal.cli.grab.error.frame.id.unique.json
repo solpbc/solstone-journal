@@ -1,0 +1,21 @@
+{
+  "description": "Grab error when duplicate frame IDs are supplied.",
+  "context": "Grab error when duplicate frame IDs are supplied.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "frame_id",
+      "type": "string"
+    }
+  ],
+  "source_revision": "59ff23143242a653b3d6beae2fae465c8bb89f5d945965e61de4be97164a26b3",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Top domain continuity reconnecting indicator.",
+  "context": "Top domain continuity reconnecting indicator.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "4ff162d85b9ec2d88bd980506e9e7b5827b0998bf669ce9f97bca54337d4097f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

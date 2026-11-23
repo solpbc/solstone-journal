@@ -1,0 +1,25 @@
+{
+  "description": "Grab error when output paths already exist without --force.",
+  "context": "Grab error when output paths already exist without --force.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "force_flag",
+      "type": "string"
+    },
+    {
+      "name": "paths",
+      "type": "string"
+    }
+  ],
+  "source_revision": "d3a53fd53303e50963e199186586aee0c0bf5d9470e1fac83d485fe56eac4003",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

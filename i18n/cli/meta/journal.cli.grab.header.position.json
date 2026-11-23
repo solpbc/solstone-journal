@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for screen position.",
+  "context": "Grab table column header for screen position.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "d4f7bb85c8d75803ba71f21675e1555f24bba907e67263ae87c308d4e4a8ee85",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

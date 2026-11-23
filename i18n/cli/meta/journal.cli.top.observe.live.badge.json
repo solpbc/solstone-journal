@@ -1,0 +1,16 @@
+{
+  "description": "Top Observe screencast live badge.",
+  "context": "Top Observe screencast live badge.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "5968d26f169ec48a49b5279cf1164318c5a324c0de97f7d2cffa988e0c994e7a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for end time.",
+  "context": "Grab table column header for end time.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "dd344d3f16fe3b57d24ded72d4d5f530e34773dfaa57bf5d3b175a23f4383861",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

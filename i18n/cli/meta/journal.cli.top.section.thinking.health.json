@@ -1,0 +1,16 @@
+{
+  "description": "Top Thinking Health section heading.",
+  "context": "Top Thinking Health section heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "c85d74c15d2b62f0cee91f12a0c6abcbcc1b39a46b00e19c9aa847eeed930494",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

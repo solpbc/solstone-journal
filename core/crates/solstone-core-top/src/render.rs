@@ -188,8 +188,20 @@ pub fn render_frame(
     width: usize,
     style: &dyn TopStyle,
 ) -> String {
+    render_frame_in(solstone_core_cli_copy::ENGLISH, state, frame, width, style)
+}
+
+/// Render a bounded frame from state in `locale`.
+#[must_use]
+pub fn render_frame_in(
+    locale: &str,
+    state: &TopState,
+    frame: FrameSample,
+    width: usize,
+    style: &dyn TopStyle,
+) -> String {
     let width = width.min(MAX_FRAME_WIDTH);
-    let output = build_frame_text(state, frame, width, style);
+    let output = build_frame_text(locale, state, frame, width, style);
     let rendered = transform_trusted_render(&output, width);
     if rendered.len() <= MAX_FRAME_BYTES {
         rendered
@@ -201,8 +213,19 @@ pub fn render_frame(
 /// Typed live-path frame: style tokens stay structure, payload stays Print.
 #[must_use]
 pub fn render_ops(state: &TopState, frame: FrameSample, width: usize) -> Vec<TopRenderOp> {
+    render_ops_in(solstone_core_cli_copy::ENGLISH, state, frame, width)
+}
+
+/// Typed live-path frame rendered in `locale`.
+#[must_use]
+pub fn render_ops_in(
+    locale: &str,
+    state: &TopState,
+    frame: FrameSample,
+    width: usize,
+) -> Vec<TopRenderOp> {
     let width = width.min(MAX_FRAME_WIDTH);
-    let output = build_frame_text(state, frame, width, &AnsiTopStyle);
+    let output = build_frame_text(locale, state, frame, width, &AnsiTopStyle);
     let ops = transform_trusted_render_to_ops(&output, width);
     if ops.len() <= MAX_FRAME_OPS {
         ops
@@ -211,7 +234,12 @@ pub fn render_ops(state: &TopState, frame: FrameSample, width: usize) -> Vec<Top
     }
 }
 
+fn cli_text(locale: &str, id: &str) -> String {
+    solstone_core_cli_copy::render_for(locale, id, &[])
+}
+
 fn build_frame_text(
+    locale: &str,
     state: &TopState,
     frame: FrameSample,
     width: usize,
@@ -223,31 +251,52 @@ fn build_frame_text(
     output.push('\n');
     output.push_str(style.bold());
     output.push_str(style.cyan());
-    output.push_str(&center("solstone activity manager", width));
+    output.push_str(&center(&cli_text(locale, "journal.cli.top.title"), width));
     output.push_str(style.normal());
     output.push_str("\n\n");
     if state.malformed_events > 0 {
+        let count = state.malformed_events.to_string();
+        let reason = state.last_malformed.as_ref().map_or_else(
+            || cli_text(locale, "journal.cli.top.unknown"),
+            ToString::to_string,
+        );
         output.push_str(style.red());
-        output.push_str(&format!(
-            "  malformed events: {} ({})",
-            state.malformed_events,
-            state
-                .last_malformed
-                .as_ref()
-                .map_or("unknown".to_owned(), ToString::to_string)
+        output.push_str("  ");
+        output.push_str(&solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.top.malformed.events",
+            &[
+                ("count", solstone_core_cli_copy::Value::String(&count)),
+                ("reason", solstone_core_cli_copy::Value::String(&reason)),
+            ],
         ));
         output.push_str(style.normal());
         output.push('\n');
     }
     output.push_str(style.bold());
-    output.push_str("  Service         PID      Uptime            MB      %  Last Log");
+    output.push_str(&format!(
+        "  {:<15} {:<8} {:<12} {:>7}  {:>5}  {}",
+        cli_text(locale, "journal.cli.top.header.service"),
+        cli_text(locale, "journal.cli.top.header.pid"),
+        cli_text(locale, "journal.cli.top.header.uptime"),
+        cli_text(locale, "journal.cli.top.header.mb"),
+        cli_text(locale, "journal.cli.top.header.percent"),
+        cli_text(locale, "journal.cli.top.header.last.log"),
+    ));
     output.push_str(style.normal());
-    reconnecting(&mut output, state, &state.continuity.supervisor, style);
+    reconnecting(
+        locale,
+        &mut output,
+        state,
+        &state.continuity.supervisor,
+        style,
+    );
     output.push('\n');
     rule(&mut output, width);
     if state.services.is_empty() {
         output.push_str(style.dim());
-        output.push_str("  (waiting for services)");
+        output.push_str("  ");
+        output.push_str(&cli_text(locale, "journal.cli.top.waiting.services"));
         output.push_str(style.normal());
         output.push('\n');
     } else {
@@ -263,17 +312,18 @@ fn build_frame_text(
             );
         }
     }
-    observe_section(&mut output, state, frame, width, style);
-    think_section(&mut output, state, width, style);
-    tasks_section(&mut output, state, frame, width, style);
-    brain_section(&mut output, state, width, style);
-    crashed_section(&mut output, state, style);
+    observe_section(locale, &mut output, state, frame, width, style);
+    think_section(locale, &mut output, state, width, style);
+    tasks_section(locale, &mut output, state, frame, width, style);
+    brain_section(locale, &mut output, state, width, style);
+    crashed_section(locale, &mut output, state, style);
     rule(&mut output, width);
-    footer(&mut output, state, style);
+    footer(locale, &mut output, state, style);
     output
 }
 
 fn tasks_section(
+    locale: &str,
     out: &mut String,
     state: &TopState,
     frame: FrameSample,
@@ -282,9 +332,17 @@ fn tasks_section(
 ) {
     rule(out, width);
     out.push_str(style.bold());
-    out.push_str("  Task            PID      Runtime           MB      %  Last Log");
+    out.push_str(&format!(
+        "  {:<15} {:<8} {:<12} {:>7}  {:>5}  {}",
+        cli_text(locale, "journal.cli.top.header.task"),
+        cli_text(locale, "journal.cli.top.header.pid"),
+        cli_text(locale, "journal.cli.top.header.runtime"),
+        cli_text(locale, "journal.cli.top.header.mb"),
+        cli_text(locale, "journal.cli.top.header.percent"),
+        cli_text(locale, "journal.cli.top.header.last.log"),
+    ));
     out.push_str(style.normal());
-    reconnecting(out, state, &state.continuity.tasks, style);
+    reconnecting(locale, out, state, &state.continuity.tasks, style);
     out.push('\n');
     let service_pids = state
         .services
@@ -309,8 +367,12 @@ fn tasks_section(
         if queued.is_empty() {
             out.push_str("  -");
         } else {
-            out.push_str("  queued: ");
-            out.push_str(&queued);
+            out.push_str("  ");
+            out.push_str(&solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.top.queued",
+                &[("commands", solstone_core_cli_copy::Value::String(&queued))],
+            ));
         }
         out.push_str(style.normal());
         out.push('\n');
@@ -321,19 +383,29 @@ fn tasks_section(
         task_line(out, task, name, state, frame, width, style);
     }
     for task in state.finished_tasks.values().take(256) {
-        ghost_line(out, task, style);
+        ghost_line(locale, out, task, style);
     }
     let queued = queued_commands(state, &visible_commands);
     if !queued.is_empty() {
         out.push_str(style.dim());
-        out.push_str("  queued: ");
-        out.push_str(&queued);
+        out.push_str("  ");
+        out.push_str(&solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.top.queued",
+            &[("commands", solstone_core_cli_copy::Value::String(&queued))],
+        ));
         out.push_str(style.normal());
         out.push('\n');
     }
 }
 
-fn brain_section(out: &mut String, state: &TopState, width: usize, style: &dyn TopStyle) {
+fn brain_section(
+    locale: &str,
+    out: &mut String,
+    state: &TopState,
+    width: usize,
+    style: &dyn TopStyle,
+) {
     rule(out, width);
     match (&state.brain_health_state, state.brain_health.as_ref()) {
         (BrainHealthState::Available { .. }, Some(value))
@@ -356,22 +428,24 @@ fn brain_section(out: &mut String, state: &TopState, width: usize, style: &dyn T
         (BrainHealthState::Checking, _) => {
             out.push_str("  ");
             out.push_str(style.bold());
-            out.push_str("Thinking Health");
+            out.push_str(&cli_text(locale, "journal.cli.top.section.thinking.health"));
             out.push_str(style.normal());
             out.push('\n');
             out.push_str(style.dim());
-            out.push_str("  (checking)");
+            out.push_str("  ");
+            out.push_str(&cli_text(locale, "journal.cli.top.thinking.checking"));
             out.push_str(style.normal());
             out.push('\n');
         }
         (BrainHealthState::Unavailable { message, .. }, _) => {
             out.push_str("  ");
             out.push_str(style.bold());
-            out.push_str("Thinking Health");
+            out.push_str(&cli_text(locale, "journal.cli.top.section.thinking.health"));
             out.push_str(style.normal());
             out.push('\n');
             out.push_str(style.dim());
-            out.push_str("  (status unavailable)");
+            out.push_str("  ");
+            out.push_str(&cli_text(locale, "journal.cli.top.thinking.unavailable"));
             out.push_str(style.normal());
             out.push('\n');
             if !message.is_empty() {
@@ -385,24 +459,26 @@ fn brain_section(out: &mut String, state: &TopState, width: usize, style: &dyn T
         _ => {
             out.push_str("  ");
             out.push_str(style.bold());
-            out.push_str("Thinking Health");
+            out.push_str(&cli_text(locale, "journal.cli.top.section.thinking.health"));
             out.push_str(style.normal());
             out.push('\n');
             out.push_str(style.dim());
-            out.push_str("  (status unavailable)");
+            out.push_str("  ");
+            out.push_str(&cli_text(locale, "journal.cli.top.thinking.unavailable"));
             out.push_str(style.normal());
             out.push('\n');
         }
     }
 }
 
-fn footer(out: &mut String, state: &TopState, style: &dyn TopStyle) {
+fn footer(locale: &str, out: &mut String, state: &TopState, style: &dyn TopStyle) {
     out.push_str(style.dim());
-    out.push_str(match state.services.len() {
-        0 => "q: Quit",
-        1 => "r: Restart  q: Quit",
-        _ => "↑/↓: Navigate  r: Restart  q: Quit",
-    });
+    let id = match state.services.len() {
+        0 => "journal.cli.top.footer.empty",
+        1 => "journal.cli.top.footer.single",
+        _ => "journal.cli.top.footer.multi",
+    };
+    out.push_str(&cli_text(locale, id));
     out.push_str(style.normal());
 }
 
@@ -800,13 +876,25 @@ fn task_line(
     out.push('\n');
 }
 
-fn ghost_line(out: &mut String, task: &Value, style: &dyn TopStyle) {
+fn ghost_line(locale: &str, out: &mut String, task: &Value, style: &dyn TopStyle) {
     let name = task.get("name").and_then(Value::as_str).unwrap_or_default();
     let exit = task.get("exit_code");
-    let (indicator, color, label) = match exit {
-        Some(Value::Null) | None => ("?".to_owned(), style.yellow(), "gone"),
-        Some(value) if value.as_i64() == Some(0) => ("✓".to_owned(), style.green(), "ok"),
-        Some(value) => (format!("✗ {}", value_text(value)), style.red(), "failed"),
+    let (indicator, color, label_id) = match exit {
+        Some(Value::Null) | None => (
+            "?".to_owned(),
+            style.yellow(),
+            "journal.cli.top.task.status.gone",
+        ),
+        Some(value) if value.as_i64() == Some(0) => (
+            "✓".to_owned(),
+            style.green(),
+            "journal.cli.top.task.status.ok",
+        ),
+        Some(value) => (
+            format!("✗ {}", value_text(value)),
+            style.red(),
+            "journal.cli.top.task.status.failed",
+        ),
     };
     out.push_str(style.dim());
     out.push_str(&format!(
@@ -823,7 +911,7 @@ fn ghost_line(out: &mut String, task: &Value, style: &dyn TopStyle) {
     out.push_str(style.normal());
     out.push_str(style.dim());
     out.push(' ');
-    out.push_str(label);
+    out.push_str(&cli_text(locale, label_id));
     out.push_str(style.normal());
     out.push('\n');
 }
@@ -858,6 +946,7 @@ fn log_text(reference: Option<&str>, state: &TopState, width: usize) -> (String,
 }
 
 fn observe_section(
+    locale: &str,
     out: &mut String,
     state: &TopState,
     frame: FrameSample,
@@ -867,9 +956,9 @@ fn observe_section(
     rule(out, width);
     out.push_str("  ");
     out.push_str(style.bold());
-    out.push_str("Observe");
+    out.push_str(&cli_text(locale, "journal.cli.top.section.observe"));
     out.push_str(style.normal());
-    reconnecting(out, state, &state.continuity.observe, style);
+    reconnecting(locale, out, state, &state.continuity.observe, style);
     out.push(' ');
     if state.observe_last_ts > 0.0 {
         let age = (frame.wall_seconds - state.observe_last_ts).max(0.0);
@@ -894,7 +983,8 @@ fn observe_section(
     out.push('\n');
     if state.observe_status.is_empty() {
         out.push_str(style.dim());
-        out.push_str("  (waiting for status)");
+        out.push_str("  ");
+        out.push_str(&cli_text(locale, "journal.cli.top.waiting.status"));
         out.push_str(style.normal());
         out.push('\n');
     } else {
@@ -907,10 +997,19 @@ fn observe_section(
                     .and_then(|value| value.get("window_elapsed_seconds"))
                     .and_then(Value::as_u64)
                     .unwrap_or(0);
+                let elapsed_str = format_uptime(elapsed);
                 out.push_str(style.red());
-                out.push_str("[LIVE]");
+                out.push_str(&cli_text(locale, "journal.cli.top.observe.live.badge"));
                 out.push_str(style.normal());
-                out.push_str(&format!(" screencast {}", format_uptime(elapsed)));
+                out.push(' ');
+                out.push_str(&solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.top.observe.screencast",
+                    &[(
+                        "elapsed",
+                        solstone_core_cli_copy::Value::String(&elapsed_str),
+                    )],
+                ));
             }
             "tmux" => {
                 let captures = state
@@ -919,14 +1018,32 @@ fn observe_section(
                     .and_then(|value| value.get("captures"))
                     .and_then(Value::as_u64)
                     .unwrap_or(0);
+                let captures_str = captures.to_string();
                 out.push_str(style.magenta());
-                out.push_str("[TMUX]");
+                out.push_str(&cli_text(locale, "journal.cli.top.observe.tmux.badge"));
                 out.push_str(style.normal());
-                out.push_str(&format!(" {captures} captures"));
+                out.push(' ');
+                out.push_str(&solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.top.observe.tmux.captures",
+                    &[
+                        (
+                            "quantity",
+                            solstone_core_cli_copy::Value::Cardinal(
+                                i64::try_from(captures).unwrap_or(i64::MAX),
+                            ),
+                        ),
+                        (
+                            "count",
+                            solstone_core_cli_copy::Value::String(&captures_str),
+                        ),
+                    ],
+                ));
             }
             _ => {
                 out.push_str(style.dim());
-                out.push_str(
+                out.push_str(&cli_text(
+                    locale,
                     if state
                         .observe_status
                         .get("activity")
@@ -934,11 +1051,11 @@ fn observe_section(
                         .and_then(Value::as_bool)
                         .unwrap_or(false)
                     {
-                        "[IDLE] locked"
+                        "journal.cli.top.observe.idle.locked"
                     } else {
-                        "[IDLE]"
+                        "journal.cli.top.observe.idle"
                     },
-                );
+                ));
                 out.push_str(style.normal());
             }
         }
@@ -952,24 +1069,34 @@ fn observe_section(
             let hits = state.observe_status["audio"]["threshold_hits"]
                 .as_u64()
                 .unwrap_or(0);
+            let hits_str = hits.to_string();
+            let voice = solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.top.observe.voice",
+                &[("hits", solstone_core_cli_copy::Value::String(&hits_str))],
+            );
             out.push_str(" │ ");
             if state.observe_status["audio"]["will_save"].as_bool() == Some(true) {
                 out.push_str(style.green());
-                out.push_str(&format!("voice {hits}"));
+                out.push_str(&voice);
                 out.push_str(style.normal());
             } else {
-                out.push_str(&format!("voice {hits}"));
+                out.push_str(&voice);
             }
         }
-        out.push_str(" │ describe ");
+        out.push_str(" │ ");
+        out.push_str(&cli_text(locale, "journal.cli.top.observe.describe"));
+        out.push(' ');
         out.push_str(&queue_status(state.observe_status.get("describe")));
-        out.push_str(" │ transcribe ");
+        out.push_str(" │ ");
+        out.push_str(&cli_text(locale, "journal.cli.top.observe.transcribe"));
+        out.push(' ');
         out.push_str(&queue_status(state.observe_status.get("transcribe")));
         out.push('\n');
     }
     if !state.recent_segments.is_empty() {
         out.push_str(style.dim());
-        out.push_str("  Recent: ");
+        out.push_str("  ");
         let recent = state
             .recent_segments
             .iter()
@@ -981,7 +1108,11 @@ fn observe_section(
             })
             .collect::<Vec<_>>()
             .join(" ");
-        out.push_str(&recent);
+        out.push_str(&solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.top.observe.recent",
+            &[("segments", solstone_core_cli_copy::Value::String(&recent))],
+        ));
         out.push_str(style.normal());
         out.push('\n');
     }
@@ -1053,13 +1184,19 @@ fn memory_mb(bytes: Option<&u64>) -> String {
     )
 }
 
-fn think_section(out: &mut String, state: &TopState, width: usize, style: &dyn TopStyle) {
+fn think_section(
+    locale: &str,
+    out: &mut String,
+    state: &TopState,
+    width: usize,
+    style: &dyn TopStyle,
+) {
     rule(out, width);
     out.push_str("  ");
     out.push_str(style.bold());
-    out.push_str("Think");
+    out.push_str(&cli_text(locale, "journal.cli.top.section.think"));
     out.push_str(style.normal());
-    reconnecting(out, state, &state.continuity.think, style);
+    reconnecting(locale, out, state, &state.continuity.think, style);
     out.push('\n');
     if state.think_running {
         if !state.think_status.is_empty() {
@@ -1083,16 +1220,43 @@ fn think_section(out: &mut String, state: &TopState, width: usize, style: &dyn T
                 .unwrap_or(0);
             let mut parts = vec![format!("[{mode}] {day}/{segment}")];
             if let Some(segment_total) = status.get("segments_total").and_then(Value::as_u64) {
-                parts.push(format!(
-                    "seg {}/{}",
-                    status
-                        .get("segments_completed")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(0),
-                    segment_total
+                let seg_completed = status
+                    .get("segments_completed")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0)
+                    .to_string();
+                let seg_total = segment_total.to_string();
+                parts.push(solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.top.think.segments",
+                    &[
+                        (
+                            "completed",
+                            solstone_core_cli_copy::Value::String(&seg_completed),
+                        ),
+                        ("total", solstone_core_cli_copy::Value::String(&seg_total)),
+                    ],
                 ));
             }
-            parts.push(format!("{completed}/{total} agents"));
+            let completed_str = completed.to_string();
+            let total_str = total.to_string();
+            parts.push(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.top.think.agents",
+                &[
+                    (
+                        "total_quantity",
+                        solstone_core_cli_copy::Value::Cardinal(
+                            i64::try_from(total).unwrap_or(i64::MAX),
+                        ),
+                    ),
+                    (
+                        "completed",
+                        solstone_core_cli_copy::Value::String(&completed_str),
+                    ),
+                    ("total", solstone_core_cli_copy::Value::String(&total_str)),
+                ],
+            ));
             if let Some(agents) = status.get("current_agents").and_then(Value::as_array)
                 && !agents.is_empty()
             {
@@ -1110,7 +1274,8 @@ fn think_section(out: &mut String, state: &TopState, width: usize, style: &dyn T
             out.push('\n');
         } else {
             out.push_str(style.dim());
-            out.push_str("  (waiting for status)");
+            out.push_str("  ");
+            out.push_str(&cli_text(locale, "journal.cli.top.waiting.status"));
             out.push_str(style.normal());
             out.push('\n');
         }
@@ -1126,13 +1291,29 @@ fn think_section(out: &mut String, state: &TopState, width: usize, style: &dyn T
             .and_then(Value::as_u64)
             .unwrap_or(0)
             / 1000;
-        out.push_str(&format!("  Last: {success} ok, "));
+        let success_str = success.to_string();
+        let failed_str = failed.to_string();
+        out.push_str("  ");
+        out.push_str(&solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.top.think.last.prefix",
+            &[(
+                "success",
+                solstone_core_cli_copy::Value::String(&success_str),
+            )],
+        ));
+        out.push_str(", ");
+        let failed_label = solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.top.think.last.failed",
+            &[("failed", solstone_core_cli_copy::Value::String(&failed_str))],
+        );
         if failed > 0 {
             out.push_str(style.red());
-            out.push_str(&format!("{failed} failed"));
+            out.push_str(&failed_label);
             out.push_str(style.normal());
         } else {
-            out.push_str("0 failed");
+            out.push_str(&failed_label);
         }
         out.push_str(&format!(" ({duration}s)"));
         if failed > 0
@@ -1152,13 +1333,14 @@ fn think_section(out: &mut String, state: &TopState, width: usize, style: &dyn T
         out.push('\n');
     } else {
         out.push_str(style.dim());
-        out.push_str("  (waiting for think)");
+        out.push_str("  ");
+        out.push_str(&cli_text(locale, "journal.cli.top.waiting.think"));
         out.push_str(style.normal());
         out.push('\n');
     }
 }
 
-fn crashed_section(out: &mut String, state: &TopState, style: &dyn TopStyle) {
+fn crashed_section(locale: &str, out: &mut String, state: &TopState, style: &dyn TopStyle) {
     if state.crashed.is_empty() {
         return;
     }
@@ -1168,10 +1350,13 @@ fn crashed_section(out: &mut String, state: &TopState, style: &dyn TopStyle) {
         .any(|crash| crash.get("phase").and_then(Value::as_str) == Some("backoff"));
     out.push_str(style.bold());
     if has_retrying {
-        out.push_str("Services needing attention:");
+        out.push_str(&cli_text(
+            locale,
+            "journal.cli.top.crashed.heading.attention",
+        ));
     } else {
         out.push_str(style.red());
-        out.push_str("Crashed:");
+        out.push_str(&cli_text(locale, "journal.cli.top.crashed.heading.crashed"));
     }
     out.push_str(style.normal());
     out.push('\n');
@@ -1184,14 +1369,38 @@ fn crashed_section(out: &mut String, state: &TopState, style: &dyn TopStyle) {
         let retrying = crash.get("phase").and_then(Value::as_str) == Some("backoff");
         if retrying {
             out.push_str(style.yellow());
-            out.push_str(&format!("  {name} (Retrying; attempts: {attempts})"));
+            out.push_str("  ");
+            out.push_str(&solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.top.crashed.retrying",
+                &[
+                    ("name", solstone_core_cli_copy::Value::String(&name)),
+                    ("attempts", solstone_core_cli_copy::Value::String(&attempts)),
+                ],
+            ));
             out.push_str(style.normal());
         } else if has_retrying {
             out.push_str(style.red());
-            out.push_str(&format!("  {name} (Crashed; attempts: {attempts})"));
+            out.push_str("  ");
+            out.push_str(&solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.top.crashed.crashed",
+                &[
+                    ("name", solstone_core_cli_copy::Value::String(&name)),
+                    ("attempts", solstone_core_cli_copy::Value::String(&attempts)),
+                ],
+            ));
             out.push_str(style.normal());
         } else {
-            out.push_str(&format!("  {name} (attempts: {attempts})"));
+            out.push_str("  ");
+            out.push_str(&solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.top.crashed.attempts",
+                &[
+                    ("name", solstone_core_cli_copy::Value::String(&name)),
+                    ("attempts", solstone_core_cli_copy::Value::String(&attempts)),
+                ],
+            ));
         }
         out.push('\n');
     }
@@ -1203,6 +1412,7 @@ fn rule(out: &mut String, width: usize) {
     out.push('\n');
 }
 fn reconnecting(
+    locale: &str,
     out: &mut String,
     state: &TopState,
     recovery: &crate::DomainRecovery,
@@ -1215,7 +1425,8 @@ fn reconnecting(
         )
     {
         out.push_str(style.dim());
-        out.push_str(" (reconnecting)");
+        out.push(' ');
+        out.push_str(&cli_text(locale, "journal.cli.top.reconnecting"));
         out.push_str(style.normal());
     }
 }
@@ -1468,11 +1679,23 @@ mod tests {
             state
         }] {
             let ansi = transform_trusted_render_to_ops(
-                &build_frame_text(&state, sample, width, &AnsiTopStyle),
+                &build_frame_text(
+                    solstone_core_cli_copy::ENGLISH,
+                    &state,
+                    sample,
+                    width,
+                    &AnsiTopStyle,
+                ),
                 width,
             );
             let plain = transform_trusted_render_to_ops(
-                &build_frame_text(&state, sample, width, &PlainTopStyle),
+                &build_frame_text(
+                    solstone_core_cli_copy::ENGLISH,
+                    &state,
+                    sample,
+                    width,
+                    &PlainTopStyle,
+                ),
                 width,
             );
             assert_eq!(ansi, plain);
@@ -1664,7 +1887,13 @@ mod tests {
     fn render_ops_capped_helper_truncates_real_maximal_frame_content_and_resets() {
         let sample = FrameSample::default();
         let state = fully_maximal_hostile_combined_state();
-        let output = build_frame_text(&state, sample, MAX_FRAME_WIDTH, &AnsiTopStyle);
+        let output = build_frame_text(
+            solstone_core_cli_copy::ENGLISH,
+            &state,
+            sample,
+            MAX_FRAME_WIDTH,
+            &AnsiTopStyle,
+        );
         let uncapped = transform_trusted_render_to_ops(&output, MAX_FRAME_WIDTH);
         assert!(
             uncapped.len() > 256,
@@ -1780,5 +2009,48 @@ mod tests {
         assert!(!text.ends_with("\\x"));
         assert!(!text.ends_with("\\x1"));
         assert!(!text.ends_with("\\u{"));
+    }
+
+    #[test]
+    fn singular_capture_and_agent_counts_render_grammatically() {
+        let mut state = TopState {
+            displayed_mode: "tmux".into(),
+            last_active_ts: 99.0,
+            observe_last_ts: 99.0,
+            think_running: true,
+            ..TopState::default()
+        };
+        state
+            .observe_status
+            .insert("mode".into(), serde_json::json!("tmux"));
+        state
+            .observe_status
+            .insert("tmux".into(), serde_json::json!({"captures": 1}));
+        state
+            .think_status
+            .insert("mode".into(), serde_json::json!("batch"));
+        state
+            .think_status
+            .insert("day".into(), serde_json::json!("260810"));
+        state
+            .think_status
+            .insert("segment".into(), serde_json::json!("001"));
+        state
+            .think_status
+            .insert("agents_completed".into(), serde_json::json!(1));
+        state
+            .think_status
+            .insert("agents_total".into(), serde_json::json!(1));
+        let rendered = render_frame(
+            &state,
+            FrameSample {
+                wall_seconds: 100.0,
+                monotonic_seconds: 100.0,
+            },
+            120,
+            &PlainTopStyle,
+        );
+        assert!(rendered.contains(" 1 capture "), "{rendered}");
+        assert!(rendered.contains("1/1 agent\n"), "{rendered}");
     }
 }

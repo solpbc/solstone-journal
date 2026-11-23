@@ -1,0 +1,16 @@
+{
+  "description": "Top Observe transcribe queue label.",
+  "context": "Top Observe transcribe queue label.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "e669e47237599070018a61ec0a0392e44a0e9b67a27c198c85e409bf9ad2a038",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

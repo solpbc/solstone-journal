@@ -1,0 +1,16 @@
+{
+  "description": "Schedule report disabled tag on a row.",
+  "context": "Schedule report disabled tag on a row.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "0e06b9c3404a9308788cdc942d4fd460475fb0dc6d73ad4b9a61bb7758aac449",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for streams count.",
+  "context": "Grab table column header for streams count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "d9f26f2b9a58fa8617739569dff6f63cd3f7b41e048a484dfd3f7f42ef6966c6",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

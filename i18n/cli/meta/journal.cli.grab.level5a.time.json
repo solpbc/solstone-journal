@@ -1,0 +1,21 @@
+{
+  "description": "Grab frame detail timestamp field.",
+  "context": "Grab frame detail timestamp field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "source_revision": "8391b8f0e92aad582b937c776f5b1ae63bfe14f9eec7ca730106af87547a56d4",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

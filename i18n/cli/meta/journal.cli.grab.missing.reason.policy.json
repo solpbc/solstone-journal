@@ -1,0 +1,16 @@
+{
+  "description": "Grab missing-video reason when deleted under retention policy.",
+  "context": "Grab missing-video reason when deleted under retention policy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "9c8ab4ac8a9e5298785ff1f41f09c0925ddd146cbabe145b909883abf1365192",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

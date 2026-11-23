@@ -1,0 +1,29 @@
+{
+  "description": "Grab level 4 footer when the original video is unavailable.",
+  "context": "Grab level 4 footer when the original video is unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "source_revision": "1bbf8c95a1a863fbbf398a3bc67ad816f5909dc4bffdff7406198ccb06fe1798",
+  "max_length": 420,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Grab table column header for primary screen analysis label.",
+  "context": "Grab table column header for primary screen analysis label.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "6d2623e694441b795aa8ea276a567264c22bfed439b940b49f54fb2ad033d7f1",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

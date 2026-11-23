@@ -1,0 +1,34 @@
+{
+  "description": "Sense batch dry-run header listing files that would be processed.",
+  "context": "Sense batch dry-run header listing files that would be processed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "breakdown",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "cb2a4f1b472a41c29a85e127d438ec38bffa90710d4c045243a5a92cbb8f37d6",
+  "max_length": 420,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

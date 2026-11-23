@@ -1,0 +1,16 @@
+{
+  "description": "Grab render error for malformed level 4 payload.",
+  "context": "Grab render error for malformed level 4 payload.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "source_revision": "1954b1041957ed3dd2068597d22dbae4ba45052f304f92d872f73457bf96fb2d",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}

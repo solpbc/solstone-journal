@@ -1,0 +1,21 @@
+{
+  "description": "Grab usage error when --out is passed without all five positional tokens.",
+  "context": "Grab usage error when --out is passed without all five positional tokens.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "out_flag",
+      "type": "string"
+    }
+  ],
+  "source_revision": "4fcb78444e99bb57863c2d54f5e8e11259db60d862aa2eb9ad6c57d3eef298c0",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "format_intent": "text"
+}
