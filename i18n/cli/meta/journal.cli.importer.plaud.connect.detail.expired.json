@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sign-in expired failure detail.",
+  "context": "Plaud sign-in expired failure detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "126f2bbd58781fdd707ffeed2db880e4fc611ac10b88bddcffebdc10a3a7ed66",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

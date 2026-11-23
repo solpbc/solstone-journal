@@ -69,6 +69,21 @@ pub fn run_audio_archive(options: AudioArchiveDispatchOptions, journal: &Path) -
     run_audio_archive_with(options, journal, None, None)
 }
 
+fn cardinal(locale: &str, id: &str, count: u64) -> String {
+    let count_str = count.to_string();
+    solstone_core_cli_copy::render_for(
+        locale,
+        id,
+        &[
+            (
+                "quantity",
+                solstone_core_cli_copy::Value::Cardinal(i64::try_from(count).unwrap_or(i64::MAX)),
+            ),
+            ("count", solstone_core_cli_copy::Value::String(&count_str)),
+        ],
+    )
+}
+
 pub fn run_audio_archive_with(
     options: AudioArchiveDispatchOptions,
     journal: &Path,
@@ -77,7 +92,17 @@ pub fn run_audio_archive_with(
 ) -> CliRun {
     match save(options, journal, custom_materializer, custom_fault) {
         Ok(run) => run,
-        Err(error) => failure("", &format!("audio archive failed: {error}\n"), 1),
+        Err(error) => failure(
+            "",
+            &format!(
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.audio.archive.failed",
+                    [("error", &error)],
+                )
+            ),
+            1,
+        ),
     }
 }
 
@@ -87,6 +112,7 @@ fn save(
     custom_materializer: Option<Box<dyn AudioArchiveMaterializer>>,
     fault: Option<ArchiveFault>,
 ) -> Result<CliRun, AudioArchiveError> {
+    let locale = solstone_core_cli_copy::cli_locale();
     let path = &options.path;
     let metadata = std::fs::metadata(path)?;
     let is_manifest = metadata.is_file();
@@ -104,7 +130,11 @@ fn save(
         .is_some_and(|expected| Some(expected) != owner_zone.iana_name())
     {
         return Err(AudioArchiveError::Other(
-            "the time zone changed after preview; preview it again".into(),
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.audio.archive.zone.changed",
+                &[],
+            ),
         ));
     }
     // An explicit resume uses the admitted plan, even when the source folder
@@ -125,7 +155,11 @@ fn save(
             read_manifest_members(path, &source_root, options.source_zone.as_deref())
         } else {
             let zone = options.source_zone.as_deref().ok_or_else(|| {
-                AudioArchiveError::Other("a folder requires --source-zone".into())
+                AudioArchiveError::Other(solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.importer.audio.archive.folder.needs.zone",
+                    &[],
+                ))
             })?;
             scan_folder_members(path, zone)
         }
@@ -146,13 +180,21 @@ fn save(
         .is_some_and(|identity| identity != &settings.archive_identity)
     {
         return Err(AudioArchiveError::Other(
-            "the archive changed after preview; preview it again".into(),
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.audio.archive.changed",
+                &[],
+            ),
         ));
     }
     if options.dry_run {
         if options.resume.is_some() {
             return Err(AudioArchiveError::Other(
-                "use --audio-archive-status to inspect an admitted run".into(),
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.importer.audio.archive.dry.run.resume",
+                    &[],
+                ),
             ));
         }
         let archive_identity = settings.archive_identity.clone();
@@ -166,15 +208,49 @@ fn save(
                 "span":plan.size.span, "left_out":plan.size.left_out})
             )
         } else {
-            format!(
-                "audio archive preview: {} members, {} source bytes, {} days, {} tiles\nspan: {}\nleft out: {:?}\n",
-                plan.size.members,
+            let members = cardinal(
+                locale,
+                "journal.cli.importer.count.member",
+                plan.size.members as u64,
+            );
+            let source_bytes = cardinal(
+                locale,
+                "journal.cli.importer.count.source.byte",
                 plan.size.source_bytes,
-                plan.size.days,
-                plan.size.tiles,
-                span_text(plan.size.span.as_ref()),
-                plan.size.left_out
-            )
+            );
+            let days = cardinal(
+                locale,
+                "journal.cli.importer.count.day",
+                plan.size.days as u64,
+            );
+            let tiles = cardinal(
+                locale,
+                "journal.cli.importer.count.tile",
+                plan.size.tiles as u64,
+            );
+            let line1 = solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.audio.archive.preview.line1",
+                [
+                    ("members", &members),
+                    ("source_bytes", &source_bytes),
+                    ("days", &days),
+                    ("tiles", &tiles),
+                ],
+            );
+            let span = span_text(locale, plan.size.span.as_ref());
+            let line2 = solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.audio.archive.span.line",
+                [("span", &span)],
+            );
+            let left_out = format!("{:?}", plan.size.left_out);
+            let line3 = solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.audio.archive.left.out.inline",
+                [("counts", &left_out)],
+            );
+            format!("{line1}\n{line2}\n{line3}\n")
         }));
     }
     let matching = match &options.resume {
@@ -254,24 +330,59 @@ fn save(
             "left_out_counts":status.size.left_out, "status":status})
         )
     } else {
-        format!(
-            "audio archive {operation}: {}\nsaved {} parts in {} tiles; {} pending processing, {} processed, {} unavailable, {} rejected\nleft out: {:?}\n",
-            result.import_id,
-            status.saved_parts,
-            status.saved_tiles,
-            status.pending_processing,
-            status.processed_parts,
-            status.unavailable_parts,
-            status.rejected_parts,
-            status.size.left_out
-        )
+        let line1 = solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.audio.archive.complete.line1",
+            [("operation", &operation), ("run_id", &result.import_id)],
+        );
+        let parts = cardinal(
+            locale,
+            "journal.cli.importer.count.part",
+            status.saved_parts as u64,
+        );
+        let tiles = cardinal(
+            locale,
+            "journal.cli.importer.count.tile",
+            status.saved_tiles as u64,
+        );
+        let line2 = solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.audio.archive.complete.line2",
+            [
+                ("parts", &parts),
+                ("tiles", &tiles),
+                ("pending", &status.pending_processing),
+                ("processed", &status.processed_parts),
+                ("unavailable", &status.unavailable_parts),
+                ("rejected", &status.rejected_parts),
+            ],
+        );
+        let left_out = format!("{:?}", status.size.left_out);
+        let line3 = solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.audio.archive.left.out.inline",
+            [("counts", &left_out)],
+        );
+        format!("{line1}\n{line2}\n{line3}\n")
     }))
 }
 
-fn span_text(span: Option<&(String, String)>) -> String {
+fn span_text(locale: &str, span: Option<&(String, String)>) -> String {
     span.map_or_else(
-        || "none".into(),
-        |(first, last)| format!("{first} to {last}"),
+        || {
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.audio.archive.span.none",
+                &[],
+            )
+        },
+        |(first, last)| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.audio.archive.span.range",
+                [("first", first), ("last", last)],
+            )
+        },
     )
 }
 
@@ -290,22 +401,75 @@ fn write_progress(
             "phase":event.phase, "status":event.status})
         )?;
     } else if event.phase == ArchiveProgressPhase::Admitted {
-        writeln!(
-            stdout,
-            "archive {}: {} members, {} source bytes, {} days, {} tiles\nspan: {}\nleft out: {:?}",
-            event.import_id,
-            event.status.size.members,
+        let locale = solstone_core_cli_copy::cli_locale();
+        let members = cardinal(
+            locale,
+            "journal.cli.importer.count.member",
+            event.status.size.members as u64,
+        );
+        let source_bytes = cardinal(
+            locale,
+            "journal.cli.importer.count.source.byte",
             event.status.size.source_bytes,
-            event.status.size.days,
-            event.status.size.tiles,
-            span_text(event.status.size.span.as_ref()),
-            event.status.size.left_out
-        )?;
+        );
+        let days = cardinal(
+            locale,
+            "journal.cli.importer.count.day",
+            event.status.size.days as u64,
+        );
+        let tiles = cardinal(
+            locale,
+            "journal.cli.importer.count.tile",
+            event.status.size.tiles as u64,
+        );
+        let line1 = solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.audio.archive.admitted.line1",
+            [
+                ("run_id", &event.import_id),
+                ("members", &members),
+                ("source_bytes", &source_bytes),
+                ("days", &days),
+                ("tiles", &tiles),
+            ],
+        );
+        let span = span_text(locale, event.status.size.span.as_ref());
+        let line2 = solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.audio.archive.span.line",
+            [("span", &span)],
+        );
+        let left_out = format!("{:?}", event.status.size.left_out);
+        let line3 = solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.audio.archive.left.out.inline",
+            [("counts", &left_out)],
+        );
+        writeln!(stdout, "{line1}\n{line2}\n{line3}")?;
     } else {
+        let locale = solstone_core_cli_copy::cli_locale();
+        let total = cardinal(
+            locale,
+            "journal.cli.importer.count.part",
+            event.status.total_parts,
+        );
+        let tiles = cardinal(
+            locale,
+            "journal.cli.importer.count.tile",
+            event.status.saved_tiles,
+        );
         writeln!(
             stdout,
-            "saved {} of {} parts ({} tiles)",
-            event.status.saved_parts, event.status.total_parts, event.status.saved_tiles
+            "{}",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.audio.archive.progress.saved",
+                [
+                    ("saved", &event.status.saved_parts),
+                    ("total", &total),
+                    ("tiles", &tiles),
+                ],
+            )
         )?;
     }
     stdout.flush()?;
@@ -313,21 +477,34 @@ fn write_progress(
 }
 
 pub fn run_audio_archive_status(run_id: &str, json: bool, journal: &Path) -> CliRun {
+    let locale = solstone_core_cli_copy::cli_locale();
+    let status_failed = |error: &dyn std::fmt::Display| {
+        failure(
+            "",
+            &format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.importer.audio.archive.status.failed",
+                    [("error", error)],
+                )
+            ),
+            1,
+        )
+    };
     let store = match ArchiveStore::open(journal, run_id, false) {
         Ok(s) => s,
-        Err(e) => return failure("", &format!("audio archive status failed: {e}\n"), 1),
+        Err(e) => return status_failed(&e),
     };
     let status = match store.status() {
         Ok(st) => st,
-        Err(e) => return failure("", &format!("audio archive status failed: {e}\n"), 1),
+        Err(e) => return status_failed(&e),
     };
 
     if json {
         let settings = match store.settings() {
             Ok(settings) => settings,
-            Err(error) => {
-                return failure("", &format!("audio archive status failed: {error}\n"), 1);
-            }
+            Err(error) => return status_failed(&error),
         };
         let mut value = serde_json::to_value(&status).unwrap();
         value["operation"] = json!("status");
@@ -337,18 +514,32 @@ pub fn run_audio_archive_status(run_id: &str, json: bool, journal: &Path) -> Cli
         success(stdout)
     } else {
         let mut out = format!(
-            "audio archive status: run_id={run_id} total_parts={} saved_parts={} saved_tiles={} pending_processing={} processed_parts={} unavailable_parts={} rejected_parts={} save_complete={}\n",
-            status.total_parts,
-            status.saved_parts,
-            status.saved_tiles,
-            status.pending_processing,
-            status.processed_parts,
-            status.unavailable_parts,
-            status.rejected_parts,
-            status.save_complete,
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.audio.archive.status.summary",
+                [
+                    ("run_id", &run_id),
+                    ("total_parts", &status.total_parts),
+                    ("saved_parts", &status.saved_parts),
+                    ("saved_tiles", &status.saved_tiles),
+                    ("pending", &status.pending_processing),
+                    ("processed", &status.processed_parts),
+                    ("unavailable", &status.unavailable_parts),
+                    ("rejected", &status.rejected_parts),
+                    ("save_complete", &status.save_complete),
+                ],
+            )
         );
         if !status.size.left_out.is_empty() {
-            out.push_str("left out:\n");
+            out.push_str(&format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.importer.audio.archive.left.out.header",
+                    &[],
+                )
+            ));
             for (reason, count) in &status.size.left_out {
                 out.push_str(&format!("  {reason}: {count}\n"));
             }
@@ -364,23 +555,43 @@ pub fn run_audio_archive_members(
     json: bool,
     journal: &Path,
 ) -> CliRun {
+    let locale = solstone_core_cli_copy::cli_locale();
+    let members_failed = |error: &dyn std::fmt::Display| {
+        failure(
+            "",
+            &format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.importer.audio.archive.members.failed",
+                    [("error", error)],
+                )
+            ),
+            1,
+        )
+    };
     let store = match ArchiveStore::open(journal, run_id, false) {
         Ok(s) => s,
-        Err(e) => return failure("", &format!("audio archive members failed: {e}\n"), 1),
+        Err(e) => return members_failed(&e),
     };
     let capped_limit = limit.unwrap_or(100).min(1000);
     let members = match store.members(offset, capped_limit) {
         Ok(m) => m,
-        Err(e) => return failure("", &format!("audio archive members failed: {e}\n"), 1),
+        Err(e) => return members_failed(&e),
     };
 
     if json {
         let stdout = format!("{}\n", serde_json::to_string_pretty(&members).unwrap());
         success(stdout)
     } else {
+        let count = members.len();
         let mut out = format!(
-            "audio archive members: run_id={run_id} offset={offset} count={}\n",
-            members.len()
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.audio.archive.members.summary",
+                [("run_id", &run_id), ("offset", &offset), ("count", &count)],
+            )
         );
         for member in &members {
             let disp_str = match &member.disposition {

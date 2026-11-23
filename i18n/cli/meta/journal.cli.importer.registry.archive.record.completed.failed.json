@@ -1,0 +1,25 @@
+{
+  "description": "Archive merge failure when recording completed attempt fails.",
+  "context": "Archive merge failure when recording completed attempt fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f5ddb21a736ecde471e5931fca012982aeac423902cd75c3eeb768711098b7c6",
+  "max_length": 219,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

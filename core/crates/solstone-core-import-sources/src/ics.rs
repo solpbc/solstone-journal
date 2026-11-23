@@ -113,13 +113,18 @@ pub fn parse_events(path: &Path, zone: &TimeZone) -> Result<Vec<CalendarEntry>, 
 
 /// Aggregate a calendar source into the fixed import preview contract, on the zone's days.
 pub fn preview(path: &Path, zone: &TimeZone) -> Result<ImportPreview, IcsError> {
+    let locale = solstone_core_cli_copy::cli_locale();
     let data = extract_ics_data(path)?;
     if data.is_empty() {
         return Ok(ImportPreview {
             date_range: (String::new(), String::new()),
             item_count: 0,
             entity_count: 0,
-            summary: "No ICS data found".to_owned(),
+            summary: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.preview.ics.none",
+                &[],
+            ),
         });
     }
     let entries = parse_ics_data(data, zone);
@@ -128,7 +133,11 @@ pub fn preview(path: &Path, zone: &TimeZone) -> Result<ImportPreview, IcsError> 
             date_range: (String::new(), String::new()),
             item_count: 0,
             entity_count: 0,
-            summary: "No events found in ICS data".to_owned(),
+            summary: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.preview.ics.no.events",
+                &[],
+            ),
         });
     }
 
@@ -148,12 +157,20 @@ pub fn preview(path: &Path, zone: &TimeZone) -> Result<ImportPreview, IcsError> 
         .collect::<HashSet<_>>();
     let item_count = u64::try_from(entries.len()).expect("entry count fits u64");
     let entity_count = u64::try_from(emails.len()).expect("email count fits u64");
+    let events =
+        crate::save::cardinal_count(locale, "journal.cli.importer.count.event", item_count);
+    let attendees =
+        crate::save::cardinal_count(locale, "journal.cli.importer.count.attendee", entity_count);
 
     Ok(ImportPreview {
         date_range: (days[0].clone(), days[days.len() - 1].clone()),
         item_count,
         entity_count,
-        summary: format!("{item_count} events, {entity_count} unique attendees"),
+        summary: solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.preview.ics.counts",
+            [("events", &events), ("attendees", &attendees)],
+        ),
     })
 }
 

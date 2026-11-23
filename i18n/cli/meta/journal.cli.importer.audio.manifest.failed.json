@@ -1,0 +1,21 @@
+{
+  "description": "Generic audio import warning when dedupe manifest write fails.",
+  "context": "Generic audio import warning when dedupe manifest write fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4fa69da4a7128835ee7357df4b39736ca7dc1f8390e5e7c12e164586abc93dbe",
+  "max_length": 426,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Audio archive refusal when archive contents changed after preview.",
+  "context": "Audio archive refusal when archive contents changed after preview.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b46abd05bad06af79b4a9cc4b8b3655b0a08c06b0563f8560404190081b8071f",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

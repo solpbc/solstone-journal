@@ -1,0 +1,16 @@
+{
+  "description": "Explanation of declining facet filing for Strava.",
+  "context": "Explanation of declining facet filing for Strava.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "34badcda9fc39619e863a6a1347f9344f9e35bc6b2a6dcf34c8460d167ceff4d",
+  "max_length": 576,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "ICS unexpandable repeating series clause.",
+  "context": "ICS unexpandable repeating series clause.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2f61c5bf3f8895d05ee09dc5fc6210893457c7e731e374eb8e5d6cdc26472771",
+  "max_length": 459,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

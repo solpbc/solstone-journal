@@ -1,0 +1,16 @@
+{
+  "description": "Plaud OAuth begin error: loopback bind failure.",
+  "context": "Plaud OAuth begin error: loopback bind failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5f1a03c61fb1b4ac7153a35b4c552d2c80df968db3f15a75af088e520f075d1",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

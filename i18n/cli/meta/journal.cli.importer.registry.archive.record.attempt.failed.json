@@ -1,0 +1,25 @@
+{
+  "description": "Archive merge failure when recording unconfirmed attempt fails.",
+  "context": "Archive merge failure when recording unconfirmed attempt fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "59bc850487b9a68233b53b5c6e8cdc04264963f591edda10bf0b5f24217d2e1a",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

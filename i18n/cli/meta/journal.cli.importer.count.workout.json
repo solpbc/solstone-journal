@@ -1,0 +1,30 @@
+{
+  "description": "Count phrase for Apple Health workouts.",
+  "context": "Count phrase for Apple Health workouts.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f201f7c2fe6408fa2b47d07c89e90f39349194c52dbef26401960af4fa6f0034",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

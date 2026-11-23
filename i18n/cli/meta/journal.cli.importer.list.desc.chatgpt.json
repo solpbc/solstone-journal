@@ -1,0 +1,16 @@
+{
+  "description": "Description for chatgpt importer.",
+  "context": "Description for chatgpt importer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a49fe9a97d21f47baf90236b909e431d1371be61a4b123c4a3b30b2dd7582f8b",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

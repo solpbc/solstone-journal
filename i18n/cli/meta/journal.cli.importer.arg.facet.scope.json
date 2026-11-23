@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI invalid --facet scope error.",
+  "context": "Importer CLI invalid --facet scope error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e89ebe2efb7596276de0be392133b12e52505935ec24e854f4741458e6458656",
+  "max_length": 228,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Apple Health CLI preview intro sentence.",
+  "context": "Apple Health CLI preview intro sentence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "head",
+      "type": "string"
+    },
+    {
+      "name": "tail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "842086187c55ee39dced338ad070eba517a4af9af7b88097063910b911627acd",
+  "max_length": 243,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

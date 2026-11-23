@@ -2342,7 +2342,8 @@ fn run_segments_text(
     identity: &dyn Fn() -> Result<(String, String), String>,
 ) -> Result<RunOutcome, Result<OuraStop, String>> {
     let admitted = Cell::new(false);
-    let result = run_segments_bound(journal, source, request, identity, &admitted);
+    let early_stop = Cell::new(None);
+    let result = run_segments_bound(journal, source, request, identity, &admitted, &early_stop);
     // A page start refused before its attempt was admitted says why on its own
     // import. Once admitted, the run recorded it itself, before its terminal write.
     if let (Err(Err(error)), Some(import_id)) = (&result, request.exact_import)
@@ -2351,17 +2352,13 @@ fn run_segments_text(
         // nothing is written on an import that's its.
         && latest_generation(journal, import_id) == 0
     {
-        let code = if error.starts_with("another ") && error.contains(" import is running") {
-            "busy"
-        } else if error.contains(crate::cli_argv::FACET_REFUSAL_MARKER) {
-            "facet"
-        } else if solstone_core_import_sources::body_status::code_for_run_error(error)
-            == "disk_full"
-        {
-            "no_room"
-        } else {
-            "not_started"
-        };
+        let code = early_stop.get().unwrap_or_else(|| {
+            if solstone_core_import_sources::body_status::code_for_run_error(error) == "disk_full" {
+                "no_room"
+            } else {
+                "not_started"
+            }
+        });
         record_stop(
             journal,
             source,
@@ -2379,9 +2376,13 @@ fn run_segments_bound(
     request: &RunRequest<'_>,
     identity: &dyn Fn() -> Result<(String, String), String>,
     admitted: &Cell<bool>,
+    early_stop: &Cell<Option<&'static str>>,
 ) -> Result<RunOutcome, Result<OuraStop, String>> {
     if let Some(facet) = request.facet {
-        crate::cli_argv::require_enabled_facet(facet, journal).map_err(Err)?;
+        crate::cli_argv::require_enabled_facet(facet, journal).map_err(|error| {
+            early_stop.set(Some("facet"));
+            Err(error)
+        })?;
     }
     fs::create_dir_all(journal.join("imports")).map_err(|error| Err(error.to_string()))?;
     let _lock = hold_lock(
@@ -2393,6 +2394,7 @@ fn run_segments_bound(
         },
     )
     .map_err(|_| {
+        early_stop.set(Some("busy"));
         Err(format!(
             "another {} import is running; run this again when it finishes.",
             source_owner_name(source)

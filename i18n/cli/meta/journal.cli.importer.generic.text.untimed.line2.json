@@ -1,0 +1,21 @@
+{
+  "description": "Generic text untimed transcript support link line 2.",
+  "context": "Generic text untimed transcript support link line 2.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "url",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e62d2b0d19d984cdbaeb62c3f9ca0382d1906bb6aa6d5a01bb1d6be9cd3c34ed",
+  "max_length": 288,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

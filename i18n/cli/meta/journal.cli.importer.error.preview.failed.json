@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI error when previewing fails.",
+  "context": "Importer CLI error when previewing fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2a1198e7aab7cd031f66b742f42fa846a1e0dccf0faaffbd7c02645b20dbb177",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

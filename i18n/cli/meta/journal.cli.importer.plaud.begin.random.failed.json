@@ -1,0 +1,16 @@
+{
+  "description": "Plaud OAuth begin error: random identifier failure.",
+  "context": "Plaud OAuth begin error: random identifier failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2aa2665247fb4ff4753dad509dbc264e7a36b166d3c941785db1a390ee406a2e",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

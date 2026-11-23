@@ -1,0 +1,21 @@
+{
+  "description": "Interactive Oura app registration storage note.",
+  "context": "Interactive Oura app registration storage note.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "how",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d8528d9919409e6eb305560becee52e0b688bc82dcb522d91d645902af252733",
+  "max_length": 375,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

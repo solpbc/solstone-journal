@@ -528,7 +528,7 @@ fn the_remembered_default_command_splits_a_foreign_hour_without_an_answer() {
         force: false,
         save: true,
     };
-    let result = crate::body_commands::save_apple(next.to_str().unwrap(), &command, root);
+    let (result, _) = crate::body_commands::save_apple(next.to_str().unwrap(), &command, root);
     assert_eq!(result.exit_code, 0, "{}", result.stderr);
     assert!(
         result.stdout.contains("saved separately"),

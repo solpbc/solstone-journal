@@ -1,0 +1,53 @@
+{
+  "description": "Audio archive status summary line.",
+  "context": "Audio archive status summary line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "run_id",
+      "type": "string"
+    },
+    {
+      "name": "total_parts",
+      "type": "string"
+    },
+    {
+      "name": "saved_parts",
+      "type": "string"
+    },
+    {
+      "name": "saved_tiles",
+      "type": "string"
+    },
+    {
+      "name": "pending",
+      "type": "string"
+    },
+    {
+      "name": "processed",
+      "type": "string"
+    },
+    {
+      "name": "unavailable",
+      "type": "string"
+    },
+    {
+      "name": "rejected",
+      "type": "string"
+    },
+    {
+      "name": "save_complete",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0d8f5f7baef29f9337f85be7aa90db3bfd871585f126a1442f5b8c1d6203150b",
+  "max_length": 861,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

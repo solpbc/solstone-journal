@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI help --deterministic-only line 2.",
+  "context": "Importer CLI help --deterministic-only line 2.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "57f043806f7f4395b8276a4aae0ec2f3fc7e287ceafbdef8919c0d604b8daa35",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

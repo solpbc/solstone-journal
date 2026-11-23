@@ -153,11 +153,171 @@ pub const HELP: &str = concat!(
     "  -v, --verbose         Enable verbose output\n  -d, --debug            Enable debug logging\n"
 );
 
+pub fn embedded_body_refusal() -> String {
+    solstone_core_cli_copy::text("journal.cli.importer.embedded.body.refusal")
+}
+
+pub fn notes_folder_import_retired() -> String {
+    solstone_core_cli_copy::text("journal.cli.importer.notes.folder.retired")
+}
+
+pub fn help() -> String {
+    help_for(solstone_core_cli_copy::cli_locale())
+}
+
+pub fn help_for(locale: &str) -> String {
+    let r = |id: &str| solstone_core_cli_copy::render_for(locale, id, &[]);
+    let ind = |id: &str, indent: &str| {
+        solstone_core_cli_copy::display_for(locale, id, [("indent", &indent)])
+    };
+    let manifest_example =
+        r#"{"members":[{"path":"clip.ogg","instant":"2025-11-02T01:30:00-06:00"}]}"#;
+    [
+        r("journal.cli.importer.help.usage"),
+        "                        [--setting SETTING] [--source SOURCE] [--force]".to_owned(),
+        "                        [--auto [AUTO]] [--dry-run] [--confirm-body-save]".to_owned(),
+        "                        [--date-from DATE_FROM] [--date-to DATE_TO]".to_owned(),
+        "                        [--deterministic-only] [--backends] [--sync BACKEND]".to_owned(),
+        "                        [--save] [--window-days WINDOW_DAYS]".to_owned(),
+        "                        [--scheduled] [--connect BACKEND] [--list-importers]".to_owned(),
+        "                        [--audio-archive PATH] [--source-zone IANA] [--resume IMPORT_ID]"
+            .to_owned(),
+        "                        [--audio-archive-status IMPORT_ID] [--audio-archive-members IMPORT_ID]"
+            .to_owned(),
+        "                        [--offset OFFSET] [--limit LIMIT]".to_owned(),
+        "                        [--json] [-v] [-d] [media]".to_owned(),
+        String::new(),
+        r("journal.cli.importer.help.summary"),
+        String::new(),
+        r("journal.cli.importer.help.positional.header"),
+        ind("journal.cli.importer.help.positional.media", "  "),
+        String::new(),
+        r("journal.cli.importer.help.options.header"),
+        ind("journal.cli.importer.help.opt.help", "  "),
+        "  --timestamp TIMESTAMP".to_owned(),
+        ind(
+            "journal.cli.importer.help.opt.timestamp",
+            "                        ",
+        ),
+        ind("journal.cli.importer.help.opt.facet.line1", "  "),
+        ind(
+            "journal.cli.importer.help.opt.facet.line2",
+            "                        ",
+        ),
+        ind(
+            "journal.cli.importer.help.opt.facet.line3",
+            "                        ",
+        ),
+        ind("journal.cli.importer.help.opt.no.facet.line1", "  "),
+        ind(
+            "journal.cli.importer.help.opt.no.facet.line2",
+            "                        ",
+        ),
+        "  --setting SETTING".to_owned(),
+        ind("journal.cli.importer.help.opt.source", "  "),
+        ind("journal.cli.importer.help.opt.force", "  "),
+        ind("journal.cli.importer.help.opt.auto", "  "),
+        ind("journal.cli.importer.help.opt.dry.run", "  "),
+        ind("journal.cli.importer.help.opt.confirm.body", "  "),
+        "  --date-from DATE_FROM".to_owned(),
+        "  --date-to DATE_TO".to_owned(),
+        ind("journal.cli.importer.help.opt.deterministic.line1", "  "),
+        ind(
+            "journal.cli.importer.help.opt.deterministic.line2",
+            "                        ",
+        ),
+        ind("journal.cli.importer.help.opt.backends", "  "),
+        "  --sync BACKEND".to_owned(),
+        ind("journal.cli.importer.help.opt.save", "  "),
+        "  --window-days WINDOW_DAYS".to_owned(),
+        "  --scheduled".to_owned(),
+        "  --connect BACKEND".to_owned(),
+        ind("journal.cli.importer.help.opt.list.importers", "  "),
+        ind("journal.cli.importer.help.opt.audio.archive.line1", "  "),
+        ind(
+            "journal.cli.importer.help.opt.audio.archive.line2",
+            "                        ",
+        ),
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.help.opt.audio.archive.line3",
+            [
+                ("indent", &"                        "),
+                ("example", &manifest_example),
+            ],
+        ),
+        ind(
+            "journal.cli.importer.help.opt.audio.archive.line4",
+            "                        ",
+        ),
+        ind(
+            "journal.cli.importer.help.opt.audio.archive.line5",
+            "                        ",
+        ),
+        ind(
+            "journal.cli.importer.help.opt.audio.archive.line6",
+            "                        ",
+        ),
+        ind(
+            "journal.cli.importer.help.opt.audio.archive.line7",
+            "                        ",
+        ),
+        ind(
+            "journal.cli.importer.help.opt.audio.archive.line8",
+            "                        ",
+        ),
+        ind("journal.cli.importer.help.opt.source.zone", "  "),
+        ind("journal.cli.importer.help.opt.resume", "  "),
+        "  --audio-archive-status IMPORT_ID".to_owned(),
+        ind(
+            "journal.cli.importer.help.opt.archive.status",
+            "                        ",
+        ),
+        "  --audio-archive-members IMPORT_ID".to_owned(),
+        ind(
+            "journal.cli.importer.help.opt.archive.members",
+            "                        ",
+        ),
+        ind("journal.cli.importer.help.opt.offset", "  "),
+        ind("journal.cli.importer.help.opt.limit", "  "),
+        ind("journal.cli.importer.help.opt.json.line1", "  "),
+        ind(
+            "journal.cli.importer.help.opt.json.line2",
+            "                        ",
+        ),
+        ind("journal.cli.importer.help.opt.verbose", "  "),
+        ind("journal.cli.importer.help.opt.debug", "  "),
+    ]
+    .join("\n")
+        + "\n"
+}
+
+fn importer_description_id(name: &str) -> Option<&'static str> {
+    match name {
+        "ics" => Some("journal.cli.importer.list.desc.ics"),
+        "claude" => Some("journal.cli.importer.list.desc.claude"),
+        "chatgpt" => Some("journal.cli.importer.list.desc.chatgpt"),
+        "gemini" => Some("journal.cli.importer.list.desc.gemini"),
+        "document" => Some("journal.cli.importer.list.desc.document"),
+        "image" => Some("journal.cli.importer.list.desc.image"),
+        "journal_archive" => Some("journal.cli.importer.list.desc.journal.archive"),
+        "apple_health" => Some("journal.cli.importer.list.desc.apple.health"),
+        "oura" => Some("journal.cli.importer.list.desc.oura"),
+        "strava" => Some("journal.cli.importer.list.desc.strava"),
+        "evernote" => Some("journal.cli.importer.list.desc.evernote"),
+        _ => None,
+    }
+}
+
 pub fn importers(json: bool) -> String {
     if json {
         return serde_json::to_string(IMPORTERS).expect("static importer rows serialize") + "\n";
     }
-    let mut output = String::from("File importers:\n");
+    let locale = solstone_core_cli_copy::cli_locale();
+    let mut output = format!(
+        "{}\n",
+        solstone_core_cli_copy::render_for(locale, "journal.cli.importer.list.header", &[])
+    );
     for row in IMPORTERS {
         output.push_str(&format!(
             "  {:<12} {} ({})\n",
@@ -165,7 +325,10 @@ pub fn importers(json: bool) -> String {
             row.display_name,
             row.file_patterns.join(", ")
         ));
-        output.push_str(&format!("               {}\n", row.description));
+        let desc = importer_description_id(row.name)
+            .map(|id| solstone_core_cli_copy::render_for(locale, id, &[]))
+            .unwrap_or_else(|| row.description.to_owned());
+        output.push_str(&format!("               {desc}\n"));
     }
     output
 }
@@ -175,7 +338,10 @@ pub fn sync_backends() -> impl Iterator<Item = &'static str> {
 }
 
 pub fn backends() -> String {
-    let mut output = String::from("Syncable backends:\n");
+    let mut output = format!(
+        "{}\n",
+        solstone_core_cli_copy::text("journal.cli.importer.backends.header")
+    );
     for backend in sync_backends() {
         output.push_str(&format!("  {backend}\n"));
     }
@@ -183,22 +349,22 @@ pub fn backends() -> String {
 }
 
 pub fn resolution_skipped(reason: crate::SkipReason) -> String {
-    let reason = match reason {
-        crate::SkipReason::AlreadyImported => {
-            "this file was already imported; use --force to import it again"
-        }
-        crate::SkipReason::NoDeterministicMatch => {
-            "no date could be read from the file; name one with --timestamp YYYYMMDD_HHMMSS"
-        }
-        crate::SkipReason::TimestampRequired => {
-            "the file's date needs confirming; rerun with --timestamp or --auto"
-        }
+    let id = match reason {
+        crate::SkipReason::AlreadyImported => "journal.cli.importer.skipped.already",
+        crate::SkipReason::NoDeterministicMatch => "journal.cli.importer.skipped.no.date",
+        crate::SkipReason::TimestampRequired => "journal.cli.importer.skipped.confirm.date",
     };
-    format!("Import skipped: {reason}\n")
+    format!("{}\n", solstone_core_cli_copy::text(id))
 }
 
 pub fn timestamp_confirmation(timestamp: &str) -> String {
-    format!("detected timestamp {timestamp}; rerun with --timestamp {timestamp} or --auto\n")
+    format!(
+        "{}\n",
+        solstone_core_cli_copy::strings(
+            "journal.cli.importer.timestamp.confirm",
+            [("timestamp", timestamp)],
+        )
+    )
 }
 
 /// Where an owner asks for a transcript layout the journal does not read yet: the support
@@ -206,11 +372,28 @@ pub fn timestamp_confirmation(timestamp: &str) -> String {
 pub const UNTIMED_TRANSCRIPT_SUPPORT_URL: &str = "https://support.solstone.app/#report=v1&app=import&state=transcript%20times%20not%20recognized";
 
 pub fn generic_text_complete(segments: usize, untimed: bool) -> String {
-    let mut output = format!("Generic text import complete: segments={segments}\n");
+    let locale = solstone_core_cli_copy::cli_locale();
+    let mut output = format!(
+        "{}\n",
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.generic.text.complete",
+            [("segments", &segments)],
+        )
+    );
     if untimed {
         output.push_str(&format!(
-            "no turn times found in this file, so it landed as one segment at the import's start time, each line as written.\n\
-             if your transcripts mark times in a way the journal doesn't read yet, ask us to add it: {UNTIMED_TRANSCRIPT_SUPPORT_URL}\n"
+            "{}\n{}\n",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.generic.text.untimed.line1",
+                &[],
+            ),
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.generic.text.untimed.line2",
+                [("url", &UNTIMED_TRANSCRIPT_SUPPORT_URL)],
+            ),
         ));
     }
     output
@@ -218,33 +401,61 @@ pub fn generic_text_complete(segments: usize, untimed: bool) -> String {
 
 /// The outcome of a sync that saved: how many items reached the journal, and how many failed.
 pub fn sync_save_complete(backend: &str, saved: u64, errors: usize) -> String {
-    format!("{backend} sync complete: saved={saved} errors={errors}\n")
+    format!(
+        "{}\n",
+        solstone_core_cli_copy::display(
+            "journal.cli.importer.sync.complete",
+            [
+                ("backend", &backend),
+                ("saved", &saved),
+                ("errors", &errors),
+            ],
+        )
+    )
 }
 
 pub fn plaud_sync_preview(files: usize) -> String {
-    format!("Plaud sync preview complete: files={files}\n")
+    format!(
+        "{}\n",
+        solstone_core_cli_copy::display(
+            "journal.cli.importer.plaud.preview.complete",
+            [("files", &files)],
+        )
+    )
 }
 
 pub fn source_preview(source: RegistrySource, preview: &ImportPreview) -> String {
     format!(
-        "{} preview: date_range={}..{} items={} entities={} summary={}\n",
-        source.name(),
-        preview.date_range.0,
-        preview.date_range.1,
-        preview.item_count,
-        preview.entity_count,
-        preview.summary,
+        "{}\n",
+        solstone_core_cli_copy::display(
+            "journal.cli.importer.source.preview",
+            [
+                ("source", &source.name()),
+                ("start", &preview.date_range.0),
+                ("end", &preview.date_range.1),
+                ("items", &preview.item_count),
+                ("entities", &preview.entity_count),
+                ("summary", &preview.summary),
+            ],
+        )
     )
 }
 
 pub fn source_import_complete(source: RegistrySource, result: &ImportResult) -> String {
+    let files_created = result.files_created.len();
+    let errors = result.errors.len();
     format!(
-        "{} import complete: entries_written={} files_created={} errors={} summary={}\n",
-        source.name(),
-        result.entries_written,
-        result.files_created.len(),
-        result.errors.len(),
-        result.summary,
+        "{}\n",
+        solstone_core_cli_copy::display(
+            "journal.cli.importer.source.complete",
+            [
+                ("source", &source.name()),
+                ("entries", &result.entries_written),
+                ("files", &files_created),
+                ("errors", &errors),
+                ("summary", &result.summary),
+            ],
+        )
     )
 }
 
@@ -255,7 +466,13 @@ pub fn source_import_failure(source: RegistrySource, result: &ImportResult) -> S
         .or_else(|| result.errors.first())
         .map(String::as_str)
         .unwrap_or(result.summary.as_str());
-    format!("{} import failed: {detail}\n", source.name())
+    format!(
+        "{}\n",
+        solstone_core_cli_copy::display(
+            "journal.cli.importer.source.failed",
+            [("source", &source.name()), ("detail", &detail)],
+        )
+    )
 }
 
 pub fn source_archive_merge_complete(
@@ -268,54 +485,103 @@ pub fn source_archive_merge_complete(
     facets_merged: usize,
 ) -> String {
     format!(
-        "{} import complete: segments_copied={segments_copied} imports_copied={imports_copied} entities_created={entities_created} entities_merged={entities_merged} facets_created={facets_created} facets_merged={facets_merged}\n",
-        source.name(),
+        "{}\n",
+        solstone_core_cli_copy::display(
+            "journal.cli.importer.source.archive.complete",
+            [
+                ("source", &source.name()),
+                ("segments_copied", &segments_copied),
+                ("imports_copied", &imports_copied),
+                ("entities_created", &entities_created),
+                ("entities_merged", &entities_merged),
+                ("facets_created", &facets_created),
+                ("facets_merged", &facets_merged),
+            ],
+        )
     )
 }
 
 /// What the owner reads about body data that came in on another time zone.
 pub fn body_zones_differ(source: &str, hours: u64) -> String {
+    let locale = solstone_core_cli_copy::cli_locale();
     if hours == 0 {
         return format!(
-            "less than an hour of {source} may show at the wrong time: it was saved in a different time zone from the one this journal holds for {source}.\n"
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.body.zones.under.hour",
+                [("source", &source)],
+            )
         );
     }
-    let (unit, were) = if hours == 1 {
-        ("hour", "it was")
-    } else {
-        ("hours", "they were")
-    };
+    let count = hours.to_string();
     format!(
-        "{hours} {unit} of {source} may show at the wrong time: {were} saved in a different time zone from the one this journal holds for {source}.\n"
+        "{}\n",
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.importer.body.zones.hours",
+            &[
+                (
+                    "quantity",
+                    solstone_core_cli_copy::Value::Cardinal(
+                        i64::try_from(hours).unwrap_or(i64::MAX)
+                    ),
+                ),
+                ("count", solstone_core_cli_copy::Value::String(&count)),
+                ("source", solstone_core_cli_copy::Value::String(source)),
+            ],
+        )
     )
 }
 
 /// What the owner reads about days of body data an archive brought hidden.
 pub fn body_days_hidden(days: usize) -> String {
-    if days == 1 {
-        "1 day of body data was hidden in the archive, so it's hidden in this journal too.\n"
-            .to_owned()
-    } else {
-        format!(
-            "{days} days of body data were hidden in the archive, so they're hidden in this journal too.\n"
+    let count = days.to_string();
+    format!(
+        "{}\n",
+        solstone_core_cli_copy::render(
+            "journal.cli.importer.body.days.hidden",
+            &[
+                (
+                    "quantity",
+                    solstone_core_cli_copy::Value::Cardinal(
+                        i64::try_from(days).unwrap_or(i64::MAX)
+                    ),
+                ),
+                ("count", solstone_core_cli_copy::Value::String(&count)),
+            ],
         )
-    }
+    )
 }
 
 pub fn source_archive_already_present(source: RegistrySource) -> String {
     format!(
-        "{} import did not merge anything: archive content is already present\n",
-        source.name()
+        "{}\n",
+        solstone_core_cli_copy::display(
+            "journal.cli.importer.source.archive.already.present",
+            [("source", &source.name())],
+        )
     )
 }
 
 pub fn source_archive_incomplete(source: RegistrySource, detail: &str) -> String {
-    format!("{} import incomplete: {detail}\n", source.name())
+    format!(
+        "{}\n",
+        solstone_core_cli_copy::display(
+            "journal.cli.importer.source.archive.incomplete",
+            [("source", &source.name()), ("detail", &detail)],
+        )
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::body_zones_differ;
+    use super::{HELP, body_zones_differ, help_for};
+
+    #[test]
+    fn help_matches_english_const() {
+        assert_eq!(help_for(solstone_core_cli_copy::ENGLISH), HELP);
+    }
 
     #[test]
     fn a_zone_line_claims_no_more_of_the_clock_than_it_covers() {

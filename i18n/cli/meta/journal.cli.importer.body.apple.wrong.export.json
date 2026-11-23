@@ -1,0 +1,16 @@
+{
+  "description": "Refusal when --import-id does not contain the supplied media path.",
+  "context": "Refusal when --import-id does not contain the supplied media path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e5a59bf52bee9f9311a5fd707c0c685c670d0f35c23c7fef424b877daf71dd73",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

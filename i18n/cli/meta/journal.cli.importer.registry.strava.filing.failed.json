@@ -1,0 +1,25 @@
+{
+  "description": "Strava failure when workouts cannot be filed under facet.",
+  "context": "Strava failure when workouts cannot be filed under facet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6a045740041dd77cfec81199cf9c5d941c3f78d324b707f26ba62a42ceb569a3",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

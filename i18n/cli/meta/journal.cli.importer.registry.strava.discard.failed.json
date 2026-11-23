@@ -1,0 +1,21 @@
+{
+  "description": "Strava cleanup failure when staged download cannot be removed.",
+  "context": "Strava cleanup failure when staged download cannot be removed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "22b379e0828750a8b7b394b1c04ef74187341fe22d864cc7e238cff35abf1f19",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

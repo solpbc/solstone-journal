@@ -15,22 +15,24 @@ use solstone_core_journal_config_write::record_body_facet;
 
 use crate::cli_argv::ImportFacet;
 
-const NO_MEANS_STRAVA: &str = "if you say no, new workouts aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.";
-const NO_MEANS_BODY: &str = "if you say no, new workouts and sleep aren't listed on the activities page, and agents limited to some facets won't see them. search and the body app still show them.";
-
-fn question(ask: &BodyFacetAsk) -> Option<String> {
+fn question(locale: &str, ask: &BodyFacetAsk) -> Option<String> {
     match ask {
         BodyFacetAsk::Chosen(_) | BodyFacetAsk::Declined => None,
-        BodyFacetAsk::AskExisting(facet) => Some(format!(
-            "file your workouts, sleep and other body data under the facet you named {facet}?"
+        BodyFacetAsk::AskExisting(facet) => Some(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.body.facet.ask.existing",
+            [("facet", facet)],
         )),
-        BodyFacetAsk::AskMakeBody => {
-            Some("make a body facet for your workouts, sleep and other body data?".to_owned())
-        }
-        BodyFacetAsk::AskUnmute => Some(
-            "your body facet is muted. turn it back on for your workouts, sleep and other body data?"
-                .to_owned(),
-        ),
+        BodyFacetAsk::AskMakeBody => Some(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.importer.body.facet.ask.make.body",
+            &[],
+        )),
+        BodyFacetAsk::AskUnmute => Some(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.importer.body.facet.ask.unmute",
+            &[],
+        )),
     }
 }
 
@@ -64,12 +66,8 @@ pub(crate) fn ask_strava_facet(
     let ids = download_ids(media);
     ask_facet(
         journal,
-        (
-            ("workout", "workouts"),
-            "moves",
-            "already filed",
-            NO_MEANS_STRAVA,
-        ),
+        "journal.cli.importer.body.facet.no.means.strava",
+        "journal.cli.importer.body.facet.moves.strava",
         &|facet| crate::strava_convert::listed_moves(journal, &ids, facet),
         input,
         output,
@@ -86,12 +84,8 @@ pub(crate) fn ask_body_facet(
 ) -> (ImportFacet, Option<usize>) {
     ask_facet(
         journal,
-        (
-            ("record", "records"),
-            "can move up to",
-            "already listed on the activities page",
-            NO_MEANS_BODY,
-        ),
+        "journal.cli.importer.body.facet.no.means.body",
+        "journal.cli.importer.body.facet.moves.body",
         &|facet| {
             let (count, from) = crate::body_activity::listed_elsewhere(journal, stream, facet);
             (count > 0).then(|| {
@@ -111,30 +105,57 @@ type ListedCount<'a> = &'a dyn Fn(&str) -> Option<(usize, Vec<String>)>;
 
 fn ask_facet(
     journal: &Path,
-    ((one, many), moves_verb, earlier, no_means): ((&str, &str), &str, &str, &str),
+    no_means_id: &str,
+    moves_id: &str,
     listed: ListedCount<'_>,
     input: &mut dyn BufRead,
     output: &mut dyn Write,
 ) -> (ImportFacet, Option<usize>) {
+    let locale = solstone_core_cli_copy::cli_locale();
     let Ok((ask, _)) = body_facet_ask(journal) else {
         return (ImportFacet::Unattended, None);
     };
-    let Some(text) = question(&ask) else {
+    let Some(text) = question(locale, &ask) else {
         return (ImportFacet::Unattended, None);
     };
     let moves = listed(would_file_under(&ask));
     let shown = moves.as_ref().map_or(0, |(count, _)| *count);
-    let _ = writeln!(output, "{no_means}");
+    let _ = writeln!(
+        output,
+        "{}",
+        solstone_core_cli_copy::render_for(locale, no_means_id, &[])
+    );
     if let Some((count, from)) = &moves {
+        let count_str = count.to_string();
+        let from_words = solstone_core_import_sources::apple_health::facets_words(from);
         let _ = writeln!(
             output,
-            "a yes {} {count} {} {earlier}, from {}.",
-            moves_verb,
-            if *count == 1 { one } else { many },
-            solstone_core_import_sources::apple_health::facets_words(from)
+            "{}",
+            solstone_core_cli_copy::render_for(
+                locale,
+                moves_id,
+                &[
+                    (
+                        "quantity",
+                        solstone_core_cli_copy::Value::Cardinal(
+                            i64::try_from(*count).unwrap_or(i64::MAX),
+                        ),
+                    ),
+                    ("count", solstone_core_cli_copy::Value::String(&count_str)),
+                    ("from", solstone_core_cli_copy::Value::String(&from_words)),
+                ],
+            )
         );
     }
-    let _ = write!(output, "{text} [y/n] ");
+    let _ = write!(
+        output,
+        "{} ",
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.body.facet.prompt.yn",
+            [("question", &text)],
+        )
+    );
     let _ = output.flush();
     let mut answer = String::new();
     if input.read_line(&mut answer).is_err() {
@@ -149,12 +170,28 @@ fn ask_facet(
         Ok(Some(choice)) => choice,
         Ok(None) => return (ImportFacet::Unattended, None),
         Err(error) => {
-            let _ = writeln!(output, "your answer couldn't be saved: {error}");
+            let _ = writeln!(
+                output,
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.importer.body.facet.save.failed",
+                    [("error", &error)],
+                )
+            );
             return (ImportFacet::Unattended, None);
         }
     };
     if let Err(error) = record_body_facet(journal, &choice) {
-        let _ = writeln!(output, "your answer couldn't be saved: {error}");
+        let _ = writeln!(
+            output,
+            "{}",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.body.facet.save.failed",
+                [("error", &error)],
+            )
+        );
         return (ImportFacet::Unattended, None);
     }
     match choice {

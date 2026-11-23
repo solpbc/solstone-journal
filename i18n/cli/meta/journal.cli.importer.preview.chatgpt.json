@@ -1,0 +1,21 @@
+{
+  "description": "ChatGPT export preview summary.",
+  "context": "ChatGPT export preview summary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "messages",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6ec44e9c172be2e0f039a7e64c65a8ec71f84ee61980e06ca73ec2461e239b14",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

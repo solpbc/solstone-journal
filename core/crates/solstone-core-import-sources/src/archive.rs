@@ -519,8 +519,24 @@ fn plan_zip_archive(archive_path: &Path) -> Result<(ArchivePlan, bool), ImportSo
     let warning_count = warnings.len() as u64;
     let days = days.into_iter().collect::<Vec<_>>();
     let day_count = days.len() as u64;
-    let summary = format!(
-        "Journal archive: {day_count} days, {entity_count} entities, {facet_count} facets ({warning_count} warnings)"
+    let locale = solstone_core_cli_copy::cli_locale();
+    let day_label =
+        crate::save::cardinal_count(locale, "journal.cli.importer.count.day", day_count);
+    let entity_label =
+        crate::save::cardinal_count(locale, "journal.cli.importer.count.entity", entity_count);
+    let facet_label =
+        crate::save::cardinal_count(locale, "journal.cli.importer.count.facet", facet_count);
+    let warning_label =
+        crate::save::cardinal_count(locale, "journal.cli.importer.count.warning", warning_count);
+    let summary = solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.importer.summary.archive",
+        [
+            ("days", &day_label),
+            ("entities", &entity_label),
+            ("facets", &facet_label),
+            ("warnings", &warning_label),
+        ],
     );
     Ok((
         ArchivePlan {
@@ -4493,7 +4509,7 @@ mod tests {
         let plan = plan_journal_archive(&archive).unwrap();
         assert_eq!(
             plan.summary,
-            "Journal archive: 1 days, 0 entities, 0 facets (1 warnings)"
+            "Journal archive: 1 day, 0 entities, 0 facets (1 warning)"
         );
         assert_eq!(plan.days, vec!["20260311".to_owned()]);
         assert_eq!(plan.entity_count, 0);
@@ -4504,7 +4520,7 @@ mod tests {
         assert_eq!(preview.item_count, 1);
         assert_eq!(
             preview.summary,
-            "Journal archive: 1 days, 0 entities, 0 facets (1 warnings)"
+            "Journal archive: 1 day, 0 entities, 0 facets (1 warning)"
         );
     }
 

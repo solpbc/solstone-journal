@@ -1,0 +1,21 @@
+{
+  "description": "Audio archive status failure line.",
+  "context": "Audio archive status failure line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fc8e6de41c5670a4aace2e3ad5b891c6bf37937decfd8247e6355a7b623bcbdd",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

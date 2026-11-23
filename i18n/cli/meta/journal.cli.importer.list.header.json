@@ -1,0 +1,16 @@
+{
+  "description": "Header for --list-importers output.",
+  "context": "Header for --list-importers output.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3281b0c65377939e9a3fc3ea4ca8ec721b4478d1b035bdbac0e4e7e258318a76",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

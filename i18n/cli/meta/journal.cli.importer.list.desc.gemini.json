@@ -1,0 +1,16 @@
+{
+  "description": "Description for gemini importer.",
+  "context": "Description for gemini importer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d84a6542ae3a887edb9d058c0214a25a54f0d4b3787631a2492305658b8dad0",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Generic audio import failed processing segments list.",
+  "context": "Generic audio import failed processing segments list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2d564b084e35358d1ee95516023b1483e114de4b38e04cd67af8032d1861b271",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

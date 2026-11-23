@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI help options section header.",
+  "context": "Importer CLI help options section header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a55dc45767cebd822c2883b105b5ab89e5e17cb9340827ed2f9d8eb78b3c1ea",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

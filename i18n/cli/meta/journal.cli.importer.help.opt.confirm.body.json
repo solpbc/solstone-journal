@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI help --confirm-body-save description.",
+  "context": "Importer CLI help --confirm-body-save description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7fd5fbf32b5ce4de11fe26ed74686575efc50c0cec8eb63a96236f08bfa2319f",
+  "max_length": 267,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

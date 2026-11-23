@@ -1,0 +1,16 @@
+{
+  "description": "Description for strava importer.",
+  "context": "Description for strava importer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fdebaea9a31bb6a041ebc74b6463513158a957fc4351eaa880348614e4e6ba62",
+  "max_length": 195,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

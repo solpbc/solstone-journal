@@ -1,0 +1,21 @@
+{
+  "description": "Registry import unconfirmed publication error.",
+  "context": "Registry import unconfirmed publication error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7a1897297c03ab5307a48d2586ffddc642c0e4dbab42ac87fd96fb6f7ba18e14",
+  "max_length": 336,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

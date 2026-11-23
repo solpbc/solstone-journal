@@ -1,0 +1,16 @@
+{
+  "description": "Oura connect failure: authorization timed out.",
+  "context": "Oura connect failure: authorization timed out.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d1d48808b06c9115d01fbfbafc139946ade5b2d714cc6a40ae193afaf3ef6abe",
+  "max_length": 282,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

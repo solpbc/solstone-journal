@@ -1,0 +1,21 @@
+{
+  "description": "ICS skipped reason: unreadable.",
+  "context": "ICS skipped reason: unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aad11a3bba55bdc4ea760d07ab40d686eda9f993fd4e898bb6b641bc51079c3b",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

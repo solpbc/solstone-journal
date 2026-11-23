@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sync failure: temporary download URL failed.",
+  "context": "Plaud sync failure: temporary download URL failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3a707b395ed3d2adda0fd95c64d34336781f75667950f1a1e1f01d9eb1a8dc01",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

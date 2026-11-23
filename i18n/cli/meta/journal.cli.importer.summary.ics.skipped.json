@@ -1,0 +1,25 @@
+{
+  "description": "ICS skipped events summary clause.",
+  "context": "ICS skipped events summary clause.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "skipped",
+      "type": "string"
+    },
+    {
+      "name": "reasons",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fc09851804c63dbf8b4f5a1185dbec66f84e1879615d30dd1bd037b89cb8d228",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

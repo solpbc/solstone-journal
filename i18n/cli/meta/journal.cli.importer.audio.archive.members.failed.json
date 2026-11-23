@@ -1,0 +1,21 @@
+{
+  "description": "Audio archive members failure line.",
+  "context": "Audio archive members failure line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a6bfe9a48622fca7128185f5a18269d0d7cef95173cd8bb1880e376ea1d827e2",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

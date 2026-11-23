@@ -1,0 +1,21 @@
+{
+  "description": "Plaud sync preview completion line.",
+  "context": "Plaud sync preview completion line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "files",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "298cb19f931668d77197f5640664eaede82a16a461465e63004b5726cadcc9db",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sync failure: import matching failed.",
+  "context": "Plaud sync failure: import matching failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "94d08eb18a85089a6c26bdcbf656c30e16e217dd18544da2964da55006bb3d06",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

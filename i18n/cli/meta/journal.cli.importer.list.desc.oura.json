@@ -1,0 +1,16 @@
+{
+  "description": "Description for oura importer.",
+  "context": "Description for oura importer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c728d4792337940538312ab8c6d088b142e79832dd396851c62113bbc8d0b066",
+  "max_length": 270,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

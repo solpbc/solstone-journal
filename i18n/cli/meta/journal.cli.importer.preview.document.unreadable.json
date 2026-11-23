@@ -1,0 +1,33 @@
+{
+  "description": "Document preview summary with unreadable files.",
+  "context": "Document preview summary with unreadable files.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "documents",
+      "type": "string"
+    },
+    {
+      "name": "pages",
+      "type": "string"
+    },
+    {
+      "name": "unreadable",
+      "type": "string"
+    },
+    {
+      "name": "failures",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "acbd5eb85899a028bf981e9df0651fe3a812d7caff104b1118f0aabff4a87fbd",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

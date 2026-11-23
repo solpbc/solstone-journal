@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI refusal when --no-facet is used with non-body source.",
+  "context": "Importer CLI refusal when --no-facet is used with non-body source.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2bac6f50430abdb428802abe90dfbaef96c927a05cbc2bcef1d2dcd1b6642fbc",
+  "max_length": 279,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

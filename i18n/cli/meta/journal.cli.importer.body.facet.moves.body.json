@@ -1,0 +1,34 @@
+{
+  "description": "Notice of how many body records a yes answer could move.",
+  "context": "Notice of how many body records a yes answer could move.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "from",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e6bce6ce6e86364c64ffe3e8ea807e8b981b02fcffc5cbd7f80194d3721ad1b6",
+  "max_length": 654,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

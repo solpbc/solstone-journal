@@ -1,0 +1,16 @@
+{
+  "description": "Oura sync error when Oura date range extends past today.",
+  "context": "Oura sync error when Oura date range extends past today.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cdfc52e232f519bac4d954fe73a46973f42364474303f0954853b4a9e0351078",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

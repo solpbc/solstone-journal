@@ -1,0 +1,25 @@
+{
+  "description": "Import size summary line for recordings across days.",
+  "context": "Import size summary line for recordings across days.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "recordings",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "840746e7e05ca37801ad9e836bf341d5b5862e4ac3489122016f2cd5c18b1ab0",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Count phrase for Apple Health logged entries.",
+  "context": "Count phrase for Apple Health logged entries.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "98c33793ff99936dabb32bdc00efd32cb07747024351d97f97ff3d07a7cb39d1",
+  "max_length": 237,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

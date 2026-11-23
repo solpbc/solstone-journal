@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI list of available sync backends.",
+  "context": "Importer CLI list of available sync backends.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backends",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a87381a2d1e8a88a286b526f275acfa2e5724dfc9fdfcbeff89c18bf857416fe",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

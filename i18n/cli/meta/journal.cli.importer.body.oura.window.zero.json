@@ -1,0 +1,16 @@
+{
+  "description": "Oura sync error when --window-days is zero.",
+  "context": "Oura sync error when --window-days is zero.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "163ba033a6b9cae6fcc66e28cf60c11c755e0f041c91d796f2a53fb04fcde57f",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

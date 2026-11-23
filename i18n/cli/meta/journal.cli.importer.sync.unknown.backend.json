@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI error for unknown --sync backend.",
+  "context": "Importer CLI error for unknown --sync backend.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0b3632005faed41e93d93ae8ff7d6becaaeb0d1dc2b0b23d914d6011dc091dea",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

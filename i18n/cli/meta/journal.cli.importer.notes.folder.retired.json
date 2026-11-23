@@ -1,0 +1,16 @@
+{
+  "description": "Refusal for retired notes-folder import option.",
+  "context": "Refusal for retired notes-folder import option.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "18527e781de337818ef61ecdd66a5ab73adc3b04607c672656cbf9bda6603ff4",
+  "max_length": 468,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

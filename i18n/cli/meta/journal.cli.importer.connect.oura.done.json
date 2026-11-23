@@ -1,0 +1,16 @@
+{
+  "description": "Oura connect success line 1.",
+  "context": "Oura connect success line 1.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f4501c78c2465380b5d924d69b5c1962269745c51b5d8c92c6713e4c3e2a237a",
+  "max_length": 222,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

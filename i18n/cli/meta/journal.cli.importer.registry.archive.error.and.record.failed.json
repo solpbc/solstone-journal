@@ -1,0 +1,29 @@
+{
+  "description": "Archive merge failure when both merge and attempt recording fail.",
+  "context": "Archive merge failure when both merge and attempt recording fail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    },
+    {
+      "name": "record_error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7d813ec027003ede7571437ce6c28b332c14dfeab7511decb20c83367ce6fb71",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

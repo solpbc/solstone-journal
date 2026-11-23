@@ -1,0 +1,21 @@
+{
+  "description": "Plaud sync state persistence failure.",
+  "context": "Plaud sync state persistence failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "message",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8752480e6303081a4e63dc40fde3e1fde040a8b45dbe51d419744b59286eb61a",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

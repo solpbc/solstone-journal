@@ -1,0 +1,16 @@
+{
+  "description": "Import skipped message when no deterministic date was found.",
+  "context": "Import skipped message when no deterministic date was found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c12a7de2360740c999db87816288936ca3e9fa96cd5b6377e8de8852d0123caf",
+  "max_length": 282,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

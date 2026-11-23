@@ -93,8 +93,10 @@ fn run_resolved(
         if preview.exit_code != 0 {
             return (preview.stdout, preview.stderr, preview.exit_code);
         }
-        let announces =
-            solstone_core_import::size::ImportSize::rendered_announces_work(&preview.stdout);
+        let announces = solstone_core_import::size::ImportSize::rendered_announces_work_for(
+            locale,
+            &preview.stdout,
+        );
         let mut notice: Box<dyn Write> = if json_mode {
             Box::new(std::io::stderr())
         } else {
@@ -196,15 +198,24 @@ fn desktop_pdf() -> DesktopPdf {
 
 #[cfg(not(windows))]
 fn pdf_worker_sibling() -> Result<PathBuf, String> {
+    let locale = crate::host_locale();
     let current = std::env::current_exe().map_err(|error| error.to_string())?;
-    let parent = current
-        .parent()
-        .ok_or_else(|| "current executable has no parent".to_owned())?;
+    let parent = current.parent().ok_or_else(|| {
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.importer.desktop.exe.no.parent",
+            &[],
+        )
+    })?;
     let path = parent.join(format!("solstone-core-pdf{}", std::env::consts::EXE_SUFFIX));
     if path.is_file() {
         Ok(path)
     } else {
-        Err(format!("missing sibling executable {}", path.display()))
+        Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.desktop.missing.sibling",
+            [("path", &path.display())],
+        ))
     }
 }
 

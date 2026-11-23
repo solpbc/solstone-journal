@@ -1,0 +1,25 @@
+{
+  "description": "ICS preview summary counts.",
+  "context": "ICS preview summary counts.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "events",
+      "type": "string"
+    },
+    {
+      "name": "attendees",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5fb35a36b30aa7084df2692255f3e9cf930aaf1767050a8392ddc1bf381d8db2",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

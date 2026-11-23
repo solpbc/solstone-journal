@@ -1,0 +1,16 @@
+{
+  "description": "Description for document importer.",
+  "context": "Description for document importer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "298689945dcdcae3f327e2064a2674a2c54563bfad4312081c1a2a3f07d494e9",
+  "max_length": 198,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

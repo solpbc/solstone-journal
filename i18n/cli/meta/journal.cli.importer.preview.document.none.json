@@ -1,0 +1,16 @@
+{
+  "description": "Document preview summary when no PDF files are found.",
+  "context": "Document preview summary when no PDF files are found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "de2b40234b945c6565910c2cc4698254a6367db82c3ab34b60de13cf5b09c5dc",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

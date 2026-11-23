@@ -1,0 +1,21 @@
+{
+  "description": "Prompt to confirm detected timestamp.",
+  "context": "Prompt to confirm detected timestamp.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "timestamp",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c8a6249c5968244395e517e2e15cbe504f5ecff352cca04e8a14a3bef0c7d3eb",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

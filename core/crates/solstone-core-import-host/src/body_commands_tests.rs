@@ -26,7 +26,7 @@ fn today() -> jiff::civil::Date {
 #[test]
 fn apple_without_the_go_ahead_says_so_before_anything_else() {
     let journal = tempfile::tempdir().unwrap();
-    let run = save_apple(
+    let (run, _) = save_apple(
         "nowhere",
         &BodyCommand {
             confirm: false,
@@ -57,8 +57,8 @@ fn apple_refuses_dates_and_force_before_any_write() {
             ..command()
         },
     ] {
-        let run = save_apple("nowhere", &refused, journal.path());
-        assert_eq!(run.stderr, APPLE_WHOLE_WORDS);
+        let (run, _) = save_apple("nowhere", &refused, journal.path());
+        assert_eq!(run.stderr, apple_whole_words());
     }
     assert!(!journal.path().join("imports").exists());
 }
@@ -308,7 +308,7 @@ fn an_oura_plan_says_what_it_would_ask_and_writes_nothing() {
 #[test]
 fn a_facet_that_isnt_one_of_yours_stops_a_body_import() {
     let journal = tempfile::tempdir().unwrap();
-    let run = save_apple(
+    let (run, _) = save_apple(
         "nowhere",
         &BodyCommand {
             facet: ImportFacet::Facet("absent".to_owned()),
@@ -385,7 +385,7 @@ mod page_start {
         // Superseded: the attempt this run holds ends with no outcome of its own.
         let superseded = stage(P);
         solstone_core_import::record_running_attempt(root, P, 1_000).unwrap();
-        crate::body_commands::settle_page_import(root, P, Some("this import was superseded"));
+        crate::body_commands::settle_page_import(root, P, Some("this import was superseded"), None);
         assert!(!superseded.exists(), "a superseded run's upload goes");
         assert_ne!(
             solstone_core_import::metadata::attempt_holder(root, P),
@@ -400,10 +400,10 @@ mod page_start {
             solstone_core_journal_io::LockOptions::default(),
         )
         .unwrap();
-        crate::body_commands::settle_page_import(root, other, Some("import stopped"));
+        crate::body_commands::settle_page_import(root, other, Some("import stopped"), None);
         assert!(held.exists(), "a live run's upload stays");
         drop(lock);
-        crate::body_commands::settle_page_import(root, other, Some("import stopped"));
+        crate::body_commands::settle_page_import(root, other, Some("import stopped"), None);
         assert!(!held.exists(), "and goes once nothing holds it");
     }
 
@@ -507,7 +507,7 @@ mod page_start {
             solstone_core_import::snapshot::fingerprint(&root.join("imports").join(q)).unwrap();
         let run = run_page(root, &page_args(&held, q, true));
         assert_eq!(run.exit_code, 1, "{}", run.stderr);
-        assert_eq!(run.stderr, crate::body_commands::CARD_ONLY);
+        assert_eq!(run.stderr, crate::body_commands::card_only_words());
         assert_eq!(
             solstone_core_import::snapshot::fingerprint(&root.join("imports").join(q)).unwrap(),
             untouched,

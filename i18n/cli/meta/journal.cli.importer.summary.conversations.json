@@ -1,0 +1,29 @@
+{
+  "description": "Chat conversation import completion summary.",
+  "context": "Chat conversation import completion summary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "messages",
+      "type": "string"
+    },
+    {
+      "name": "conversations",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "925557f6b130d2a636fd9803577f8233d5e9eb0d1df9f1808743707d208e894a",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

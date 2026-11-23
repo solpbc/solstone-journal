@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI help --json line 2.",
+  "context": "Importer CLI help --json line 2.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "04788f4132ded1299f43932d04d377c634ae89cdb1fa4c76b27d7e948cc6bc5a",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

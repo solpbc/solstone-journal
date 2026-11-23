@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sign-in busy failure detail.",
+  "context": "Plaud sign-in busy failure detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "159375e04cb072cc5796fefa8f9c7672e0a8523e106f4069158182ca1d3b15e4",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

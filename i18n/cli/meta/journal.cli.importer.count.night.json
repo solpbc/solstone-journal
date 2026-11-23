@@ -1,0 +1,30 @@
+{
+  "description": "Count phrase for Apple Health sleep nights.",
+  "context": "Count phrase for Apple Health sleep nights.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "60decd37504c1f05efb666a25b13f79d657e3ff2e63a8d1cc1f0223062e6769e",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

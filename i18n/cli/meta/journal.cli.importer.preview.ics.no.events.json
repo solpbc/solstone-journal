@@ -1,0 +1,16 @@
+{
+  "description": "ICS preview summary when ICS contains no events.",
+  "context": "ICS preview summary when ICS contains no events.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7ec357102b76d02186068a5ebccce13b5f0bff9eda14cd92366c2478b6da6cc8",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

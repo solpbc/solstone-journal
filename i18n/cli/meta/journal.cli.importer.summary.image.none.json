@@ -1,0 +1,16 @@
+{
+  "description": "Image import summary when no readable image is found.",
+  "context": "Image import summary when no readable image is found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "75f3736665bc9a2837a1ae206041599aa9d3b27e1de20d4ecf4123edcdc2c842",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

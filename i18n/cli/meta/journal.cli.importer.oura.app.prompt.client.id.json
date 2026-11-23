@@ -1,0 +1,16 @@
+{
+  "description": "Interactive Oura client ID prompt.",
+  "context": "Interactive Oura client ID prompt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9b4842374bd669293858731300e138741f5363557862e058bb6111e79aaaa35d",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

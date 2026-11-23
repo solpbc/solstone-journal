@@ -918,13 +918,18 @@ pub fn detect(path: &Path) -> bool {
 }
 
 pub fn preview(request: DocumentPreviewRequest<'_>, worker: &dyn PdfWorker) -> ImportPreview {
+    let locale = solstone_core_cli_copy::cli_locale();
     let pdfs = find_pdfs(request.source);
     if pdfs.is_empty() {
         return ImportPreview {
             date_range: (String::new(), String::new()),
             item_count: 0,
             entity_count: 0,
-            summary: "No PDF documents found".to_owned(),
+            summary: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.preview.document.none",
+                &[],
+            ),
         };
     }
     let single_file = !request.source.is_dir();
@@ -960,14 +965,34 @@ pub fn preview(request: DocumentPreviewRequest<'_>, worker: &dyn PdfWorker) -> I
         .map(|date| day_for(date, &request.zone))
         .collect::<Vec<_>>();
     days.sort();
+    let documents = crate::save::cardinal_count(
+        locale,
+        "journal.cli.importer.count.pdf.document",
+        pdfs.len() as u64,
+    );
+    let pages = crate::save::cardinal_count(
+        locale,
+        "journal.cli.importer.count.total.page",
+        page_count as u64,
+    );
     let summary = if failures.is_empty() {
-        format!("{} PDF documents, {page_count} total pages", pdfs.len())
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.preview.document.counts",
+            [("documents", &documents), ("pages", &pages)],
+        )
     } else {
-        format!(
-            "{} PDF documents, {page_count} total pages; {} unreadable ({})",
-            pdfs.len(),
-            failures.len(),
-            failures.join("; ")
+        let unreadable = failures.len();
+        let joined = failures.join("; ");
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.preview.document.unreadable",
+            [
+                ("documents", &documents),
+                ("pages", &pages),
+                ("unreadable", &unreadable),
+                ("failures", &joined),
+            ],
         )
     };
     ImportPreview {
@@ -1483,16 +1508,32 @@ pub fn install_and_publish_document(
         .iter()
         .map(|segment| segment.day.clone())
         .collect::<BTreeSet<_>>();
+    let locale = solstone_core_cli_copy::cli_locale();
+    let documents = crate::save::cardinal_count(
+        locale,
+        "journal.cli.importer.count.pdf.document",
+        created_segments.len() as u64,
+    );
+    let day_label =
+        crate::save::cardinal_count(locale, "journal.cli.importer.count.day", days.len() as u64);
+    let segments = crate::save::cardinal_count(
+        locale,
+        "journal.cli.importer.count.segment",
+        created_segments.len() as u64,
+    );
     ImportResult {
         entries_written: u64::try_from(created_segments.len()).expect("segment count fits u64"),
         entities_seeded: 0,
         files_created,
         errors,
-        summary: format!(
-            "imported {} PDF documents across {} days into {} segments",
-            created_segments.len(),
-            days.len(),
-            created_segments.len()
+        summary: solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.summary.document",
+            [
+                ("documents", &documents),
+                ("days", &day_label),
+                ("segments", &segments),
+            ],
         ),
         hard_failures,
         segments: (!created_segments.is_empty()).then(|| {

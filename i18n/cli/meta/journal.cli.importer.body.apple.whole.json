@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health refusal when date-range or --force flags are passed.",
+  "context": "Apple Health refusal when date-range or --force flags are passed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f8e2c4274111129190ee2f9ff542d7fcacdeeff66b3334e6c7b3c899e18e560",
+  "max_length": 459,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

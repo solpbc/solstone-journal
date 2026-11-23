@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI refusal when --facet is used with unsupported source.",
+  "context": "Importer CLI refusal when --facet is used with unsupported source.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "733934a18104c671a73a8c3eed905407022cb340b8f60e0d26efb929561439aa",
+  "max_length": 378,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -17,10 +17,15 @@ pub fn force_day_notice(
         return None;
     }
     Some(format!(
-        "notice: this file dates to {}, and a previous import used {}. this --force import will use {}. existing recordings are not moved.\n",
-        fresh.day(),
-        stored_source.day(),
-        planned.day(),
+        "{}\n",
+        solstone_core_cli_copy::display(
+            "journal.cli.importer.force.day.notice",
+            [
+                ("fresh", &fresh.day()),
+                ("stored", &stored_source.day()),
+                ("planned", &planned.day()),
+            ],
+        )
     ))
 }
 

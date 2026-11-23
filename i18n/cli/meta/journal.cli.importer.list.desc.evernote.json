@@ -1,0 +1,16 @@
+{
+  "description": "Description for evernote importer.",
+  "context": "Description for evernote importer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9f786a6ab4f4a339bc1e4d1edf8240bf4512503f87c0b7c67894e07e8efc646d",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

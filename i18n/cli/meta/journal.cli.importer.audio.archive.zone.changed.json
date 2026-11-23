@@ -1,0 +1,16 @@
+{
+  "description": "Audio archive refusal when owner time zone changed after preview.",
+  "context": "Audio archive refusal when owner time zone changed after preview.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "78d3ff7460472c6a8830a40c07b8bfc2b4523096af21f579eb37491f3a2d1c6c",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

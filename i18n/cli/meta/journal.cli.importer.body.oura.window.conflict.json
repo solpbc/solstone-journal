@@ -1,0 +1,16 @@
+{
+  "description": "Oura sync error when --window-days is combined with date flags.",
+  "context": "Oura sync error when --window-days is combined with date flags.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b28c88d41ba7374a5c0ffd17395c97af31e614762740115ca408c16fa48b724e",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

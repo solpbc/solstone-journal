@@ -1,0 +1,25 @@
+{
+  "description": "Source import failure line.",
+  "context": "Source import failure line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "817ef847f89b6a62fea48486152e80f2158d4bbfa9c065caceb4b94729faa123",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health preview reads list item: mindful time.",
+  "context": "Apple Health preview reads list item: mindful time.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "864b046f347dc9af089fe0d99cb693fe631337d9ed3678fe602fba35281e4c49",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

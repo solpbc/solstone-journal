@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI help --audio-archive-status description.",
+  "context": "Importer CLI help --audio-archive-status description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3c8ff082549b2bb8446a25560ff8abd69afdd7840a1431ce9d0cafa785d6eb0d",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

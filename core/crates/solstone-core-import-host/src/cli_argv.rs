@@ -11,9 +11,7 @@ use std::time::Duration;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use serde_json::Value;
-use solstone_core_segment::{
-    SUPERVISOR_MESSAGE, SupervisorRefusal, require_solstone, require_solstone_with,
-};
+use solstone_core_segment::{SupervisorRefusal, require_solstone, require_solstone_with};
 
 use solstone_core_import::cli_render::{self, CliRun};
 use solstone_core_import::connect::{
@@ -127,7 +125,19 @@ pub fn preview_arguments_with(
             let digest = match options.snapshot_digest {
                 Some(digest) => digest,
                 None => solstone_core_import::snapshot::fingerprint(Path::new(&media)).map_err(
-                    |error| failure("", &format!("could not preview import: {error}\n"), 1),
+                    |error| {
+                        failure(
+                            "",
+                            &format!(
+                                "{}\n",
+                                solstone_core_cli_copy::display(
+                                    "journal.cli.importer.error.preview.failed",
+                                    [("error", &error)],
+                                )
+                            ),
+                            1,
+                        )
+                    },
                 )?,
             };
             let mut preview = vec![
@@ -235,10 +245,15 @@ pub fn force_day_notice_with(
         return Ok(None);
     };
     if selected == Some(RegistrySource::Document) && options.timestamp.is_none() {
-        return Ok((fresh.day() != stored.day()).then(|| format!(
-            "notice: this file's name dates to {}, and a previous import was recorded on {}. the PDF's own dates may select a different day. choose --timestamp to set its date. existing recordings are not moved.\n",
-            fresh.day(), stored.day(),
-        )));
+        return Ok((fresh.day() != stored.day()).then(|| {
+            format!(
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.force.pdf.day.notice",
+                    [("fresh", &fresh.day()), ("stored", &stored.day())],
+                )
+            )
+        }));
     }
     let planned = solstone_core_import::source_timestamp_for_preview(journal, &fresh, media)
         .map_err(|error| failure("", &format!("{error}\n"), 1))?;
@@ -259,7 +274,7 @@ pub fn grammar_outcome_before_preflight(args: &[String]) -> Option<CliRun> {
 /// Resolve the output mode before the desktop supervisor check.
 pub fn json_mode_before_preflight(args: &[String]) -> Result<bool, CliRun> {
     match parse_arguments(args) {
-        Ok(ParsedCommand::Help) => Err(success(cli_render::HELP.to_owned())),
+        Ok(ParsedCommand::Help) => Err(success(cli_render::help())),
         Ok(ParsedCommand::RetiredNotesFolder) => Err(notes_folder_retired()),
         Err(arguments) => Err(argparse_error(arguments)),
         Ok(ParsedCommand::Import(options) | ParsedCommand::Sync { options, .. }) => {
@@ -278,7 +293,7 @@ pub fn json_mode_before_preflight(args: &[String]) -> Result<bool, CliRun> {
 /// Run the importer grammar with the process environment and local supervisor probe.
 pub fn run_cli(args: &[String], journal_path: &Path) -> CliOutcome {
     let parsed = match parse_arguments(args) {
-        Ok(ParsedCommand::Help) => return rendered(success(cli_render::HELP.to_owned())),
+        Ok(ParsedCommand::Help) => return rendered(success(cli_render::help())),
         Ok(parsed) => parsed,
         Err(arguments) => return rendered(argparse_error(arguments)),
     };
@@ -297,7 +312,7 @@ where
     C: FnOnce() -> bool,
 {
     let parsed = match parse_arguments(args) {
-        Ok(ParsedCommand::Help) => return rendered(success(cli_render::HELP.to_owned())),
+        Ok(ParsedCommand::Help) => return rendered(success(cli_render::help())),
         Ok(parsed) => parsed,
         Err(arguments) => return rendered(argparse_error(arguments)),
     };
@@ -390,7 +405,7 @@ impl Dispatch<'_> {
 }
 
 fn embedded_body_refused() -> CliRun {
-    failure("", &format!("{}\n", cli_render::EMBEDDED_BODY_REFUSAL), 1)
+    failure("", &format!("{}\n", cli_render::embedded_body_refusal()), 1)
 }
 
 /// Shape one embedded preview so it cannot save, admit, or publish.
@@ -475,7 +490,9 @@ pub struct ArgumentClass {
 pub fn classify_arguments(args: &[String]) -> Result<ArgumentClass, String> {
     let parsed = parse_arguments(args)?;
     if matches!(&parsed, ParsedCommand::Import(options) if options.media.is_none()) {
-        return Err("the following arguments are required: media".to_owned());
+        return Err(solstone_core_cli_copy::text(
+            "journal.cli.importer.arg.media.required",
+        ));
     }
     Ok(classify_parsed(&parsed))
 }
@@ -528,12 +545,22 @@ pub(crate) fn run_library(
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_millis() as u64);
     let parsed = match parse_arguments(args) {
-        Ok(ParsedCommand::Help) => return (success(cli_render::HELP.to_owned()), None),
+        Ok(ParsedCommand::Help) => return (success(cli_render::help()), None),
         Ok(parsed) => parsed,
         Err(arguments) => return (argparse_error(arguments), None),
     };
     if !solstone_core_import::work_continues() {
-        return (failure("", "import stopped\n", 1), None);
+        return (
+            failure(
+                "",
+                &format!(
+                    "{}\n",
+                    solstone_core_cli_copy::text("journal.cli.importer.error.stopped")
+                ),
+                1,
+            ),
+            None,
+        );
     }
     let (run, import_id) =
         match dispatch_parsed(parsed, journal_path, Dispatch::Library { seams, embedded }) {
@@ -557,7 +584,7 @@ fn dispatch_parsed(
     dispatch: Dispatch<'_>,
 ) -> CliOutcome {
     match parsed {
-        ParsedCommand::Help => rendered(success(cli_render::HELP.to_owned())),
+        ParsedCommand::Help => rendered(success(cli_render::help())),
         ParsedCommand::ListImporters { json } => rendered(success(cli_render::importers(json))),
         ParsedCommand::Backends => rendered(success(cli_render::backends())),
         ParsedCommand::Connect { backend } => {
@@ -599,7 +626,7 @@ fn dispatch_parsed(
 fn notes_folder_retired() -> CliRun {
     failure(
         "",
-        &format!("{}\n", cli_render::NOTES_FOLDER_IMPORT_RETIRED),
+        &format!("{}\n", cli_render::notes_folder_import_retired()),
         1,
     )
 }
@@ -607,18 +634,38 @@ fn notes_folder_retired() -> CliRun {
 fn refusal_run(refusal: SupervisorRefusal) -> CliRun {
     match refusal {
         SupervisorRefusal::SpawnedUnavailable => failure("", "", 75),
-        SupervisorRefusal::Unavailable => failure("", &format!("{SUPERVISOR_MESSAGE}\n"), 1),
+        SupervisorRefusal::Unavailable => failure(
+            "",
+            &format!(
+                "{}\n",
+                solstone_core_cli_copy::text("journal.cli.streams.supervisor")
+            ),
+            1,
+        ),
     }
 }
 
 fn run_connect(backend: &str, journal_path: &Path) -> CliRun {
+    let locale = solstone_core_cli_copy::cli_locale();
     match backend {
         "plaud" => return run_plaud_connect(journal_path),
         "oura" => {}
         _ => {
             return failure(
                 "",
-                &format!("Unknown connect backend: {backend}\nConnectable backends: oura, plaud\n"),
+                &format!(
+                    "{}\n{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.importer.connect.unknown.backend",
+                        [("backend", &backend)],
+                    ),
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.importer.connect.available",
+                        &[],
+                    ),
+                ),
                 1,
             );
         }
@@ -650,7 +697,14 @@ fn run_connect(backend: &str, journal_path: &Path) -> CliRun {
             let Some(app) = asked else {
                 return failure(
                     "",
-                    "Oura needs both the client ID and the client secret, so nothing was saved.\n",
+                    &format!(
+                        "{}\n",
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.importer.connect.oura.both.required",
+                            &[],
+                        )
+                    ),
                     1,
                 );
             };
@@ -659,10 +713,22 @@ fn run_connect(backend: &str, journal_path: &Path) -> CliRun {
         other => other,
     };
     match result {
-        Ok(outcome) => success(format!(
-            "Oura is connected, and the connection is saved in this journal's settings.\npermissions asked for: {}\n",
-            outcome.report.scopes().join(" ")
-        )),
+        Ok(outcome) => {
+            let scopes = outcome.report.scopes().join(" ");
+            success(format!(
+                "{}\n{}\n",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.importer.connect.oura.done",
+                    &[],
+                ),
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.importer.connect.oura.scopes",
+                    [("scopes", &scopes)],
+                ),
+            ))
+        }
         Err(error) => failure(
             "",
             &crate::oura_app_question::connect_failed_words(&error),
@@ -687,14 +753,27 @@ fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
                 Err(error) => failure("", &format!("{error}\n"), 1),
             }
         }
-        _ => failure(
-            "",
-            &format!(
-                "Unknown sync backend: {backend}\nAvailable backends: {}\n",
-                cli_render::sync_backends().collect::<Vec<_>>().join(", ")
-            ),
-            1,
-        ),
+        _ => {
+            let locale = solstone_core_cli_copy::cli_locale();
+            let backends = cli_render::sync_backends().collect::<Vec<_>>().join(", ");
+            failure(
+                "",
+                &format!(
+                    "{}\n{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.importer.sync.unknown.backend",
+                        [("backend", &backend)],
+                    ),
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.importer.sync.available",
+                        [("backends", &backends)],
+                    ),
+                ),
+                1,
+            )
+        }
     }
 }
 
@@ -711,7 +790,7 @@ fn run_import(options: Options, journal_path: &Path, dispatch: Dispatch<'_>) -> 
         let apple_save =
             options.source.as_deref() == Some("apple_health") && options.media.is_some();
         if !apple_save {
-            return rendered(failure("", crate::body_commands::CARD_ONLY, 2));
+            return rendered(failure("", &crate::body_commands::card_only_words(), 2));
         }
         if let Err(run) = crate::body_commands::accept_page_import(
             journal_path,
@@ -721,7 +800,7 @@ fn run_import(options: Options, journal_path: &Path, dispatch: Dispatch<'_>) -> 
             return rendered(run);
         }
     }
-    let outcome = run_import_accepted(options, journal_path, dispatch);
+    let (outcome, refusal_code) = run_import_accepted(options, journal_path, dispatch);
     if let Some(id) = page_import.as_deref().filter(|_| !dry_run) {
         let failed = match &outcome {
             CliOutcome::Rendered(run) | CliOutcome::Imported { run, .. } if run.exit_code != 0 => {
@@ -729,7 +808,7 @@ fn run_import(options: Options, journal_path: &Path, dispatch: Dispatch<'_>) -> 
             }
             _ => None,
         };
-        crate::body_commands::settle_page_import(journal_path, id, failed);
+        crate::body_commands::settle_page_import(journal_path, id, failed, refusal_code);
     }
     outcome
 }
@@ -738,29 +817,38 @@ fn run_import_accepted(
     mut options: Options,
     journal_path: &Path,
     dispatch: Dispatch<'_>,
-) -> CliOutcome {
+) -> (CliOutcome, Option<&'static str>) {
     let owner_instant = match owner_instant(&mut options, journal_path) {
         Ok(instant) => instant,
-        Err(run) => return rendered(run),
+        Err(run) => return (rendered(run), None),
     };
     let Some(media) = options.media.as_deref() else {
-        return rendered(argparse_error(
-            "the following arguments are required: media".to_owned(),
-        ));
+        return (
+            rendered(argparse_error(solstone_core_cli_copy::text(
+                "journal.cli.importer.arg.media.required",
+            ))),
+            None,
+        );
     };
     if options.preview_zone.as_deref().is_some_and(|zone| {
         Some(zone) != solstone_core_journal_config::owner_zone(journal_path).iana_name()
     }) {
-        return rendered(failure(
-            "",
-            "the time zone changed after preview; preview again before importing\n",
-            1,
-        ));
+        return (
+            rendered(failure(
+                "",
+                &format!(
+                    "{}\n",
+                    solstone_core_cli_copy::text("journal.cli.importer.error.zone.changed.preview")
+                ),
+                1,
+            )),
+            Some("preview_again"),
+        );
     }
     if let Some(digest) = &options.snapshot_digest
         && let Err(error) = solstone_core_import::snapshot::verify(Path::new(media), digest)
     {
-        return rendered(failure("", &format!("{error}\n"), 1));
+        return (rendered(failure("", &format!("{error}\n"), 1)), None);
     }
     if let Some(token) = &options.preview_token {
         let timestamp = options
@@ -777,13 +865,16 @@ fn run_import_accepted(
             options.setting.as_deref(),
             options.source.as_deref(),
         ) {
-            return rendered(failure("", &format!("{error}\n"), 1));
+            return (rendered(failure("", &format!("{error}\n"), 1)), None);
         }
     }
     if options.facet.is_some() && options.no_facet {
-        return rendered(argparse_error(
-            "argument --no-facet: not allowed with argument --facet".to_owned(),
-        ));
+        return (
+            rendered(argparse_error(solstone_core_cli_copy::text(
+                "journal.cli.importer.error.no.facet.conflict",
+            ))),
+            None,
+        );
     }
     if let Some(token) = &options.preview_token
         && let Err(error) = solstone_core_import::snapshot::verify_preview_body_facet(
@@ -793,16 +884,19 @@ fn run_import_accepted(
             import_facet(&options).preview_value().as_ref(),
         )
     {
-        return rendered(failure("", &format!("{error}\n"), 1));
+        return (rendered(failure("", &format!("{error}\n"), 1)), None);
     }
     if let Some(facet) = options.facet.as_deref()
         && let Err(error) = require_enabled_facet(facet, journal_path)
     {
-        return rendered(failure("", &format!("{error}\n"), 1));
+        return (
+            rendered(failure("", &format!("{error}\n"), 1)),
+            Some("facet"),
+        );
     }
     let outcome = match resolve(options_ref(&options, media), journal_path) {
         Ok(outcome) => outcome,
-        Err(error) => return rendered(failure("", &format!("{error}\n"), 1)),
+        Err(error) => return (rendered(failure("", &format!("{error}\n"), 1)), None),
     };
     let strava = matches!(
         outcome,
@@ -821,36 +915,75 @@ fn run_import_accepted(
             }
         )
     {
-        return rendered(failure(
-            "",
-            "--facet only applies to an audio file, a plain text file or a body import, so nothing was imported; import this one without it\n",
-            1,
-        ));
+        return (
+            rendered(failure(
+                "",
+                &format!(
+                    "{}\n",
+                    solstone_core_cli_copy::text("journal.cli.importer.error.facet.scope")
+                ),
+                1,
+            )),
+            None,
+        );
     }
     if options.no_facet && !strava && !matches!(outcome, ResolutionOutcome::RouteAppleHealth) {
-        return rendered(failure(
-            "",
-            "--no-facet only applies to a body import, so nothing was imported; import this one without it\n",
-            1,
-        ));
+        return (
+            rendered(failure(
+                "",
+                &format!(
+                    "{}\n",
+                    solstone_core_cli_copy::text("journal.cli.importer.error.no.facet.scope")
+                ),
+                1,
+            )),
+            None,
+        );
     }
     match outcome {
         ResolutionOutcome::RouteAppleHealth => {
             if dispatch.embedded() {
-                rendered(embedded_body_refused())
-            } else {
-                rendered(if options.dry_run {
-                    crate::body_commands::preview_apple(
+                (rendered(embedded_body_refused()), None)
+            } else if options.dry_run {
+                (
+                    rendered(crate::body_commands::preview_apple(
                         media,
                         journal_path,
                         &import_facet(&options),
                         options.json,
-                    )
-                } else {
-                    crate::body_commands::save_apple(media, &body_command(&options), journal_path)
-                })
+                    )),
+                    None,
+                )
+            } else {
+                let (run, code) =
+                    crate::body_commands::save_apple(media, &body_command(&options), journal_path);
+                (rendered(run), code)
             }
         }
+        other => (
+            run_import_resolved(
+                other,
+                media,
+                owner_instant,
+                &options,
+                journal_path,
+                dispatch,
+            ),
+            None,
+        ),
+    }
+}
+
+fn run_import_resolved(
+    outcome: ResolutionOutcome,
+    media: &str,
+    owner_instant: Option<Timestamp>,
+    options: &Options,
+    journal_path: &Path,
+    dispatch: Dispatch<'_>,
+) -> CliOutcome {
+    match outcome {
+        ResolutionOutcome::RouteAppleHealth => unreachable!("handled by run_import_accepted"),
         ResolutionOutcome::Skipped {
             reason: solstone_core_import::SkipReason::TimestampRequired,
             detected_timestamp: Some(timestamp),
@@ -878,7 +1011,7 @@ fn run_import_accepted(
             ..
         } => {
             let timestamp = with_owner_instant(timestamp, owner_instant);
-            let (run, import_id) = run_audio(media, &options, journal_path, &timestamp, true);
+            let (run, import_id) = run_audio(media, options, journal_path, &timestamp, true);
             imported(run, &import_id, options.dry_run)
         }
         ResolutionOutcome::Resolved {
@@ -891,7 +1024,7 @@ fn run_import_accepted(
                 Some(seams) => {
                     let (run, import_id) = run_text(
                         media,
-                        &options,
+                        options,
                         journal_path,
                         &timestamp,
                         &stream,
@@ -903,7 +1036,7 @@ fn run_import_accepted(
                 None => {
                     let wire = solstone_core_import::text::SystemWireClient::sibling();
                     let (run, import_id) =
-                        run_text(media, &options, journal_path, &timestamp, &stream, &wire);
+                        run_text(media, options, journal_path, &timestamp, &stream, &wire);
                     wire.finish();
                     imported(run, &import_id, options.dry_run)
                 }
@@ -915,7 +1048,7 @@ fn run_import_accepted(
             ..
         } => {
             let (facet, listed_moves_shown) =
-                asked_import_facet(&options, source, media, journal_path);
+                asked_import_facet(options, source, media, journal_path);
             let registry_dispatch = RegistryDispatch {
                 media: PathBuf::from(media),
                 source,
@@ -1009,20 +1142,24 @@ fn import_facet(options: &Options) -> ImportFacet {
     }
 }
 
-/// An import filed under a facet the journal would not route to would land somewhere the
-/// owner did not choose, so it never starts.
-/// What a refused facet's words always say.
-pub(crate) const FACET_REFUSAL_MARKER: &str = "is not one of your unmuted facets";
-
 pub(crate) fn require_enabled_facet(facet: &str, journal: &Path) -> Result<(), String> {
-    let inventory = solstone_core_facets::observe_declared_facet_inventory(journal)
-        .map_err(|error| format!("could not read your facets, so nothing was imported: {error}"))?;
+    let locale = solstone_core_cli_copy::cli_locale();
+    let inventory =
+        solstone_core_facets::observe_declared_facet_inventory(journal).map_err(|error| {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.error.facets.unreadable",
+                [("error", &error)],
+            )
+        })?;
     if inventory.enabled.iter().any(|enabled| enabled == facet) {
         return Ok(());
     }
-    Err(format!(
-        "\"{facet}\" {FACET_REFUSAL_MARKER}, so nothing was imported. your unmuted facets: {}",
-        inventory.enabled.join(", ")
+    let enabled = inventory.enabled.join(", ");
+    Err(solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.importer.error.facet.not.unmuted",
+        [("facet", &facet), ("enabled", &enabled)],
     ))
 }
 
@@ -1043,7 +1180,10 @@ fn owner_instant(options: &mut Options, journal: &Path) -> Result<Option<Timesta
     let Some(stamp) = solstone_core_import::owner_instant(raw, &zone) else {
         return Err(failure(
             "",
-            "timestamp must be YYYYMMDD_HHMMSS, or a date and time with its offset, such as 2025-11-02T01:30:00-07:00\n",
+            &format!(
+                "{}\n",
+                solstone_core_cli_copy::text("journal.cli.importer.error.timestamp.format.offset")
+            ),
             1,
         ));
     };
@@ -1167,7 +1307,17 @@ fn run_audio(
         Ok(bound) => bound,
         Err(error) => {
             return (
-                failure("", &format!("audio import failed: {error}\n"), 1),
+                failure(
+                    "",
+                    &format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display(
+                            "journal.cli.importer.audio.failed",
+                            [("error", &error)],
+                        )
+                    ),
+                    1,
+                ),
                 timestamp.to_owned(),
             );
         }
@@ -1177,7 +1327,17 @@ fn run_audio(
         solstone_core_import::originals::capture_choice(journal_path, &import_id, "audio")
     {
         return (
-            failure("", &format!("audio import failed: {error}\n"), 1),
+            failure(
+                "",
+                &format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display(
+                        "journal.cli.importer.audio.failed",
+                        [("error", &error)],
+                    )
+                ),
+                1,
+            ),
             import_id,
         );
     }
@@ -1187,7 +1347,16 @@ fn run_audio(
             Ok(value) => value,
             Err(_) => {
                 return (
-                    failure("", "timestamp must be YYYYMMDD_HHMMSS format\n", 1),
+                    failure(
+                        "",
+                        &format!(
+                            "{}\n",
+                            solstone_core_cli_copy::text(
+                                "journal.cli.importer.error.timestamp.format"
+                            )
+                        ),
+                        1,
+                    ),
                     import_id,
                 );
             }
@@ -1196,7 +1365,17 @@ fn run_audio(
         Ok(runtime) => runtime,
         Err(error) => {
             return (
-                failure("", &format!("audio import runtime failed: {error}\n"), 1),
+                failure(
+                    "",
+                    &format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display(
+                            "journal.cli.importer.audio.runtime.failed",
+                            [("error", &error)],
+                        )
+                    ),
+                    1,
+                ),
                 import_id,
             );
         }
@@ -1226,7 +1405,17 @@ fn run_audio(
         Ok(facts) => facts,
         Err(error) => {
             return (
-                failure("", &format!("audio import failed: {error}\n"), 1),
+                failure(
+                    "",
+                    &format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display(
+                            "journal.cli.importer.audio.failed",
+                            [("error", &error)],
+                        )
+                    ),
+                    1,
+                ),
                 import_id,
             );
         }
@@ -1312,7 +1501,11 @@ fn run_audio(
         Some(Err(error)) if run.exit_code == 0 => failure(
             &run.stdout,
             &format!(
-                "audio import saved to your journal, but this file couldn't be marked as imported, so importing it again would add it a second time: {error}\n"
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.audio.manifest.failed",
+                    [("error", &error)],
+                )
             ),
             1,
         ),
@@ -1407,7 +1600,17 @@ fn run_text(
         Ok(bound) => bound,
         Err(error) => {
             return (
-                failure("", &format!("text import failed: {error}\n"), 1),
+                failure(
+                    "",
+                    &format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display(
+                            "journal.cli.importer.text.failed",
+                            [("error", &error)],
+                        )
+                    ),
+                    1,
+                ),
                 timestamp.as_str().to_owned(),
             );
         }
@@ -1475,7 +1678,10 @@ fn run_text(
         {
             failure(
                 "",
-                "text import saved to your journal, but it could not confirm the entries are ready to search; run it again\n",
+                &format!(
+                    "{}\n",
+                    solstone_core_cli_copy::text("journal.cli.importer.text.unconfirmed")
+                ),
                 1,
             )
         }
@@ -1510,15 +1716,17 @@ fn resolve(
     if let Some(source) = options.source
         && solstone_core_import::RegistrySource::from_name(source).is_none()
     {
-        return Err(format!("unknown importer source: {source}"));
+        return Err(solstone_core_cli_copy::display(
+            "journal.cli.importer.error.unknown.source",
+            [("source", &source)],
+        ));
     }
     let mut admitted_structured = false;
     if options.source.is_none()
         && options.media.exists()
         && requires_registry_classification(options.media)
-        && !solstone_core_import_sources::apple_export::detect_apple_source(options.media).map_err(
-            |_| "could not inspect Apple Health export; retry with a valid export".to_owned(),
-        )?
+        && !solstone_core_import_sources::apple_export::detect_apple_source(options.media)
+            .map_err(|_| solstone_core_cli_copy::text("journal.cli.importer.error.apple.inspect"))?
     {
         // An export dropped with no source named is recognised by its content, in registry
         // order, as each source's own detector reads it. When no registry source claims a
@@ -1682,13 +1890,16 @@ fn run_plaud_connect(journal_path: &Path) -> CliRun {
     let attempt = match plaud::begin_sign_in(None) {
         Ok(attempt) => attempt,
         Err(error) => {
+            let locale = solstone_core_cli_copy::cli_locale();
+            let detail = error.render(locale);
             return failure(
                 "",
                 &format!(
                     "{}\n",
-                    solstone_core_cli_copy::strings(
+                    solstone_core_cli_copy::display_for(
+                        locale,
                         "journal.cli.importer.plaud.connect.failed",
-                        [("detail", &error.to_string())],
+                        [("detail", &detail)],
                     )
                 ),
                 1,
@@ -1809,24 +2020,31 @@ fn run_plaud_connect(journal_path: &Path) -> CliRun {
         }
         Err(outcome) => {
             plaud::cancel_active_attempt();
-            let detail = match outcome {
-                PlaudSignInOutcome::Denied => "sign-in was not approved",
-                PlaudSignInOutcome::CallbackInvalid => "the sign-in address was invalid",
-                PlaudSignInOutcome::ExchangeFailed | PlaudSignInOutcome::SignedIn => {
-                    "couldn't finish signing in"
+            let locale = solstone_core_cli_copy::cli_locale();
+            let detail_id = match outcome {
+                PlaudSignInOutcome::Denied => "journal.cli.importer.plaud.connect.detail.denied",
+                PlaudSignInOutcome::CallbackInvalid => {
+                    "journal.cli.importer.plaud.connect.detail.callback.invalid"
                 }
-                PlaudSignInOutcome::Cancelled => "sign-in cancelled",
-                PlaudSignInOutcome::Expired => "the sign-in attempt timed out",
-                PlaudSignInOutcome::Busy => "another sign-in or sync is already running",
-                PlaudSignInOutcome::Storage => "couldn't save the sign-in in this journal",
+                PlaudSignInOutcome::ExchangeFailed | PlaudSignInOutcome::SignedIn => {
+                    "journal.cli.importer.plaud.connect.detail.exchange.failed"
+                }
+                PlaudSignInOutcome::Cancelled => {
+                    "journal.cli.importer.plaud.connect.detail.cancelled"
+                }
+                PlaudSignInOutcome::Expired => "journal.cli.importer.plaud.connect.detail.expired",
+                PlaudSignInOutcome::Busy => "journal.cli.importer.plaud.connect.detail.busy",
+                PlaudSignInOutcome::Storage => "journal.cli.importer.plaud.connect.detail.storage",
             };
+            let detail = solstone_core_cli_copy::render_for(locale, detail_id, &[]);
             failure(
                 "",
                 &format!(
                     "{}\n",
-                    solstone_core_cli_copy::strings(
+                    solstone_core_cli_copy::display_for(
+                        locale,
                         "journal.cli.importer.plaud.connect.failed",
-                        [("detail", detail)],
+                        [("detail", &detail)],
                     )
                 ),
                 1,
@@ -1912,7 +2130,11 @@ pub(crate) fn run_plaud_with(
                         )),
                     );
                 }
-                failure("", &format!("{error}\n"), 1)
+                failure(
+                    "",
+                    &format!("{}\n", error.render(solstone_core_cli_copy::cli_locale())),
+                    1,
+                )
             }
         };
     }
@@ -1938,7 +2160,11 @@ pub(crate) fn run_plaud_with(
                     )),
                 );
             }
-            failure("", &format!("{error}\n"), 1)
+            failure(
+                "",
+                &format!("{}\n", error.render(solstone_core_cli_copy::cli_locale())),
+                1,
+            )
         }
     }
 }
@@ -1950,7 +2176,10 @@ pub(crate) fn run_plaud_with(
 fn sync_saved(backend: &str, saved: u64, errors: &[String], stopped: bool) -> CliRun {
     let stdout = cli_render::sync_save_complete(backend, saved, errors.len());
     if stopped {
-        let mut stderr = String::from("import stopped\n");
+        let mut stderr = format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.importer.error.stopped")
+        );
         for error in errors {
             stderr.push_str(error);
             stderr.push('\n');
@@ -2270,9 +2499,12 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
         if let Some((name, value)) = argument.split_once('=') {
             assign_value(&mut options, name, value)?;
         } else if takes_value(argument) {
-            let value = args
-                .get(index + 1)
-                .ok_or_else(|| format!("argument {argument}: expected one argument"))?;
+            let value = args.get(index + 1).ok_or_else(|| {
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.arg.expected.one",
+                    [("argument", argument)],
+                )
+            })?;
             assign_value(&mut options, argument, value)?;
             index += 1;
         } else if argument == "--auto" {
@@ -2286,7 +2518,10 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
             options.auto = Some(value);
         } else if assign_flag(&mut options, argument) {
         } else if argument.starts_with('-') {
-            return Err(format!("unrecognized arguments: {argument}"));
+            return Err(solstone_core_cli_copy::display(
+                "journal.cli.importer.arg.unrecognized",
+                [("arguments", argument)],
+            ));
         } else {
             positionals.push(argument.clone());
         }
@@ -2302,7 +2537,11 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
         [media, timestamp, extras @ ..] => {
             options.media = Some(media.clone());
             options.timestamp = Some(timestamp.clone());
-            return Err(format!("unrecognized arguments: {}", extras.join(" ")));
+            let joined = extras.join(" ");
+            return Err(solstone_core_cli_copy::display(
+                "journal.cli.importer.arg.unrecognized",
+                [("arguments", &joined)],
+            ));
         }
     }
     if options.sync.as_deref() == Some(RETIRED_NOTES_SOURCE)
@@ -2311,26 +2550,35 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
         return Ok(ParsedCommand::RetiredNotesFolder);
     }
     if options.archive_identity.is_some() && options.audio_archive.is_none() {
-        return Err("--archive-identity is only valid with --audio-archive".to_owned());
+        return Err(solstone_core_cli_copy::text(
+            "journal.cli.importer.arg.archive.identity.scope",
+        ));
     }
     if (options.facet.is_some() || options.no_facet)
         && (options.audio_archive.is_some()
             || options.sync.as_deref().is_some_and(|sync| sync != "oura"))
     {
-        return Err(
-            "--facet is only valid when importing one audio or text file or a body import"
-                .to_owned(),
-        );
+        return Err(solstone_core_cli_copy::text(
+            "journal.cli.importer.arg.facet.scope",
+        ));
     }
     if let Some(audio_archive) = options.audio_archive {
         if !positionals.is_empty() {
-            return Err(format!("unrecognized arguments: {}", positionals.join(" ")));
+            let joined = positionals.join(" ");
+            return Err(solstone_core_cli_copy::display(
+                "journal.cli.importer.arg.unrecognized",
+                [("arguments", &joined)],
+            ));
         }
         if options.offset.is_some() || options.limit.is_some() {
-            return Err("unrecognized arguments: --offset/--limit are only valid with --audio-archive-members".to_owned());
+            return Err(solstone_core_cli_copy::text(
+                "journal.cli.importer.arg.offset.limit.scope",
+            ));
         }
         if options.audio_archive_status.is_some() || options.audio_archive_members.is_some() {
-            return Err("unrecognized arguments: conflicting audio archive commands".to_owned());
+            return Err(solstone_core_cli_copy::text(
+                "journal.cli.importer.arg.archive.conflict.commands",
+            ));
         }
         return Ok(ParsedCommand::AudioArchive(
             crate::audio_archive::AudioArchiveDispatchOptions {
@@ -2346,16 +2594,24 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
     }
     if let Some(run_id) = options.audio_archive_status {
         if !positionals.is_empty() {
-            return Err(format!("unrecognized arguments: {}", positionals.join(" ")));
+            let joined = positionals.join(" ");
+            return Err(solstone_core_cli_copy::display(
+                "journal.cli.importer.arg.unrecognized",
+                [("arguments", &joined)],
+            ));
         }
         if options.offset.is_some() || options.limit.is_some() {
-            return Err("unrecognized arguments: --offset/--limit are only valid with --audio-archive-members".to_owned());
+            return Err(solstone_core_cli_copy::text(
+                "journal.cli.importer.arg.offset.limit.scope",
+            ));
         }
         if options.resume.is_some()
             || options.source_zone.is_some()
             || options.audio_archive_members.is_some()
         {
-            return Err("unrecognized arguments: conflicting audio archive flags".to_owned());
+            return Err(solstone_core_cli_copy::text(
+                "journal.cli.importer.arg.archive.conflict.flags",
+            ));
         }
         return Ok(ParsedCommand::AudioArchiveStatus {
             run_id,
@@ -2364,10 +2620,16 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
     }
     if let Some(run_id) = options.audio_archive_members {
         if !positionals.is_empty() {
-            return Err(format!("unrecognized arguments: {}", positionals.join(" ")));
+            let joined = positionals.join(" ");
+            return Err(solstone_core_cli_copy::display(
+                "journal.cli.importer.arg.unrecognized",
+                [("arguments", &joined)],
+            ));
         }
         if options.resume.is_some() || options.source_zone.is_some() {
-            return Err("unrecognized arguments: conflicting audio archive flags".to_owned());
+            return Err(solstone_core_cli_copy::text(
+                "journal.cli.importer.arg.archive.conflict.flags",
+            ));
         }
         return Ok(ParsedCommand::AudioArchiveMembers {
             run_id,
@@ -2378,20 +2640,19 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
     }
 
     if options.offset.is_some() || options.limit.is_some() {
-        return Err(
-            "unrecognized arguments: --offset/--limit are only valid with --audio-archive-members"
-                .to_owned(),
-        );
+        return Err(solstone_core_cli_copy::text(
+            "journal.cli.importer.arg.offset.limit.scope",
+        ));
     }
     if options.resume.is_some() {
-        return Err(
-            "unrecognized arguments: --resume is only valid with --audio-archive".to_owned(),
-        );
+        return Err(solstone_core_cli_copy::text(
+            "journal.cli.importer.arg.resume.scope",
+        ));
     }
     if options.source_zone.is_some() {
-        return Err(
-            "unrecognized arguments: --source-zone is only valid with --audio-archive".to_owned(),
-        );
+        return Err(solstone_core_cli_copy::text(
+            "journal.cli.importer.arg.source.zone.scope",
+        ));
     }
 
     if options.list_importers {
@@ -2457,16 +2718,20 @@ fn assign_value(options: &mut Options, name: &str, value: &str) -> Result<(), St
             let _ = value;
         }
         "--window-days" => {
-            options.window_days = Some(
-                value
-                    .parse()
-                    .map_err(|_| format!("argument --window-days: invalid int value: '{value}'"))?,
-            )
+            options.window_days = Some(value.parse().map_err(|_| {
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.arg.invalid.int",
+                    [("flag", &"--window-days"), ("value", &value)],
+                )
+            })?)
         }
         "--facet" => options.facet = Some(value.to_owned()),
         "--listed-moves-shown" => {
             options.listed_moves_shown = Some(value.parse().map_err(|_| {
-                format!("argument --listed-moves-shown: invalid int value: '{value}'")
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.arg.invalid.int",
+                    [("flag", &"--listed-moves-shown"), ("value", &value)],
+                )
             })?);
         }
         "--setting" => options.setting = Some(value.to_owned()),
@@ -2474,7 +2739,9 @@ fn assign_value(options: &mut Options, name: &str, value: &str) -> Result<(), St
         "--audio-archive" => options.audio_archive = Some(PathBuf::from(value)),
         "--archive-identity" => {
             if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-                return Err("--archive-identity must be a SHA-256 identity".to_owned());
+                return Err(solstone_core_cli_copy::text(
+                    "journal.cli.importer.arg.archive.identity.sha256",
+                ));
             }
             options.archive_identity = Some(value.to_ascii_lowercase());
         }
@@ -2483,20 +2750,28 @@ fn assign_value(options: &mut Options, name: &str, value: &str) -> Result<(), St
         "--audio-archive-status" => options.audio_archive_status = Some(value.to_owned()),
         "--audio-archive-members" => options.audio_archive_members = Some(value.to_owned()),
         "--offset" => {
-            options.offset = Some(
-                value
-                    .parse()
-                    .map_err(|_| format!("argument --offset: invalid int value: '{value}'"))?,
-            )
+            options.offset = Some(value.parse().map_err(|_| {
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.arg.invalid.int",
+                    [("flag", &"--offset"), ("value", &value)],
+                )
+            })?)
         }
         "--limit" => {
-            options.limit = Some(
-                value
-                    .parse()
-                    .map_err(|_| format!("argument --limit: invalid int value: '{value}'"))?,
-            )
+            options.limit = Some(value.parse().map_err(|_| {
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.arg.invalid.int",
+                    [("flag", &"--limit"), ("value", &value)],
+                )
+            })?)
         }
-        _ => return Err(format!("unrecognized arguments: {name}={value}")),
+        _ => {
+            let arg = format!("{name}={value}");
+            return Err(solstone_core_cli_copy::display(
+                "journal.cli.importer.arg.unrecognized",
+                [("arguments", &arg)],
+            ));
+        }
     }
     Ok(())
 }
@@ -2523,6 +2798,7 @@ fn assign_flag(options: &mut Options, argument: &str) -> bool {
 pub fn audio_import_cli_run(
     result: Result<crate::audio::AudioImportOutcome, solstone_core_import::ImportError>,
 ) -> CliRun {
+    let locale = solstone_core_cli_copy::cli_locale();
     match result {
         Ok(outcome) => {
             let processing = &outcome.created().processing;
@@ -2531,15 +2807,25 @@ pub fn audio_import_cli_run(
             // both, because neither finished while the importer waited.
             let mut lines = String::new();
             if !processing.failed_segments.is_empty() {
+                let segments = processing.failed_segments.join(", ");
                 lines.push_str(&format!(
-                    "audio import processing failed: {}\n",
-                    processing.failed_segments.join(", ")
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.importer.audio.processing.failed",
+                        [("segments", &segments)],
+                    )
                 ));
             }
             if !processing.stalled_segments.is_empty() {
+                let segments = processing.stalled_segments.join(", ");
                 lines.push_str(&format!(
-                    "audio import still processing when the importer stopped waiting: {}\n",
-                    processing.stalled_segments.join(", ")
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.importer.audio.processing.stalled",
+                        [("segments", &segments)],
+                    )
                 ));
             }
             if !lines.is_empty() {
@@ -2551,18 +2837,33 @@ pub fn audio_import_cli_run(
                 .dropped_chunks()
                 .iter()
                 .map(|chunk| {
-                    format!(
-                        "{} to {}",
-                        recording_offset(chunk.start_offset_seconds),
-                        recording_offset(chunk.start_offset_seconds + chunk.duration_seconds)
+                    let start = recording_offset(chunk.start_offset_seconds);
+                    let end = recording_offset(chunk.start_offset_seconds + chunk.duration_seconds);
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.importer.audio.dropped.range",
+                        [("start", &start), ("end", &end)],
                     )
                 })
                 .collect::<Vec<_>>();
-            let mut run = success(format!("Generic audio import complete: {outcome:?}\n"));
+            let outcome_debug = format!("{outcome:?}");
+            let mut run = success(format!(
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.importer.audio.complete",
+                    [("outcome", &outcome_debug)],
+                )
+            ));
             if !left_out.is_empty() {
+                let ranges = left_out.join(", ");
                 run.stderr = format!(
-                    "part of this recording couldn't be imported: {} into the recording. the other parts are in your journal, and importing the file again would add them a second time.\n",
-                    left_out.join(", ")
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.importer.audio.dropped.notice",
+                        [("ranges", &ranges)],
+                    )
                 );
             }
             run
@@ -2583,10 +2884,17 @@ fn recording_offset(seconds: f64) -> String {
 }
 
 fn argparse_error(arguments: String) -> CliRun {
+    let locale = solstone_core_cli_copy::cli_locale();
     failure(
         "",
         &format!(
-            "usage: solstone journal importer [-h] [options] media [timestamp]\nsolstone journal importer: error: {arguments}\n"
+            "{}\n{}\n",
+            solstone_core_cli_copy::render_for(locale, "journal.cli.importer.arg.usage", &[]),
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.arg.error",
+                [("detail", &arguments)],
+            ),
         ),
         2,
     )
@@ -2622,7 +2930,7 @@ mod tests {
             confirm_body_save: true,
             ..Options::default()
         };
-        let run = crate::body_commands::save_apple(
+        let (run, _) = crate::body_commands::save_apple(
             scratch.path().to_str().unwrap(),
             &body_command(&options),
             &scratch.path().join("journal"),
@@ -2712,7 +3020,14 @@ mod tests {
                 .unwrap_err();
         assert_eq!(
             interactive,
-            failure("", &format!("{SUPERVISOR_MESSAGE}\n"), 1)
+            failure(
+                "",
+                &format!(
+                    "{}\n",
+                    solstone_core_cli_copy::text("journal.cli.streams.supervisor")
+                ),
+                1
+            )
         );
         let unreadable = preview_arguments_with(&args, root.path(), || Ok(())).unwrap_err();
         assert_eq!(unreadable.exit_code, 1);

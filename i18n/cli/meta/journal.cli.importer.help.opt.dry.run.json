@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI help --dry-run description.",
+  "context": "Importer CLI help --dry-run description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aa8778f8cd50d8c80174706fbdb806f36d2280894f546a41c9c91de0f698ce77",
+  "max_length": 273,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -49199,6 +49199,3917 @@
       "selector": null
     },
     {
+      "id": "journal.cli.importer.arg.archive.conflict.commands",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e617263686976652e636f6e666c6963742e636f6d6d616e6473",
+      "namespace": "journal.cli.importer.arg.archive.conflict",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.arg.archive.conflict.flags",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e617263686976652e636f6e666c6963742e666c616773",
+      "namespace": "journal.cli.importer.arg.archive.conflict",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.arg.archive.identity.scope",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e617263686976652e6964656e746974792e73636f7065",
+      "namespace": "journal.cli.importer.arg.archive.identity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.arg.archive.identity.sha256",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e617263686976652e6964656e746974792e736861323536",
+      "namespace": "journal.cli.importer.arg.archive.identity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.arg.error",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e6572726f72",
+      "namespace": "journal.cli.importer.arg",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.arg.expected.one",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e65787065637465642e6f6e65",
+      "namespace": "journal.cli.importer.arg.expected",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "argument",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.arg.facet.scope",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e66616365742e73636f7065",
+      "namespace": "journal.cli.importer.arg.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.arg.invalid.int",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e696e76616c69642e696e74",
+      "namespace": "journal.cli.importer.arg.invalid",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "flag",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "value",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.arg.media.required",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e6d656469612e7265717569726564",
+      "namespace": "journal.cli.importer.arg.media",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.arg.offset.limit.scope",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e6f66667365742e6c696d69742e73636f7065",
+      "namespace": "journal.cli.importer.arg.offset.limit",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.arg.resume.scope",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e726573756d652e73636f7065",
+      "namespace": "journal.cli.importer.arg.resume",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.arg.source.zone.scope",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e736f757263652e7a6f6e652e73636f7065",
+      "namespace": "journal.cli.importer.arg.source.zone",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.arg.unrecognized",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e756e7265636f676e697a6564",
+      "namespace": "journal.cli.importer.arg",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "arguments",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.arg.usage",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6172672e7573616765",
+      "namespace": "journal.cli.importer.arg",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.admitted.line1",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e61646d69747465642e6c696e6531",
+      "namespace": "journal.cli.importer.audio.archive.admitted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "run_id",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "members",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "source_bytes",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "tiles",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.changed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6368616e676564",
+      "namespace": "journal.cli.importer.audio.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.complete.line1",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e636f6d706c6574652e6c696e6531",
+      "namespace": "journal.cli.importer.audio.archive.complete",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "operation",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "run_id",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.complete.line2",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e636f6d706c6574652e6c696e6532",
+      "namespace": "journal.cli.importer.audio.archive.complete",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "parts",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "tiles",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "pending",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "processed",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "unavailable",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "rejected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.dry.run.resume",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6472792e72756e2e726573756d65",
+      "namespace": "journal.cli.importer.audio.archive.dry.run",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6661696c6564",
+      "namespace": "journal.cli.importer.audio.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.folder.needs.zone",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e666f6c6465722e6e656564732e7a6f6e65",
+      "namespace": "journal.cli.importer.audio.archive.folder.needs",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.left.out.header",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6c6566742e6f75742e686561646572",
+      "namespace": "journal.cli.importer.audio.archive.left.out",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.left.out.inline",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6c6566742e6f75742e696e6c696e65",
+      "namespace": "journal.cli.importer.audio.archive.left.out",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "counts",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.members.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6d656d626572732e6661696c6564",
+      "namespace": "journal.cli.importer.audio.archive.members",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.members.summary",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6d656d626572732e73756d6d617279",
+      "namespace": "journal.cli.importer.audio.archive.members",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "run_id",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "offset",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.preview.line1",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e707265766965772e6c696e6531",
+      "namespace": "journal.cli.importer.audio.archive.preview",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "members",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "source_bytes",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "tiles",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.progress.saved",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e70726f67726573732e7361766564",
+      "namespace": "journal.cli.importer.audio.archive.progress",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "saved",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "tiles",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.span.line",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e7370616e2e6c696e65",
+      "namespace": "journal.cli.importer.audio.archive.span",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "span",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.span.none",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e7370616e2e6e6f6e65",
+      "namespace": "journal.cli.importer.audio.archive.span",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.span.range",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e7370616e2e72616e6765",
+      "namespace": "journal.cli.importer.audio.archive.span",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "first",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "last",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.status.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e7374617475732e6661696c6564",
+      "namespace": "journal.cli.importer.audio.archive.status",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.status.summary",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e7374617475732e73756d6d617279",
+      "namespace": "journal.cli.importer.audio.archive.status",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "run_id",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total_parts",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "saved_parts",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "saved_tiles",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "pending",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "processed",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "unavailable",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "rejected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "save_complete",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.archive.zone.changed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e7a6f6e652e6368616e676564",
+      "namespace": "journal.cli.importer.audio.archive.zone",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.complete",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e636f6d706c657465",
+      "namespace": "journal.cli.importer.audio",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "outcome",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.dropped.notice",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e64726f707065642e6e6f74696365",
+      "namespace": "journal.cli.importer.audio.dropped",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "ranges",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.dropped.range",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e64726f707065642e72616e6765",
+      "namespace": "journal.cli.importer.audio.dropped",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "start",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "end",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e6661696c6564",
+      "namespace": "journal.cli.importer.audio",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.manifest.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e6d616e69666573742e6661696c6564",
+      "namespace": "journal.cli.importer.audio.manifest",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.processing.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e70726f63657373696e672e6661696c6564",
+      "namespace": "journal.cli.importer.audio.processing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "segments",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.processing.stalled",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e70726f63657373696e672e7374616c6c6564",
+      "namespace": "journal.cli.importer.audio.processing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "segments",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.audio.runtime.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e72756e74696d652e6661696c6564",
+      "namespace": "journal.cli.importer.audio.runtime",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.backends.header",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6261636b656e64732e686561646572",
+      "namespace": "journal.cli.importer.backends",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.apple.already.ran",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e616c72656164792e72616e",
+      "namespace": "journal.cli.importer.body.apple.already",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.apple.card.only",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e636172642e6f6e6c79",
+      "namespace": "journal.cli.importer.body.apple.card",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.apple.preview.intro",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e707265766965772e696e74726f",
+      "namespace": "journal.cli.importer.body.apple.preview",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "head",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "tail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.apple.preview.moves",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e707265766965772e6d6f766573",
+      "namespace": "journal.cli.importer.body.apple.preview",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.body.apple.preview.span",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e707265766965772e7370616e",
+      "namespace": "journal.cli.importer.body.apple.preview",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "first",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "last",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "workouts",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "nights",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "mindful",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "readings",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "daily",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "logged",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.apple.reads.daily",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e72656164732e6461696c79",
+      "namespace": "journal.cli.importer.body.apple.reads",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.apple.reads.logged",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e72656164732e6c6f67676564",
+      "namespace": "journal.cli.importer.body.apple.reads",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.apple.reads.mindful",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e72656164732e6d696e6466756c",
+      "namespace": "journal.cli.importer.body.apple.reads",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.apple.reads.readings",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e72656164732e72656164696e6773",
+      "namespace": "journal.cli.importer.body.apple.reads",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.apple.reads.sleep",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e72656164732e736c656570",
+      "namespace": "journal.cli.importer.body.apple.reads",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.apple.reads.workouts",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e72656164732e776f726b6f757473",
+      "namespace": "journal.cli.importer.body.apple.reads",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.apple.unknown.import",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e756e6b6e6f776e2e696d706f7274",
+      "namespace": "journal.cli.importer.body.apple.unknown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.apple.whole",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e77686f6c65",
+      "namespace": "journal.cli.importer.body.apple",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.apple.wrong.export",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e77726f6e672e6578706f7274",
+      "namespace": "journal.cli.importer.body.apple.wrong",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.days.hidden",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e646179732e68696464656e",
+      "namespace": "journal.cli.importer.body.days",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.body.facet.ask.existing",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e61736b2e6578697374696e67",
+      "namespace": "journal.cli.importer.body.facet.ask",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "facet",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.facet.ask.make.body",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e61736b2e6d616b652e626f6479",
+      "namespace": "journal.cli.importer.body.facet.ask.make",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.facet.ask.unmute",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e61736b2e756e6d757465",
+      "namespace": "journal.cli.importer.body.facet.ask",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.facet.moves.body",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e6d6f7665732e626f6479",
+      "namespace": "journal.cli.importer.body.facet.moves",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.body.facet.moves.strava",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e6d6f7665732e737472617661",
+      "namespace": "journal.cli.importer.body.facet.moves",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.body.facet.no.means.body",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e6e6f2e6d65616e732e626f6479",
+      "namespace": "journal.cli.importer.body.facet.no.means",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.facet.no.means.strava",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e6e6f2e6d65616e732e737472617661",
+      "namespace": "journal.cli.importer.body.facet.no.means",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.facet.prompt.yn",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e70726f6d70742e796e",
+      "namespace": "journal.cli.importer.body.facet.prompt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "question",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.facet.save.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e736176652e6661696c6564",
+      "namespace": "journal.cli.importer.body.facet.save",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.oura.bad.date",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6f7572612e6261642e64617465",
+      "namespace": "journal.cli.importer.body.oura.bad",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "flag",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "text",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.oura.date.to.needs.from",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6f7572612e646174652e746f2e6e656564732e66726f6d",
+      "namespace": "journal.cli.importer.body.oura.date.to.needs",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.oura.range.future",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6f7572612e72616e67652e667574757265",
+      "namespace": "journal.cli.importer.body.oura.range",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.oura.window.conflict",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6f7572612e77696e646f772e636f6e666c696374",
+      "namespace": "journal.cli.importer.body.oura.window",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.oura.window.zero",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6f7572612e77696e646f772e7a65726f",
+      "namespace": "journal.cli.importer.body.oura.window",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.body.zones.hours",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e7a6f6e65732e686f757273",
+      "namespace": "journal.cli.importer.body.zones",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.body.zones.under.hour",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e626f64792e7a6f6e65732e756e6465722e686f7572",
+      "namespace": "journal.cli.importer.body.zones.under",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.connect.available",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f6e6e6563742e617661696c61626c65",
+      "namespace": "journal.cli.importer.connect",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.connect.oura.both.required",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f6e6e6563742e6f7572612e626f74682e7265717569726564",
+      "namespace": "journal.cli.importer.connect.oura.both",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.connect.oura.done",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f6e6e6563742e6f7572612e646f6e65",
+      "namespace": "journal.cli.importer.connect.oura",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.connect.oura.scopes",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f6e6e6563742e6f7572612e73636f706573",
+      "namespace": "journal.cli.importer.connect.oura",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "scopes",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.connect.unknown.backend",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f6e6e6563742e756e6b6e6f776e2e6261636b656e64",
+      "namespace": "journal.cli.importer.connect.unknown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "backend",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.count.attendee",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e617474656e646565",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.calendar.event",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e63616c656e6461722e6576656e74",
+      "namespace": "journal.cli.importer.count.calendar",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.conversation",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e636f6e766572736174696f6e",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.daily.total",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6461696c792e746f74616c",
+      "namespace": "journal.cli.importer.count.daily",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.day",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e646179",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.entity",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e656e74697479",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.event",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6576656e74",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.facet",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6661636574",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.logged.entry",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6c6f676765642e656e747279",
+      "namespace": "journal.cli.importer.count.logged",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.member",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6d656d626572",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.message",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6d657373616765",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.mindful.session",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6d696e6466756c2e73657373696f6e",
+      "namespace": "journal.cli.importer.count.mindful",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.night",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6e69676874",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.part",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e70617274",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.pdf.document",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e7064662e646f63756d656e74",
+      "namespace": "journal.cli.importer.count.pdf",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.reading",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e72656164696e67",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.recording",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e7265636f7264696e67",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.segment",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e7365676d656e74",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.source.byte",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e736f757263652e62797465",
+      "namespace": "journal.cli.importer.count.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.tile",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e74696c65",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.total.page",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e746f74616c2e70616765",
+      "namespace": "journal.cli.importer.count.total",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.warning",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e7761726e696e67",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.count.workout",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e776f726b6f7574",
+      "namespace": "journal.cli.importer.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.desktop.exe.no.parent",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6465736b746f702e6578652e6e6f2e706172656e74",
+      "namespace": "journal.cli.importer.desktop.exe.no",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.desktop.missing.sibling",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6465736b746f702e6d697373696e672e7369626c696e67",
+      "namespace": "journal.cli.importer.desktop.missing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.embedded.body.refusal",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e656d6265646465642e626f64792e7265667573616c",
+      "namespace": "journal.cli.importer.embedded.body",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.error.apple.inspect",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e6170706c652e696e7370656374",
+      "namespace": "journal.cli.importer.error.apple",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.error.facet.not.unmuted",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e66616365742e6e6f742e756e6d75746564",
+      "namespace": "journal.cli.importer.error.facet.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "facet",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "enabled",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.error.facet.scope",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e66616365742e73636f7065",
+      "namespace": "journal.cli.importer.error.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.error.facets.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e6661636574732e756e7265616461626c65",
+      "namespace": "journal.cli.importer.error.facets",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.error.no.facet.conflict",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e6e6f2e66616365742e636f6e666c696374",
+      "namespace": "journal.cli.importer.error.no.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.error.no.facet.scope",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e6e6f2e66616365742e73636f7065",
+      "namespace": "journal.cli.importer.error.no.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.error.preview.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e707265766965772e6661696c6564",
+      "namespace": "journal.cli.importer.error.preview",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.error.stopped",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e73746f70706564",
+      "namespace": "journal.cli.importer.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.error.timestamp.format",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e74696d657374616d702e666f726d6174",
+      "namespace": "journal.cli.importer.error.timestamp",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.error.timestamp.format.offset",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e74696d657374616d702e666f726d61742e6f6666736574",
+      "namespace": "journal.cli.importer.error.timestamp.format",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.error.unknown.source",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e756e6b6e6f776e2e736f75726365",
+      "namespace": "journal.cli.importer.error.unknown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.error.zone.changed.preview",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e7a6f6e652e6368616e6765642e70726576696577",
+      "namespace": "journal.cli.importer.error.zone.changed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.force.day.notice",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e666f7263652e6461792e6e6f74696365",
+      "namespace": "journal.cli.importer.force.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "fresh",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "stored",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "planned",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.force.pdf.day.notice",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e666f7263652e7064662e6461792e6e6f74696365",
+      "namespace": "journal.cli.importer.force.pdf.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "fresh",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "stored",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.generic.text.complete",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e67656e657269632e746578742e636f6d706c657465",
+      "namespace": "journal.cli.importer.generic.text",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "segments",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.generic.text.untimed.line1",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e67656e657269632e746578742e756e74696d65642e6c696e6531",
+      "namespace": "journal.cli.importer.generic.text.untimed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.generic.text.untimed.line2",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e67656e657269632e746578742e756e74696d65642e6c696e6532",
+      "namespace": "journal.cli.importer.generic.text.untimed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "url",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.archive.members",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617263686976652e6d656d62657273",
+      "namespace": "journal.cli.importer.help.opt.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.archive.status",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617263686976652e737461747573",
+      "namespace": "journal.cli.importer.help.opt.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.audio.archive.line1",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6531",
+      "namespace": "journal.cli.importer.help.opt.audio.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.audio.archive.line2",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6532",
+      "namespace": "journal.cli.importer.help.opt.audio.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.audio.archive.line3",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6533",
+      "namespace": "journal.cli.importer.help.opt.audio.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "example",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.audio.archive.line4",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6534",
+      "namespace": "journal.cli.importer.help.opt.audio.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.audio.archive.line5",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6535",
+      "namespace": "journal.cli.importer.help.opt.audio.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.audio.archive.line6",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6536",
+      "namespace": "journal.cli.importer.help.opt.audio.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.audio.archive.line7",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6537",
+      "namespace": "journal.cli.importer.help.opt.audio.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.audio.archive.line8",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6538",
+      "namespace": "journal.cli.importer.help.opt.audio.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.auto",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6175746f",
+      "namespace": "journal.cli.importer.help.opt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.backends",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6261636b656e6473",
+      "namespace": "journal.cli.importer.help.opt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.confirm.body",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e636f6e6669726d2e626f6479",
+      "namespace": "journal.cli.importer.help.opt.confirm",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.debug",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6465627567",
+      "namespace": "journal.cli.importer.help.opt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.deterministic.line1",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e64657465726d696e69737469632e6c696e6531",
+      "namespace": "journal.cli.importer.help.opt.deterministic",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.deterministic.line2",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e64657465726d696e69737469632e6c696e6532",
+      "namespace": "journal.cli.importer.help.opt.deterministic",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.dry.run",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6472792e72756e",
+      "namespace": "journal.cli.importer.help.opt.dry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.facet.line1",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e66616365742e6c696e6531",
+      "namespace": "journal.cli.importer.help.opt.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.facet.line2",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e66616365742e6c696e6532",
+      "namespace": "journal.cli.importer.help.opt.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.facet.line3",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e66616365742e6c696e6533",
+      "namespace": "journal.cli.importer.help.opt.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.force",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e666f726365",
+      "namespace": "journal.cli.importer.help.opt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.help",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e68656c70",
+      "namespace": "journal.cli.importer.help.opt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.json.line1",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6a736f6e2e6c696e6531",
+      "namespace": "journal.cli.importer.help.opt.json",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.json.line2",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6a736f6e2e6c696e6532",
+      "namespace": "journal.cli.importer.help.opt.json",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.limit",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6c696d6974",
+      "namespace": "journal.cli.importer.help.opt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.list.importers",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6c6973742e696d706f7274657273",
+      "namespace": "journal.cli.importer.help.opt.list",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.no.facet.line1",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6e6f2e66616365742e6c696e6531",
+      "namespace": "journal.cli.importer.help.opt.no.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.no.facet.line2",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6e6f2e66616365742e6c696e6532",
+      "namespace": "journal.cli.importer.help.opt.no.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.offset",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6f6666736574",
+      "namespace": "journal.cli.importer.help.opt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.resume",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e726573756d65",
+      "namespace": "journal.cli.importer.help.opt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.save",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e73617665",
+      "namespace": "journal.cli.importer.help.opt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.source",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e736f75726365",
+      "namespace": "journal.cli.importer.help.opt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.source.zone",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e736f757263652e7a6f6e65",
+      "namespace": "journal.cli.importer.help.opt.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.timestamp",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e74696d657374616d70",
+      "namespace": "journal.cli.importer.help.opt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.opt.verbose",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e766572626f7365",
+      "namespace": "journal.cli.importer.help.opt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.options.header",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f7074696f6e732e686561646572",
+      "namespace": "journal.cli.importer.help.options",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.positional.header",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e706f736974696f6e616c2e686561646572",
+      "namespace": "journal.cli.importer.help.positional",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.positional.media",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e706f736974696f6e616c2e6d65646961",
+      "namespace": "journal.cli.importer.help.positional",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.summary",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e73756d6d617279",
+      "namespace": "journal.cli.importer.help",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.help.usage",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e68656c702e7573616765",
+      "namespace": "journal.cli.importer.help",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.list.desc.apple.health",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e6170706c652e6865616c7468",
+      "namespace": "journal.cli.importer.list.desc.apple",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.list.desc.chatgpt",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e63686174677074",
+      "namespace": "journal.cli.importer.list.desc",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.list.desc.claude",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e636c61756465",
+      "namespace": "journal.cli.importer.list.desc",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.list.desc.document",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e646f63756d656e74",
+      "namespace": "journal.cli.importer.list.desc",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.list.desc.evernote",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e657665726e6f7465",
+      "namespace": "journal.cli.importer.list.desc",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.list.desc.gemini",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e67656d696e69",
+      "namespace": "journal.cli.importer.list.desc",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.list.desc.ics",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e696373",
+      "namespace": "journal.cli.importer.list.desc",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.list.desc.image",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e696d616765",
+      "namespace": "journal.cli.importer.list.desc",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.list.desc.journal.archive",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e6a6f75726e616c2e61726368697665",
+      "namespace": "journal.cli.importer.list.desc.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.list.desc.oura",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e6f757261",
+      "namespace": "journal.cli.importer.list.desc",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.list.desc.strava",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e737472617661",
+      "namespace": "journal.cli.importer.list.desc",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.list.header",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e686561646572",
+      "namespace": "journal.cli.importer.list",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.notes.folder.retired",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6e6f7465732e666f6c6465722e72657469726564",
+      "namespace": "journal.cli.importer.notes.folder",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.oura.app.needed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e6e6565646564",
+      "namespace": "journal.cli.importer.oura.app",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "how",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.oura.app.prompt.client.id",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e636c69656e742e6964",
+      "namespace": "journal.cli.importer.oura.app.prompt.client",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.oura.app.prompt.client.secret",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e636c69656e742e736563726574",
+      "namespace": "journal.cli.importer.oura.app.prompt.client",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.oura.app.prompt.intro",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e696e74726f",
+      "namespace": "journal.cli.importer.oura.app.prompt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.oura.app.prompt.note",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e6e6f7465",
+      "namespace": "journal.cli.importer.oura.app.prompt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "how",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.oura.app.prompt.step1",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e7374657031",
+      "namespace": "journal.cli.importer.oura.app.prompt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.oura.app.prompt.step2",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e7374657032",
+      "namespace": "journal.cli.importer.oura.app.prompt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.oura.app.prompt.step3",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e7374657033",
+      "namespace": "journal.cli.importer.oura.app.prompt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "indent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.oura.connect.failed.browser",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e636f6e6e6563742e6661696c65642e62726f77736572",
+      "namespace": "journal.cli.importer.oura.connect.failed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.oura.connect.failed.callback",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e636f6e6e6563742e6661696c65642e63616c6c6261636b",
+      "namespace": "journal.cli.importer.oura.connect.failed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.oura.connect.failed.declined",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e636f6e6e6563742e6661696c65642e6465636c696e6564",
+      "namespace": "journal.cli.importer.oura.connect.failed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.oura.connect.failed.exchange",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e636f6e6e6563742e6661696c65642e65786368616e6765",
+      "namespace": "journal.cli.importer.oura.connect.failed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.oura.connect.failed.timeout",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e636f6e6e6563742e6661696c65642e74696d656f7574",
+      "namespace": "journal.cli.importer.oura.connect.failed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.begin.invalid.redirect",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e626567696e2e696e76616c69642e7265646972656374",
+      "namespace": "journal.cli.importer.plaud.begin.invalid",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.begin.loopback.bind",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e626567696e2e6c6f6f706261636b2e62696e64",
+      "namespace": "journal.cli.importer.plaud.begin.loopback",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.begin.random.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e626567696e2e72616e646f6d2e6661696c6564",
+      "namespace": "journal.cli.importer.plaud.begin.random",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.connect.detail.busy",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e62757379",
+      "namespace": "journal.cli.importer.plaud.connect.detail",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.connect.detail.callback.invalid",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e63616c6c6261636b2e696e76616c6964",
+      "namespace": "journal.cli.importer.plaud.connect.detail.callback",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.connect.detail.cancelled",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e63616e63656c6c6564",
+      "namespace": "journal.cli.importer.plaud.connect.detail",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.connect.detail.denied",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e64656e696564",
+      "namespace": "journal.cli.importer.plaud.connect.detail",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.connect.detail.exchange.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e65786368616e67652e6661696c6564",
+      "namespace": "journal.cli.importer.plaud.connect.detail.exchange",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.connect.detail.expired",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e65787069726564",
+      "namespace": "journal.cli.importer.plaud.connect.detail",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.connect.detail.storage",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e73746f72616765",
+      "namespace": "journal.cli.importer.plaud.connect.detail",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.cli.importer.plaud.connect.done",
       "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e65",
       "namespace": "journal.cli.importer.plaud.connect",
@@ -49341,6 +53252,110 @@
       "selector": null
     },
     {
+      "id": "journal.cli.importer.plaud.failure.audio.not.ready",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e617564696f2e6e6f742e7265616479",
+      "namespace": "journal.cli.importer.plaud.failure.audio.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.failure.catalogue",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e636174616c6f677565",
+      "namespace": "journal.cli.importer.plaud.failure",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.failure.download",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e646f776e6c6f6164",
+      "namespace": "journal.cli.importer.plaud.failure",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.failure.manifest",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e6d616e6966657374",
+      "namespace": "journal.cli.importer.plaud.failure",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.failure.pipeline",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e706970656c696e65",
+      "namespace": "journal.cli.importer.plaud.failure",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.failure.temporary.url",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e74656d706f726172792e75726c",
+      "namespace": "journal.cli.importer.plaud.failure.temporary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.failure.token.refused",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e746f6b656e2e72656675736564",
+      "namespace": "journal.cli.importer.plaud.failure.token",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.preview.complete",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e707265766965772e636f6d706c657465",
+      "namespace": "journal.cli.importer.plaud.preview",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "files",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.cli.importer.plaud.sync.busy",
       "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e73796e632e62757379",
       "namespace": "journal.cli.importer.plaud.sync",
@@ -49356,6 +53371,1525 @@
           "value": "Plaud"
         }
       ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.sync.missing.credential",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e73796e632e6d697373696e672e63726564656e7469616c",
+      "namespace": "journal.cli.importer.plaud.sync.missing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.sync.operation",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e73796e632e6f7065726174696f6e",
+      "namespace": "journal.cli.importer.plaud.sync",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.plaud.sync.state.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e73796e632e73746174652e6661696c6564",
+      "namespace": "journal.cli.importer.plaud.sync.state",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "message",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.preview.chatgpt",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e63686174677074",
+      "namespace": "journal.cli.importer.preview",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "messages",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.preview.claude",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e636c61756465",
+      "namespace": "journal.cli.importer.preview",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "messages",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.preview.document.counts",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e646f63756d656e742e636f756e7473",
+      "namespace": "journal.cli.importer.preview.document",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "documents",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "pages",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.preview.document.none",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e646f63756d656e742e6e6f6e65",
+      "namespace": "journal.cli.importer.preview.document",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.preview.document.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e646f63756d656e742e756e7265616461626c65",
+      "namespace": "journal.cli.importer.preview.document",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "documents",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "pages",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "unreadable",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "failures",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.preview.gemini",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e67656d696e69",
+      "namespace": "journal.cli.importer.preview",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "messages",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.preview.ics.counts",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e6963732e636f756e7473",
+      "namespace": "journal.cli.importer.preview.ics",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "events",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "attendees",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.preview.ics.no.events",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e6963732e6e6f2e6576656e7473",
+      "namespace": "journal.cli.importer.preview.ics.no",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.preview.ics.none",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e6963732e6e6f6e65",
+      "namespace": "journal.cli.importer.preview.ics",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.preview.image.one",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e696d6167652e6f6e65",
+      "namespace": "journal.cli.importer.preview.image",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "format",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "width",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "height",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.archive.error.and.record.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617263686976652e6572726f722e616e642e7265636f72642e6661696c6564",
+      "namespace": "journal.cli.importer.registry.archive.error.and.record",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "record_error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.archive.missing.facts",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617263686976652e6d697373696e672e6661637473",
+      "namespace": "journal.cli.importer.registry.archive.missing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "attempt",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.archive.missing.provenance",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617263686976652e6d697373696e672e70726f76656e616e6365",
+      "namespace": "journal.cli.importer.registry.archive.missing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "attempt",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.archive.record.attempt.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617263686976652e7265636f72642e617474656d70742e6661696c6564",
+      "namespace": "journal.cli.importer.registry.archive.record.attempt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.archive.record.completed.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617263686976652e7265636f72642e636f6d706c657465642e6661696c6564",
+      "namespace": "journal.cli.importer.registry.archive.record.completed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.archive.record.merge.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617263686976652e7265636f72642e6d657267652e6661696c6564",
+      "namespace": "journal.cli.importer.registry.archive.record.merge",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.attempt.superseded",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617474656d70742e73757065727365646564",
+      "namespace": "journal.cli.importer.registry.attempt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "import_id",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "generation",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.evernote.attachments.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e657665726e6f74652e6174746163686d656e74732e6661696c6564",
+      "namespace": "journal.cli.importer.registry.evernote.attachments",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.found.nothing",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e666f756e642e6e6f7468696e67",
+      "namespace": "journal.cli.importer.registry.found",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.gemini.folder.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e67656d696e692e666f6c6465722e756e7265616461626c65",
+      "namespace": "journal.cli.importer.registry.gemini.folder",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.originals.choice.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e6f726967696e616c732e63686f6963652e756e7265616461626c65",
+      "namespace": "journal.cli.importer.registry.originals.choice",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.originals.cleanup.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e6f726967696e616c732e636c65616e75702e6661696c6564",
+      "namespace": "journal.cli.importer.registry.originals.cleanup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.originals.keep.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e6f726967696e616c732e6b6565702e6661696c6564",
+      "namespace": "journal.cli.importer.registry.originals.keep",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.preview.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e707265766965772e6661696c6564",
+      "namespace": "journal.cli.importer.registry.preview",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.strava.discard.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e7374726176612e646973636172642e6661696c6564",
+      "namespace": "journal.cli.importer.registry.strava.discard",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.strava.filing.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e7374726176612e66696c696e672e6661696c6564",
+      "namespace": "journal.cli.importer.registry.strava.filing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.strava.release.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e7374726176612e72656c656173652e6661696c6564",
+      "namespace": "journal.cli.importer.registry.strava.release",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.summary.image",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e73756d6d6172792e696d616765",
+      "namespace": "journal.cli.importer.registry.summary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.summary.pdf",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e73756d6d6172792e706466",
+      "namespace": "journal.cli.importer.registry.summary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "documents",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.registry.unconfirmed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e756e636f6e6669726d6564",
+      "namespace": "journal.cli.importer.registry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.size.listed.moves",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73697a652e6c69737465642e6d6f766573",
+      "namespace": "journal.cli.importer.size.listed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.size.recordings.across",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73697a652e7265636f7264696e67732e6163726f7373",
+      "namespace": "journal.cli.importer.size.recordings",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "recordings",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.size.skipped",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73697a652e736b6970706564",
+      "namespace": "journal.cli.importer.size",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.skipped.already",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e736b69707065642e616c7265616479",
+      "namespace": "journal.cli.importer.skipped",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.skipped.confirm.date",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e736b69707065642e636f6e6669726d2e64617465",
+      "namespace": "journal.cli.importer.skipped.confirm",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.skipped.no.date",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e736b69707065642e6e6f2e64617465",
+      "namespace": "journal.cli.importer.skipped.no",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.source.archive.already.present",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e617263686976652e616c72656164792e70726573656e74",
+      "namespace": "journal.cli.importer.source.archive.already",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.source.archive.complete",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e617263686976652e636f6d706c657465",
+      "namespace": "journal.cli.importer.source.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segments_copied",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "imports_copied",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "entities_created",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "entities_merged",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facets_created",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facets_merged",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.source.archive.incomplete",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e617263686976652e696e636f6d706c657465",
+      "namespace": "journal.cli.importer.source.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.source.complete",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e636f6d706c657465",
+      "namespace": "journal.cli.importer.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "entries",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "files",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "errors",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "summary",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.source.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e6661696c6564",
+      "namespace": "journal.cli.importer.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.source.preview",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e70726576696577",
+      "namespace": "journal.cli.importer.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "start",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "end",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "items",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "entities",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "summary",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.summary.archive",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e61726368697665",
+      "namespace": "journal.cli.importer.summary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "entities",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facets",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "warnings",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.summary.conversations",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e636f6e766572736174696f6e73",
+      "namespace": "journal.cli.importer.summary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "messages",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "conversations",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.summary.document",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e646f63756d656e74",
+      "namespace": "journal.cli.importer.summary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "documents",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segments",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.summary.ics.base",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e62617365",
+      "namespace": "journal.cli.importer.summary.ics",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "events",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.summary.ics.over.limit",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e6f7665722e6c696d6974",
+      "namespace": "journal.cli.importer.summary.ics.over",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "limit",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.summary.ics.reason.invalid",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e726561736f6e2e696e76616c6964",
+      "namespace": "journal.cli.importer.summary.ics.reason",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.summary.ics.reason.no.change",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e726561736f6e2e6e6f2e6368616e6765",
+      "namespace": "journal.cli.importer.summary.ics.reason.no",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.summary.ics.reason.unknown.zone",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e726561736f6e2e756e6b6e6f776e2e7a6f6e65",
+      "namespace": "journal.cli.importer.summary.ics.reason.unknown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.summary.ics.skipped",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e736b6970706564",
+      "namespace": "journal.cli.importer.summary.ics",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "skipped",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "reasons",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.summary.ics.truncated.series",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e7472756e63617465642e736572696573",
+      "namespace": "journal.cli.importer.summary.ics.truncated",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "limit",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.summary.ics.unexpandable.series",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e756e657870616e6461626c652e736572696573",
+      "namespace": "journal.cli.importer.summary.ics.unexpandable",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.importer.summary.image.none",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e696d6167652e6e6f6e65",
+      "namespace": "journal.cli.importer.summary.image",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.sync.available",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73796e632e617661696c61626c65",
+      "namespace": "journal.cli.importer.sync",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "backends",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.sync.complete",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73796e632e636f6d706c657465",
+      "namespace": "journal.cli.importer.sync",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "backend",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "saved",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "errors",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.sync.unknown.backend",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e73796e632e756e6b6e6f776e2e6261636b656e64",
+      "namespace": "journal.cli.importer.sync.unknown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "backend",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.text.failed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e746578742e6661696c6564",
+      "namespace": "journal.cli.importer.text",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.text.unconfirmed",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e746578742e756e636f6e6669726d6564",
+      "namespace": "journal.cli.importer.text",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.importer.timestamp.confirm",
+      "resource": "m6a6f75726e616c2e636c692e696d706f727465722e74696d657374616d702e636f6e6669726d",
+      "namespace": "journal.cli.importer.timestamp",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "timestamp",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
       "selector": null
     },
     {

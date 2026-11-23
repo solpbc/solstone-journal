@@ -1,0 +1,16 @@
+{
+  "description": "ICS preview summary when no ICS data is found.",
+  "context": "ICS preview summary when no ICS data is found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "62351756c829c67ea2fc4be6cc4c2e30ae85024c34b508053751f98375e2d123",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

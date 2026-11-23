@@ -1,0 +1,16 @@
+{
+  "description": "Oura connect refusal when client ID or secret is omitted.",
+  "context": "Oura connect refusal when client ID or secret is omitted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c7823cb6d44b384239b3384bb637dd554c92456e4251cdd661649f4967c501c3",
+  "max_length": 222,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

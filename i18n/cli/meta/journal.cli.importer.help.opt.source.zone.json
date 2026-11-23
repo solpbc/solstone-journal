@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI help --source-zone description.",
+  "context": "Importer CLI help --source-zone description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "280deb9b7913dc0aa42c3eb7e8e9ec5aeb4835b19d4f42ae45be4d837a48d1b7",
+  "max_length": 321,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

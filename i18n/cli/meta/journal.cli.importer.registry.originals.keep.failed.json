@@ -1,0 +1,16 @@
+{
+  "description": "Registry import failure when original file copy fails.",
+  "context": "Registry import failure when original file copy fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3e9789225747dc9f79fd156b5a3d26bfce9c0f15357f7e5ac453f376daaa89fb",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

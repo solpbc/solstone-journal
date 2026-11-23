@@ -1,0 +1,21 @@
+{
+  "description": "Gemini export preview summary.",
+  "context": "Gemini export preview summary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "messages",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8a64727fd96d7a662e3036302589dc0fc5564f36656e4af3ce113d9eb1ca5ab4",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

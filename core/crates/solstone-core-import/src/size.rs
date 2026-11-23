@@ -32,7 +32,15 @@ impl ImportSize {
             .collect()
     }
 
+    pub fn announces_work(&self) -> bool {
+        !self.recordings.is_empty() || self.other_units.is_some() || self.listed_moves.is_some()
+    }
+
     pub fn render(&self, json: bool) -> String {
+        self.render_for(solstone_core_cli_copy::cli_locale(), json)
+    }
+
+    pub fn render_for(&self, locale: &str, json: bool) -> String {
         if json {
             let mut size = serde_json::json!({
                 "schema": "solstone.import.size.v1",
@@ -46,33 +54,79 @@ impl ImportSize {
             }
             format!("{size}\n")
         } else {
+            let recordings_len = self.recordings.len();
+            let recordings_str = recordings_len.to_string();
+            let recordings = solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.count.recording",
+                &[
+                    (
+                        "quantity",
+                        solstone_core_cli_copy::Value::Cardinal(
+                            i64::try_from(recordings_len).unwrap_or(i64::MAX),
+                        ),
+                    ),
+                    (
+                        "count",
+                        solstone_core_cli_copy::Value::String(&recordings_str),
+                    ),
+                ],
+            );
+            let days_len = self.days().len();
+            let days_str = days_len.to_string();
+            let days = solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.count.day",
+                &[
+                    (
+                        "quantity",
+                        solstone_core_cli_copy::Value::Cardinal(
+                            i64::try_from(days_len).unwrap_or(i64::MAX),
+                        ),
+                    ),
+                    ("count", solstone_core_cli_copy::Value::String(&days_str)),
+                ],
+            );
             let mut result = format!(
-                "{} {} across {} {}\n",
-                self.recordings.len(),
-                if self.recordings.len() == 1 {
-                    "recording"
-                } else {
-                    "recordings"
-                },
-                self.days().len(),
-                if self.days().len() == 1 {
-                    "day"
-                } else {
-                    "days"
-                }
+                "{}\n",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.importer.size.recordings.across",
+                    [("recordings", &recordings), ("days", &days)],
+                )
             );
             if let Some((unit, count)) = &self.other_units {
                 result.push_str(&format!("{count} {unit}\n"));
             }
             if self.skipped > 0 {
-                result.push_str(&format!("{} skipped\n", self.skipped));
+                result.push_str(&format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.importer.size.skipped",
+                        [("count", &self.skipped)],
+                    )
+                ));
             }
             if let Some((count, from)) = &self.listed_moves {
+                let count_str = count.to_string();
+                let from_joined = from.join(", ");
                 result.push_str(&format!(
-                    "{} {} already listed on the activities page would move to this import's facet from {}\n",
-                    count,
-                    if *count == 1 { "workout" } else { "workouts" },
-                    from.join(", ")
+                    "{}\n",
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.importer.size.listed.moves",
+                        &[
+                            (
+                                "quantity",
+                                solstone_core_cli_copy::Value::Cardinal(
+                                    i64::try_from(*count).unwrap_or(i64::MAX),
+                                ),
+                            ),
+                            ("count", solstone_core_cli_copy::Value::String(&count_str)),
+                            ("from", solstone_core_cli_copy::Value::String(&from_joined)),
+                        ],
+                    )
                 ));
             }
             result
@@ -85,16 +139,31 @@ impl ImportSize {
     /// so the import's own outcome line stays the first line owners and scripts read.
     /// Output this renderer did not produce is treated as an announcement.
     pub fn rendered_announces_work(rendered: &str) -> bool {
+        Self::rendered_announces_work_for(solstone_core_cli_copy::cli_locale(), rendered)
+    }
+
+    pub fn rendered_announces_work_for(locale: &str, rendered: &str) -> bool {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(rendered.trim_end()) {
             return !(value["schema"] == "solstone.import.size.v1"
                 && value["recordings"] == 0
                 && value["other_units"].is_null()
                 && value["listed_moves"].is_null());
         }
+        let empty_first_line = Self::default().render_for(locale, false);
+        let empty_first_line = empty_first_line.trim_end();
+        let skipped_template = solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.importer.size.skipped",
+            &[("count", solstone_core_cli_copy::Value::String("\x1f"))],
+        );
+        let (skip_prefix, skip_suffix) = skipped_template
+            .split_once('\x1f')
+            .unwrap_or(("", " skipped"));
         let mut lines = rendered.lines();
-        !(lines.next() == Some("0 recordings across 0 days")
+        !(lines.next() == Some(empty_first_line)
             && lines.all(|line| {
-                line.strip_suffix(" skipped")
+                line.strip_prefix(skip_prefix)
+                    .and_then(|rest| rest.strip_suffix(skip_suffix))
                     .is_some_and(|count| count.parse::<usize>().is_ok())
             }))
     }
@@ -131,10 +200,11 @@ mod tests {
                 (sized(0, 0, Some(("body rows", 3))), true),
                 (sized(0, 1, Some(("body rows", 3))), true),
             ] {
+                let locale = solstone_core_cli_copy::cli_locale();
                 assert_eq!(
-                    ImportSize::rendered_announces_work(&size.render(json)),
+                    ImportSize::rendered_announces_work_for(locale, &size.render_for(locale, json)),
                     announces,
-                    "{size:?} json={json}"
+                    "{size:?} json={json} locale={locale}"
                 );
             }
         }
@@ -142,7 +212,7 @@ mod tests {
             "{\"source\":\"apple_health\"}\n"
         ));
         assert!(ImportSize::rendered_announces_work(
-            "2 events, 1 unique attendees\n"
+            "2 events, 1 unique attendee\n"
         ));
     }
 

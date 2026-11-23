@@ -1,0 +1,16 @@
+{
+  "description": "Header for --backends output.",
+  "context": "Header for --backends output.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06bf9a66367d2dd7625df5b11a14b5f59141fc61faeffa3c3f70950101d931b7",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -51,6 +51,20 @@ pub enum PlaudFailureKind {
 }
 
 impl PlaudFailureKind {
+    #[must_use]
+    pub fn render(self, locale: &str) -> String {
+        let id = match self {
+            Self::TokenRefused => "journal.cli.importer.plaud.failure.token.refused",
+            Self::Catalogue => "journal.cli.importer.plaud.failure.catalogue",
+            Self::Manifest => "journal.cli.importer.plaud.failure.manifest",
+            Self::TemporaryUrl => "journal.cli.importer.plaud.failure.temporary.url",
+            Self::AudioNotReady => "journal.cli.importer.plaud.failure.audio.not.ready",
+            Self::Download => "journal.cli.importer.plaud.failure.download",
+            Self::Pipeline => "journal.cli.importer.plaud.failure.pipeline",
+        };
+        solstone_core_cli_copy::render_for(locale, id, &[])
+    }
+
     const fn message(self) -> &'static str {
         match self {
             Self::TokenRefused => "sign-in expired or was revoked; sign in again in settings",
@@ -212,6 +226,29 @@ pub enum PlaudSyncError {
     State { message: String },
 }
 
+impl PlaudSyncError {
+    #[must_use]
+    pub fn render(&self, locale: &str) -> String {
+        match self {
+            Self::MissingCredential => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.plaud.sync.missing.credential",
+                &[],
+            ),
+            Self::Operation(kind) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.plaud.sync.operation",
+                [("detail", &kind.render(locale))],
+            ),
+            Self::State { message } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.plaud.sync.state.failed",
+                [("message", message)],
+            ),
+        }
+    }
+}
+
 impl fmt::Display for PlaudSyncError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -328,7 +365,11 @@ pub fn sync_plaud_save(
                 if first_error_code.is_none() {
                     first_error_code = Some(crate::plaud::attention_code_for_failure(kind));
                 }
-                errors.push(format!("{}: {}", file.filename, kind.message()));
+                errors.push(format!(
+                    "{}: {}",
+                    file.filename,
+                    kind.render(solstone_core_cli_copy::cli_locale())
+                ));
             }
         }
     }

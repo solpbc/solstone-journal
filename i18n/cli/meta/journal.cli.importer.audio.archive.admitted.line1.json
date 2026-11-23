@@ -1,0 +1,37 @@
+{
+  "description": "Audio archive admitted progress line 1.",
+  "context": "Audio archive admitted progress line 1.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "run_id",
+      "type": "string"
+    },
+    {
+      "name": "members",
+      "type": "string"
+    },
+    {
+      "name": "source_bytes",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "tiles",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "95767e882779d50e985dddf30cf0966e8421fca4b269f79847c4126026e56898",
+  "max_length": 225,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

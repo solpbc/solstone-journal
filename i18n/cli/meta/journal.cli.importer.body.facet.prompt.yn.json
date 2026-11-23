@@ -1,0 +1,21 @@
+{
+  "description": "Interactive yes/no prompt for body facet question.",
+  "context": "Interactive yes/no prompt for body facet question.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "question",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b5c482dd5918e7c3e38a1deb13b90217dc8fba0a83e040b8a582cb147f54dcce",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

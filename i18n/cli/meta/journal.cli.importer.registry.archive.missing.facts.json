@@ -1,0 +1,25 @@
+{
+  "description": "Archive merge failure when attempt facts are missing.",
+  "context": "Archive merge failure when attempt facts are missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "attempt",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "20aa37427a42f71c766e0109ee17eb37f01a529b46cdea51f1aa4ef6311cbf62",
+  "max_length": 195,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

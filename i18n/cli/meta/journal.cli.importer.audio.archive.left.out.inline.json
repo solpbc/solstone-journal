@@ -1,0 +1,21 @@
+{
+  "description": "Audio archive inline left-out summary line.",
+  "context": "Audio archive inline left-out summary line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counts",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "11a156f0b42ff8e19a36faad26ca26afe1a52ebe6c44222100fe8c49b85294bf",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

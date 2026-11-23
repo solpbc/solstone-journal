@@ -1,0 +1,21 @@
+{
+  "description": "Evernote import failure when installing attachments fails.",
+  "context": "Evernote import failure when installing attachments fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d32ab70518cb1a04e823cb2023314377272a687a0af4d0b384f0294280abec15",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

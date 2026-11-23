@@ -1,0 +1,25 @@
+{
+  "description": "Notice emitted when --force PDF re-import filename date differs from prior import day.",
+  "context": "Notice emitted when --force PDF re-import filename date differs from prior import day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "fresh",
+      "type": "string"
+    },
+    {
+      "name": "stored",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "af914866dfe81e5a1a61d627d3c53745e3eeb346dc4b868993197efac69ec36b",
+  "max_length": 645,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

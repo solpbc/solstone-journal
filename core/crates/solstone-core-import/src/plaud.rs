@@ -309,6 +309,32 @@ pub enum PlaudBeginError {
     RandomFailed,
 }
 
+impl PlaudBeginError {
+    #[must_use]
+    pub fn render(&self, locale: &str) -> String {
+        match self {
+            Self::InvalidRedirectUri => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.plaud.begin.invalid.redirect",
+                &[],
+            ),
+            Self::LoopbackBind => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.plaud.begin.loopback.bind",
+                &[],
+            ),
+            Self::Discovery(err) => err.to_string(),
+            Self::Registration(err) => err.to_string(),
+            Self::Authorize(err) => err.to_string(),
+            Self::RandomFailed => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.plaud.begin.random.failed",
+                &[],
+            ),
+        }
+    }
+}
+
 impl fmt::Display for PlaudBeginError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

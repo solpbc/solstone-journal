@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sync failure: token refused.",
+  "context": "Plaud sync failure: token refused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ade6b371d794994e44c9b7134f206224cd1e04cddc491ac2a23be6851b1a1983",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

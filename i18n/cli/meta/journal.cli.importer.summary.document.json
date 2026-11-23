@@ -1,0 +1,29 @@
+{
+  "description": "Document import completion summary.",
+  "context": "Document import completion summary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "documents",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d3249958919ff70a16644b9fa86306d06a15be4e144ddbdc59b00067284ad06c",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

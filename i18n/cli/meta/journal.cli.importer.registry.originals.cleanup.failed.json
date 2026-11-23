@@ -1,0 +1,16 @@
+{
+  "description": "Registry import warning when extra uploaded copy cannot be removed.",
+  "context": "Registry import warning when extra uploaded copy cannot be removed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ee5199399f8a8b73939e6ce7e61932699c472f06520ec6a8a2bc90dd1196fa65",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

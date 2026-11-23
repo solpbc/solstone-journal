@@ -1,0 +1,16 @@
+{
+  "description": "Oura connect failure: browser unavailable.",
+  "context": "Oura connect failure: browser unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "efb2906a59f1e16dab7833d860e8cca7086b4efa9719c9c9acfc8a46ace0df45",
+  "max_length": 291,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

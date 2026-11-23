@@ -1,0 +1,21 @@
+{
+  "description": "Generic text import completion line.",
+  "context": "Generic text import completion line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1f20d443d8b0019a50a9b4519639072a3f97a1c6b4c5811319e1b10017a9965f",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

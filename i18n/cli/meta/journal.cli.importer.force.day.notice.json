@@ -1,0 +1,29 @@
+{
+  "description": "Notice emitted when --force re-import lands on a different calendar day.",
+  "context": "Notice emitted when --force re-import lands on a different calendar day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "fresh",
+      "type": "string"
+    },
+    {
+      "name": "stored",
+      "type": "string"
+    },
+    {
+      "name": "planned",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1717939120eac5728adc23d2aba171bd9bccb76a0532ae2a114bee3f7a79101d",
+  "max_length": 468,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

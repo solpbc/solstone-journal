@@ -1,0 +1,21 @@
+{
+  "description": "Journal archive idempotent no-op completion line.",
+  "context": "Journal archive idempotent no-op completion line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9063a92d28e63df033d4177564f086d46595c461b5f67f6ae62a415060a655ee",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

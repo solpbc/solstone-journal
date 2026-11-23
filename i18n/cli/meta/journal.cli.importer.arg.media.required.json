@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI missing media argument error.",
+  "context": "Importer CLI missing media argument error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e93b721fe424ece35077ef653ee6551ee9419aad3fdcf5ce658df10ecc366286",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

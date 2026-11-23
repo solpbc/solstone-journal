@@ -5009,6 +5009,484 @@ m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e796f75722e6a6
 
 m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e796f75722e6a6f75726e616c2e69732e7265616479 = your journal is ready
 
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e617263686976652e636f6e666c6963742e636f6d6d616e6473 = unrecognized arguments: conflicting audio archive commands
+
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e617263686976652e636f6e666c6963742e666c616773 = unrecognized arguments: conflicting audio archive flags
+
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e617263686976652e6964656e746974792e73636f7065 = --archive-identity is only valid with --audio-archive
+
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e617263686976652e6964656e746974792e736861323536 = --archive-identity must be a SHA-256 identity
+
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e6572726f72 = solstone journal importer: error: { $detail }
+
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e65787065637465642e6f6e65 = argument { $argument }: expected one argument
+
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e66616365742e73636f7065 = --facet is only valid when importing one audio or text file or a body import
+
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e696e76616c69642e696e74 = argument { $flag }: invalid int value: '{ $value }'
+
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e6d656469612e7265717569726564 = the following arguments are required: media
+
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e6f66667365742e6c696d69742e73636f7065 = unrecognized arguments: --offset/--limit are only valid with --audio-archive-members
+
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e726573756d652e73636f7065 = unrecognized arguments: --resume is only valid with --audio-archive
+
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e736f757263652e7a6f6e652e73636f7065 = unrecognized arguments: --source-zone is only valid with --audio-archive
+
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e756e7265636f676e697a6564 = unrecognized arguments: { $arguments }
+
+m6a6f75726e616c2e636c692e696d706f727465722e6172672e7573616765 = usage: solstone journal importer [-h] [options] media [timestamp]
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e61646d69747465642e6c696e6531 = archive { $run_id }: { $members }, { $source_bytes }, { $days }, { $tiles }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6368616e676564 = the archive changed after preview; preview it again
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e636f6d706c6574652e6c696e6531 = audio archive { $operation }: { $run_id }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e636f6d706c6574652e6c696e6532 = saved { $parts } in { $tiles }; { $pending } pending processing, { $processed } processed, { $unavailable } unavailable, { $rejected } rejected
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6472792e72756e2e726573756d65 = use --audio-archive-status to inspect an admitted run
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6661696c6564 = audio archive failed: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e666f6c6465722e6e656564732e7a6f6e65 = a folder requires --source-zone
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6c6566742e6f75742e686561646572 = left out:
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6c6566742e6f75742e696e6c696e65 = left out: { $counts }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6d656d626572732e6661696c6564 = audio archive members failed: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e6d656d626572732e73756d6d617279 = audio archive members: run_id={ $run_id } offset={ $offset } count={ $count }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e707265766965772e6c696e6531 = audio archive preview: { $members }, { $source_bytes }, { $days }, { $tiles }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e70726f67726573732e7361766564 = saved { $saved } of { $total } ({ $tiles })
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e7370616e2e6c696e65 = span: { $span }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e7370616e2e6e6f6e65 = none
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e7370616e2e72616e6765 = { $first } to { $last }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e7374617475732e6661696c6564 = audio archive status failed: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e7374617475732e73756d6d617279 = audio archive status: run_id={ $run_id } total_parts={ $total_parts } saved_parts={ $saved_parts } saved_tiles={ $saved_tiles } pending_processing={ $pending } processed_parts={ $processed } unavailable_parts={ $unavailable } rejected_parts={ $rejected } save_complete={ $save_complete }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e617263686976652e7a6f6e652e6368616e676564 = the time zone changed after preview; preview it again
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e636f6d706c657465 = Generic audio import complete: { $outcome }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e64726f707065642e6e6f74696365 = part of this recording couldn't be imported: { $ranges } into the recording. the other parts are in your journal, and importing the file again would add them a second time.
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e64726f707065642e72616e6765 = { $start } to { $end }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e6661696c6564 = audio import failed: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e6d616e69666573742e6661696c6564 = audio import saved to your journal, but this file couldn't be marked as imported, so importing it again would add it a second time: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e70726f63657373696e672e6661696c6564 = audio import processing failed: { $segments }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e70726f63657373696e672e7374616c6c6564 = audio import still processing when the importer stopped waiting: { $segments }
+
+m6a6f75726e616c2e636c692e696d706f727465722e617564696f2e72756e74696d652e6661696c6564 = audio import runtime failed: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e6261636b656e64732e686561646572 = Syncable backends:
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e616c72656164792e72616e = this import has already run, so nothing was brought in. start a new one from the Apple Health card.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e636172642e6f6e6c79 = --import-id is only for saving an Apple Health export from its card, so nothing was brought in.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e707265766965772e696e74726f = this looks like an Apple Health export. saving it reads { $head }, and { $tail }.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e707265766965772e6d6f766573 = { $i18nCategory ->
+    [one] saying yes can move up to 1 record already listed under another facet.
+   *[other] saying yes can move up to { $count } records already listed under another facet.
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e707265766965772e7370616e = it runs from { $first } to { $last }: { $workouts }, { $nights } put together from sleep stages, { $mindful }, { $readings }, { $daily } and { $logged }.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e72656164732e6461696c79 = daily totals like steps and distance
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e72656164732e6c6f67676564 = logged entries like food and symptoms
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e72656164732e6d696e6466756c = mindful time
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e72656164732e72656164696e6773 = heart rate and other readings
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e72656164732e736c656570 = sleep
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e72656164732e776f726b6f757473 = workouts
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e756e6b6e6f776e2e696d706f7274 = --import-id names no import, so nothing was brought in.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e77686f6c65 = an Apple Health import always reads the whole export, so it doesn't take --date-from, --date-to or --force. nothing was saved; run it again without them.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6170706c652e77726f6e672e6578706f7274 = that import doesn't hold this export, so nothing was brought in.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e646179732e68696464656e = { $i18nCategory ->
+    [one] 1 day of body data was hidden in the archive, so it's hidden in this journal too.
+   *[other] { $count } days of body data were hidden in the archive, so they're hidden in this journal too.
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e61736b2e6578697374696e67 = file your workouts, sleep and other body data under the facet you named { $facet }?
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e61736b2e6d616b652e626f6479 = make a body facet for your workouts, sleep and other body data?
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e61736b2e756e6d757465 = your body facet is muted. turn it back on for your workouts, sleep and other body data?
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e6d6f7665732e626f6479 = { $i18nCategory ->
+    [one] a yes can move up to 1 record already listed on the activities page, from { $from }.
+   *[other] a yes can move up to { $count } records already listed on the activities page, from { $from }.
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e6d6f7665732e737472617661 = { $i18nCategory ->
+    [one] a yes moves 1 workout already filed, from { $from }.
+   *[other] a yes moves { $count } workouts already filed, from { $from }.
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e6e6f2e6d65616e732e626f6479 = if you say no, new workouts and sleep aren't listed on the activities page, and agents limited to some facets won't see them. search and the body app still show them.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e6e6f2e6d65616e732e737472617661 = if you say no, new workouts aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e70726f6d70742e796e = { $question } [y/n]
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e66616365742e736176652e6661696c6564 = your answer couldn't be saved: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6f7572612e6261642e64617465 = { $flag } takes a date like 2026-01-31, and { $text } isn't one. nothing was read.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6f7572612e646174652e746f2e6e656564732e66726f6d = --date-to needs a --date-from to go with it. nothing was read.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6f7572612e72616e67652e667574757265 = that range goes past today, and Oura has nothing there yet. nothing was read.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6f7572612e77696e646f772e636f6e666c696374 = use --window-days or dates, not both. nothing was read.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e6f7572612e77696e646f772e7a65726f = --window-days needs at least one day. nothing was read.
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e7a6f6e65732e686f757273 = { $i18nCategory ->
+    [one] 1 hour of { $source } may show at the wrong time: it was saved in a different time zone from the one this journal holds for { $source }.
+   *[other] { $count } hours of { $source } may show at the wrong time: they were saved in a different time zone from the one this journal holds for { $source }.
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e626f64792e7a6f6e65732e756e6465722e686f7572 = less than an hour of { $source } may show at the wrong time: it was saved in a different time zone from the one this journal holds for { $source }.
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f6e6e6563742e617661696c61626c65 = Connectable backends: oura, plaud
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f6e6e6563742e6f7572612e626f74682e7265717569726564 = Oura needs both the client ID and the client secret, so nothing was saved.
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f6e6e6563742e6f7572612e646f6e65 = Oura is connected, and the connection is saved in this journal's settings.
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f6e6e6563742e6f7572612e73636f706573 = permissions asked for: { $scopes }
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f6e6e6563742e756e6b6e6f776e2e6261636b656e64 = Unknown connect backend: { $backend }
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e617474656e646565 = { $i18nCategory ->
+    [one] 1 unique attendee
+   *[other] { $count } unique attendees
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e63616c656e6461722e6576656e74 = { $i18nCategory ->
+    [one] 1 calendar event
+   *[other] { $count } calendar events
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e636f6e766572736174696f6e = { $i18nCategory ->
+    [one] 1 conversation
+   *[other] { $count } conversations
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6461696c792e746f74616c = { $i18nCategory ->
+    [one] 1 daily total
+   *[other] { $count } daily totals
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e646179 = { $i18nCategory ->
+    [one] 1 day
+   *[other] { $count } days
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e656e74697479 = { $i18nCategory ->
+    [one] 1 entity
+   *[other] { $count } entities
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6576656e74 = { $i18nCategory ->
+    [one] 1 event
+   *[other] { $count } events
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6661636574 = { $i18nCategory ->
+    [one] 1 facet
+   *[other] { $count } facets
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6c6f676765642e656e747279 = { $i18nCategory ->
+    [one] 1 logged entry
+   *[other] { $count } logged entries
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6d656d626572 = { $i18nCategory ->
+    [one] 1 member
+   *[other] { $count } members
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6d657373616765 = { $i18nCategory ->
+    [one] 1 message
+   *[other] { $count } messages
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6d696e6466756c2e73657373696f6e = { $i18nCategory ->
+    [one] 1 mindful session
+   *[other] { $count } mindful sessions
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e6e69676874 = { $i18nCategory ->
+    [one] 1 night
+   *[other] { $count } nights
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e70617274 = { $i18nCategory ->
+    [one] 1 part
+   *[other] { $count } parts
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e7064662e646f63756d656e74 = { $i18nCategory ->
+    [one] 1 PDF document
+   *[other] { $count } PDF documents
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e72656164696e67 = { $i18nCategory ->
+    [one] 1 reading
+   *[other] { $count } readings
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e7265636f7264696e67 = { $i18nCategory ->
+    [one] 1 recording
+   *[other] { $count } recordings
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e7365676d656e74 = { $i18nCategory ->
+    [one] 1 segment
+   *[other] { $count } segments
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e736f757263652e62797465 = { $i18nCategory ->
+    [one] 1 source byte
+   *[other] { $count } source bytes
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e74696c65 = { $i18nCategory ->
+    [one] 1 tile
+   *[other] { $count } tiles
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e746f74616c2e70616765 = { $i18nCategory ->
+    [one] 1 total page
+   *[other] { $count } total pages
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e7761726e696e67 = { $i18nCategory ->
+    [one] 1 warning
+   *[other] { $count } warnings
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e636f756e742e776f726b6f7574 = { $i18nCategory ->
+    [one] 1 workout
+   *[other] { $count } workouts
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e6465736b746f702e6578652e6e6f2e706172656e74 = current executable has no parent
+
+m6a6f75726e616c2e636c692e696d706f727465722e6465736b746f702e6d697373696e672e7369626c696e67 = missing sibling executable { $path }
+
+m6a6f75726e616c2e636c692e696d706f727465722e656d6265646465642e626f64792e7265667573616c = Apple Health exports and Oura data are brought in by a journal on a computer, so nothing was brought in.
+
+m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e6170706c652e696e7370656374 = could not inspect Apple Health export; retry with a valid export
+
+m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e66616365742e6e6f742e756e6d75746564 = "{ $facet }" is not one of your unmuted facets, so nothing was imported. your unmuted facets: { $enabled }
+
+m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e66616365742e73636f7065 = --facet only applies to an audio file, a plain text file or a body import, so nothing was imported; import this one without it
+
+m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e6661636574732e756e7265616461626c65 = could not read your facets, so nothing was imported: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e6e6f2e66616365742e636f6e666c696374 = argument --no-facet: not allowed with argument --facet
+
+m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e6e6f2e66616365742e73636f7065 = --no-facet only applies to a body import, so nothing was imported; import this one without it
+
+m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e707265766965772e6661696c6564 = could not preview import: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e73746f70706564 = import stopped
+
+m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e74696d657374616d702e666f726d6174 = timestamp must be YYYYMMDD_HHMMSS format
+
+m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e74696d657374616d702e666f726d61742e6f6666736574 = timestamp must be YYYYMMDD_HHMMSS, or a date and time with its offset, such as 2025-11-02T01:30:00-07:00
+
+m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e756e6b6e6f776e2e736f75726365 = unknown importer source: { $source }
+
+m6a6f75726e616c2e636c692e696d706f727465722e6572726f722e7a6f6e652e6368616e6765642e70726576696577 = the time zone changed after preview; preview again before importing
+
+m6a6f75726e616c2e636c692e696d706f727465722e666f7263652e6461792e6e6f74696365 = notice: this file dates to { $fresh }, and a previous import used { $stored }. this --force import will use { $planned }. existing recordings are not moved.
+
+m6a6f75726e616c2e636c692e696d706f727465722e666f7263652e7064662e6461792e6e6f74696365 = notice: this file's name dates to { $fresh }, and a previous import was recorded on { $stored }. the PDF's own dates may select a different day. choose --timestamp to set its date. existing recordings are not moved.
+
+m6a6f75726e616c2e636c692e696d706f727465722e67656e657269632e746578742e636f6d706c657465 = Generic text import complete: segments={ $segments }
+
+m6a6f75726e616c2e636c692e696d706f727465722e67656e657269632e746578742e756e74696d65642e6c696e6531 = no turn times found in this file, so it landed as one segment at the import's start time, each line as written.
+
+m6a6f75726e616c2e636c692e696d706f727465722e67656e657269632e746578742e756e74696d65642e6c696e6532 = if your transcripts mark times in a way the journal doesn't read yet, ask us to add it: { $url }
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617263686976652e6d656d62657273 = { $indent }List members for an audio archive run (use with --offset and --limit)
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617263686976652e737461747573 = { $indent }Print compact status for an audio archive run
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6531 = { $indent }--audio-archive PATH  Import a folder of Ogg Opus recordings or a JSON manifest
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6532 = { $indent }Folder: Limitless filenames and --source-zone are required.
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6533 = { $indent }Manifest: { $example }
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6534 = { $indent }Or use local_civil and source_zone for a member's time.
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6535 = { $indent }Paths are absolute or relative to the manifest.
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6536 = { $indent }Explicit manifest times take precedence over filenames.
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6537 = { $indent }Supports single-stream mono/stereo Ogg Opus; other containers are left out.
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e617564696f2e617263686976652e6c696e6538 = { $indent }Shows size before saving; --dry-run saves nothing.
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6175746f = { $indent }--auto [AUTO]         Adopt the detected timestamp; AUTO is guidance, not the file path
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6261636b656e6473 = { $indent }--backends            List syncable importer backends
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e636f6e6669726d2e626f6479 = { $indent }--confirm-body-save   Confirm this run may save sensitive body importer output
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6465627567 = { $indent }-d, --debug            Enable debug logging
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e64657465726d696e69737469632e6c696e6531 = { $indent }--deterministic-only  When no date can be read from the file, skip it (exit 0)
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e64657465726d696e69737469632e6c696e6532 = { $indent }instead of failing
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6472792e72756e = { $indent }--dry-run             Show what would be imported without writing to the journal
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e66616365742e6c696e6531 = { $indent }--facet FACET         File this audio or text file, or this body import, under FACET,
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e66616365742e6c696e6532 = { $indent }one of your unmuted facets, instead of letting your journal choose
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e66616365742e6c696e6533 = { $indent }(for a body import: your remembered facet, or none)
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e666f726365 = { $indent }--force               Force re-import; body sources create a separate import
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e68656c70 = { $indent }-h, --help            show this help message and exit
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6a736f6e2e6c696e6531 = { $indent }--json                Output results as JSON; archive saves emit progress objects
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6a736f6e2e6c696e6532 = { $indent }and a final result, one JSON object per line.
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6c696d6974 = { $indent }--limit LIMIT         Maximum members to list (default 100, max 1000)
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6c6973742e696d706f7274657273 = { $indent }--list-importers      List available file importers
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6e6f2e66616365742e6c696e6531 = { $indent }--no-facet            File this body import under no facet, whatever the remembered
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6e6f2e66616365742e6c696e6532 = { $indent }default is
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e6f6666736574 = { $indent }--offset OFFSET       Starting member offset for member listing
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e726573756d65 = { $indent }--resume IMPORT_ID    Fill unsaved parts of an audio archive's frozen plan
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e73617665 = { $indent }--save                With --sync: download and import new files (default is dry-run)
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e736f75726365 = { $indent }--source SOURCE       Required for classified formats (ics, chat export, image, PDF)
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e736f757263652e7a6f6e65 = { $indent }--source-zone IANA    Time zone for folder audio archives or civil times (e.g. America/New_York)
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e74696d657374616d70 = { $indent }Generic .txt/.md use this, or --auto to adopt a detected timestamp (--timestamp YYYYMMDD_HHMMSS, or a date and time with its offset, such as 2025-11-02T01:30:00-07:00)
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f70742e766572626f7365 = { $indent }-v, --verbose         Enable verbose output
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e6f7074696f6e732e686561646572 = options:
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e706f736974696f6e616c2e686561646572 = positional arguments:
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e706f736974696f6e616c2e6d65646961 = { $indent }media                 Path to audio or text file
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e73756d6d617279 = Import a media file into the journal
+
+m6a6f75726e616c2e636c692e696d706f727465722e68656c702e7573616765 = usage: solstone journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET] [--no-facet]
+
+m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e6170706c652e6865616c7468 = Preview Apple Health export.xml data without writing to the journal
+
+m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e63686174677074 = Import conversations from a ChatGPT export
+
+m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e636c61756465 = Import conversations from a Claude chat export
+
+m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e646f63756d656e74 = Import PDF documents with worker-backed text and raster extraction
+
+m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e657665726e6f7465 = Notes from an Evernote export
+
+m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e67656d696e69 = Import conversations from a Google Takeout Gemini or Bard export
+
+m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e696373 = Import events from ICS calendar files or a Google Calendar export ZIP
+
+m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e696d616765 = Import a single image and describe its contents with vision
+
+m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e6a6f75726e616c2e61726368697665 = Merge an exported journal archive into the current journal
+
+m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e6f757261 = Preview Oura API v2 JSON documents (synthetic fixtures; save path is a later, gated phase)
+
+m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e646573632e737472617661 = Workouts from a Strava download (only its activities.csv is read)
+
+m6a6f75726e616c2e636c692e696d706f727465722e6c6973742e686561646572 = File importers:
+
+m6a6f75726e616c2e636c692e696d706f727465722e6e6f7465732e666f6c6465722e72657469726564 = importing a folder of notes is gone; an Obsidian vault comes into your journal when you turn it on in the solstone app on the computer where the vault lives
+
+m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e6e6565646564 = this journal isn't connected to an app you've registered with Oura yet. register one, then run `solstone journal importer --connect oura` at a terminal and paste in its client ID and client secret. how: { $how }
+
+m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e636c69656e742e6964 = client ID:
+
+m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e636c69656e742e736563726574 = client secret:
+
+m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e696e74726f = this journal isn't connected to an app you've registered with Oura yet. to connect one:
+
+m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e6e6f7465 = they're kept in this journal's settings and used only to connect to Oura. nothing is saved until Oura says yes. how: { $how }
+
+m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e7374657031 = { $indent }1. sign in at https://cloud.ouraring.com/oauth/applications and create an app
+
+m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e7374657032 = { $indent }2. add the redirect URI http://localhost:8765/callback
+
+m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e6170702e70726f6d70742e7374657033 = { $indent }3. paste the app's client ID and client secret below
+
+m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e636f6e6e6563742e6661696c65642e62726f77736572 = a browser couldn't be opened here. run this at the journal's computer, not over a remote session.
+
+m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e636f6e6e6563742e6661696c65642e63616c6c6261636b = Oura's sign-in comes back to this computer on port 8765, and something else is using it. close that and run it again.
+
+m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e636f6e6e6563742e6661696c65642e6465636c696e6564 = Oura didn't connect, so nothing was saved.
+
+m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e636f6e6e6563742e6661696c65642e65786368616e6765 = Oura didn't accept the connection, so nothing was saved. check the client secret on your app's page at Oura and run it again.
+
+m6a6f75726e616c2e636c692e696d706f727465722e6f7572612e636f6e6e6563742e6661696c65642e74696d656f7574 = Oura's sign-in didn't finish within five minutes, so nothing was saved. run it again to retry.
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e626567696e2e696e76616c69642e7265646972656374 = invalid Plaud callback redirect URI
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e626567696e2e6c6f6f706261636b2e62696e64 = could not bind local callback listener
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e626567696e2e72616e646f6d2e6661696c6564 = failed to generate sign-in identifier
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e62757379 = another sign-in or sync is already running
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e63616c6c6261636b2e696e76616c6964 = the sign-in address was invalid
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e63616e63656c6c6564 = sign-in cancelled
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e64656e696564 = sign-in was not approved
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e65786368616e67652e6661696c6564 = couldn't finish signing in
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e65787069726564 = the sign-in attempt timed out
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e64657461696c2e73746f72616765 = couldn't save the sign-in in this journal
+
 m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e65 = { "Plaud" } is connected, and your sign-in is saved in this journal.
 
 m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e652e6163636f756e74 = { "Plaud" } is connected as { $account }, and your sign-in is saved in this journal.
@@ -5023,7 +5501,158 @@ m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e726574727
 
 m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e77616974696e67 = waiting for { "Plaud" } to finish sign-in. if your browser is on another device, paste the final address from the browser bar and press enter:
 
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e617564696f2e6e6f742e7265616479 = audio download link is not ready yet; will try again on next sync
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e636174616c6f677565 = catalogue failed
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e646f776e6c6f6164 = download failed
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e6d616e6966657374 = import matching failed
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e706970656c696e65 = import failed
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e74656d706f726172792e75726c = failed to get download URL
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e6661696c7572652e746f6b656e2e72656675736564 = sign-in expired or was revoked; sign in again in settings
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e707265766965772e636f6d706c657465 = Plaud sync preview complete: files={ $files }
+
 m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e73796e632e62757379 = your journal is already checking { "Plaud" }. try again when it finishes.
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e73796e632e6d697373696e672e63726564656e7469616c = Plaud credential is not configured
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e73796e632e6f7065726174696f6e = Plaud { $detail }
+
+m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e73796e632e73746174652e6661696c6564 = Plaud sync state failed: { $message }
+
+m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e63686174677074 = { $messages } from ChatGPT export
+
+m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e636c61756465 = { $messages } from Claude chat export
+
+m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e646f63756d656e742e636f756e7473 = { $documents }, { $pages }
+
+m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e646f63756d656e742e6e6f6e65 = No PDF documents found
+
+m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e646f63756d656e742e756e7265616461626c65 = { $documents }, { $pages }; { $unreadable } unreadable ({ $failures })
+
+m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e67656d696e69 = { $messages } from Gemini export
+
+m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e6963732e636f756e7473 = { $events }, { $attendees }
+
+m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e6963732e6e6f2e6576656e7473 = No events found in ICS data
+
+m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e6963732e6e6f6e65 = No ICS data found
+
+m6a6f75726e616c2e636c692e696d706f727465722e707265766965772e696d6167652e6f6e65 = 1 image ({ $format }, { $width }×{ $height })
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617263686976652e6572726f722e616e642e7265636f72642e6661696c6564 = { $source } import failed: { $error }; failed to record attempt: { $record_error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617263686976652e6d697373696e672e6661637473 = { $source } import failed: missing attempt facts for { $attempt }
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617263686976652e6d697373696e672e70726f76656e616e6365 = { $source } import failed: missing provenance for attempt { $attempt }
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617263686976652e7265636f72642e617474656d70742e6661696c6564 = { $source } import failed: failed to record attempt: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617263686976652e7265636f72642e636f6d706c657465642e6661696c6564 = { $source } import failed: failed to record completed attempt: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617263686976652e7265636f72642e6d657267652e6661696c6564 = { $source } import failed: failed to record merge results: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e617474656d70742e73757065727365646564 = { $source } import failed: attempt { $import_id }:{ $generation } was superseded
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e657665726e6f74652e6174746163686d656e74732e6661696c6564 = Evernote import failed. { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e666f756e642e6e6f7468696e67 = { $source } import failed: found nothing to import
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e67656d696e692e666f6c6465722e756e7265616461626c65 = Gemini import failed. couldn't read the saved export folder.
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e6f726967696e616c732e63686f6963652e756e7265616461626c65 = couldn't read the keep originals choice. reopen the import to try again.
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e6f726967696e616c732e636c65616e75702e6661696c6564 = saved to your journal. couldn't remove the extra copy.
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e6f726967696e616c732e6b6565702e6661696c6564 = couldn't keep a copy of the original. try again.
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e707265766965772e6661696c6564 = import preview failed: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e7374726176612e646973636172642e6661696c6564 = could not remove the staged Strava download: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e7374726176612e66696c696e672e6661696c6564 = { $source } import failed: the workouts couldn't be filed: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e7374726176612e72656c656173652e6661696c6564 = workouts placed at the wrong time could not be released
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e73756d6d6172792e696d616765 = imported 1 image
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e73756d6d6172792e706466 = imported { $documents }
+
+m6a6f75726e616c2e636c692e696d706f727465722e72656769737472792e756e636f6e6669726d6564 = { $source } import saved to your journal, but it could not confirm the entries are ready to search; run it again
+
+m6a6f75726e616c2e636c692e696d706f727465722e73697a652e6c69737465642e6d6f766573 = { $i18nCategory ->
+    [one] 1 workout already listed on the activities page would move to this import's facet from { $from }
+   *[other] { $count } workouts already listed on the activities page would move to this import's facet from { $from }
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e73697a652e7265636f7264696e67732e6163726f7373 = { $recordings } across { $days }
+
+m6a6f75726e616c2e636c692e696d706f727465722e73697a652e736b6970706564 = { $count } skipped
+
+m6a6f75726e616c2e636c692e696d706f727465722e736b69707065642e616c7265616479 = Import skipped: this file was already imported; use --force to import it again
+
+m6a6f75726e616c2e636c692e696d706f727465722e736b69707065642e636f6e6669726d2e64617465 = Import skipped: the file's date needs confirming; rerun with --timestamp or --auto
+
+m6a6f75726e616c2e636c692e696d706f727465722e736b69707065642e6e6f2e64617465 = Import skipped: no date could be read from the file; name one with --timestamp YYYYMMDD_HHMMSS
+
+m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e617263686976652e616c72656164792e70726573656e74 = { $source } import did not merge anything: archive content is already present
+
+m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e617263686976652e636f6d706c657465 = { $source } import complete: segments_copied={ $segments_copied } imports_copied={ $imports_copied } entities_created={ $entities_created } entities_merged={ $entities_merged } facets_created={ $facets_created } facets_merged={ $facets_merged }
+
+m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e617263686976652e696e636f6d706c657465 = { $source } import incomplete: { $detail }
+
+m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e636f6d706c657465 = { $source } import complete: entries_written={ $entries } files_created={ $files } errors={ $errors } summary={ $summary }
+
+m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e6661696c6564 = { $source } import failed: { $detail }
+
+m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e70726576696577 = { $source } preview: date_range={ $start }..{ $end } items={ $items } entities={ $entities } summary={ $summary }
+
+m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e61726368697665 = Journal archive: { $days }, { $entities }, { $facets } ({ $warnings })
+
+m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e636f6e766572736174696f6e73 = imported { $messages } from { $conversations } across { $days }
+
+m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e646f63756d656e74 = imported { $documents } across { $days } into { $segments }
+
+m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e62617365 = imported { $events } across { $days }
+
+m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e6f7665722e6c696d6974 = ; { $count } not listed by the day they happen, past the { $limit } dates one import lists
+
+m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e726561736f6e2e696e76616c6964 = { $count } unreadable
+
+m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e726561736f6e2e6e6f2e6368616e6765 = { $count } with no change time
+
+m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e726561736f6e2e756e6b6e6f776e2e7a6f6e65 = { $count } in an unknown time zone
+
+m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e736b6970706564 = ; { $skipped } not listed by the day they happen ({ $reasons })
+
+m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e7472756e63617465642e736572696573 = { $i18nCategory ->
+    [one] ; 1 repeating series listed only for its latest { $limit } dates
+   *[other] ; { $count } repeating series listed only for their latest { $limit } dates
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e6963732e756e657870616e6461626c652e736572696573 = { $i18nCategory ->
+    [one] ; 1 repeating series listed only for its first date
+   *[other] ; { $count } repeating series listed only for their first date
+}
+
+m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e696d6167652e6e6f6e65 = No readable image found
+
+m6a6f75726e616c2e636c692e696d706f727465722e73796e632e617661696c61626c65 = Available backends: { $backends }
+
+m6a6f75726e616c2e636c692e696d706f727465722e73796e632e636f6d706c657465 = { $backend } sync complete: saved={ $saved } errors={ $errors }
+
+m6a6f75726e616c2e636c692e696d706f727465722e73796e632e756e6b6e6f776e2e6261636b656e64 = Unknown sync backend: { $backend }
+
+m6a6f75726e616c2e636c692e696d706f727465722e746578742e6661696c6564 = text import failed: { $error }
+
+m6a6f75726e616c2e636c692e696d706f727465722e746578742e756e636f6e6669726d6564 = text import saved to your journal, but it could not confirm the entries are ready to search; run it again
+
+m6a6f75726e616c2e636c692e696d706f727465722e74696d657374616d702e636f6e6669726d = detected timestamp { $timestamp }; rerun with --timestamp { $timestamp } or --auto
 
 m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e62696e617279 = { $binary_name } missing from archive
 

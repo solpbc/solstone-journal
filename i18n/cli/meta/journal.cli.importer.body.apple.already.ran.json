@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health refusal when --import-id points to an already-run import.",
+  "context": "Apple Health refusal when --import-id points to an already-run import.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "892fb7b694428dc63524883efc94b4adc69d3aa59148ec41c22f498cb06e6fda",
+  "max_length": 297,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

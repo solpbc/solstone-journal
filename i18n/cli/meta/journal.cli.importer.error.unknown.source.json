@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI error for unknown --source value.",
+  "context": "Importer CLI error for unknown --source value.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "71cda408100729f46d7118b5c876f695c72cef3cb1819f0335cdfb85b9ad863b",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

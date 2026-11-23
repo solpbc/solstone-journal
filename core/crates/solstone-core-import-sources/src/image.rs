@@ -387,7 +387,14 @@ pub fn preview(
         ),
         item_count: 1,
         entity_count: 0,
-        summary: format!("1 image ({format}, {}×{})", image.width(), image.height()),
+        summary: solstone_core_cli_copy::display(
+            "journal.cli.importer.preview.image.one",
+            [
+                ("format", &format),
+                ("width", &image.width()),
+                ("height", &image.height()),
+            ],
+        ),
     }
 }
 
@@ -1331,7 +1338,7 @@ fn degenerate_preview() -> ImportPreview {
         date_range: (String::new(), String::new()),
         item_count: 0,
         entity_count: 0,
-        summary: "No readable image found".to_owned(),
+        summary: solstone_core_cli_copy::text("journal.cli.importer.summary.image.none"),
     }
 }
 

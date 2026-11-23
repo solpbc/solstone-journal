@@ -1,0 +1,21 @@
+{
+  "description": "Interactive Oura app registration step 2.",
+  "context": "Interactive Oura app registration step 2.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fadb2ee0ed77498df60d8a7c5c5738e82742c021b88c387a7f4d2e98ce3362a1",
+  "max_length": 195,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

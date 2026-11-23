@@ -1,0 +1,16 @@
+{
+  "description": "Import skipped message when file timestamp needs confirmation.",
+  "context": "Import skipped message when file timestamp needs confirmation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "18864e3423c85ad8ffa41e2699d713e829b9bd1027cd3458ce7b647b9ae1b822",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

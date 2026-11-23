@@ -1,0 +1,45 @@
+{
+  "description": "Journal archive merge completion line.",
+  "context": "Journal archive merge completion line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "segments_copied",
+      "type": "string"
+    },
+    {
+      "name": "imports_copied",
+      "type": "string"
+    },
+    {
+      "name": "entities_created",
+      "type": "string"
+    },
+    {
+      "name": "entities_merged",
+      "type": "string"
+    },
+    {
+      "name": "facets_created",
+      "type": "string"
+    },
+    {
+      "name": "facets_merged",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "25f182e395d2d48ba9e431c871fe08295be4b52d74780b29e2a8141059267bc6",
+  "max_length": 732,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

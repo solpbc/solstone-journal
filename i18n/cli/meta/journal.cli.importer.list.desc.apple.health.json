@@ -1,0 +1,16 @@
+{
+  "description": "Description for apple_health importer.",
+  "context": "Description for apple_health importer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce953f7534b4d7fc335ab93f8496ef755b68b89ad7ce79953211673a6b2fd96d",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

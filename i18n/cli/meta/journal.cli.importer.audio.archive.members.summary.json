@@ -1,0 +1,29 @@
+{
+  "description": "Audio archive members header line.",
+  "context": "Audio archive members header line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "run_id",
+      "type": "string"
+    },
+    {
+      "name": "offset",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "87b39689932689cd6d5ab75c53abf3a1ffacd7c5dbe5aa3ade17de993065791e",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI short argparse usage line.",
+  "context": "Importer CLI short argparse usage line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a9e27ccd98711ba0c2b0e4dab42fdc62a76bb01d12751d88ab501040b373417",
+  "max_length": 195,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

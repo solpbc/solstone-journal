@@ -1,0 +1,21 @@
+{
+  "description": "ICS skipped reason: unknown time zone.",
+  "context": "ICS skipped reason: unknown time zone.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5d88df8ffe622f560baea4616a6484cea481e3ee29da6d5ee3918943d87a4f86",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

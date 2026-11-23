@@ -1,0 +1,16 @@
+{
+  "description": "Generic text untimed transcript note line 1.",
+  "context": "Generic text untimed transcript note line 1.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1c1c5c93271b0fbbb489e4572fbafa6c68714543c3a2e698043208f7b3e63899",
+  "max_length": 333,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

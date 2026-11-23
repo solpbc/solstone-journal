@@ -1,0 +1,21 @@
+{
+  "description": "Generic audio import stalled processing segments list.",
+  "context": "Generic audio import stalled processing segments list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "842a8e5e4cc550580fb69c6e3bb40d5706aed0d7ff34697bb0df7112d95bf1e5",
+  "max_length": 234,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

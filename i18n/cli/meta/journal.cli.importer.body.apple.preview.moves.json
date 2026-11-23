@@ -1,0 +1,30 @@
+{
+  "description": "Apple Health CLI preview upper-bound facet move warning.",
+  "context": "Apple Health CLI preview upper-bound facet move warning.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "73abefbca6ef52c6b8fc34024436603ea362d6941165d4aa04c25220c1c99d88",
+  "max_length": 570,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

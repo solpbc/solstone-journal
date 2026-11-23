@@ -1,0 +1,16 @@
+{
+  "description": "Description for journal_archive importer.",
+  "context": "Description for journal_archive importer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "682d307f1338de38f626433abb16db16d4d359db65466ec395b9d8da0323f81d",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

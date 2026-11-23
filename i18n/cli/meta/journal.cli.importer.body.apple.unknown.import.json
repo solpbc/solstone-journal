@@ -1,0 +1,16 @@
+{
+  "description": "Refusal when --import-id names no existing import.",
+  "context": "Refusal when --import-id names no existing import.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "07b6860d8cd7d3e9ccd58312b4c8494cd7c29c83aedbf40128be68042e98d102",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

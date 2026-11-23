@@ -20,8 +20,39 @@ use solstone_core_segment::{AiChatSource, ImportSource, Kind, StreamHints};
 /// Private mode for everything an import writes about the owner.
 const PRIVATE_FILE_MODE: u32 = 0o600;
 
+pub(crate) fn cardinal_count(locale: &str, id: &str, count: u64) -> String {
+    let count_str = count.to_string();
+    solstone_core_cli_copy::render_for(
+        locale,
+        id,
+        &[
+            (
+                "quantity",
+                solstone_core_cli_copy::Value::Cardinal(i64::try_from(count).unwrap_or(i64::MAX)),
+            ),
+            ("count", solstone_core_cli_copy::Value::String(&count_str)),
+        ],
+    )
+}
+
 pub(crate) fn conversations_summary(messages: u64, conversations: usize, days: usize) -> String {
-    format!("imported {messages} messages from {conversations} conversations across {days} days")
+    let locale = solstone_core_cli_copy::cli_locale();
+    let messages = cardinal_count(locale, "journal.cli.importer.count.message", messages);
+    let conversations = cardinal_count(
+        locale,
+        "journal.cli.importer.count.conversation",
+        conversations as u64,
+    );
+    let days = cardinal_count(locale, "journal.cli.importer.count.day", days as u64);
+    solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.importer.summary.conversations",
+        [
+            ("messages", &messages),
+            ("conversations", &conversations),
+            ("days", &days),
+        ],
+    )
 }
 
 pub(crate) fn ics_summary(
@@ -29,51 +60,92 @@ pub(crate) fn ics_summary(
     days: usize,
     counts: &crate::ics_notes::CalendarNoteCounts,
 ) -> String {
-    let mut summary = format!(
-        "imported {entry_count} calendar {} across {days} {}",
-        noun(entry_count, "event", "events"),
-        noun(days as u64, "day", "days")
+    let locale = solstone_core_cli_copy::cli_locale();
+    let events = cardinal_count(
+        locale,
+        "journal.cli.importer.count.calendar.event",
+        entry_count,
+    );
+    let days = cardinal_count(locale, "journal.cli.importer.count.day", days as u64);
+    let mut summary = solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.importer.summary.ics.base",
+        [("events", &events), ("days", &days)],
     );
     let skipped = counts.skipped();
     if skipped > 0 {
         let reasons: Vec<String> = [
-            (counts.no_change_time, "with no change time"),
-            (counts.unknown_zone, "in an unknown time zone"),
-            (counts.invalid, "unreadable"),
+            (
+                counts.no_change_time,
+                "journal.cli.importer.summary.ics.reason.no.change",
+            ),
+            (
+                counts.unknown_zone,
+                "journal.cli.importer.summary.ics.reason.unknown.zone",
+            ),
+            (
+                counts.invalid,
+                "journal.cli.importer.summary.ics.reason.invalid",
+            ),
         ]
         .into_iter()
         .filter(|(count, _)| *count > 0)
-        .map(|(count, reason)| format!("{count} {reason}"))
+        .map(|(count, id)| solstone_core_cli_copy::display_for(locale, id, [("count", &count)]))
         .collect();
-        summary.push_str(&format!(
-            "; {skipped} not listed by the day they happen ({})",
-            reasons.join(", ")
+        let joined = reasons.join(", ");
+        summary.push_str(&solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.summary.ics.skipped",
+            [("skipped", &skipped), ("reasons", &joined)],
         ));
     }
     if counts.truncated_series > 0 {
-        summary.push_str(&format!(
-            "; {} repeating series listed only for their latest {} dates",
-            counts.truncated_series,
-            grouped(crate::ics_notes::MAX_SERIES_OCCURRENCES as u64)
+        let count_str = counts.truncated_series.to_string();
+        let limit = grouped(crate::ics_notes::MAX_SERIES_OCCURRENCES as u64);
+        summary.push_str(&solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.importer.summary.ics.truncated.series",
+            &[
+                (
+                    "quantity",
+                    solstone_core_cli_copy::Value::Cardinal(
+                        i64::try_from(counts.truncated_series).unwrap_or(i64::MAX),
+                    ),
+                ),
+                ("count", solstone_core_cli_copy::Value::String(&count_str)),
+                ("limit", solstone_core_cli_copy::Value::String(&limit)),
+            ],
         ));
     }
     if counts.unexpandable_series > 0 {
-        summary.push_str(&format!(
-            "; {} repeating series listed only for their first date",
-            counts.unexpandable_series
+        let count_str = counts.unexpandable_series.to_string();
+        summary.push_str(&solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.importer.summary.ics.unexpandable.series",
+            &[
+                (
+                    "quantity",
+                    solstone_core_cli_copy::Value::Cardinal(
+                        i64::try_from(counts.unexpandable_series).unwrap_or(i64::MAX),
+                    ),
+                ),
+                ("count", solstone_core_cli_copy::Value::String(&count_str)),
+            ],
         ));
     }
     if counts.over_limit > 0 {
-        summary.push_str(&format!(
-            "; {} not listed by the day they happen, past the {} dates one import lists",
-            counts.over_limit,
-            grouped(crate::ics_notes::MAX_IMPORT_LINES as u64)
+        let limit = grouped(crate::ics_notes::MAX_IMPORT_LINES as u64);
+        summary.push_str(&solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.summary.ics.over.limit",
+            [("count", &counts.over_limit), ("limit", &limit)],
         ));
     }
     summary
 }
 
 /// The noun for a count: the singular for exactly one.
+#[cfg(test)]
 pub(crate) fn noun(count: u64, one: &'static str, many: &'static str) -> &'static str {
     if count == 1 { one } else { many }
 }

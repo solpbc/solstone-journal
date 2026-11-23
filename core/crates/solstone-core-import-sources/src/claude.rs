@@ -41,11 +41,21 @@ pub fn detect(path: &Path) -> Result<bool, SourceError> {
 /// Preview the atomic message count and local date range for a Claude archive.
 pub fn preview(path: &Path, zone: &TimeZone) -> Result<ImportPreview, SourceError> {
     let plan = plan(path, zone)?;
+    let locale = solstone_core_cli_copy::cli_locale();
+    let messages = crate::save::cardinal_count(
+        locale,
+        "journal.cli.importer.count.message",
+        plan.item_count,
+    );
     Ok(ImportPreview {
         date_range: plan.date_range,
         item_count: plan.item_count,
         entity_count: 0,
-        summary: format!("{} messages from Claude chat export", plan.item_count),
+        summary: solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.preview.claude",
+            [("messages", &messages)],
+        ),
     })
 }
 

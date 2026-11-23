@@ -1,0 +1,16 @@
+{
+  "description": "Refusal when --import-id is used outside Apple Health card save.",
+  "context": "Refusal when --import-id is used outside Apple Health card save.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "499051bc85062f855a02d968c1350aec74849a46d9132ff494d547d47bbe891f",
+  "max_length": 285,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Audio archive incremental save progress line.",
+  "context": "Audio archive incremental save progress line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "saved",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "tiles",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "647e2d5604b5bc937b379462cd851c66d4375b835d352b3027bcc2a5b9fbfbb2",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

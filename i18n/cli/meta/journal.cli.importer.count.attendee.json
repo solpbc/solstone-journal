@@ -1,0 +1,30 @@
+{
+  "description": "Count phrase for unique calendar attendees.",
+  "context": "Count phrase for unique calendar attendees.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "96dbc84be4e5aa3c1cffdfbb5cba046f7f635d1918cbf3b6ca9cd52c4d847774",
+  "max_length": 252,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

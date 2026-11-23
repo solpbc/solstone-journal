@@ -1,0 +1,16 @@
+{
+  "description": "Plaud OAuth begin error: invalid redirect URI.",
+  "context": "Plaud OAuth begin error: invalid redirect URI.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6096d8ae6e635472c7df4b490127e558cf09e66bce33b80422aa3d129d8904dd",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

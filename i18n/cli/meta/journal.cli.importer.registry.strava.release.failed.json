@@ -1,0 +1,16 @@
+{
+  "description": "Strava repair failure when misplaced workouts cannot be released.",
+  "context": "Strava repair failure when misplaced workouts cannot be released.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "33c4b612c74ec433f56a280a6828d7564e5fb501261e5c752f56c6d0625d0d57",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

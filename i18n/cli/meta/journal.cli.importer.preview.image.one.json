@@ -1,0 +1,29 @@
+{
+  "description": "Image preview summary.",
+  "context": "Image preview summary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "format",
+      "type": "string"
+    },
+    {
+      "name": "width",
+      "type": "string"
+    },
+    {
+      "name": "height",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0a5f32e4bec4013b57f7b6635938f1c1c24ce7a4b60961663e832552c6917ea1",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

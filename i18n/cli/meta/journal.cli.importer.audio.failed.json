@@ -1,0 +1,21 @@
+{
+  "description": "Generic audio import failure line.",
+  "context": "Generic audio import failure line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9f7dea7f6de4dbbd354b3124d6ab0eed1f4d0ca02cc98b65ce9041eed5e61087",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

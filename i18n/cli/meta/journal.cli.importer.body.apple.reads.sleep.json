@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health preview reads list item: sleep.",
+  "context": "Apple Health preview reads list item: sleep.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8ebc8057f8f98adcdc875c4d96ea2dc92e7d5a966f09642b42b060d44b1a0b15",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

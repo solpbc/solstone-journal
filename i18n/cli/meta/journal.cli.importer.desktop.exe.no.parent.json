@@ -1,0 +1,16 @@
+{
+  "description": "Desktop importer error when current executable has no parent directory.",
+  "context": "Desktop importer error when current executable has no parent directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a6fcdc2efa326b2b8beb99fa7b785991655bc49373678e93b42f9d027ded1e57",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

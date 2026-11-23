@@ -1,0 +1,30 @@
+{
+  "description": "Count phrase for Apple Health mindful sessions.",
+  "context": "Count phrase for Apple Health mindful sessions.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c04314334d389569f3def92d4879a89ce7901a1ef41a721e477ee3a33c811adf",
+  "max_length": 252,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

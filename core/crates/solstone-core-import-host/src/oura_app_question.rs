@@ -14,26 +14,62 @@ const HOW: &str =
 /// What a connect with nobody at the terminal says when there is no app yet.
 pub(crate) fn app_needed_words() -> String {
     format!(
-        "this journal isn't connected to an app you've registered with Oura yet. register one, then \
-         run `solstone journal importer --connect oura` at a terminal and paste in its client ID and \
-         client secret. how: {HOW}\n"
+        "{}\n",
+        solstone_core_cli_copy::display("journal.cli.importer.oura.app.needed", [("how", &HOW)])
     )
 }
 
 /// Ask for the app's client ID and secret. `None` when either is left empty or
 /// the terminal closes.
 pub(crate) fn ask_oura_app(input: &mut dyn BufRead, output: &mut dyn Write) -> Option<OuraApp> {
+    let locale = solstone_core_cli_copy::cli_locale();
     let _ = write!(
         output,
-        "this journal isn't connected to an app you've registered with Oura yet. to connect one:\n\
-         \x20 1. sign in at https://cloud.ouraring.com/oauth/applications and create an app\n\
-         \x20 2. add the redirect URI http://localhost:8765/callback\n\
-         \x20 3. paste the app's client ID and client secret below\n\
-         they're kept in this journal's settings and used only to connect to Oura. nothing is \
-         saved until Oura says yes. how: {HOW}\n\n"
+        "{}\n{}\n{}\n{}\n{}\n\n",
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.importer.oura.app.prompt.intro",
+            &[]
+        ),
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.oura.app.prompt.step1",
+            [("indent", &"  ")],
+        ),
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.oura.app.prompt.step2",
+            [("indent", &"  ")],
+        ),
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.oura.app.prompt.step3",
+            [("indent", &"  ")],
+        ),
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.oura.app.prompt.note",
+            [("how", &HOW)],
+        ),
     );
-    let client_id = answer(input, output, "client ID: ")?;
-    let client_secret = answer(input, output, "client secret: ")?;
+    let client_id_prompt = format!(
+        "{} ",
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.importer.oura.app.prompt.client.id",
+            &[],
+        )
+    );
+    let client_secret_prompt = format!(
+        "{} ",
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.importer.oura.app.prompt.client.secret",
+            &[],
+        )
+    );
+    let client_id = answer(input, output, &client_id_prompt)?;
+    let client_secret = answer(input, output, &client_secret_prompt)?;
     Some(OuraApp {
         client_id,
         client_secret,
@@ -51,27 +87,15 @@ fn answer(input: &mut dyn BufRead, output: &mut dyn Write, prompt: &str) -> Opti
 
 /// What an owner reads when a connect stops.
 pub(crate) fn connect_failed_words(error: &BodyIngestError) -> String {
-    let words = match error.stage() {
-        "authorization_timeout" => {
-            "Oura's sign-in didn't finish within five minutes, so nothing was saved. run it again \
-             to retry."
-        }
-        "authorization_declined" => "Oura didn't connect, so nothing was saved.",
-        "authorization_exchange" => {
-            "Oura didn't accept the connection, so nothing was saved. check the client secret on \
-             your app's page at Oura and run it again."
-        }
-        "authorization_callback_unavailable" => {
-            "Oura's sign-in comes back to this computer on port 8765, and something else is using \
-             it. close that and run it again."
-        }
-        "authorization_browser" => {
-            "a browser couldn't be opened here. run this at the journal's computer, not over a \
-             remote session."
-        }
+    let id = match error.stage() {
+        "authorization_timeout" => "journal.cli.importer.oura.connect.failed.timeout",
+        "authorization_declined" => "journal.cli.importer.oura.connect.failed.declined",
+        "authorization_exchange" => "journal.cli.importer.oura.connect.failed.exchange",
+        "authorization_callback_unavailable" => "journal.cli.importer.oura.connect.failed.callback",
+        "authorization_browser" => "journal.cli.importer.oura.connect.failed.browser",
         _ => return format!("{error}\n"),
     };
-    format!("{words}\n")
+    format!("{}\n", solstone_core_cli_copy::text(id))
 }
 
 #[cfg(test)]

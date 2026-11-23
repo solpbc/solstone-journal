@@ -1,0 +1,25 @@
+{
+  "description": "Importer CLI invalid integer flag value error.",
+  "context": "Importer CLI invalid integer flag value error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "flag",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bc60790e6a3ca008b6f66e1010bcbfb6d2fa89aea6eca733f61457e7f5e9603c",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

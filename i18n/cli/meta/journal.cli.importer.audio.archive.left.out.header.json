@@ -1,0 +1,16 @@
+{
+  "description": "Audio archive status left-out section header.",
+  "context": "Audio archive status left-out section header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "494be59b724f6de4f72333b9a1ae29278865185d8ba1f68f8e44b75a2458d7c6",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

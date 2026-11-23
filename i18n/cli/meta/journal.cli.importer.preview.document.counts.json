@@ -1,0 +1,25 @@
+{
+  "description": "Document preview summary counts.",
+  "context": "Document preview summary counts.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "documents",
+      "type": "string"
+    },
+    {
+      "name": "pages",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e87664bd13532b05f598d368e0a98c4ef567f3d467fe7784e4e80505d05103a9",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

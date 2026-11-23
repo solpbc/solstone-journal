@@ -1,0 +1,41 @@
+{
+  "description": "Audio archive completion counts line.",
+  "context": "Audio archive completion counts line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "parts",
+      "type": "string"
+    },
+    {
+      "name": "tiles",
+      "type": "string"
+    },
+    {
+      "name": "pending",
+      "type": "string"
+    },
+    {
+      "name": "processed",
+      "type": "string"
+    },
+    {
+      "name": "unavailable",
+      "type": "string"
+    },
+    {
+      "name": "rejected",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "84f748295772093fc8941a4fee399342f2009b04a713e3edd48f0b16a1719f4b",
+  "max_length": 429,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

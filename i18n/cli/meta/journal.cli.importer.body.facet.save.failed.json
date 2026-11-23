@@ -1,0 +1,21 @@
+{
+  "description": "Error when body facet answer cannot be saved.",
+  "context": "Error when body facet answer cannot be saved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2dcaecf5da9950121ed745d8823794964a799290ab4af9ff081a391a996e2a6b",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

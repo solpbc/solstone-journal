@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI help --offset description.",
+  "context": "Importer CLI help --offset description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d2b8807b9f4a46acdbed8f0932b7135d4838f336cc4775a51aa6d4eb15751861",
+  "max_length": 222,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

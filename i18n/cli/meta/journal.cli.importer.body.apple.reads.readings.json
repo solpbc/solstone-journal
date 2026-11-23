@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health preview reads list item: heart rate and other readings.",
+  "context": "Apple Health preview reads list item: heart rate and other readings.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "50f042b53193a7d94dad2b7c7b24100e20db808d0b50e40a43fd3c668c251fb9",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

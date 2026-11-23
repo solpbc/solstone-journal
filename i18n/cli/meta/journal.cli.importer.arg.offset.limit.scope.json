@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI invalid --offset/--limit scope error.",
+  "context": "Importer CLI invalid --offset/--limit scope error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cd223cf73e64540774551887bbb9a1e56d6df8e05f8d580eb369ace6c1468fd2",
+  "max_length": 252,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

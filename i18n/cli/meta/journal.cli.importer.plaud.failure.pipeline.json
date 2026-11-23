@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sync failure: import pipeline failed.",
+  "context": "Plaud sync failure: import pipeline failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "66c9d18276fa4e0519feaf5caf8e228c69710484f75640e0c9c673d22376901f",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

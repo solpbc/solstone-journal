@@ -1,0 +1,25 @@
+{
+  "description": "Audio archive completion header line.",
+  "context": "Audio archive completion header line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "run_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2f20b4e730f6f9e2ab338be4833cf6b9e582243ea7778cd1a0ed67e4a4c3a014",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

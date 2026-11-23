@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sign-in invalid callback failure detail.",
+  "context": "Plaud sign-in invalid callback failure detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f3e52468323beea4bae3865580227a775ab4131d6667f0b82def7144858326fa",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

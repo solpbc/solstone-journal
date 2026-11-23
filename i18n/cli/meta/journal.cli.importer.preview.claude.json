@@ -1,0 +1,21 @@
+{
+  "description": "Claude export preview summary.",
+  "context": "Claude export preview summary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "messages",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2463aeb8eac4ca51d96d15cf89c68d5308da9c99b1a00a8c466fea786ec69d04",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

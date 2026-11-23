@@ -1,0 +1,21 @@
+{
+  "description": "Registry import failure when nothing importable was found.",
+  "context": "Registry import failure when nothing importable was found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f854f2638a6a19f3043fdefdf722a09f0e54a90b13a06b06cbd93db3f2d7bd00",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

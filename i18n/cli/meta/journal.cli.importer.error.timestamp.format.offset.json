@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI refusal for invalid --timestamp with offset.",
+  "context": "Importer CLI refusal for invalid --timestamp with offset.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e3819ceaa3855d82a726bd0c9f314c84b3cc87842d3eeec6e623c0b7b9209d1b",
+  "max_length": 312,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

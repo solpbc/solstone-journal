@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sign-in cancelled failure detail.",
+  "context": "Plaud sign-in cancelled failure detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5f0447ef5e193f943e17a5b9b3039b8ee6fb5386f6047d0134e3fa63bc9b14a1",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

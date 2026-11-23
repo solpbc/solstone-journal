@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI list of connectable backends.",
+  "context": "Importer CLI list of connectable backends.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "62514ba1c820cf7fe304fdcbf4f2662b7012394adccb7c6582c85cd0e92d6c38",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

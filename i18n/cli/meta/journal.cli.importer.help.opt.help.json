@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI help -h/--help option.",
+  "context": "Importer CLI help -h/--help option.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bb8d506da61438136774685ceac3a3628f6f90dcbc183ecf8734d5b94246c806",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

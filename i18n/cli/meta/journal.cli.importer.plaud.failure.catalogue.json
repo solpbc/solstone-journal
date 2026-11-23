@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sync failure: catalogue request failed.",
+  "context": "Plaud sync failure: catalogue request failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "131c5fbaa25cf337c2465ed12187b9ce760d2fe7697427a6c8a3699b0d51f62a",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

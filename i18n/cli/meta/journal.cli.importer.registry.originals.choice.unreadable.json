@@ -1,0 +1,16 @@
+{
+  "description": "Registry import failure when keep-originals preference cannot be read.",
+  "context": "Registry import failure when keep-originals preference cannot be read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c4f283a7d09c11e74b79c0a51031dc9ffb34d4c57c7bd4d09e503bc36fdf32e",
+  "max_length": 216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

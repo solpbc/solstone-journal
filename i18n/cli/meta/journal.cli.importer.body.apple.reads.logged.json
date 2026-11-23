@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health preview reads list item: logged entries.",
+  "context": "Apple Health preview reads list item: logged entries.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd8ba8e75a189567f964cbb60357302149f91b7f8ae06eb69938d23731a1af62",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

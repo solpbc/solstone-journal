@@ -1,0 +1,25 @@
+{
+  "description": "Oura sync error when a date flag is malformed.",
+  "context": "Oura sync error when a date flag is malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "flag",
+      "type": "string"
+    },
+    {
+      "name": "text",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c4d9e9fa5d622bab3c4878e9448129743f925112df7e526836bc9c6b5a6d8d98",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

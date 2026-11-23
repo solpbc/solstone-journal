@@ -1,0 +1,16 @@
+{
+  "description": "Refusal when Apple Health or Oura import is invoked on embedded mobile runtime.",
+  "context": "Refusal when Apple Health or Oura import is invoked on embedded mobile runtime.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "82c2b225bbcadbb2d526644a4b3235eb2b0ab596fa6fb3e79ba615e253997d4d",
+  "max_length": 312,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

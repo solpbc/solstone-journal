@@ -1,0 +1,25 @@
+{
+  "description": "Audio archive span date range.",
+  "context": "Audio archive span date range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "first",
+      "type": "string"
+    },
+    {
+      "name": "last",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bb7a034af42997341be4c169ad20151867f17953174f292d8c5f5ad2fbcfdbcf",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

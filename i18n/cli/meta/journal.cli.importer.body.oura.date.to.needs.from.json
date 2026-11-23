@@ -1,0 +1,16 @@
+{
+  "description": "Oura sync error when --date-to is passed without --date-from.",
+  "context": "Oura sync error when --date-to is passed without --date-from.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b83499153530d210a92236402fa3a6838eb35d7dadfcd4345e6b22f7f6f82445",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

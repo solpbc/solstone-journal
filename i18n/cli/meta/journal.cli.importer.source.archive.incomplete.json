@@ -1,0 +1,25 @@
+{
+  "description": "Journal archive incomplete merge line.",
+  "context": "Journal archive incomplete merge line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a241cfce4ca383ba052164c1cf98b945ad698247ecd5e6f33b74dff8521324e8",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

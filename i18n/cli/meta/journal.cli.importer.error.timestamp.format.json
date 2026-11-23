@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI refusal for invalid internal timestamp format.",
+  "context": "Importer CLI refusal for invalid internal timestamp format.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ada2075038304fc97f0f09f46b1d02772e9ed0b6b50edf5e0e0afbbeb81ac638",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

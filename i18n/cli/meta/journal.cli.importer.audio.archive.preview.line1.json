@@ -1,0 +1,33 @@
+{
+  "description": "Audio archive dry-run preview line 1.",
+  "context": "Audio archive dry-run preview line 1.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "members",
+      "type": "string"
+    },
+    {
+      "name": "source_bytes",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "tiles",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "561e755e43a3de29a1420380084bbb238183a3266fae70479fe7f65ec1be2de1",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

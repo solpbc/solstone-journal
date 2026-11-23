@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI help --timestamp description.",
+  "context": "Importer CLI help --timestamp description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4e953dc6cf4ad3d7956ed10c4b7c59d8fef00ee4a527f280b5b1cb1bfbd45bb2",
+  "max_length": 534,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

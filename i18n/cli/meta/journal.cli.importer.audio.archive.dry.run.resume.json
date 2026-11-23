@@ -1,0 +1,16 @@
+{
+  "description": "Audio archive refusal when --dry-run is combined with --resume.",
+  "context": "Audio archive refusal when --dry-run is combined with --resume.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc81ab6ead74e3fbd83d6b98b885d13d7573524a049093f971931f17bc71f5fc",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

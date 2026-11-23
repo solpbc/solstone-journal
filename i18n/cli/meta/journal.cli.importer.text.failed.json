@@ -1,0 +1,21 @@
+{
+  "description": "Generic text import failure line.",
+  "context": "Generic text import failure line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4625e18e66b3b42d278f79a8dbb4070dc214f315ed7315fe4ae3a5ae1f21880f",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

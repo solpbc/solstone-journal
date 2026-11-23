@@ -1,0 +1,21 @@
+{
+  "description": "ICS skipped reason: no change time.",
+  "context": "ICS skipped reason: no change time.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e23bac1e64a0d9b80b10db3be0c90c96eda3244b5dee8637875c8840573343d",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

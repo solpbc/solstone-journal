@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sync failure: download failed.",
+  "context": "Plaud sync failure: download failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c62bfa6dda02bea5b12dfa8bc9f647045089edd761d6b759850aae4529a60c3",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

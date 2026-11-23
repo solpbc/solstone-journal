@@ -1,0 +1,16 @@
+{
+  "description": "Interactive Oura app registration intro line.",
+  "context": "Interactive Oura app registration intro line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06b7c25f548f2cf27268e953f5e9a63afeea778dc243dfae0ab9483677dafae5",
+  "max_length": 261,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

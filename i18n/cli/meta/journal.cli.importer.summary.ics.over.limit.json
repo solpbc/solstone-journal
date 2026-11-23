@@ -1,0 +1,25 @@
+{
+  "description": "ICS over-limit occurrences summary clause.",
+  "context": "ICS over-limit occurrences summary clause.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "limit",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aac4fd9d0f715de126cc67581ed1383606bd5dd3b4585457a0029943fdc66196",
+  "max_length": 270,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

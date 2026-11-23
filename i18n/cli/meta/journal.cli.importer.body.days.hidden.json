@@ -1,0 +1,30 @@
+{
+  "description": "Notice when merged archive carried hidden body days.",
+  "context": "Notice when merged archive carried hidden body days.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "66fe1b0698c09004ab65222c5693e4ed7b0f8a31cc4a96e27223270ca259adbc",
+  "max_length": 648,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

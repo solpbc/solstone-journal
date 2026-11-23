@@ -1,0 +1,29 @@
+{
+  "description": "Registry import failure when attempt was superseded.",
+  "context": "Registry import failure when attempt was superseded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "import_id",
+      "type": "string"
+    },
+    {
+      "name": "generation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "355ac1508cc2952ea120372f38661f1652e2bf1b168d1e56521d6531501c0d68",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

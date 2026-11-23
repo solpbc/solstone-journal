@@ -1,0 +1,16 @@
+{
+  "description": "Apple Health preview reads list item: daily totals.",
+  "context": "Apple Health preview reads list item: daily totals.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef70cd4d90567db5f0bfbef92b60e587f2f69e5ff3ef8d44a487e9185381916a",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

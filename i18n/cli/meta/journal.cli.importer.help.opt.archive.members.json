@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI help --audio-archive-members description.",
+  "context": "Importer CLI help --audio-archive-members description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1246213a48977d96a558a0bddd794c6fdfbedf7041c08d17cf86f9230094eb7c",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

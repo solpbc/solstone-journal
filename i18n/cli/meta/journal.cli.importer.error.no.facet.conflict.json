@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI argument conflict between --no-facet and --facet.",
+  "context": "Importer CLI argument conflict between --no-facet and --facet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "482ee32b6e35657f780e87e1fb17fb6483740b53c7d9493b99e42b7346aa83b0",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

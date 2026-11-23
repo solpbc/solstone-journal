@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI argparse error line.",
+  "context": "Importer CLI argparse error line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "91c5bf3f8a699c9875ce94d9881a3209722f27c64649218a06b357ea5c53b419",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

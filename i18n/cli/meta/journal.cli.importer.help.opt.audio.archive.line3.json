@@ -1,0 +1,25 @@
+{
+  "description": "Importer CLI help --audio-archive line 3.",
+  "context": "Importer CLI help --audio-archive line 3.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    },
+    {
+      "name": "example",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d29c887f05acf51ad0c6601c6fdcdcc13bb1834a2cc4c0b4da6b7d644fcce24f",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -69,14 +69,26 @@ pub(crate) fn run_with_seams(
     seams: &SourceSeams<'_>,
 ) -> (CliRun, Option<String>) {
     if !solstone_core_import::work_continues() {
-        return (failure("import stopped\n".to_owned()), None);
+        return (
+            failure(format!(
+                "{}\n",
+                solstone_core_cli_copy::text("journal.cli.importer.error.stopped")
+            )),
+            None,
+        );
     }
     if dispatch.dry_run {
         if dispatch.source == RegistrySource::Evernote {
             return (
                 match evernote_preview(&dispatch) {
                     Ok(body) => success(body),
-                    Err(error) => failure(format!("import preview failed: {error}\n")),
+                    Err(error) => failure(format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display(
+                            "journal.cli.importer.registry.preview.failed",
+                            [("error", &error)],
+                        )
+                    )),
                 },
                 None,
             );
@@ -84,7 +96,13 @@ pub(crate) fn run_with_seams(
         return (
             match preview_size(&dispatch, journal, seams) {
                 Ok(size) => success(size.render(dispatch.json)),
-                Err(error) => failure(format!("import preview failed: {error}\n")),
+                Err(error) => failure(format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display(
+                        "journal.cli.importer.registry.preview.failed",
+                        [("error", &error)],
+                    )
+                )),
             },
             None,
         );
@@ -323,7 +341,7 @@ fn run_save(
         ));
     }
     if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
-        return failure(format!("{name} import failed: {error}\n"));
+        return source_failed(name, &error);
     }
     if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, source) {
         return refused;
@@ -331,22 +349,25 @@ fn run_save(
     let import_id = dispatch.timestamp.as_str();
     if let Err(error) = solstone_core_import::originals::capture_choice(journal, import_id, name) {
         log::warn!("import originals setting {name}: {error}");
-        return failure(
-            "couldn't read the keep originals choice. reopen the import to try again.\n".to_owned(),
-        );
+        return failure(format!(
+            "{}\n",
+            solstone_core_cli_copy::text(
+                "journal.cli.importer.registry.originals.choice.unreadable"
+            )
+        ));
     }
     let generation =
         match solstone_core_import::admit_running_attempt(journal, import_id, now_ms(), Some(name))
         {
             Ok(facts) => facts.generation,
-            Err(error) => return failure(format!("{name} import failed: {error}\n")),
+            Err(error) => return source_failed(name, &error),
         };
     let finish = |input| finish_import_attempt(journal, import_id, generation, name, input);
     let source_hash = match solstone_core_import::hash_source(&dispatch.media) {
         Ok(hash) => hash,
         Err(error) => {
             let _ = finish(ImportTerminalInput::Failed(&[]));
-            return failure(format!("{name} import failed: {error}\n"));
+            return source_failed(name, &error);
         }
     };
     let folder_files = if source == RegistrySource::Gemini && dispatch.media.is_dir() {
@@ -359,9 +380,12 @@ fn run_save(
             Err(error) => {
                 let _ = finish(ImportTerminalInput::Failed(&[]));
                 log::warn!("Gemini export folder {import_id}: {error}");
-                return failure(
-                    "Gemini import failed. couldn't read the saved export folder.\n".to_owned(),
-                );
+                return failure(format!(
+                    "{}\n",
+                    solstone_core_cli_copy::text(
+                        "journal.cli.importer.registry.gemini.folder.unreadable"
+                    )
+                ));
             }
         }
     } else {
@@ -375,12 +399,18 @@ fn run_save(
     {
         Ok(rendered) if rendered.files.is_empty() => {
             let _ = finish(ImportTerminalInput::Failed(&[]));
-            return failure(format!("{name} import failed: found nothing to import\n"));
+            return failure(format!(
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.registry.found.nothing",
+                    [("source", &name)],
+                )
+            ));
         }
         Ok(rendered) => rendered,
         Err(detail) => {
             let _ = finish(ImportTerminalInput::Failed(&[]));
-            return failure(format!("{name} import failed: {detail}\n"));
+            return source_failed(name, &detail);
         }
     };
     if let Err(error) = solstone_core_import::originals::preserve_unstaged_choice(
@@ -391,7 +421,10 @@ fn run_save(
     ) {
         let _ = finish(ImportTerminalInput::Failed(&[]));
         log::warn!("import original copy {import_id}: {error}");
-        return failure("couldn't keep a copy of the original. try again.\n".to_owned());
+        return failure(format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.importer.registry.originals.keep.failed")
+        ));
     }
     let written = save::write_rendered(journal, Some(import_id), &rendered);
     let manifest = match written.error {
@@ -407,7 +440,7 @@ fn run_save(
     };
     if let Err(detail) = manifest {
         let _ = finish(ImportTerminalInput::Failed(&written.created));
-        return failure(format!("{name} import failed: {detail}\n"));
+        return source_failed(name, &detail);
     }
     let finished = finish_import_attempt_indexing(
         journal,
@@ -421,16 +454,28 @@ fn run_save(
         Ok(ImportFinish::Applied) => {}
         Ok(ImportFinish::Stale) => {
             return failure(format!(
-                "{name} import failed: attempt {import_id}:{generation} was superseded\n"
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.registry.attempt.superseded",
+                    [
+                        ("source", &name),
+                        ("import_id", &import_id),
+                        ("generation", &generation),
+                    ],
+                )
             ));
         }
-        Err(error) => return failure(format!("{name} import failed: {error}\n")),
+        Err(error) => return source_failed(name, &error),
     }
     // The terminal record is the authority on whether publication held, not the write.
     let projection = solstone_core_import::project_import_result(journal, import_id);
     if projection.status != solstone_core_import::ProjectionStatus::Success {
         return failure(format!(
-            "{name} import saved to your journal, but it could not confirm the entries are ready to search; run it again\n"
+            "{}\n",
+            solstone_core_cli_copy::display(
+                "journal.cli.importer.registry.unconfirmed",
+                [("source", &name)],
+            )
         ));
     }
     if let Err(error) = solstone_core_import::originals::discard_finished_upload(
@@ -441,7 +486,10 @@ fn run_save(
         false,
     ) {
         log::warn!("import original cleanup {name}: {error}");
-        return failure("saved to your journal. couldn't remove the extra copy.\n".to_owned());
+        return failure(format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.importer.registry.originals.cleanup.failed")
+        ));
     }
     if !folder_files.is_empty()
         && let Err(error) = solstone_core_import::originals::discard_folder_members(
@@ -453,7 +501,10 @@ fn run_save(
         )
     {
         log::warn!("import original cleanup {name}: {error}");
-        return failure("saved to your journal. couldn't remove the extra copy.\n".to_owned());
+        return failure(format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.importer.registry.originals.cleanup.failed")
+        ));
     }
     success(cli_render::source_import_complete(
         source,
@@ -596,7 +647,7 @@ fn run_evernote(
         ));
     }
     if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
-        return failure(format!("{name} import failed: {error}\n"));
+        return source_failed(name, &error);
     }
     if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, source) {
         return refused;
@@ -609,7 +660,7 @@ fn run_evernote(
         Some(name),
     ) {
         Ok(facts) => facts.generation,
-        Err(error) => return failure(format!("{name} import failed: {error}\n")),
+        Err(error) => return source_failed(name, &error),
     };
     let fail = |detail: String| {
         let _ = finish_import_attempt(
@@ -623,7 +674,7 @@ fn run_evernote(
     };
     let source_hash = match solstone_core_import::hash_source(&dispatch.media) {
         Ok(hash) => hash,
-        Err(error) => return fail(format!("{name} import failed: {error}\n")),
+        Err(error) => return fail(source_failed_text(name, &error)),
     };
     let zone = solstone_core_journal_config::owner_zone(journal);
     let today = jiff::Timestamp::now()
@@ -632,7 +683,7 @@ fn run_evernote(
     let notebook = evernote_notebook(journal, &dispatch);
     let planned = match evernote::plan(journal, &dispatch.media, &notebook, &zone, today) {
         Ok(plan) => plan,
-        Err(error) => return fail(format!("{name} import failed: {error}\n")),
+        Err(error) => return fail(source_failed_text(name, &error)),
     };
     if let Some(refusal) = planned.refusal {
         return fail(format!("{refusal}\n"));
@@ -640,9 +691,12 @@ fn run_evernote(
 
     if let Err(error) = solstone_core_import::originals::capture_choice(journal, &import_id, name) {
         log::warn!("import originals setting {name}: {error}");
-        return fail(
-            "couldn't read the keep originals choice. reopen the import to try again.\n".to_owned(),
-        );
+        return fail(format!(
+            "{}\n",
+            solstone_core_cli_copy::text(
+                "journal.cli.importer.registry.originals.choice.unreadable"
+            )
+        ));
     }
 
     let container_policy = solstone_core_import::originals::captured_choice(journal, &import_id);
@@ -657,13 +711,21 @@ fn run_evernote(
         container_policy.is_some(),
     ) {
         Ok(installed) => installed,
-        Err(error) => return fail(format!("Evernote import failed. {error}\n")),
+        Err(error) => {
+            return fail(format!(
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.registry.evernote.attachments.failed",
+                    [("error", &error)],
+                )
+            ));
+        }
     };
 
     let rendered = evernote_rendered(&planned);
     let written = save::write_rendered(journal, Some(&import_id), &rendered);
     if let Some(error) = written.error {
-        return fail(format!("{name} import failed: {error}\n"));
+        return fail(source_failed_text(name, &error));
     }
 
     if let Err(error) = solstone_core_import::originals::preserve_unstaged_choice(
@@ -673,7 +735,10 @@ fn run_evernote(
         source_hash.as_str(),
     ) {
         log::warn!("import original copy {import_id}: {error}");
-        return fail("couldn't keep a copy of the original. try again.\n".to_owned());
+        return fail(format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.importer.registry.originals.keep.failed")
+        ));
     }
     let note_segments = written.created.clone();
     let extra_segments = attachment_segments.clone();
@@ -711,10 +776,18 @@ fn run_evernote(
         },
     );
     match finished {
-        Err(error) => return failure(format!("{name} import failed: {error}\n")),
+        Err(error) => return source_failed(name, &error),
         Ok(ImportFinish::Stale) => {
             return failure(format!(
-                "{name} import failed: attempt {import_id}:{generation} was superseded\n"
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.registry.attempt.superseded",
+                    [
+                        ("source", &name),
+                        ("import_id", &import_id),
+                        ("generation", &generation),
+                    ],
+                )
             ));
         }
         Ok(ImportFinish::Applied) => {}
@@ -722,7 +795,7 @@ fn run_evernote(
     if let Err(error) =
         solstone_core_segment::record_unbound_source(journal, "import.evernote", "evernote")
     {
-        return failure(format!("{name} import failed: {error}\n"));
+        return source_failed(name, &error);
     }
     let mut days = written
         .created
@@ -763,7 +836,7 @@ fn run_evernote(
             span: None,
         })
     {
-        return failure(format!("{name} import failed: {error}\n"));
+        return source_failed(name, &error);
     }
     let finish_path = journal.join("imports").join(&import_id).join("finish.txt");
     if let Err(error) = solstone_core_journal_io::atomic_replace(
@@ -771,10 +844,10 @@ fn run_evernote(
         written.summary.as_bytes(),
         solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
     ) {
-        return failure(format!("{name} import failed: {error}\n"));
+        return source_failed(name, &error);
     }
     if let Err(error) = evernote::commit(journal, &planned.updates) {
-        return failure(format!("{name} import failed: {error}\n"));
+        return source_failed(name, &error);
     }
     if let Err(error) = solstone_core_import::originals::discard_finished_upload(
         journal,
@@ -784,7 +857,10 @@ fn run_evernote(
         false,
     ) {
         log::warn!("import original cleanup {name}: {error}");
-        return failure("saved to your journal. couldn't remove the extra copy.\n".to_owned());
+        return failure(format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.importer.registry.originals.cleanup.failed")
+        ));
     }
     let projection = solstone_core_import::project_import_result(journal, &import_id);
     success(cli_render::source_import_complete(
@@ -1006,16 +1082,10 @@ fn run_document(
         return failure(format!("{error}\n"));
     }
     if let Err(error) = seams.model.prepare() {
-        return failure(format!(
-            "{} import failed: {error}\n",
-            dispatch.source.name()
-        ));
+        return source_failed(dispatch.source.name(), &error);
     }
     if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
-        return failure(format!(
-            "{} import failed: {error}\n",
-            dispatch.source.name()
-        ));
+        return source_failed(dispatch.source.name(), &error);
     }
     if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, dispatch.source) {
         return refused;
@@ -1031,9 +1101,7 @@ fn run_document(
         Some("document"),
     ) {
         Ok(f) => f,
-        Err(err) => {
-            return failure(format!("{} import failed: {err}\n", dispatch.source.name()));
-        }
+        Err(err) => return source_failed(dispatch.source.name(), &err),
     };
     let publication = NativePublicationOperations;
     let req = cli_producer_request(journal, &dispatch, facts.generation);
@@ -1047,10 +1115,7 @@ fn run_document(
         Ok(outcome) => outcome,
         Err(error) => {
             seams.model.finish();
-            return failure(format!(
-                "{} import failed: {error}\n",
-                dispatch.source.name()
-            ));
+            return source_failed(dispatch.source.name(), &error);
         }
     };
     seams.model.finish();
@@ -1061,6 +1126,21 @@ fn run_document(
     {
         errors.push(err);
     }
+    let locale = solstone_core_cli_copy::cli_locale();
+    let count_str = outcome.entries_written.to_string();
+    let documents = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.importer.count.pdf.document",
+        &[
+            (
+                "quantity",
+                solstone_core_cli_copy::Value::Cardinal(
+                    i64::try_from(outcome.entries_written).unwrap_or(i64::MAX),
+                ),
+            ),
+            ("count", solstone_core_cli_copy::Value::String(&count_str)),
+        ],
+    );
     let result = ImportResult {
         entries_written: outcome.entries_written,
         entities_seeded: 0,
@@ -1070,7 +1150,11 @@ fn run_document(
             .map(|p| p.to_string_lossy().into_owned())
             .collect(),
         errors,
-        summary: format!("imported {} PDF documents", outcome.entries_written),
+        summary: solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.registry.summary.pdf",
+            [("documents", &documents)],
+        ),
         hard_failures: Vec::new(),
         segments: None,
         date_range: proj.date_range.clone(),
@@ -1091,12 +1175,7 @@ fn run_image(
 ) -> CliRun {
     let bound = match claim_dispatch_id(journal, &mut dispatch, selected) {
         Ok(bound) => bound,
-        Err(error) => {
-            return failure(format!(
-                "{} import failed: {error}\n",
-                dispatch.source.name()
-            ));
-        }
+        Err(error) => return source_failed(dispatch.source.name(), &error),
     };
     if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, dispatch.source) {
         return refused;
@@ -1112,9 +1191,7 @@ fn run_image(
         Some("image"),
     ) {
         Ok(f) => f,
-        Err(err) => {
-            return failure(format!("{} import failed: {err}\n", dispatch.source.name()));
-        }
+        Err(err) => return source_failed(dispatch.source.name(), &err),
     };
     let mut req = cli_producer_request(journal, &dispatch, facts.generation);
     req.owner_timestamp = Some(bound.source_timestamp.as_str());
@@ -1127,12 +1204,7 @@ fn run_image(
         &NativePublicationOperations,
     ) {
         Ok(outcome) => outcome,
-        Err(error) => {
-            return failure(format!(
-                "{} import failed: {error}\n",
-                dispatch.source.name()
-            ));
-        }
+        Err(error) => return source_failed(dispatch.source.name(), &error),
     };
     let proj = solstone_core_import::project_import_result(journal, &dispatch.timestamp);
     let mut errors = outcome.errors;
@@ -1150,7 +1222,7 @@ fn run_image(
             .map(|p| p.to_string_lossy().into_owned())
             .collect(),
         errors,
-        summary: "imported 1 image".to_owned(),
+        summary: solstone_core_cli_copy::text("journal.cli.importer.registry.summary.image"),
         hard_failures: Vec::new(),
         segments: None,
         date_range: proj.date_range.clone(),
@@ -1211,10 +1283,7 @@ fn run_archive_with_seams(
         return archive_failure(dispatch.source, error);
     }
     if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
-        return failure(format!(
-            "{} import failed: {error}\n",
-            dispatch.source.name()
-        ));
+        return source_failed(dispatch.source.name(), &error);
     }
     if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, dispatch.source) {
         return refused;
@@ -1230,49 +1299,58 @@ fn run_archive_with_seams(
         Some("journal_archive"),
     ) {
         Ok(f) => f,
-        Err(err) => {
-            return failure(format!("{} import failed: {err}\n", dispatch.source.name()));
-        }
+        Err(err) => return source_failed(dispatch.source.name(), &err),
     };
     if let Some(hook) = seams.after_admit {
         hook();
     }
     let _import_lock = match solstone_core_import::hold_import_lock(journal, &dispatch.timestamp) {
         Ok(lock) => lock,
-        Err(err) => {
-            return failure(format!("{} import failed: {err}\n", dispatch.source.name()));
-        }
+        Err(err) => return source_failed(dispatch.source.name(), &err),
     };
     let provenance = match solstone_core_import::read_provenance(journal, &dispatch.timestamp) {
         Ok(Some(p)) => p,
         Ok(None) => {
             return failure(format!(
-                "{} import failed: missing provenance for attempt {}\n",
-                dispatch.source.name(),
-                dispatch.timestamp
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.registry.archive.missing.provenance",
+                    [
+                        ("source", &dispatch.source.name()),
+                        ("attempt", &dispatch.timestamp),
+                    ],
+                )
             ));
         }
-        Err(err) => {
-            return failure(format!("{} import failed: {err}\n", dispatch.source.name()));
-        }
+        Err(err) => return source_failed(dispatch.source.name(), &err),
     };
     let current_facts = match solstone_core_import::get_attempt_facts(&provenance) {
         Some(f) => f,
         None => {
             return failure(format!(
-                "{} import failed: missing attempt facts for {}\n",
-                dispatch.source.name(),
-                dispatch.timestamp
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.registry.archive.missing.facts",
+                    [
+                        ("source", &dispatch.source.name()),
+                        ("attempt", &dispatch.timestamp),
+                    ],
+                )
             ));
         }
     };
     if current_facts.generation != facts.generation || current_facts.state != AttemptState::Running
     {
         return failure(format!(
-            "{} import failed: attempt {}:{} was superseded\n",
-            dispatch.source.name(),
-            dispatch.timestamp,
-            facts.generation
+            "{}\n",
+            solstone_core_cli_copy::display(
+                "journal.cli.importer.registry.attempt.superseded",
+                [
+                    ("source", &dispatch.source.name()),
+                    ("import_id", &dispatch.timestamp),
+                    ("generation", &facts.generation),
+                ],
+            )
         ));
     }
     let merge_result = merge_journal_archive(&dispatch.media, journal, &options, Some(reindex));
@@ -1297,8 +1375,11 @@ fn run_archive_with_seams(
         )
     {
         return failure(format!(
-            "{} import failed: failed to record merge results: {err}\n",
-            dispatch.source.name()
+            "{}\n",
+            solstone_core_cli_copy::display(
+                "journal.cli.importer.registry.archive.record.merge.failed",
+                [("source", &dispatch.source.name()), ("error", &err)],
+            )
         ));
     }
     match merge_result {
@@ -1314,8 +1395,11 @@ fn run_archive_with_seams(
                 );
                 if let Err(err) = rec {
                     return failure(format!(
-                        "{} import failed: failed to record completed attempt: {err}\n",
-                        dispatch.source.name()
+                        "{}\n",
+                        solstone_core_cli_copy::display(
+                            "journal.cli.importer.registry.archive.record.completed.failed",
+                            [("source", &dispatch.source.name()), ("error", &err)],
+                        )
                     ));
                 }
                 let mut text = cli_render::source_archive_merge_complete(
@@ -1351,8 +1435,11 @@ fn run_archive_with_seams(
                 );
                 if let Err(err) = rec {
                     return failure(format!(
-                        "{} import failed: failed to record completed attempt: {err}\n",
-                        dispatch.source.name()
+                        "{}\n",
+                        solstone_core_cli_copy::display(
+                            "journal.cli.importer.registry.archive.record.completed.failed",
+                            [("source", &dispatch.source.name()), ("error", &err)],
+                        )
                     ));
                 }
                 success(cli_render::source_archive_already_present(dispatch.source))
@@ -1367,8 +1454,11 @@ fn run_archive_with_seams(
                 );
                 if let Err(err) = rec {
                     return failure(format!(
-                        "{} import failed: failed to record attempt: {err}\n",
-                        dispatch.source.name()
+                        "{}\n",
+                        solstone_core_cli_copy::display(
+                            "journal.cli.importer.registry.archive.record.attempt.failed",
+                            [("source", &dispatch.source.name()), ("error", &err)],
+                        )
                     ));
                 }
                 failure(cli_render::source_archive_incomplete(
@@ -1393,8 +1483,15 @@ fn run_archive_with_seams(
             );
             if let Err(err) = rec {
                 return failure(format!(
-                    "{} import failed: {error}; failed to record attempt: {err}\n",
-                    dispatch.source.name()
+                    "{}\n",
+                    solstone_core_cli_copy::display(
+                        "journal.cli.importer.registry.archive.error.and.record.failed",
+                        [
+                            ("source", &dispatch.source.name()),
+                            ("error", &error),
+                            ("record_error", &err),
+                        ],
+                    )
                 ));
             }
             archive_failure(dispatch.source, error)
@@ -1477,7 +1574,21 @@ fn render_result(source: RegistrySource, result: ImportResult) -> CliRun {
 }
 
 fn archive_failure(source: RegistrySource, error: ImportSourcesError) -> CliRun {
-    failure(format!("{} import failed: {error}\n", source.name()))
+    source_failed(source.name(), &error)
+}
+
+fn source_failed_text(source: &str, detail: &dyn std::fmt::Display) -> String {
+    format!(
+        "{}\n",
+        solstone_core_cli_copy::display(
+            "journal.cli.importer.source.failed",
+            [("source", &source), ("detail", detail)],
+        )
+    )
+}
+
+fn source_failed(source: &str, detail: &dyn std::fmt::Display) -> CliRun {
+    failure(source_failed_text(source, detail))
 }
 
 #[cfg(all(test, not(windows)))]
@@ -1555,7 +1666,9 @@ fn release_misplaced_strava_pieces(
         &outcome,
     );
     if outcome.halted.is_some() || !pieces.iter().all(gone) {
-        return Err("workouts placed at the wrong time could not be released".to_owned());
+        return Err(solstone_core_cli_copy::text(
+            "journal.cli.importer.registry.strava.release.failed",
+        ));
     }
     Ok(())
 }
@@ -1588,7 +1701,11 @@ pub(crate) fn run_strava(
             && let Err(error) = solstone_core_import::snapshot::discard_download(journal, import_id)
         {
             return failure(format!(
-                "could not remove the staged Strava download: {error}\n"
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.registry.strava.discard.failed",
+                    [("error", &error)],
+                )
             ));
         }
     }
@@ -1641,18 +1758,17 @@ fn run_strava_internal(
 ) -> CliRun {
     let source = dispatch.source;
     let name = source.name();
-    let action_label = "import";
 
     // 1. read_zone_record
     let pre_lock_zone = match strava::read_zone_record(journal) {
         Ok(z) => z,
-        Err(e) => return failure(format!("{name} {action_label} failed: {e}\n")),
+        Err(e) => return source_failed(name, &e),
     };
 
     // 2. read_workouts at DEFAULT_LIST_CAP
     let workouts = match strava::read_workouts(&dispatch.media, strava::DEFAULT_LIST_CAP) {
         Ok(w) => w,
-        Err(e) => return failure(format!("{name} {action_label} failed: {e}\n")),
+        Err(e) => return source_failed(name, &e),
     };
 
     #[cfg(test)]
@@ -1663,7 +1779,7 @@ fn run_strava_internal(
     // 3. place as fail-fast
     match strava::place(journal, &workouts.workouts, pre_lock_zone, fault) {
         Ok(_) => {}
-        Err(e) => return failure(format!("{name} {action_label} failed: {e}\n")),
+        Err(e) => return source_failed(name, &e),
     };
 
     // 4. dry_run
@@ -1687,13 +1803,13 @@ fn run_strava_internal(
         },
     ) {
         Ok(lock) => lock,
-        Err(_) => return failure(format!("{name} import failed: strava_lock_unavailable\n")),
+        Err(_) => return source_failed(name, &"strava_lock_unavailable"),
     };
     // Nothing of Strava is written while a delete or recovery of a Strava import
     // or workout is part way: what that moves must not meet this run's tiles.
     if let Some(words) = solstone_core_import::body_trash::source_trash_held(journal, "strava", "")
     {
-        return failure(format!("{name} import failed: {words}\n"));
+        return source_failed(name, &words);
     }
 
     #[cfg(test)]
@@ -1704,25 +1820,25 @@ fn run_strava_internal(
     // 7. Re-read the zone record & place again
     let post_lock_zone = match strava::read_zone_record(journal) {
         Ok(z) => z,
-        Err(_) => return failure(format!("{name} import failed: strava_zone_unrecognised\n")),
+        Err(_) => return source_failed(name, &"strava_zone_unrecognised"),
     };
     let placement = match strava::place(journal, &workouts.workouts, post_lock_zone.clone(), fault)
     {
         Ok(p) => p,
-        Err(e) => return failure(format!("{name} import failed: {e}\n")),
+        Err(e) => return source_failed(name, &e),
     };
 
     // 7b. The facet: a muted or missing one the owner chose refuses the run
     // before anything is written.
     let run_facet = match crate::strava_filing::run_facet(journal, &dispatch.facet) {
         Ok(facet) => facet,
-        Err(error) => return failure(format!("{name} import failed: {error}\n")),
+        Err(error) => return source_failed(name, &error),
     };
     let legacy_matches = crate::strava_convert::legacy_matches(journal);
 
     // 8. claim_dispatch_id, refuse_if_live_running, admit_running_attempt
     if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
-        return failure(format!("{name} import failed: {error}\n"));
+        return source_failed(name, &error);
     }
     if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, source) {
         return refused;
@@ -1736,7 +1852,7 @@ fn run_strava_internal(
         Some("strava"),
     ) {
         Ok(facts) => facts.generation,
-        Err(error) => return failure(format!("{name} import failed: {error}\n")),
+        Err(error) => return source_failed(name, &error),
     };
 
     let finish = |input| finish_import_attempt(journal, import_id, generation, name, input);
@@ -1746,7 +1862,7 @@ fn run_strava_internal(
         && let Err(error) = strava::create_zone_record(journal, &placement.zone)
     {
         let _ = finish(ImportTerminalInput::Failed(&[]));
-        return failure(format!("{name} import failed: {error}\n"));
+        return source_failed(name, &error);
     }
 
     // 9b. Release workouts an earlier version placed at the wrong time
@@ -1754,7 +1870,7 @@ fn run_strava_internal(
         && let Err(detail) = release_misplaced_strava_pieces(journal, &placement.release, import_id)
     {
         let _ = finish(ImportTerminalInput::Failed(&[]));
-        return failure(format!("{name} import failed: {detail}\n"));
+        return source_failed(name, &detail);
     }
 
     // 10. before_apply callback
@@ -1798,7 +1914,8 @@ fn run_strava_internal(
         let _ = finish(ImportTerminalInput::Failed(&publish_slice));
         let count_line = strava::format_count_summary(&corrected_counts);
         return failure(format!(
-            "{name} import failed: {save_error}\n{count_line}\n"
+            "{}{count_line}\n",
+            source_failed_text(name, &save_error)
         ));
     }
 
@@ -1815,7 +1932,11 @@ fn run_strava_internal(
     if let Err(error) = crate::strava_filing::validate_assignments(journal, &live) {
         let _ = finish(ImportTerminalInput::Failed(&publish_slice));
         return failure(format!(
-            "{name} import failed: the workouts couldn't be filed: {error}\n"
+            "{}\n",
+            solstone_core_cli_copy::display(
+                "journal.cli.importer.registry.strava.filing.failed",
+                [("source", &name), ("error", &error)],
+            )
         ));
     }
     // Records an earlier reading filed become code records first, and every
@@ -1871,7 +1992,11 @@ fn run_strava_internal(
         Err(error) => {
             let _ = finish(ImportTerminalInput::Failed(&publish_slice));
             return failure(format!(
-                "{name} import failed: the workouts couldn't be filed: {error}\n"
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.registry.strava.filing.failed",
+                    [("source", &name), ("error", &error)],
+                )
             ));
         }
     };
@@ -1947,7 +2072,7 @@ fn run_strava_internal(
         Ok(hash) => hash,
         Err(error) => {
             let _ = finish(ImportTerminalInput::Failed(&[]));
-            return failure(format!("{name} import failed: {error}\n"));
+            return source_failed(name, &error);
         }
     };
 
@@ -1986,7 +2111,7 @@ fn run_strava_internal(
         });
     if let Err(error) = manifest_res {
         let _ = finish(ImportTerminalInput::Failed(&publish_slice));
-        return failure(format!("{name} import failed: {error}\n"));
+        return source_failed(name, &error);
     }
 
     // 15. finish Success
@@ -1994,16 +2119,28 @@ fn run_strava_internal(
         Ok(ImportFinish::Applied) => {}
         Ok(ImportFinish::Stale) => {
             return failure(format!(
-                "{name} import failed: attempt {import_id}:{generation} was superseded\n"
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.registry.attempt.superseded",
+                    [
+                        ("source", &name),
+                        ("import_id", &import_id),
+                        ("generation", &generation),
+                    ],
+                )
             ));
         }
-        Err(error) => return failure(format!("{name} import failed: {error}\n")),
+        Err(error) => return source_failed(name, &error),
     }
 
     let projection = solstone_core_import::project_import_result(journal, import_id);
     if projection.status != solstone_core_import::ProjectionStatus::Success {
         return failure(format!(
-            "{name} import saved to your journal, but it could not confirm the entries are ready to search; run it again\n"
+            "{}\n",
+            solstone_core_cli_copy::display(
+                "journal.cli.importer.registry.unconfirmed",
+                [("source", &name)],
+            )
         ));
     }
     // Published: the refiled tiles no longer owe it.

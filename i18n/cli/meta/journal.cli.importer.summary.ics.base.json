@@ -1,0 +1,25 @@
+{
+  "description": "ICS import summary base phrase.",
+  "context": "ICS import summary base phrase.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "events",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b8fe26afb40b6641f5fb4a47439a5fac9e039727f23b7db2a35d9ce52e415e70",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

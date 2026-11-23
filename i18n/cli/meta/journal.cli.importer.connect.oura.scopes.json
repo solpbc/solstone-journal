@@ -1,0 +1,21 @@
+{
+  "description": "Oura connect success scopes line 2.",
+  "context": "Oura connect success scopes line 2.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "scopes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5f05b4e205973ddde28ac057b2fa0f521126c279e3c0f965180cb5bcaa2aae43",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

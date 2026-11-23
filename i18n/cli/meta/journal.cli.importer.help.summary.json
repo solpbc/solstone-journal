@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI help summary line.",
+  "context": "Importer CLI help summary line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0aa06bce27b9bd433f64cec6f96ed729a8b6ac70b8765192bdd10bd673fdeb5c",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

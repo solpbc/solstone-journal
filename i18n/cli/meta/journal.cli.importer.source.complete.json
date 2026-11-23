@@ -1,0 +1,37 @@
+{
+  "description": "Source import completion line.",
+  "context": "Source import completion line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "entries",
+      "type": "string"
+    },
+    {
+      "name": "files",
+      "type": "string"
+    },
+    {
+      "name": "errors",
+      "type": "string"
+    },
+    {
+      "name": "summary",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0a7e376943ea5d51c8e9032d2a0dc33f459842a625c4b2b3ae1f7f4d7d5ee4cd",
+  "max_length": 366,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

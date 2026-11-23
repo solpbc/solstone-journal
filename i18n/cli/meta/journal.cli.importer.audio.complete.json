@@ -1,0 +1,21 @@
+{
+  "description": "Generic audio import completion line.",
+  "context": "Generic audio import completion line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "outcome",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e41fdf8d3e2a3ba73cae3983a9834d76f7c0efba827fd714a31140b00fa572f4",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

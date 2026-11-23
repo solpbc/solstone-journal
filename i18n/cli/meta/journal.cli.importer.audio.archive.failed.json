@@ -1,0 +1,21 @@
+{
+  "description": "Audio archive command failure line.",
+  "context": "Audio archive command failure line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3b17fc74dd1e83d2422562fc69af9eb5dc061f713999c1ebe52c98980b513861",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

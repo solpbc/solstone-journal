@@ -1,0 +1,21 @@
+{
+  "description": "Prompt asking to file body data under existing facet.",
+  "context": "Prompt asking to file body data under existing facet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5f4a3f038e8cf13bcba02c3a4ada042b343679c5ab87fa005228052aae8e2a4e",
+  "max_length": 249,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -13026,3 +13026,632 @@ journal.cli.setup.clean.outcome.not.tty = not a tty; rerun with --yes to proceed
 journal.cli.setup.clean.outcome.cancelled = cancelled
 
 journal.cli.setup.clean.outcome.complete = clean uninstall complete: { $removed } removed, { $already_absent } already-absent, { $preserved } preserved, { $skipped } skipped, { $failed } failed
+
+journal.cli.importer.count.recording = { $quantity ->
+    [one] 1 recording
+   *[other] { $count } recordings
+}
+
+journal.cli.importer.count.day = { $quantity ->
+    [one] 1 day
+   *[other] { $count } days
+}
+
+journal.cli.importer.count.entity = { $quantity ->
+    [one] 1 entity
+   *[other] { $count } entities
+}
+
+journal.cli.importer.count.facet = { $quantity ->
+    [one] 1 facet
+   *[other] { $count } facets
+}
+
+journal.cli.importer.count.warning = { $quantity ->
+    [one] 1 warning
+   *[other] { $count } warnings
+}
+
+journal.cli.importer.count.message = { $quantity ->
+    [one] 1 message
+   *[other] { $count } messages
+}
+
+journal.cli.importer.count.conversation = { $quantity ->
+    [one] 1 conversation
+   *[other] { $count } conversations
+}
+
+journal.cli.importer.count.event = { $quantity ->
+    [one] 1 event
+   *[other] { $count } events
+}
+
+journal.cli.importer.count.attendee = { $quantity ->
+    [one] 1 unique attendee
+   *[other] { $count } unique attendees
+}
+
+journal.cli.importer.count.calendar.event = { $quantity ->
+    [one] 1 calendar event
+   *[other] { $count } calendar events
+}
+
+journal.cli.importer.count.pdf.document = { $quantity ->
+    [one] 1 PDF document
+   *[other] { $count } PDF documents
+}
+
+journal.cli.importer.count.total.page = { $quantity ->
+    [one] 1 total page
+   *[other] { $count } total pages
+}
+
+journal.cli.importer.count.segment = { $quantity ->
+    [one] 1 segment
+   *[other] { $count } segments
+}
+
+journal.cli.importer.count.member = { $quantity ->
+    [one] 1 member
+   *[other] { $count } members
+}
+
+journal.cli.importer.count.source.byte = { $quantity ->
+    [one] 1 source byte
+   *[other] { $count } source bytes
+}
+
+journal.cli.importer.count.tile = { $quantity ->
+    [one] 1 tile
+   *[other] { $count } tiles
+}
+
+journal.cli.importer.count.part = { $quantity ->
+    [one] 1 part
+   *[other] { $count } parts
+}
+
+journal.cli.importer.count.workout = { $quantity ->
+    [one] 1 workout
+   *[other] { $count } workouts
+}
+
+journal.cli.importer.count.night = { $quantity ->
+    [one] 1 night
+   *[other] { $count } nights
+}
+
+journal.cli.importer.count.mindful.session = { $quantity ->
+    [one] 1 mindful session
+   *[other] { $count } mindful sessions
+}
+
+journal.cli.importer.count.reading = { $quantity ->
+    [one] 1 reading
+   *[other] { $count } readings
+}
+
+journal.cli.importer.count.daily.total = { $quantity ->
+    [one] 1 daily total
+   *[other] { $count } daily totals
+}
+
+journal.cli.importer.count.logged.entry = { $quantity ->
+    [one] 1 logged entry
+   *[other] { $count } logged entries
+}
+
+journal.cli.importer.desktop.exe.no.parent = current executable has no parent
+
+journal.cli.importer.desktop.missing.sibling = missing sibling executable { $path }
+
+journal.cli.importer.size.recordings.across = { $recordings } across { $days }
+
+journal.cli.importer.size.skipped = { $count } skipped
+
+journal.cli.importer.size.listed.moves = { $quantity ->
+    [one] 1 workout already listed on the activities page would move to this import's facet from { $from }
+   *[other] { $count } workouts already listed on the activities page would move to this import's facet from { $from }
+}
+
+journal.cli.importer.force.day.notice = notice: this file dates to { $fresh }, and a previous import used { $stored }. this --force import will use { $planned }. existing recordings are not moved.
+
+journal.cli.importer.embedded.body.refusal = Apple Health exports and Oura data are brought in by a journal on a computer, so nothing was brought in.
+
+journal.cli.importer.notes.folder.retired = importing a folder of notes is gone; an Obsidian vault comes into your journal when you turn it on in the solstone app on the computer where the vault lives
+
+journal.cli.importer.help.usage = usage: solstone journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET] [--no-facet]
+
+journal.cli.importer.help.summary = Import a media file into the journal
+
+journal.cli.importer.help.positional.header = positional arguments:
+
+journal.cli.importer.help.positional.media = { $indent }media                 Path to audio or text file
+
+journal.cli.importer.help.options.header = options:
+
+journal.cli.importer.help.opt.help = { $indent }-h, --help            show this help message and exit
+
+journal.cli.importer.help.opt.timestamp = { $indent }Generic .txt/.md use this, or --auto to adopt a detected timestamp (--timestamp YYYYMMDD_HHMMSS, or a date and time with its offset, such as 2025-11-02T01:30:00-07:00)
+
+journal.cli.importer.help.opt.facet.line1 = { $indent }--facet FACET         File this audio or text file, or this body import, under FACET,
+
+journal.cli.importer.help.opt.facet.line2 = { $indent }one of your unmuted facets, instead of letting your journal choose
+
+journal.cli.importer.help.opt.facet.line3 = { $indent }(for a body import: your remembered facet, or none)
+
+journal.cli.importer.help.opt.no.facet.line1 = { $indent }--no-facet            File this body import under no facet, whatever the remembered
+
+journal.cli.importer.help.opt.no.facet.line2 = { $indent }default is
+
+journal.cli.importer.help.opt.source = { $indent }--source SOURCE       Required for classified formats (ics, chat export, image, PDF)
+
+journal.cli.importer.help.opt.force = { $indent }--force               Force re-import; body sources create a separate import
+
+journal.cli.importer.help.opt.auto = { $indent }--auto [AUTO]         Adopt the detected timestamp; AUTO is guidance, not the file path
+
+journal.cli.importer.help.opt.dry.run = { $indent }--dry-run             Show what would be imported without writing to the journal
+
+journal.cli.importer.help.opt.confirm.body = { $indent }--confirm-body-save   Confirm this run may save sensitive body importer output
+
+journal.cli.importer.help.opt.deterministic.line1 = { $indent }--deterministic-only  When no date can be read from the file, skip it (exit 0)
+
+journal.cli.importer.help.opt.deterministic.line2 = { $indent }instead of failing
+
+journal.cli.importer.help.opt.backends = { $indent }--backends            List syncable importer backends
+
+journal.cli.importer.help.opt.save = { $indent }--save                With --sync: download and import new files (default is dry-run)
+
+journal.cli.importer.help.opt.list.importers = { $indent }--list-importers      List available file importers
+
+journal.cli.importer.help.opt.audio.archive.line1 = { $indent }--audio-archive PATH  Import a folder of Ogg Opus recordings or a JSON manifest
+
+journal.cli.importer.help.opt.audio.archive.line2 = { $indent }Folder: Limitless filenames and --source-zone are required.
+
+journal.cli.importer.help.opt.audio.archive.line3 = { $indent }Manifest: { $example }
+
+journal.cli.importer.help.opt.audio.archive.line4 = { $indent }Or use local_civil and source_zone for a member's time.
+
+journal.cli.importer.help.opt.audio.archive.line5 = { $indent }Paths are absolute or relative to the manifest.
+
+journal.cli.importer.help.opt.audio.archive.line6 = { $indent }Explicit manifest times take precedence over filenames.
+
+journal.cli.importer.help.opt.audio.archive.line7 = { $indent }Supports single-stream mono/stereo Ogg Opus; other containers are left out.
+
+journal.cli.importer.help.opt.audio.archive.line8 = { $indent }Shows size before saving; --dry-run saves nothing.
+
+journal.cli.importer.help.opt.source.zone = { $indent }--source-zone IANA    Time zone for folder audio archives or civil times (e.g. America/New_York)
+
+journal.cli.importer.help.opt.resume = { $indent }--resume IMPORT_ID    Fill unsaved parts of an audio archive's frozen plan
+
+journal.cli.importer.help.opt.archive.status = { $indent }Print compact status for an audio archive run
+
+journal.cli.importer.help.opt.archive.members = { $indent }List members for an audio archive run (use with --offset and --limit)
+
+journal.cli.importer.help.opt.offset = { $indent }--offset OFFSET       Starting member offset for member listing
+
+journal.cli.importer.help.opt.limit = { $indent }--limit LIMIT         Maximum members to list (default 100, max 1000)
+
+journal.cli.importer.help.opt.json.line1 = { $indent }--json                Output results as JSON; archive saves emit progress objects
+
+journal.cli.importer.help.opt.json.line2 = { $indent }and a final result, one JSON object per line.
+
+journal.cli.importer.help.opt.verbose = { $indent }-v, --verbose         Enable verbose output
+
+journal.cli.importer.help.opt.debug = { $indent }-d, --debug            Enable debug logging
+
+journal.cli.importer.list.header = File importers:
+
+journal.cli.importer.list.desc.ics = Import events from ICS calendar files or a Google Calendar export ZIP
+
+journal.cli.importer.list.desc.claude = Import conversations from a Claude chat export
+
+journal.cli.importer.list.desc.chatgpt = Import conversations from a ChatGPT export
+
+journal.cli.importer.list.desc.gemini = Import conversations from a Google Takeout Gemini or Bard export
+
+journal.cli.importer.list.desc.document = Import PDF documents with worker-backed text and raster extraction
+
+journal.cli.importer.list.desc.image = Import a single image and describe its contents with vision
+
+journal.cli.importer.list.desc.journal.archive = Merge an exported journal archive into the current journal
+
+journal.cli.importer.list.desc.apple.health = Preview Apple Health export.xml data without writing to the journal
+
+journal.cli.importer.list.desc.oura = Preview Oura API v2 JSON documents (synthetic fixtures; save path is a later, gated phase)
+
+journal.cli.importer.list.desc.strava = Workouts from a Strava download (only its activities.csv is read)
+
+journal.cli.importer.list.desc.evernote = Notes from an Evernote export
+
+journal.cli.importer.backends.header = Syncable backends:
+
+journal.cli.importer.skipped.already = Import skipped: this file was already imported; use --force to import it again
+
+journal.cli.importer.skipped.no.date = Import skipped: no date could be read from the file; name one with --timestamp YYYYMMDD_HHMMSS
+
+journal.cli.importer.skipped.confirm.date = Import skipped: the file's date needs confirming; rerun with --timestamp or --auto
+
+journal.cli.importer.timestamp.confirm = detected timestamp { $timestamp }; rerun with --timestamp { $timestamp } or --auto
+
+journal.cli.importer.generic.text.complete = Generic text import complete: segments={ $segments }
+
+journal.cli.importer.generic.text.untimed.line1 = no turn times found in this file, so it landed as one segment at the import's start time, each line as written.
+
+journal.cli.importer.generic.text.untimed.line2 = if your transcripts mark times in a way the journal doesn't read yet, ask us to add it: { $url }
+
+journal.cli.importer.sync.complete = { $backend } sync complete: saved={ $saved } errors={ $errors }
+
+journal.cli.importer.plaud.preview.complete = Plaud sync preview complete: files={ $files }
+
+journal.cli.importer.source.preview = { $source } preview: date_range={ $start }..{ $end } items={ $items } entities={ $entities } summary={ $summary }
+
+journal.cli.importer.source.complete = { $source } import complete: entries_written={ $entries } files_created={ $files } errors={ $errors } summary={ $summary }
+
+journal.cli.importer.source.failed = { $source } import failed: { $detail }
+
+journal.cli.importer.source.archive.complete = { $source } import complete: segments_copied={ $segments_copied } imports_copied={ $imports_copied } entities_created={ $entities_created } entities_merged={ $entities_merged } facets_created={ $facets_created } facets_merged={ $facets_merged }
+
+journal.cli.importer.body.zones.under.hour = less than an hour of { $source } may show at the wrong time: it was saved in a different time zone from the one this journal holds for { $source }.
+
+journal.cli.importer.body.zones.hours = { $quantity ->
+    [one] 1 hour of { $source } may show at the wrong time: it was saved in a different time zone from the one this journal holds for { $source }.
+   *[other] { $count } hours of { $source } may show at the wrong time: they were saved in a different time zone from the one this journal holds for { $source }.
+}
+
+journal.cli.importer.body.days.hidden = { $quantity ->
+    [one] 1 day of body data was hidden in the archive, so it's hidden in this journal too.
+   *[other] { $count } days of body data were hidden in the archive, so they're hidden in this journal too.
+}
+
+journal.cli.importer.source.archive.already.present = { $source } import did not merge anything: archive content is already present
+
+journal.cli.importer.source.archive.incomplete = { $source } import incomplete: { $detail }
+
+journal.cli.importer.plaud.begin.invalid.redirect = invalid Plaud callback redirect URI
+
+journal.cli.importer.plaud.begin.loopback.bind = could not bind local callback listener
+
+journal.cli.importer.plaud.begin.random.failed = failed to generate sign-in identifier
+
+journal.cli.importer.plaud.failure.token.refused = sign-in expired or was revoked; sign in again in settings
+
+journal.cli.importer.plaud.failure.catalogue = catalogue failed
+
+journal.cli.importer.plaud.failure.manifest = import matching failed
+
+journal.cli.importer.plaud.failure.temporary.url = failed to get download URL
+
+journal.cli.importer.plaud.failure.audio.not.ready = audio download link is not ready yet; will try again on next sync
+
+journal.cli.importer.plaud.failure.download = download failed
+
+journal.cli.importer.plaud.failure.pipeline = import failed
+
+journal.cli.importer.plaud.sync.missing.credential = Plaud credential is not configured
+
+journal.cli.importer.plaud.sync.operation = Plaud { $detail }
+
+journal.cli.importer.plaud.sync.state.failed = Plaud sync state failed: { $message }
+
+journal.cli.importer.plaud.connect.detail.denied = sign-in was not approved
+
+journal.cli.importer.plaud.connect.detail.callback.invalid = the sign-in address was invalid
+
+journal.cli.importer.plaud.connect.detail.exchange.failed = couldn't finish signing in
+
+journal.cli.importer.plaud.connect.detail.cancelled = sign-in cancelled
+
+journal.cli.importer.plaud.connect.detail.expired = the sign-in attempt timed out
+
+journal.cli.importer.plaud.connect.detail.busy = another sign-in or sync is already running
+
+journal.cli.importer.plaud.connect.detail.storage = couldn't save the sign-in in this journal
+
+journal.cli.importer.oura.app.needed = this journal isn't connected to an app you've registered with Oura yet. register one, then run `solstone journal importer --connect oura` at a terminal and paste in its client ID and client secret. how: { $how }
+
+journal.cli.importer.oura.app.prompt.intro = this journal isn't connected to an app you've registered with Oura yet. to connect one:
+
+journal.cli.importer.oura.app.prompt.step1 = { $indent }1. sign in at https://cloud.ouraring.com/oauth/applications and create an app
+
+journal.cli.importer.oura.app.prompt.step2 = { $indent }2. add the redirect URI http://localhost:8765/callback
+
+journal.cli.importer.oura.app.prompt.step3 = { $indent }3. paste the app's client ID and client secret below
+
+journal.cli.importer.oura.app.prompt.note = they're kept in this journal's settings and used only to connect to Oura. nothing is saved until Oura says yes. how: { $how }
+
+journal.cli.importer.oura.app.prompt.client.id = client ID:
+
+journal.cli.importer.oura.app.prompt.client.secret = client secret:
+
+journal.cli.importer.oura.connect.failed.timeout = Oura's sign-in didn't finish within five minutes, so nothing was saved. run it again to retry.
+
+journal.cli.importer.oura.connect.failed.declined = Oura didn't connect, so nothing was saved.
+
+journal.cli.importer.oura.connect.failed.exchange = Oura didn't accept the connection, so nothing was saved. check the client secret on your app's page at Oura and run it again.
+
+journal.cli.importer.oura.connect.failed.callback = Oura's sign-in comes back to this computer on port 8765, and something else is using it. close that and run it again.
+
+journal.cli.importer.oura.connect.failed.browser = a browser couldn't be opened here. run this at the journal's computer, not over a remote session.
+
+journal.cli.importer.body.facet.no.means.strava = if you say no, new workouts aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.
+
+journal.cli.importer.body.facet.no.means.body = if you say no, new workouts and sleep aren't listed on the activities page, and agents limited to some facets won't see them. search and the body app still show them.
+
+journal.cli.importer.body.facet.ask.existing = file your workouts, sleep and other body data under the facet you named { $facet }?
+
+journal.cli.importer.body.facet.ask.make.body = make a body facet for your workouts, sleep and other body data?
+
+journal.cli.importer.body.facet.ask.unmute = your body facet is muted. turn it back on for your workouts, sleep and other body data?
+
+journal.cli.importer.body.facet.moves.strava = { $quantity ->
+    [one] a yes moves 1 workout already filed, from { $from }.
+   *[other] a yes moves { $count } workouts already filed, from { $from }.
+}
+
+journal.cli.importer.body.facet.moves.body = { $quantity ->
+    [one] a yes can move up to 1 record already listed on the activities page, from { $from }.
+   *[other] a yes can move up to { $count } records already listed on the activities page, from { $from }.
+}
+
+journal.cli.importer.body.facet.prompt.yn = { $question } [y/n]
+
+journal.cli.importer.body.facet.save.failed = your answer couldn't be saved: { $error }
+
+journal.cli.importer.body.apple.whole = an Apple Health import always reads the whole export, so it doesn't take --date-from, --date-to or --force. nothing was saved; run it again without them.
+
+journal.cli.importer.body.apple.already.ran = this import has already run, so nothing was brought in. start a new one from the Apple Health card.
+
+journal.cli.importer.body.apple.card.only = --import-id is only for saving an Apple Health export from its card, so nothing was brought in.
+
+journal.cli.importer.body.apple.unknown.import = --import-id names no import, so nothing was brought in.
+
+journal.cli.importer.body.apple.wrong.export = that import doesn't hold this export, so nothing was brought in.
+
+journal.cli.importer.body.apple.reads.workouts = workouts
+
+journal.cli.importer.body.apple.reads.sleep = sleep
+
+journal.cli.importer.body.apple.reads.mindful = mindful time
+
+journal.cli.importer.body.apple.reads.readings = heart rate and other readings
+
+journal.cli.importer.body.apple.reads.daily = daily totals like steps and distance
+
+journal.cli.importer.body.apple.reads.logged = logged entries like food and symptoms
+
+journal.cli.importer.body.apple.preview.intro = this looks like an Apple Health export. saving it reads { $head }, and { $tail }.
+
+journal.cli.importer.body.apple.preview.span = it runs from { $first } to { $last }: { $workouts }, { $nights } put together from sleep stages, { $mindful }, { $readings }, { $daily } and { $logged }.
+
+journal.cli.importer.body.apple.preview.moves = { $quantity ->
+    [one] saying yes can move up to 1 record already listed under another facet.
+   *[other] saying yes can move up to { $count } records already listed under another facet.
+}
+
+journal.cli.importer.body.oura.bad.date = { $flag } takes a date like 2026-01-31, and { $text } isn't one. nothing was read.
+
+journal.cli.importer.body.oura.window.zero = --window-days needs at least one day. nothing was read.
+
+journal.cli.importer.body.oura.window.conflict = use --window-days or dates, not both. nothing was read.
+
+journal.cli.importer.body.oura.date.to.needs.from = --date-to needs a --date-from to go with it. nothing was read.
+
+journal.cli.importer.body.oura.range.future = that range goes past today, and Oura has nothing there yet. nothing was read.
+
+journal.cli.importer.error.preview.failed = could not preview import: { $error }
+
+journal.cli.importer.error.stopped = import stopped
+
+journal.cli.importer.connect.unknown.backend = Unknown connect backend: { $backend }
+
+journal.cli.importer.connect.available = Connectable backends: oura, plaud
+
+journal.cli.importer.connect.oura.both.required = Oura needs both the client ID and the client secret, so nothing was saved.
+
+journal.cli.importer.connect.oura.done = Oura is connected, and the connection is saved in this journal's settings.
+
+journal.cli.importer.connect.oura.scopes = permissions asked for: { $scopes }
+
+journal.cli.importer.sync.unknown.backend = Unknown sync backend: { $backend }
+
+journal.cli.importer.sync.available = Available backends: { $backends }
+
+journal.cli.importer.error.zone.changed.preview = the time zone changed after preview; preview again before importing
+
+journal.cli.importer.error.no.facet.conflict = argument --no-facet: not allowed with argument --facet
+
+journal.cli.importer.error.facets.unreadable = could not read your facets, so nothing was imported: { $error }
+
+journal.cli.importer.error.facet.not.unmuted = "{ $facet }" is not one of your unmuted facets, so nothing was imported. your unmuted facets: { $enabled }
+
+journal.cli.importer.error.facet.scope = --facet only applies to an audio file, a plain text file or a body import, so nothing was imported; import this one without it
+
+journal.cli.importer.error.no.facet.scope = --no-facet only applies to a body import, so nothing was imported; import this one without it
+
+journal.cli.importer.error.timestamp.format.offset = timestamp must be YYYYMMDD_HHMMSS, or a date and time with its offset, such as 2025-11-02T01:30:00-07:00
+
+journal.cli.importer.error.timestamp.format = timestamp must be YYYYMMDD_HHMMSS format
+
+journal.cli.importer.audio.failed = audio import failed: { $error }
+
+journal.cli.importer.audio.runtime.failed = audio import runtime failed: { $error }
+
+journal.cli.importer.audio.manifest.failed = audio import saved to your journal, but this file couldn't be marked as imported, so importing it again would add it a second time: { $error }
+
+journal.cli.importer.audio.processing.failed = audio import processing failed: { $segments }
+
+journal.cli.importer.audio.processing.stalled = audio import still processing when the importer stopped waiting: { $segments }
+
+journal.cli.importer.audio.complete = Generic audio import complete: { $outcome }
+
+journal.cli.importer.audio.dropped.range = { $start } to { $end }
+
+journal.cli.importer.audio.dropped.notice = part of this recording couldn't be imported: { $ranges } into the recording. the other parts are in your journal, and importing the file again would add them a second time.
+
+journal.cli.importer.text.failed = text import failed: { $error }
+
+journal.cli.importer.text.unconfirmed = text import saved to your journal, but it could not confirm the entries are ready to search; run it again
+
+journal.cli.importer.error.unknown.source = unknown importer source: { $source }
+
+journal.cli.importer.error.apple.inspect = could not inspect Apple Health export; retry with a valid export
+
+journal.cli.importer.arg.usage = usage: solstone journal importer [-h] [options] media [timestamp]
+
+journal.cli.importer.arg.error = solstone journal importer: error: { $detail }
+
+journal.cli.importer.arg.media.required = the following arguments are required: media
+
+journal.cli.importer.arg.expected.one = argument { $argument }: expected one argument
+
+journal.cli.importer.arg.unrecognized = unrecognized arguments: { $arguments }
+
+journal.cli.importer.arg.archive.identity.scope = --archive-identity is only valid with --audio-archive
+
+journal.cli.importer.arg.facet.scope = --facet is only valid when importing one audio or text file or a body import
+
+journal.cli.importer.arg.offset.limit.scope = unrecognized arguments: --offset/--limit are only valid with --audio-archive-members
+
+journal.cli.importer.arg.archive.conflict.commands = unrecognized arguments: conflicting audio archive commands
+
+journal.cli.importer.arg.archive.conflict.flags = unrecognized arguments: conflicting audio archive flags
+
+journal.cli.importer.arg.resume.scope = unrecognized arguments: --resume is only valid with --audio-archive
+
+journal.cli.importer.arg.source.zone.scope = unrecognized arguments: --source-zone is only valid with --audio-archive
+
+journal.cli.importer.arg.invalid.int = argument { $flag }: invalid int value: '{ $value }'
+
+journal.cli.importer.arg.archive.identity.sha256 = --archive-identity must be a SHA-256 identity
+
+journal.cli.importer.audio.archive.failed = audio archive failed: { $error }
+
+journal.cli.importer.audio.archive.zone.changed = the time zone changed after preview; preview it again
+
+journal.cli.importer.audio.archive.folder.needs.zone = a folder requires --source-zone
+
+journal.cli.importer.audio.archive.changed = the archive changed after preview; preview it again
+
+journal.cli.importer.audio.archive.dry.run.resume = use --audio-archive-status to inspect an admitted run
+
+journal.cli.importer.audio.archive.preview.line1 = audio archive preview: { $members }, { $source_bytes }, { $days }, { $tiles }
+
+journal.cli.importer.audio.archive.admitted.line1 = archive { $run_id }: { $members }, { $source_bytes }, { $days }, { $tiles }
+
+journal.cli.importer.audio.archive.span.line = span: { $span }
+
+journal.cli.importer.audio.archive.span.none = none
+
+journal.cli.importer.audio.archive.span.range = { $first } to { $last }
+
+journal.cli.importer.audio.archive.left.out.inline = left out: { $counts }
+
+journal.cli.importer.audio.archive.progress.saved = saved { $saved } of { $total } ({ $tiles })
+
+journal.cli.importer.audio.archive.complete.line1 = audio archive { $operation }: { $run_id }
+
+journal.cli.importer.audio.archive.complete.line2 = saved { $parts } in { $tiles }; { $pending } pending processing, { $processed } processed, { $unavailable } unavailable, { $rejected } rejected
+
+journal.cli.importer.audio.archive.status.failed = audio archive status failed: { $error }
+
+journal.cli.importer.audio.archive.status.summary = audio archive status: run_id={ $run_id } total_parts={ $total_parts } saved_parts={ $saved_parts } saved_tiles={ $saved_tiles } pending_processing={ $pending } processed_parts={ $processed } unavailable_parts={ $unavailable } rejected_parts={ $rejected } save_complete={ $save_complete }
+
+journal.cli.importer.audio.archive.left.out.header = left out:
+
+journal.cli.importer.audio.archive.members.failed = audio archive members failed: { $error }
+
+journal.cli.importer.audio.archive.members.summary = audio archive members: run_id={ $run_id } offset={ $offset } count={ $count }
+
+journal.cli.importer.registry.preview.failed = import preview failed: { $error }
+
+journal.cli.importer.registry.originals.choice.unreadable = couldn't read the keep originals choice. reopen the import to try again.
+
+journal.cli.importer.registry.gemini.folder.unreadable = Gemini import failed. couldn't read the saved export folder.
+
+journal.cli.importer.registry.found.nothing = { $source } import failed: found nothing to import
+
+journal.cli.importer.registry.originals.keep.failed = couldn't keep a copy of the original. try again.
+
+journal.cli.importer.registry.attempt.superseded = { $source } import failed: attempt { $import_id }:{ $generation } was superseded
+
+journal.cli.importer.registry.unconfirmed = { $source } import saved to your journal, but it could not confirm the entries are ready to search; run it again
+
+journal.cli.importer.registry.originals.cleanup.failed = saved to your journal. couldn't remove the extra copy.
+
+journal.cli.importer.registry.evernote.attachments.failed = Evernote import failed. { $error }
+
+journal.cli.importer.registry.summary.pdf = imported { $documents }
+
+journal.cli.importer.registry.summary.image = imported 1 image
+
+journal.cli.importer.registry.archive.missing.provenance = { $source } import failed: missing provenance for attempt { $attempt }
+
+journal.cli.importer.registry.archive.missing.facts = { $source } import failed: missing attempt facts for { $attempt }
+
+journal.cli.importer.registry.archive.record.merge.failed = { $source } import failed: failed to record merge results: { $error }
+
+journal.cli.importer.registry.archive.record.completed.failed = { $source } import failed: failed to record completed attempt: { $error }
+
+journal.cli.importer.registry.archive.record.attempt.failed = { $source } import failed: failed to record attempt: { $error }
+
+journal.cli.importer.registry.archive.error.and.record.failed = { $source } import failed: { $error }; failed to record attempt: { $record_error }
+
+journal.cli.importer.registry.strava.release.failed = workouts placed at the wrong time could not be released
+
+journal.cli.importer.registry.strava.discard.failed = could not remove the staged Strava download: { $error }
+
+journal.cli.importer.registry.strava.filing.failed = { $source } import failed: the workouts couldn't be filed: { $error }
+
+journal.cli.importer.summary.conversations = imported { $messages } from { $conversations } across { $days }
+
+journal.cli.importer.preview.chatgpt = { $messages } from ChatGPT export
+
+journal.cli.importer.preview.claude = { $messages } from Claude chat export
+
+journal.cli.importer.preview.gemini = { $messages } from Gemini export
+
+journal.cli.importer.preview.ics.none = No ICS data found
+
+journal.cli.importer.preview.ics.no.events = No events found in ICS data
+
+journal.cli.importer.preview.ics.counts = { $events }, { $attendees }
+
+journal.cli.importer.summary.ics.base = imported { $events } across { $days }
+
+journal.cli.importer.summary.ics.reason.no.change = { $count } with no change time
+
+journal.cli.importer.summary.ics.reason.unknown.zone = { $count } in an unknown time zone
+
+journal.cli.importer.summary.ics.reason.invalid = { $count } unreadable
+
+journal.cli.importer.summary.ics.skipped = ; { $skipped } not listed by the day they happen ({ $reasons })
+
+journal.cli.importer.summary.ics.truncated.series = { $quantity ->
+    [one] ; 1 repeating series listed only for its latest { $limit } dates
+   *[other] ; { $count } repeating series listed only for their latest { $limit } dates
+}
+
+journal.cli.importer.summary.ics.unexpandable.series = { $quantity ->
+    [one] ; 1 repeating series listed only for its first date
+   *[other] ; { $count } repeating series listed only for their first date
+}
+
+journal.cli.importer.summary.ics.over.limit = ; { $count } not listed by the day they happen, past the { $limit } dates one import lists
+
+journal.cli.importer.preview.document.none = No PDF documents found
+
+journal.cli.importer.preview.document.counts = { $documents }, { $pages }
+
+journal.cli.importer.preview.document.unreadable = { $documents }, { $pages }; { $unreadable } unreadable ({ $failures })
+
+journal.cli.importer.summary.document = imported { $documents } across { $days } into { $segments }
+
+journal.cli.importer.preview.image.one = 1 image ({ $format }, { $width }×{ $height })
+
+journal.cli.importer.summary.image.none = No readable image found
+
+journal.cli.importer.summary.archive = Journal archive: { $days }, { $entities }, { $facets } ({ $warnings })
+
+journal.cli.importer.force.pdf.day.notice = notice: this file's name dates to { $fresh }, and a previous import was recorded on { $stored }. the PDF's own dates may select a different day. choose --timestamp to set its date. existing recordings are not moved.

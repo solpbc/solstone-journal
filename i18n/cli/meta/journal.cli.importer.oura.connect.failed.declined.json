@@ -1,0 +1,16 @@
+{
+  "description": "Oura connect failure: authorization declined.",
+  "context": "Oura connect failure: authorization declined.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "776f3c9133427ac578d5ea5a99346d68b1dcd5555c07c0c911e990801a6eb165",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

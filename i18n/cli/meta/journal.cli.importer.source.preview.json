@@ -1,0 +1,41 @@
+{
+  "description": "Source preview summary line.",
+  "context": "Source preview summary line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "start",
+      "type": "string"
+    },
+    {
+      "name": "end",
+      "type": "string"
+    },
+    {
+      "name": "items",
+      "type": "string"
+    },
+    {
+      "name": "entities",
+      "type": "string"
+    },
+    {
+      "name": "summary",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b9dee2f8f5d11deb6f9d25f4a46d1e826a75ef82e2c5caa50ac61eea8837a2d6",
+  "max_length": 339,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

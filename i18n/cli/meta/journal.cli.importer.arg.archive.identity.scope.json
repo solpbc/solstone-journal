@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI invalid --archive-identity scope error.",
+  "context": "Importer CLI invalid --archive-identity scope error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "001063eb9544f1fb9c1c7f2565c2b0f2f808230c63d9aa0bbc75fdc0866c76e8",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

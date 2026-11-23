@@ -46,6 +46,7 @@ getrandom.workspace = true
 solstone-core-auth-flow.workspace = true
 solstone-core-oauth.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
+solstone-core-cli-copy.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-format.workspace = true
 solstone-core-generate.workspace = true

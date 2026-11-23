@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI missing flag value error.",
+  "context": "Importer CLI missing flag value error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "argument",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c5fa44b74eabefb9ee8e3997b7d388245a91c0539ed10d511ae270242f648b4a",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

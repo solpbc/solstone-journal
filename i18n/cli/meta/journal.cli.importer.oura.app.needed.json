@@ -1,0 +1,21 @@
+{
+  "description": "Oura connect refusal when non-interactive and no Oura app is registered.",
+  "context": "Oura connect refusal when non-interactive and no Oura app is registered.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "how",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "56316338d0abd4aa1265aa1b365c15514f1ed5cc5237dc9a57a309104b36f4e3",
+  "max_length": 633,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

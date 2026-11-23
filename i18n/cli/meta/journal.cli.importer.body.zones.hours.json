@@ -1,0 +1,34 @@
+{
+  "description": "Body data time-zone mismatch warning for one or more hours.",
+  "context": "Body data time-zone mismatch warning for one or more hours.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "43f1ff34e947e1ad12110c798ec25902a8c3a9fabfdf4a8fcfd79d75b2d89071",
+  "max_length": 975,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sync failure: audio download link not ready yet.",
+  "context": "Plaud sync failure: audio download link not ready yet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dea4f226a6b60dbdda2d5f8a3e944b225472d8a12df101867a2ca405e28f8e26",
+  "max_length": 195,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

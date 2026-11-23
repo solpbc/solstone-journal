@@ -1,0 +1,29 @@
+{
+  "description": "Sync completion summary line.",
+  "context": "Sync completion summary line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    },
+    {
+      "name": "saved",
+      "type": "string"
+    },
+    {
+      "name": "errors",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fcdb7ceef27553597fcd288094d185dcc45b5c077ccb549afb09409a4598c849",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

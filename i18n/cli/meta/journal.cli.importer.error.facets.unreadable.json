@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI refusal when declared facets cannot be read.",
+  "context": "Importer CLI refusal when declared facets cannot be read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c4d5a4179215205719f17e9ae024a0ffbbcf7d30f7b78489cc13d0ef02a127aa",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

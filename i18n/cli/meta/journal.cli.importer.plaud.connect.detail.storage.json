@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sign-in storage failure detail.",
+  "context": "Plaud sign-in storage failure detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f5e5c40f3e157b2da280752da47420f7cf5ba2234611989c0f4e10d6274aa634",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

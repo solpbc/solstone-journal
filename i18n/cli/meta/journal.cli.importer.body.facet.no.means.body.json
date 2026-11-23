@@ -1,0 +1,16 @@
+{
+  "description": "Explanation of declining facet filing for Apple Health / Oura.",
+  "context": "Explanation of declining facet filing for Apple Health / Oura.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a52a924ed01f51eb3246e6952cbc00ec99d1d341dceb4791366f362c28d7da92",
+  "max_length": 498,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

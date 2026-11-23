@@ -1,0 +1,21 @@
+{
+  "description": "Notice when part of an imported audio recording could not be imported.",
+  "context": "Notice when part of an imported audio recording could not be imported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "ranges",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6ff344aac778919ee5fde93c441b6795a0000bede0b2523690db6810a2168c17",
+  "max_length": 516,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

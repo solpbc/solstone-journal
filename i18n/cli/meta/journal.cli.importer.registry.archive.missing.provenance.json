@@ -1,0 +1,25 @@
+{
+  "description": "Archive merge failure when attempt provenance is missing.",
+  "context": "Archive merge failure when attempt provenance is missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "attempt",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ff2cd3b0c13f9a441b0c14b053006b78defa4c45bd92a5f687b4054e9aad7bb",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

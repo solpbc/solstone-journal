@@ -1,0 +1,16 @@
+{
+  "description": "Description for image importer.",
+  "context": "Description for image importer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "995ffcae60d831b0f2c6920d5298d91b3e80ab7b8336f972915436ad878792f2",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

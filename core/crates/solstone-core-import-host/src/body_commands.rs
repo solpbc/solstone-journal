@@ -44,15 +44,28 @@ pub(crate) struct BodyCommand<'a> {
 
 use solstone_core_import_sources::body_status::apple_go_ahead_words as apple_confirm_words;
 
-const APPLE_WHOLE_WORDS: &str = "an Apple Health import always reads the whole export, so it doesn't take --date-from, --date-to or --force. nothing was saved; run it again without them.\n";
+fn apple_whole_words() -> String {
+    format!(
+        "{}\n",
+        solstone_core_cli_copy::text("journal.cli.importer.body.apple.whole")
+    )
+}
 
-/// What a page start of an import that already ran is told; the page shows
-/// its own words for it.
-const ALREADY_RAN: &str = "this import has already run, so nothing was brought in. start a new one from the Apple Health card.\n";
+fn already_ran_words() -> String {
+    format!(
+        "{}\n",
+        solstone_core_cli_copy::text("journal.cli.importer.body.apple.already.ran")
+    )
+}
 
 /// What a start that names an import is told when nothing about it is an Apple
 /// Health card's save.
-pub(crate) const CARD_ONLY: &str = "--import-id is only for saving an Apple Health export from its card, so nothing was brought in.\n";
+pub(crate) fn card_only_words() -> String {
+    format!(
+        "{}\n",
+        solstone_core_cli_copy::text("journal.cli.importer.body.apple.card.only")
+    )
+}
 
 /// A page start names the import it runs under. Accept it only when that import
 /// was made by the Apple Health card for this export and has never run; refuse otherwise
@@ -63,18 +76,20 @@ pub(crate) fn accept_page_import(
     import_id: &str,
     media: &str,
 ) -> Result<(), CliRun> {
-    let refuse = |words: &str| failure("", words, 1);
+    let refuse = |words: String| failure("", &words, 1);
     if solstone_core_import::validate_timestamp(import_id).is_err() {
-        return Err(refuse(
-            "--import-id names no import, so nothing was brought in.\n",
-        ));
+        return Err(refuse(format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.importer.body.apple.unknown.import")
+        )));
     }
     let dir = journal.join("imports").join(import_id);
     let Ok(Some(metadata)) = solstone_core_import::metadata::read_provenance(journal, import_id)
     else {
-        return Err(refuse(
-            "--import-id names no import, so nothing was brought in.\n",
-        ));
+        return Err(refuse(format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.importer.body.apple.unknown.import")
+        )));
     };
     // Only an import the Apple Health card made: a hand-typed start aimed at
     // another source's import must never write into it or remove its upload.
@@ -83,7 +98,7 @@ pub(crate) fn accept_page_import(
         .and_then(serde_json::Value::as_str)
         != Some("apple_health")
     {
-        return Err(refuse(CARD_ONLY));
+        return Err(refuse(card_only_words()));
     }
     let has_attempt = !matches!(
         solstone_core_import::metadata::read_attempt_facts(&metadata),
@@ -95,23 +110,29 @@ pub(crate) fn accept_page_import(
             .join(solstone_core_import_sources::body_status::STOP_FILE)
             .exists()
     {
-        return Err(refuse(ALREADY_RAN));
+        return Err(refuse(already_ran_words()));
     }
     let inside = match (Path::new(media).canonicalize(), dir.canonicalize()) {
         (Ok(media), Ok(dir)) => media.starts_with(dir),
         _ => false,
     };
     if !inside {
-        return Err(refuse(
-            "that import doesn't hold this export, so nothing was brought in.\n",
-        ));
+        return Err(refuse(format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.importer.body.apple.wrong.export")
+        )));
     }
     Ok(())
 }
 
 /// After a page start: a refusal before its attempt was admitted says why on its
 /// import, and the uploaded export goes, whatever happened, as Strava's does.
-pub(crate) fn settle_page_import(journal: &Path, import_id: &str, failed_with: Option<&str>) {
+pub(crate) fn settle_page_import(
+    journal: &Path,
+    import_id: &str,
+    failed_with: Option<&str>,
+    refusal_code: Option<&'static str>,
+) {
     let stop = solstone_core_import_sources::body_status::read(journal, import_id);
     let no_attempt = matches!(
         solstone_core_import::metadata::read_provenance(journal, import_id)
@@ -124,21 +145,14 @@ pub(crate) fn settle_page_import(journal: &Path, import_id: &str, failed_with: O
         && no_attempt
         && stop.is_none()
     {
-        let code = if words.contains("preview again") {
-            "preview_again"
-        } else if words.trim_end() == apple_confirm_words().trim_end() {
-            "go_ahead"
-        } else if words.trim_end() == APPLE_WHOLE_WORDS.trim_end() {
-            "whole_export"
-        } else if words.contains(crate::cli_argv::FACET_REFUSAL_MARKER) {
-            "facet"
-        } else if solstone_core_import_sources::body_status::code_for_error_text(words)
-            == "disk_full"
-        {
-            "no_room"
-        } else {
-            "not_started"
-        };
+        let code = refusal_code.unwrap_or_else(|| {
+            if solstone_core_import_sources::body_status::code_for_error_text(words) == "disk_full"
+            {
+                "no_room"
+            } else {
+                "not_started"
+            }
+        });
         solstone_core_import_sources::body_status::record(journal, import_id, code, 1);
     }
     // This run is over, so its own attempt goes. The upload goes too unless a
@@ -156,17 +170,21 @@ pub(crate) fn settle_page_import(journal: &Path, import_id: &str, failed_with: O
     }
 }
 
-/// Save an Apple Health export.
-pub(crate) fn save_apple(media: &str, command: &BodyCommand<'_>, journal: &Path) -> CliRun {
+/// Save an Apple Health export, returning any typed early-refusal code for page runs.
+pub(crate) fn save_apple(
+    media: &str,
+    command: &BodyCommand<'_>,
+    journal: &Path,
+) -> (CliRun, Option<&'static str>) {
     if !command.confirm {
-        return failure("", &apple_confirm_words(), 1);
+        return (failure("", &apple_confirm_words(), 1), Some("go_ahead"));
     }
     if command.date_from.is_some() || command.date_to.is_some() || command.force {
-        return failure("", APPLE_WHOLE_WORDS, 1);
+        return (failure("", &apple_whole_words(), 1), Some("whole_export"));
     }
     let (facet, listed) = match settled_facet(command, &APPLE, journal) {
         Ok(settled) => settled,
-        Err(run) => return run,
+        Err((run, code)) => return (run, code),
     };
     let earlier_waiting = sweep_first(journal);
     let timestamp = owner_timestamp(journal);
@@ -174,7 +192,7 @@ pub(crate) fn save_apple(media: &str, command: &BodyCommand<'_>, journal: &Path)
     request.import_id = command.import_id;
     request.listed = listed;
     request.earlier_waiting = earlier_waiting;
-    match run_apple_health_segments(journal, &request) {
+    let run = match run_apple_health_segments(journal, &request) {
         Ok(outcome) if command.json => success(format!(
             "{}\n",
             json!({
@@ -187,7 +205,8 @@ pub(crate) fn save_apple(media: &str, command: &BodyCommand<'_>, journal: &Path)
         )),
         Ok(outcome) => success(format!("{}\n", outcome.summary.trim_end())),
         Err(error) => failure("", &format!("{error}\n"), 1),
-    }
+    };
+    (run, None)
 }
 
 /// A count as a person reads a large one: 2,000,000.
@@ -220,8 +239,8 @@ pub(crate) fn preview_apple(
         Err(error) => {
             let code =
                 solstone_core_import_sources::body_status::code_for_source_stage(error.stage());
-            let words = solstone_core_import_sources::body_status::words(code);
             return if json_output {
+                let words = solstone_core_import_sources::body_status::words(code);
                 success(format!(
                     "{}\n",
                     json!({
@@ -233,6 +252,10 @@ pub(crate) fn preview_apple(
                     })
                 ))
             } else {
+                let words = solstone_core_import_sources::body_status::words_localized(
+                    solstone_core_cli_copy::cli_locale(),
+                    code,
+                );
                 failure("", &format!("{words}\n"), 1)
             };
         }
@@ -263,29 +286,90 @@ pub(crate) fn preview_apple(
         }
         return success(format!("{size}\n"));
     }
+    let locale = solstone_core_cli_copy::cli_locale();
+    let reads = [
+        "journal.cli.importer.body.apple.reads.workouts",
+        "journal.cli.importer.body.apple.reads.sleep",
+        "journal.cli.importer.body.apple.reads.mindful",
+        "journal.cli.importer.body.apple.reads.readings",
+        "journal.cli.importer.body.apple.reads.daily",
+        "journal.cli.importer.body.apple.reads.logged",
+    ]
+    .map(|id| solstone_core_cli_copy::render_for(locale, id, &[]));
+    let head = reads[..reads.len() - 1].join(", ");
+    let tail = &reads[reads.len() - 1];
     let mut text = format!(
-        "this looks like an Apple Health export. saving it reads {}, and {}.\n",
-        APPLE_READS[..APPLE_READS.len() - 1].join(", "),
-        APPLE_READS[APPLE_READS.len() - 1]
+        "{}\n",
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.importer.body.apple.preview.intro",
+            [("head", &head), ("tail", &tail)],
+        )
     );
     if let Some((first, last)) = &preview.span {
-        let count = |n: u64, one: &str, many: &str| {
-            format!("{} {}", grouped(n), if n == 1 { one } else { many })
+        let count = |n: u64, id: &str| {
+            let formatted = grouped(n);
+            solstone_core_cli_copy::render_for(
+                locale,
+                id,
+                &[
+                    (
+                        "quantity",
+                        solstone_core_cli_copy::Value::Cardinal(
+                            i64::try_from(n).unwrap_or(i64::MAX),
+                        ),
+                    ),
+                    ("count", solstone_core_cli_copy::Value::String(&formatted)),
+                ],
+            )
         };
+        let workouts = count(preview.workouts, "journal.cli.importer.count.workout");
+        let nights = count(preview.nights, "journal.cli.importer.count.night");
+        let mindful = count(
+            preview.mindful_sessions,
+            "journal.cli.importer.count.mindful.session",
+        );
+        let readings = count(preview.readings, "journal.cli.importer.count.reading");
+        let daily = count(
+            preview.daily_totals,
+            "journal.cli.importer.count.daily.total",
+        );
+        let logged = count(preview.logged, "journal.cli.importer.count.logged.entry");
         text.push_str(&format!(
-            "it runs from {first} to {last}: {}, {} put together from sleep stages, {}, {}, {} and {}.\n",
-            count(preview.workouts, "workout", "workouts"),
-            count(preview.nights, "night", "nights"),
-            count(preview.mindful_sessions, "mindful session", "mindful sessions"),
-            count(preview.readings, "reading", "readings"),
-            count(preview.daily_totals, "daily total", "daily totals"),
-            count(preview.logged, "logged entry", "logged entries")
+            "{}\n",
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.importer.body.apple.preview.span",
+                [
+                    ("first", &first),
+                    ("last", &last),
+                    ("workouts", &workouts),
+                    ("nights", &nights),
+                    ("mindful", &mindful),
+                    ("readings", &readings),
+                    ("daily", &daily),
+                    ("logged", &logged),
+                ],
+            )
         ));
     }
     if let Some((count, _)) = listed {
+        let count_str = count.to_string();
         text.push_str(&format!(
-            "saying yes can move up to {count} {} already listed under another facet.\n",
-            if count == 1 { "record" } else { "records" }
+            "{}\n",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.importer.body.apple.preview.moves",
+                &[
+                    (
+                        "quantity",
+                        solstone_core_cli_copy::Value::Cardinal(
+                            i64::try_from(count).unwrap_or(i64::MAX),
+                        ),
+                    ),
+                    ("count", solstone_core_cli_copy::Value::String(&count_str)),
+                ],
+            )
         ));
     }
     success(text)
@@ -306,7 +390,11 @@ fn parse_day(flag: &str, text: &str) -> Result<Date, String> {
         .or_else(|| solstone_core_time::parse_day(text))
         .ok_or_else(|| {
             format!(
-                "{flag} takes a date like 2026-01-31, and {text} isn't one. nothing was read.\n"
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.importer.body.oura.bad.date",
+                    [("flag", &flag), ("text", &text)],
+                )
             )
         })
 }
@@ -314,10 +402,16 @@ fn parse_day(flag: &str, text: &str) -> Result<Date, String> {
 /// The days an Oura run was asked for, or `None` for the days it doesn't hold.
 fn oura_range(command: &BodyCommand<'_>, today: Date) -> Result<Option<(Date, Date)>, String> {
     if command.window_days == Some(0) {
-        return Err("--window-days needs at least one day. nothing was read.\n".to_owned());
+        return Err(format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.importer.body.oura.window.zero")
+        ));
     }
     if command.window_days.is_some() && (command.date_from.is_some() || command.date_to.is_some()) {
-        return Err("use --window-days or dates, not both. nothing was read.\n".to_owned());
+        return Err(format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.importer.body.oura.window.conflict")
+        ));
     }
     let (year, month, day) = FIRST_OURA_DAY;
     let floor = Date::new(year, month, day).map_err(|_| "the first day isn't a day")?;
@@ -331,14 +425,18 @@ fn oura_range(command: &BodyCommand<'_>, today: Date) -> Result<Option<(Date, Da
     }
     match (command.date_from, command.date_to) {
         (None, None) => Ok(None),
-        (None, Some(_)) => {
-            Err("--date-to needs a --date-from to go with it. nothing was read.\n".to_owned())
-        }
+        (None, Some(_)) => Err(format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.importer.body.oura.date.to.needs.from")
+        )),
         (Some(from), to) => {
             let from = parse_day("--date-from", from)?;
             let to = to.map_or(Ok(today), |to| parse_day("--date-to", to))?;
             if from > today || to > today {
-                return Err("that range goes past today, and Oura has nothing there yet. nothing was read.\n".to_owned());
+                return Err(format!(
+                    "{}\n",
+                    solstone_core_cli_copy::text("journal.cli.importer.body.oura.range.future")
+                ));
             }
             Ok(Some((from, to)))
         }
@@ -361,7 +459,7 @@ pub(crate) fn sync_oura(command: &BodyCommand<'_>, journal: &Path) -> CliRun {
     }
     let (facet, listed) = match settled_facet(command, &OURA, journal) {
         Ok(settled) => settled,
-        Err(run) => return run,
+        Err((run, _)) => return run,
     };
     let earlier_waiting = sweep_first(journal);
     let timestamp = owner_timestamp(journal);
@@ -403,13 +501,16 @@ fn owner_timestamp(journal: &Path) -> String {
         .to_string()
 }
 
+type SettledFacet = (Option<String>, ListedMoves);
+type SettledFacetError = (CliRun, Option<&'static str>);
+
 /// The facet this run files under, asking first when an owner is there and
 /// nothing has been answered, and what it may do with what's already listed.
 fn settled_facet(
     command: &BodyCommand<'_>,
     source: &BodySource,
     journal: &Path,
-) -> Result<(Option<String>, ListedMoves), CliRun> {
+) -> Result<SettledFacet, SettledFacetError> {
     let (given, shown) = if command.facet != ImportFacet::Unattended
         || command.scheduled
         || command.json
@@ -425,8 +526,8 @@ fn settled_facet(
             &mut std::io::stdout(),
         )
     };
-    let RunFacet { facet, basis } =
-        run_facet(journal, &given).map_err(|words| failure("", &format!("{words}\n"), 1))?;
+    let RunFacet { facet, basis } = run_facet(journal, &given)
+        .map_err(|words| (failure("", &format!("{words}\n"), 1), Some("facet")))?;
     let listed = match (basis, shown) {
         (FacetBasis::Chosen, Some(shown)) => ListedMoves::MoveAtMost(shown),
         (FacetBasis::Chosen, None) => ListedMoves::Move,

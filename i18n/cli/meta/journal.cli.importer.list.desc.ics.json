@@ -1,0 +1,16 @@
+{
+  "description": "Description for ics importer.",
+  "context": "Description for ics importer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "857c9c5377f40064956b0a7bc8a07ae872e83aa9c060d40bfd6ed09c5d7b944c",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

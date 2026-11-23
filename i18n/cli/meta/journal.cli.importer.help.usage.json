@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI help usage header line 1.",
+  "context": "Importer CLI help usage header line 1.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a0428e19d5a35f1879b9ee6b620cab5eb24a29e478ef2e7d96697b8bbff8afb8",
+  "max_length": 270,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

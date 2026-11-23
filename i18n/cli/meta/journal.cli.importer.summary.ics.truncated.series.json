@@ -1,0 +1,34 @@
+{
+  "description": "ICS repeating series truncated occurrences clause.",
+  "context": "ICS repeating series truncated occurrences clause.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "limit",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "baaa72c90fd65d807d6d4f8cd5634b39887fa205f7019ae5892c755eb8921cd2",
+  "max_length": 537,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Desktop importer error when sibling PDF worker binary is missing.",
+  "context": "Desktop importer error when sibling PDF worker binary is missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fc222725963cfa3ca03b7431b78905e187d141b71e01b7250a00236af9ed5daa",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

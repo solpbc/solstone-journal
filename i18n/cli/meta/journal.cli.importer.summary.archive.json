@@ -1,0 +1,33 @@
+{
+  "description": "Journal archive plan summary.",
+  "context": "Journal archive plan summary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "entities",
+      "type": "string"
+    },
+    {
+      "name": "facets",
+      "type": "string"
+    },
+    {
+      "name": "warnings",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "62f4fcbd9660c8f8d44f0a2a730e760b9e6c97883f5ebb6ec45cbc3b5ba91883",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

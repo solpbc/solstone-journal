@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI invalid --source-zone scope error.",
+  "context": "Importer CLI invalid --source-zone scope error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3889387ddfcf5ec9f3c34e1907363a509e57b9bd743500df12a7b88d0b0e57cf",
+  "max_length": 216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Oura connect failure: token exchange rejected.",
+  "context": "Oura connect failure: token exchange rejected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8cedda66184e7cc4af62400e54a18b2dffa2c064bb71316c13201873177e6e28",
+  "max_length": 375,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

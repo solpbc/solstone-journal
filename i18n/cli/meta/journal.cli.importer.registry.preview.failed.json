@@ -1,0 +1,21 @@
+{
+  "description": "Registry import preview failure line.",
+  "context": "Registry import preview failure line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0caf953dae78afe8775e3ade762adb15c64b7d065cc0e78a362224d92527bf36",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

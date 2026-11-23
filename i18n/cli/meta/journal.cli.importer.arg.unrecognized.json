@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI unrecognized arguments error.",
+  "context": "Importer CLI unrecognized arguments error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "arguments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "01b60598f9e616c71cfbb1fde7d07d85eefabba8e714a514cd47d5a5cd09470a",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

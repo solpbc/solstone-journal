@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI error for unknown --connect backend.",
+  "context": "Importer CLI error for unknown --connect backend.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "126c385af56d49e8a487ba1abc214c10e3303b1fcd3dea1aca05c468c9daa1e9",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

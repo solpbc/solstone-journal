@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI invalid --resume scope error.",
+  "context": "Importer CLI invalid --resume scope error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b2098c1d68c92dd5f9959a31a02473be973aaa2abcf5c5ffd66b6577f103dcde",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

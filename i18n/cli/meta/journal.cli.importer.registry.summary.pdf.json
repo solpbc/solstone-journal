@@ -1,0 +1,21 @@
+{
+  "description": "Registry PDF import summary.",
+  "context": "Registry PDF import summary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "documents",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1c12c3cc969d6373584c7b7217a8d60397c0990df84a28160f513037e1d6a0c7",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sign-in exchange failure detail.",
+  "context": "Plaud sign-in exchange failure detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "85e4aace8ee7ef1c8f9fc29410902183b28586cd53dffc427c979f21d152069c",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Plaud sync operation failure wrapper.",
+  "context": "Plaud sync operation failure wrapper.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e344fd0f91664cc98894b36b7ec56887f281629913c1fae767a225eae1210325",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

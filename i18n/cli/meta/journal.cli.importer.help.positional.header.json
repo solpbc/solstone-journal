@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI help positional arguments section header.",
+  "context": "Importer CLI help positional arguments section header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6f76607a238a82008a92215b87ca1e2e4723c9faea57ed730dbadafc2516f2e2",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

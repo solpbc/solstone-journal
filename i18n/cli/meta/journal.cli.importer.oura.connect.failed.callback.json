@@ -1,0 +1,16 @@
+{
+  "description": "Oura connect failure: callback port unavailable.",
+  "context": "Oura connect failure: callback port unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b9ba77c13875f1e64c4509522cc870a8e014afb27fcc33a130458eaae35837c8",
+  "max_length": 351,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

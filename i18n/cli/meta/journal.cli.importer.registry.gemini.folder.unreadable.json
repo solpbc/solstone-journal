@@ -1,0 +1,16 @@
+{
+  "description": "Gemini folder import failure when export folder cannot be read.",
+  "context": "Gemini folder import failure when export folder cannot be read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1c889bbbe8310b3f9921cb422633e5144566a5f22e7dd35188df820de912b99b",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Import skipped message when file was already imported.",
+  "context": "Import skipped message when file was already imported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d315c8a4cc2bed7d2c3e7a25a83c4f6271abff08e06d0a8500b9fde8913552d6",
+  "max_length": 234,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

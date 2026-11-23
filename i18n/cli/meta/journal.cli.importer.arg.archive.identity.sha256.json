@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI invalid SHA-256 --archive-identity error.",
+  "context": "Importer CLI invalid SHA-256 --archive-identity error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "883aa608eae444cfdf4ffb68e5f9a8c7c003b605b172b8fccc78c1662d6b1fe4",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

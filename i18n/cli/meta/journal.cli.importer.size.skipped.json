@@ -1,0 +1,21 @@
+{
+  "description": "Import size skipped item count line.",
+  "context": "Import size skipped item count line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a0782ea15f52665458043ea31c9d1035421a07d901f9c401cdcc255891c9a48b",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Importer CLI help media positional argument.",
+  "context": "Importer CLI help media positional argument.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fb91cc433c6c8cb38eacc73d7e1b4920154fa426d469d90cb0b31b9d72da1907",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Importer CLI refusal when owner time zone changed after preview.",
+  "context": "Importer CLI refusal when owner time zone changed after preview.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6623bb1b3853184edc9ed79bf81be963d2787dfbd6365f5cbf8a4d81bd1bf4c1",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

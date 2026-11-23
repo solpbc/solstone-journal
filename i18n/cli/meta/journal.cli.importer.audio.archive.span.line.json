@@ -1,0 +1,21 @@
+{
+  "description": "Audio archive span summary line.",
+  "context": "Audio archive span summary line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "span",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "80833caaf7f84e00ecfbf2fbb560ac3bf82bd16282cf5c85e18d51920e92f267",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

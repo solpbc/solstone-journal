@@ -1,0 +1,16 @@
+{
+  "description": "Audio archive refusal when folder import omits --source-zone.",
+  "context": "Audio archive refusal when folder import omits --source-zone.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e311baa6568af43108a6e2dedab61f5a73195c5c4148dc715f08da5757c40cff",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

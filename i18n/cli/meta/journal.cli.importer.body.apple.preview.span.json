@@ -1,0 +1,49 @@
+{
+  "description": "Apple Health CLI preview span and counts sentence.",
+  "context": "Apple Health CLI preview span and counts sentence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "first",
+      "type": "string"
+    },
+    {
+      "name": "last",
+      "type": "string"
+    },
+    {
+      "name": "workouts",
+      "type": "string"
+    },
+    {
+      "name": "nights",
+      "type": "string"
+    },
+    {
+      "name": "mindful",
+      "type": "string"
+    },
+    {
+      "name": "readings",
+      "type": "string"
+    },
+    {
+      "name": "daily",
+      "type": "string"
+    },
+    {
+      "name": "logged",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d0234f4bef7ac3bd0595e953cd2abe8730f0a2c46a7dbf2499df67969a04f7d8",
+  "max_length": 459,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Description for claude importer.",
+  "context": "Description for claude importer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5bc9c6ffae0b95bdedd69d010916ea7236bcf124ad8cbcbdc1b8d488620155af",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

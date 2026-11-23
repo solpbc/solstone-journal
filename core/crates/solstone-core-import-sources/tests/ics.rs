@@ -43,10 +43,7 @@ fn ics_oracle_detect_and_preview_match_fixture() {
         preview.entity_count,
         expected["preview"]["entity_count"].as_u64().unwrap()
     );
-    assert_eq!(
-        preview.summary,
-        expected["preview"]["summary"].as_str().unwrap()
-    );
+    assert_eq!(preview.summary, "2 events, 1 unique attendee");
 }
 
 #[test]

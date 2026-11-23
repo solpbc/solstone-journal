@@ -1,0 +1,25 @@
+{
+  "description": "Importer CLI refusal when requested facet is muted or missing.",
+  "context": "Importer CLI refusal when requested facet is muted or missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "enabled",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "adb18bea067f5de1b539dc84a8900cc7495be169d7a3bea8c5cc523c50cef1b9",
+  "max_length": 318,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

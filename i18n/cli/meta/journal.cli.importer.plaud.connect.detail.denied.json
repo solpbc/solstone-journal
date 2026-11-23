@@ -1,0 +1,16 @@
+{
+  "description": "Plaud sign-in denied failure detail.",
+  "context": "Plaud sign-in denied failure detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5eb15e3d7feac4197f7b09bbbb57a3896d58fe588c551e9c79aa719527ec0238",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
