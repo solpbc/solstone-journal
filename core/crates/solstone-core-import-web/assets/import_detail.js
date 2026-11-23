@@ -427,19 +427,22 @@
     return `<span>${escapeHtml(fileText)}</span>${uploadHtml} <span class="status-badge ${statusClass(derived.code)}">${escapeHtml(derived.status)}</span>`;
   }
 
-  function sourceTypeLabel(type) {
+  function knownSourceLabel(type) {
     const known = {
       document: 'journal.window.import.source.document.name',
       image: 'journal.window.import.source.image.name',
       text: 'journal.window.import.import.source.names.text.text',
     };
     const label = Object.hasOwn(known, type) ? known[type] : null;
-    return label ? window.JournalI18n.render(label) : type;
+    return label ? window.JournalI18n.render(label) : '';
   }
 
+  // The page's own word for a source it knows comes first: an importer's
+  // recorded name ("Image", "Text") was never a catalog string.
   function displaySource(data, importedJson) {
-    return data?.source_display || sourceTypeLabel(data?.source_type)
-      || importedJson.source_display || sourceTypeLabel(importedJson.source_type);
+    return knownSourceLabel(data?.source_type) || knownSourceLabel(importedJson.source_type)
+      || data?.source_display || importedJson.source_display
+      || data?.source_type || importedJson.source_type;
   }
 
   function renderLeadsCard(data) {

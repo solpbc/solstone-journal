@@ -373,8 +373,21 @@ fn source(name: &str) -> Option<&'static SourceMetadata> {
 pub(crate) fn source_icon(name: &str) -> Option<String> {
     source(name).and_then(|item| ICONS.get(item.icon).cloned())
 }
+/// Sources with no upload tile that the Import page still names in its own words.
+const UNTILED_SOURCE_NAMES: &[(&str, &str)] = &[(
+    "text",
+    "journal.window.import.import.source.names.text.text",
+)];
+
 pub(crate) fn source_display_localized(locale: &str, name: &str) -> Option<String> {
-    source(name).map(|item| text(locale, item.display_name))
+    source(name)
+        .map(|item| text(locale, item.display_name))
+        .or_else(|| {
+            UNTILED_SOURCE_NAMES
+                .iter()
+                .find(|(untiled, _)| *untiled == name)
+                .map(|(_, key)| text(locale, key))
+        })
 }
 
 /// The zone names an audio archive can be placed in, in byte order: every name
@@ -1160,6 +1173,31 @@ mod tests {
             .unwrap();
         let body: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(body["source_display"], "audio", "{body:?}");
+    }
+
+    #[tokio::test]
+    async fn the_detail_route_names_a_text_row_from_the_catalog_not_the_importer() {
+        let dir = tempdir().unwrap();
+        let (journal, id) = (dir.path(), "20260101_120004");
+        write_native_attempt(journal, id, "text");
+
+        let state = AppState {
+            root: journal.to_path_buf(),
+            route: None,
+        };
+        let response = detail(None, State(state), AxumPath(id.to_owned())).await;
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            body["source_display"],
+            text(
+                response_locale(None),
+                "journal.window.import.import.source.names.text.text"
+            ),
+            "{body:?}"
+        );
     }
 
     #[tokio::test]
