@@ -2000,6 +2000,14 @@ fn search(
     let mut checker = LiveTranscriptPages::new(Arc::clone(&possible_names), snapshot);
     let mut import_previews = BTreeMap::new();
     let mut sources: Option<BTreeMap<String, String>> = None;
+    let mut seen_document_path = (!request.query.trim().is_empty())
+        .then(|| {
+            start_after
+                .as_ref()
+                .filter(|cursor| cursor.path.ends_with("/document_transcript.md"))
+                .map(|cursor| cursor.path.clone())
+        })
+        .flatten();
     while results.len() < request.limit && examined < MAX_SEARCH_EXAMINED_ROWS {
         // One query reads each activity day file once.
         let day_files = crate::body_source::ActivityDayFiles::default();
@@ -2185,14 +2193,20 @@ fn search(
                             .unwrap_or(AdmittedCategory::Transcripts),
                     )
                 });
+            let is_document = category == AdmittedCategory::Documents
+                && hit.metadata.path.ends_with("/document_transcript.md");
             if request.query.trim().is_empty()
-                && request.content_kinds.is_some()
-                && match category {
-                    AdmittedCategory::Photos => !photo || hit.metadata.idx != 0,
-                    AdmittedCategory::Notes => topic.is_some() || hit.metadata.idx != 0,
-                    _ => false,
-                }
+                && ((is_document && hit.metadata.idx != 0)
+                    || (request.content_kinds.is_some()
+                        && match category {
+                            AdmittedCategory::Photos => !photo || hit.metadata.idx != 0,
+                            AdmittedCategory::Notes => topic.is_some() || hit.metadata.idx != 0,
+                            _ => false,
+                        }))
             {
+                continue;
+            }
+            if is_document && seen_document_path.as_deref() == Some(hit.metadata.path.as_str()) {
                 continue;
             }
             if !matches_find_filters(&request, record.as_ref(), category) {
@@ -2311,9 +2325,7 @@ fn search(
                 (None, None)
             };
 
-            let imported = photo
-                || (category == AdmittedCategory::Documents
-                    && hit.metadata.path.ends_with("/document_transcript.md"));
+            let imported = photo || is_document;
             let preview = if imported {
                 let content = import_preview_content(&served_text);
                 if !photo && !content.is_empty() {
@@ -2573,6 +2585,9 @@ fn search(
             }
             if single_subject[0].more_segments {
                 value["more_segments"] = Value::Bool(true);
+            }
+            if is_document {
+                seen_document_path = Some(hit.metadata.path.clone());
             }
             results.push(value);
             if results.len() == request.limit {

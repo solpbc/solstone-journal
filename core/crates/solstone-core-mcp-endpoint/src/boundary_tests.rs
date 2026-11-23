@@ -20643,3 +20643,208 @@ fn fetch_refuses_list_transcripts_references_and_names_get_transcript() {
         "{read}"
     );
 }
+
+#[test]
+fn multi_chunk_pdf_collapses_to_one_search_hit_across_browse_query_and_pagination() {
+    let journal = fixture();
+    let root = journal.path();
+    let day = "20260315";
+
+    let build_pdf = |title: &str, token: &str| {
+        let mut body = format!("# {title}\n\nType: Document\n\n");
+        for page in 1..=4 {
+            body.push_str(&format!(
+                "## Page {page}\n\n\
+                 Clause {page} records the {token} covenant and rent schedule in full detail, \
+                 naming the parcel bounds, annual payment dates, timber rights, and renewal terms \
+                 agreed between the parties for the ground plot and surrounding yard.\n\n"
+            ));
+        }
+        body
+    };
+
+    let doc_a_dir = root.join(format!("chronicle/{day}/import.document/130000_0"));
+    let doc_b_dir = root.join(format!("chronicle/{day}/import.document/140000_0"));
+    let screen_dir = root.join(format!("chronicle/{day}/mac/150000_300/talents"));
+    for dir in [&doc_a_dir, &doc_b_dir, &screen_dir] {
+        fs::create_dir_all(dir).unwrap();
+    }
+    fs::create_dir_all(root.join("streams")).unwrap();
+    fs::write(
+        root.join("streams/import.document.json"),
+        json!({
+            "name": "import.document",
+            "kind": "import",
+            "host": null,
+            "platform": null,
+            "created_at": 1,
+            "last_day": null,
+            "last_segment": null,
+            "seq": 1
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        doc_a_dir.join("document_transcript.md"),
+        build_pdf("Greenwich warrant", "holywellcovenant"),
+    )
+    .unwrap();
+    fs::write(
+        doc_b_dir.join("document_transcript.md"),
+        build_pdf("Theatre lease terms", "holywellcovenant"),
+    )
+    .unwrap();
+    fs::write(
+        screen_dir.join("screen_text.md"),
+        "## 00:00 · Browser\n\nFirst screen minute mentioning holywellcovenant.\n\n\
+         ## 01:00 · Editor\n\nSecond screen minute mentioning holywellcovenant.\n",
+    )
+    .unwrap();
+
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+
+    // Confirm both PDFs actually split into multiple indexed chunks.
+    let index = solstone_core_indexer_store::db::open_index(root).unwrap();
+    for seg in ["130000_0", "140000_0"] {
+        let path = format!("{day}/import.document/{seg}/document_transcript.md");
+        let count: i64 = index
+            .query_row(
+                "SELECT COUNT(*) FROM chunks WHERE path = ?1",
+                params![path],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            count >= 4,
+            "expected multi-chunk PDF for {seg}, got {count} chunks"
+        );
+    }
+    drop(index);
+
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["documents".into(), "screen_text".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+
+    // Empty-query browse with kind=["documents"]: one hit per PDF, not one per chunk.
+    let browse_docs = probe(
+        &journal,
+        "search",
+        json!({"day": day, "kind": ["documents"], "limit": 20}),
+    )
+    .unwrap();
+    let browse_rows = browse_docs["results"].as_array().unwrap();
+    assert_eq!(browse_rows.len(), 2, "{browse_docs}");
+    assert_eq!(browse_rows[0]["title"], "Theatre lease terms");
+    assert_eq!(browse_rows[1]["title"], "Greenwich warrant");
+    assert_eq!(browse_rows[0]["content_kind"], "documents");
+    assert_eq!(browse_rows[0]["source"], "PDF");
+
+    // Unfiltered empty-query browse also emits one hit per PDF while keeping both screen minutes.
+    let browse_all = probe(&journal, "search", json!({"day": day, "limit": 20})).unwrap();
+    let doc_hits: Vec<&Value> = browse_all["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["content_kind"] == "documents")
+        .collect();
+    let screen_hits: Vec<&Value> = browse_all["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["content_kind"] == "screen_text")
+        .collect();
+    assert_eq!(doc_hits.len(), 2, "{browse_all}");
+    assert_eq!(screen_hits.len(), 2, "{browse_all}");
+
+    // Keyword search matching every chunk of both PDFs collapses each PDF to one hit,
+    // while non-document multi-chunk material (screen_text) keeps every matching minute.
+    let searched = probe(
+        &journal,
+        "search",
+        json!({"query": "holywellcovenant", "limit": 20}),
+    )
+    .unwrap();
+    let search_rows = searched["results"].as_array().unwrap();
+    let search_docs: Vec<&Value> = search_rows
+        .iter()
+        .filter(|row| row["content_kind"] == "documents")
+        .collect();
+    let search_screens: Vec<&Value> = search_rows
+        .iter()
+        .filter(|row| row["content_kind"] == "screen_text")
+        .collect();
+    assert_eq!(search_docs.len(), 2, "{searched}");
+    assert_eq!(search_screens.len(), 2, "{searched}");
+    assert_eq!(search_docs[0]["title"], "Theatre lease terms");
+    assert_eq!(search_docs[1]["title"], "Greenwich warrant");
+
+    // Fetching the collapsed hit still returns the entire document across all pages.
+    let fetched = probe(
+        &journal,
+        "fetch",
+        json!({"reference": search_docs[0]["reference"]}),
+    )
+    .unwrap();
+    let text = fetched["text"].as_str().unwrap();
+    assert!(
+        text.contains("## Page 1") && text.contains("## Page 4"),
+        "{fetched}"
+    );
+
+    // Paginated keyword search with limit=1 crosses the document boundary without repeating
+    // remaining chunks of the first document on page 2.
+    let page1 = probe(
+        &journal,
+        "search",
+        json!({"query": "holywellcovenant", "kind": ["documents"], "limit": 1}),
+    )
+    .unwrap();
+    assert_eq!(page1["results"].as_array().unwrap().len(), 1, "{page1}");
+    assert_eq!(page1["results"][0]["title"], "Theatre lease terms");
+    let cursor1 = page1["next_cursor"].as_str().expect("cursor to second PDF");
+    let page2 = probe(
+        &journal,
+        "search",
+        json!({"query": "holywellcovenant", "kind": ["documents"], "limit": 1, "cursor": cursor1}),
+    )
+    .unwrap();
+    assert_eq!(page2["results"].as_array().unwrap().len(), 1, "{page2}");
+    assert_eq!(page2["results"][0]["title"], "Greenwich warrant");
+    if let Some(cursor2) = page2["next_cursor"].as_str() {
+        let page3 = probe(
+            &journal,
+            "search",
+            json!({"query": "holywellcovenant", "kind": ["documents"], "limit": 1, "cursor": cursor2}),
+        )
+        .unwrap();
+        assert!(page3["results"].as_array().unwrap().is_empty(), "{page3}");
+        assert!(page3["next_cursor"].is_null(), "{page3}");
+    }
+
+    // Paginated empty-query browse with limit=1 returns each PDF once cleanly.
+    let bpage1 = probe(
+        &journal,
+        "search",
+        json!({"day": day, "kind": ["documents"], "limit": 1}),
+    )
+    .unwrap();
+    assert_eq!(bpage1["results"].as_array().unwrap().len(), 1, "{bpage1}");
+    assert_eq!(bpage1["results"][0]["title"], "Theatre lease terms");
+    let bcursor1 = bpage1["next_cursor"].as_str().expect("browse cursor");
+    let bpage2 = probe(
+        &journal,
+        "search",
+        json!({"day": day, "kind": ["documents"], "limit": 1, "cursor": bcursor1}),
+    )
+    .unwrap();
+    assert_eq!(bpage2["results"].as_array().unwrap().len(), 1, "{bpage2}");
+    assert_eq!(bpage2["results"][0]["title"], "Greenwich warrant");
+    assert!(bpage2["next_cursor"].is_null(), "{bpage2}");
+}
