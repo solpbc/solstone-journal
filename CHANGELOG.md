@@ -8,8 +8,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- when you allow an agent to read places, you can choose how much location detail to share: exact locations (the default when you turn places on), ~1 km areas, or names only. you can pick or change this level when connecting an agent, on the agents page, or with `solstone journal mcp permission set --places-precision`. agents that already have places permission stay at names only until you change them, and places you hid stay out at every level.
-- you can now import these chat and transcript exports directly: Telegram Desktop single-chat JSON and HTML exports, Slack channel JSON exports, Fireflies CSV transcripts, MacWhisper JSON transcripts, Whisper JSON and TSV transcripts, and Podcasting 2.0 JSON transcripts. other unrecognized JSON, CSV, TSV and HTML files are still refused.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -17,17 +15,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- connected agents with places permission now see up to 50 visits, stays and runs of location readings per day in weekly and date-range summaries, a list of your places with day counts, full details when reading a day's locations, and location details on listed activities, each carrying exact coordinates, ~1 km grid cells or names only according to the detail level you chose. searching places now returns one result per day.
-- an agent connected to your journal now gets updated instructions for showing your photos or imported screenshots in a page it builds for you. for grids or large sets, the instructions tell the page to load thumbnails in batches of up to 12, fetch the standard smaller copies one at a time, and run at most one or two requests at once.
-- Plaud sync now uses Plaud's official sign-in in settings or with `solstone journal importer --connect plaud`. if you used a web token before, sign in to keep syncing. disconnecting keeps the recordings already in your journal. the API keys tab is gone. the import page on android and iphone development journals no longer has a Plaud row. after signing in, use **check now** in settings → sync to look for new recordings, or turn on hourly sync.
-- shared tools and everyday names are less likely to pull activity toward the wrong facet or crowd the list of names your journal reads for each facet when telling facets apart. an entity attached to more than one active facet now appears in that list only under a facet that holds more than half of its saved notes across active facets. when thinking runs for one facet, it still reads up to 20 of that facet's attached entities, shared ones included. thanks @dvanduzer for the report (#429).
+- the import page on android and iphone development journals no longer has a Plaud row.
 
 ### Fixed
 
 - audio recordings that stopped before any sound was saved no longer show up on your health page as recordings that could not be read. audio recordings already held that way get one more check, clearing the empty ones while unreadable recordings stay on hold.
-- text and image imports now read "text" and "image" on the import page, like every other source, in the list, on an import's own page and while one is running. they could read "Text" or "Image" before.
 - an audio file you imported now reads "audio" when you delete it from the import page. it read "audio folder" before, which only fits files the old audio folder sync brought in.
-- an agent working in a tmux session you've listed in `output_sessions` is now usually named by the session, as in "the agent in qa", rather than by its window's title. thanks @dvanduzer for the retest (#424).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
@@ -65,6 +58,29 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 
 - the journal's built-in audio folder sync is gone, including its controls and scheduled sync on the android and iphone development journals. leftover audio-folder schedules are removed on startup. recordings already in your journal stay, and you can still import an audio file or an audio archive.
+
+## [2.0.89] - 2026-11-23
+
+### Added
+
+- when you allow an agent to read places, you can choose how much location detail to share: exact locations (the default when you turn places on), ~1 km areas, or names only. you can pick or change this level when connecting an agent, on the agents page, or with `solstone journal mcp permission set --places-precision`. agents that already have places permission stay at names only until you change them, and places you hid stay out at every level.
+- you can now import these chat and transcript exports directly: Telegram Desktop single-chat JSON and HTML exports, Slack channel JSON exports, Fireflies CSV transcripts, MacWhisper JSON transcripts, Whisper JSON and TSV transcripts, and Podcasting 2.0 JSON transcripts. other unrecognized JSON, CSV, TSV and HTML files are still refused.
+- when you send a file to your journal from an up-to-date solstone app, the import page now shows it under "from this device" as it travels: sending, in your journal, waiting for your review, completed, or needs attention. a file that waits for you opens a review page that shows what your journal found, lets you choose its facet and add a short note where that applies, and start it or discard the waiting copy. import history marks these "ready to review" with a link to review and start.
+
+### Changed
+
+- connected agents with places permission now see up to 50 visits, stays and stretches of location readings per day in weekly and date-range summaries, a list of your places with day counts, every entry when reading a day's locations, and location details on listed activities, each carrying exact locations, ~1 km areas or names only, as you chose. searching places now returns one result per day.
+- an agent connected to your journal now gets updated instructions for showing your photos or imported screenshots in a page it builds for you.
+- Plaud sync now uses Plaud's official sign-in, in settings → sync or with `solstone journal importer --connect plaud`. if you used a web token before, sign in to keep syncing. disconnecting keeps the recordings already in your journal. settings no longer has an API keys tab. after signing in, use **check now** in settings → sync to look for new recordings, or turn on hourly sync.
+- shared tools and everyday names are less likely to pull activity toward the wrong facet or crowd the list of names your journal reads for each facet when telling facets apart. an entity attached to more than one active facet now appears in that list only under a facet that holds more than half of its saved notes across active facets. when thinking runs for one facet, it still reads up to 20 of that facet's attached entities, shared ones included. thanks @dvanduzer for the report (#429).
+
+### Fixed
+
+- text and image imports now read "text" and "image" on the import page, like every other source, in the list, on an import's own page and while one is running. they could read "Text" or "Image" before.
+- an agent working in a tmux session you've listed in `output_sessions` is now usually named by the session, as in "the agent in qa", rather than by its window's title. thanks @dvanduzer for the retest (#424).
+- `solstone journal backup` and its offload, destination and recovery-key commands, and `solstone journal maintenance` and `maintenance run`, now say which command or ID is missing instead of printing an empty "unrecognized arguments" line. segment commands no longer put "unrecognized arguments" before that message, and `solstone journal doctor` no longer ends its caught-up line with an empty "set aside" when nothing is set aside.
+- a count of one now reads in the singular in more places: Evernote, calendar and PDF import previews and summaries, the month map's description, and several `solstone journal` commands.
+- when signing in to ChatGPT for thinking can't finish on its own, such as from a phone or a browser on another computer, the thinking page no longer says it will, and shows the box for the address your browser ends on. on a phone, that box stays above the keyboard.
 
 ## [2.0.88] - 2026-11-22
 
