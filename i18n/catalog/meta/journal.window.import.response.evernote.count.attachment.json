@@ -1,0 +1,30 @@
+{
+  "description": "Attachment count phrase in Evernote preview summaries.",
+  "context": "Attachment count phrase in Evernote preview summaries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "bc85caae8b898752dcc6691d7c7f5a81a3cef1e98701c9c0d8370cc7e3f6b81f",
+  "max_length": 222,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

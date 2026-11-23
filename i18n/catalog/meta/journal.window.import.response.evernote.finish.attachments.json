@@ -1,0 +1,30 @@
+{
+  "description": "Evernote import completion line for attachments brought in with multiple notes.",
+  "context": "Evernote import completion line for attachments brought in with multiple notes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3f9a43dd37e56936cd75998785353c8d4c17754600c346314f2398c2418342ac",
+  "max_length": 336,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

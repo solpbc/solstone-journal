@@ -611,6 +611,27 @@ impl Document {
     pub fn push_str(&mut self, value: &str) {
         self.text.push_str(value)
     }
+    /// Resume an existing stored Markdown file for appending: carry forward its
+    /// verified spans when a matching receipt is present, or preserve the prior
+    /// bytes as untagged literal text otherwise.
+    #[must_use]
+    pub fn resume_existing(root: &Path, path: &Path, existing_text: String) -> Self {
+        if let Some(retained) = directory(root, path)
+            && let Some(limit) = existing_text.len().checked_add(65536)
+            && let Some((disk_source, receipt)) = read_document(root, retained, path, limit, None)
+            && disk_source == existing_text
+            && receipt.valid(&disk_source)
+        {
+            return Self {
+                text: existing_text,
+                spans: receipt.spans,
+            };
+        }
+        Self::plain(existing_text)
+    }
+    pub fn push_document(&mut self, document: &Self) {
+        self.push_prefix(document, document.len());
+    }
     pub(crate) fn push_prefix(&mut self, document: &Self, end: usize) {
         let offset = self.text.len();
         self.text.push_str(&document.text[..end]);

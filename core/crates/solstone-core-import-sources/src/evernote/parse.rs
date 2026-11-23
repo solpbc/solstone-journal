@@ -18,7 +18,7 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 use sha2::{Digest, Sha256};
 
-use super::copy::{ENCRYPTED_LINE, MISSING_ATTACHMENT, OVERSIZED_ATTACHMENT, UNMATCHED_ATTACHMENT};
+use super::copy::ENCRYPTED_LINE;
 
 /// Evernote's cap on one resource's decoded body.
 pub const MAX_RESOURCE_BYTES: usize = 25 * 1024 * 1024;
@@ -54,6 +54,8 @@ pub struct ParsedNote {
     pub updated: Option<Timestamp>,
     /// The note as text: title is separate. This is what a later export is compared to.
     pub rendered: String,
+    /// Structured Markdown with presentation spans for writer-supplied markers.
+    pub(crate) rendered_doc: solstone_core_format::stored_markdown::Document,
     /// SHA-256 of the ENML content, lowercase hex. Collision keys use it.
     pub content_hash: String,
     pub encrypted: bool,
@@ -185,20 +187,43 @@ pub fn read_export(reader: impl BufRead) -> ReadExport {
 }
 
 fn finish_note(note: NoteBuild) -> ParsedNote {
+    use solstone_core_format::stored_markdown::{Document, imported::Copy};
+
     let content_hash = hex_sha256(note.content.as_bytes());
     let enml = render_enml(&note.content);
-    let mut rendered = String::new();
-    if !enml.body.trim().is_empty() {
-        rendered.push_str(enml.body.trim());
+    let mut doc = Document::default();
+    let trimmed = enml.body.trim();
+    if !trimmed.is_empty() {
+        let lead = enml.body.len() - enml.body.trim_start().len();
+        let trim_end = lead + trimmed.len();
+        let mut cursor = lead;
+        for start in &enml.encrypted_offsets {
+            let end = start + ENCRYPTED_LINE.len();
+            if *start >= cursor && end <= trim_end {
+                doc.push_str(&enml.body[cursor..*start].replace("\r\n", "\n"));
+                doc.push_imported(Copy::EvernoteEncrypted);
+                cursor = end;
+            }
+        }
+        doc.push_str(&enml.body[cursor..trim_end].replace("\r\n", "\n"));
     }
     if !note.tags.is_empty() {
-        push_line(&mut rendered, &format!("tags: {}", note.tags.join(", ")));
+        push_doc_break(&mut doc);
+        doc.push_imported(Copy::EvernoteTags {
+            tags: note.tags.join(", ").replace("\r\n", "\n"),
+        });
     }
     if !note.author.trim().is_empty() {
-        push_line(&mut rendered, &format!("author: {}", note.author.trim()));
+        push_doc_break(&mut doc);
+        doc.push_imported(Copy::EvernoteAuthor {
+            author: note.author.trim().replace("\r\n", "\n"),
+        });
     }
     if !note.source_url.trim().is_empty() {
-        push_line(&mut rendered, &format!("url: {}", note.source_url.trim()));
+        push_doc_break(&mut doc);
+        doc.push_imported(Copy::EvernoteUrl {
+            url: note.source_url.trim().replace("\r\n", "\n"),
+        });
     }
     for task in &note.tasks {
         let mark = if task.status.eq_ignore_ascii_case("completed") {
@@ -206,23 +231,33 @@ fn finish_note(note: NoteBuild) -> ParsedNote {
         } else {
             "- [ ] "
         };
-        let mut line = format!("{mark}{}", task.title.trim());
+        push_doc_break(&mut doc);
+        doc.push_str(mark);
+        let title = task.title.trim().replace("\r\n", "\n");
         if let Some(due) = task.due.as_deref().and_then(display_due) {
-            line.push_str(", due ");
-            line.push_str(&due);
+            doc.push_imported(Copy::EvernoteTaskDue { title, due });
+        } else {
+            doc.push_str(&title);
         }
-        push_line(&mut rendered, &line);
     }
     let (images, pdfs, attachment_lines) = resolve_resources(&note.resources, &enml.media);
     let attachment_count = images.len() + pdfs.len() + attachment_lines.len();
     for line in &attachment_lines {
-        push_line(&mut rendered, line);
+        push_doc_break(&mut doc);
+        match line {
+            AttachmentLine::FileName(name) => doc.push_str(&name.replace("\r\n", "\n")),
+            AttachmentLine::Oversized => doc.push_imported(Copy::EvernoteOversizedAttachment),
+            AttachmentLine::Unmatched => doc.push_imported(Copy::EvernoteUnmatchedAttachment),
+            AttachmentLine::Missing => doc.push_imported(Copy::EvernoteMissingAttachment),
+        }
     }
+    let rendered = doc.to_string();
     ParsedNote {
         title: note.title.trim().to_owned(),
         created: parse_stamp(&note.created),
         updated: parse_stamp(&note.updated),
         rendered,
+        rendered_doc: doc,
         content_hash,
         encrypted: enml.encrypted,
         images,
@@ -231,20 +266,26 @@ fn finish_note(note: NoteBuild) -> ParsedNote {
     }
 }
 
-fn push_line(body: &mut String, line: &str) {
-    if !body.is_empty() && !body.ends_with('\n') {
-        body.push('\n');
+fn push_doc_break(doc: &mut solstone_core_format::stored_markdown::Document) {
+    if !doc.is_empty() && !doc.ends_with('\n') {
+        doc.push_str("\n");
     }
-    if !body.is_empty() {
-        body.push('\n');
+    if !doc.is_empty() {
+        doc.push_str("\n");
     }
-    body.push_str(line);
+}
+
+enum AttachmentLine {
+    FileName(String),
+    Oversized,
+    Unmatched,
+    Missing,
 }
 
 fn resolve_resources(
     resources: &[ResourceBuild],
     media: &[MediaRef],
-) -> (Vec<HeldBytes>, Vec<HeldBytes>, Vec<String>) {
+) -> (Vec<HeldBytes>, Vec<HeldBytes>, Vec<AttachmentLine>) {
     let mut images = Vec::new();
     let mut pdfs = Vec::new();
     let mut lines = Vec::new();
@@ -292,17 +333,17 @@ fn resolve_resources(
                         .file_name
                         .clone()
                         .unwrap_or_else(|| resource.mime.clone());
-                    lines.push(name);
+                    lines.push(AttachmentLine::FileName(name));
                 }
             }
             continue;
         }
         if resources.iter().any(|resource| resource.too_large) {
-            lines.push(OVERSIZED_ATTACHMENT.to_owned());
+            lines.push(AttachmentLine::Oversized);
         } else if resources.iter().any(|resource| !resource.md5.is_empty()) {
-            lines.push(UNMATCHED_ATTACHMENT.to_owned());
+            lines.push(AttachmentLine::Unmatched);
         } else {
-            lines.push(MISSING_ATTACHMENT.to_owned());
+            lines.push(AttachmentLine::Missing);
         }
     }
     for resource in resources {
@@ -315,7 +356,7 @@ fn resolve_resources(
                 .clone()
                 .unwrap_or_else(|| resource.mime.clone());
             if !name.is_empty() {
-                lines.push(name);
+                lines.push(AttachmentLine::FileName(name));
             }
         }
     }
@@ -353,6 +394,7 @@ struct Enml {
     body: String,
     media: Vec<MediaRef>,
     encrypted: bool,
+    encrypted_offsets: Vec<usize>,
 }
 
 struct MediaRef {
@@ -366,6 +408,7 @@ fn render_enml(content: &str) -> Enml {
     let mut out = String::new();
     let mut media = Vec::new();
     let mut encrypted = false;
+    let mut encrypted_offsets = Vec::new();
     let mut skip: u32 = 0;
     let mut pending_check: Option<bool> = None;
     let mut link: Option<String> = None;
@@ -394,6 +437,7 @@ fn render_enml(content: &str) -> Enml {
                     if name == "en-crypt" {
                         encrypted = true;
                         push_inline(&mut out, ENCRYPTED_LINE);
+                        encrypted_offsets.push(out.len() - ENCRYPTED_LINE.len());
                         out.push('\n');
                     }
                     skip = 1;
@@ -439,6 +483,7 @@ fn render_enml(content: &str) -> Enml {
                 } else if name == "en-crypt" {
                     encrypted = true;
                     push_inline(&mut out, ENCRYPTED_LINE);
+                    encrypted_offsets.push(out.len() - ENCRYPTED_LINE.len());
                     out.push('\n');
                 } else if name == "br" {
                     out.push('\n');
@@ -507,6 +552,7 @@ fn render_enml(content: &str) -> Enml {
         body: out,
         media,
         encrypted,
+        encrypted_offsets,
     }
 }
 

@@ -1,0 +1,30 @@
+{
+  "description": "Evernote import completion line for attachments brought in with a single new note.",
+  "context": "Evernote import completion line for attachments brought in with a single new note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ea7773f315161aa751ee403021882552e4e3a1a4ec0fb7cd54afcdda0cd87152",
+  "max_length": 324,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Placeholder line written in an imported Evernote note for an attachment exceeding 25 MB.",
+  "context": "Placeholder line written in an imported Evernote note for an attachment exceeding 25 MB.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "286e9bb3b3356cbe74ff24dbf702532c001250456e081658f43543b753fa10fc",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

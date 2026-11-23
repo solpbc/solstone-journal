@@ -364,6 +364,25 @@ pub enum Copy<T = String> {
     EventWith {
         names: T,
     },
+
+    // --- Evernote note transcript ---
+    EvernoteEncrypted,
+    EvernoteMissingAttachment,
+    EvernoteUnmatchedAttachment,
+    EvernoteOversizedAttachment,
+    EvernoteTags {
+        tags: T,
+    },
+    EvernoteAuthor {
+        author: T,
+    },
+    EvernoteUrl {
+        url: T,
+    },
+    EvernoteTaskDue {
+        title: T,
+        due: T,
+    },
 }
 
 impl<T> Copy<T> {
@@ -443,6 +462,17 @@ impl<T> Copy<T> {
                 location: f(location)?,
             },
             Self::EventWith { names } => Copy::EventWith { names: f(names)? },
+            Self::EvernoteEncrypted => Copy::EvernoteEncrypted,
+            Self::EvernoteMissingAttachment => Copy::EvernoteMissingAttachment,
+            Self::EvernoteUnmatchedAttachment => Copy::EvernoteUnmatchedAttachment,
+            Self::EvernoteOversizedAttachment => Copy::EvernoteOversizedAttachment,
+            Self::EvernoteTags { tags } => Copy::EvernoteTags { tags: f(tags)? },
+            Self::EvernoteAuthor { author } => Copy::EvernoteAuthor { author: f(author)? },
+            Self::EvernoteUrl { url } => Copy::EvernoteUrl { url: f(url)? },
+            Self::EvernoteTaskDue { title, due } => Copy::EvernoteTaskDue {
+                title: f(title)?,
+                due: f(due)?,
+            },
         })
     }
 }
@@ -678,6 +708,36 @@ impl Copy {
                 locale,
                 "journal.window.stored.event.with",
                 [("names", names)],
+            ),
+            Self::EvernoteEncrypted => text(locale, "journal.window.stored.evernote.encrypted"),
+            Self::EvernoteMissingAttachment => {
+                text(locale, "journal.window.stored.evernote.attachment.missing")
+            }
+            Self::EvernoteUnmatchedAttachment => text(
+                locale,
+                "journal.window.stored.evernote.attachment.unmatched",
+            ),
+            Self::EvernoteOversizedAttachment => text(
+                locale,
+                "journal.window.stored.evernote.attachment.oversized",
+            ),
+            Self::EvernoteTags { tags } => strings(
+                locale,
+                "journal.window.stored.evernote.tags",
+                [("tags", tags)],
+            ),
+            Self::EvernoteAuthor { author } => strings(
+                locale,
+                "journal.window.stored.evernote.author",
+                [("author", author)],
+            ),
+            Self::EvernoteUrl { url } => {
+                strings(locale, "journal.window.stored.evernote.url", [("url", url)])
+            }
+            Self::EvernoteTaskDue { title, due } => strings(
+                locale,
+                "journal.window.stored.evernote.task.due",
+                [("title", title), ("due", due)],
             ),
         }
     }

@@ -1,0 +1,16 @@
+{
+  "description": "Fallback item title for imported Evernote note rows in the Import browse list.",
+  "context": "Fallback item title for imported Evernote note rows in the Import browse list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e3fe627c6fb415de9c6e06ae2eb2a4fa499ec07a4a1b7c85eab87255feaa2cbf",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

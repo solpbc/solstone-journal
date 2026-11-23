@@ -1,0 +1,25 @@
+{
+  "description": "Evernote import completion line combining newly imported and updated notes.",
+  "context": "Evernote import completion line combining newly imported and updated notes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "new_part",
+      "type": "string"
+    },
+    {
+      "name": "changed_part",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a88f2f0b8e2aeff9a6a4edccf92aea6105f3de1164d526f157124217ef4d917f",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -171,7 +171,7 @@ fn a_note_lands_once_and_a_later_export_of_a_deleted_note_returns() {
             .join("finish.txt"),
     )
     .unwrap();
-    assert!(finish.contains("brought in 1 notes."), "{finish}");
+    assert!(finish.contains("brought in 1 note."), "{finish}");
     let saved = manifests(root.path());
     assert_eq!(saved.len(), 1);
     assert_eq!(saved[0]["source_type"], "evernote");

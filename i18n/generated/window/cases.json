@@ -137335,6 +137335,36 @@
     {
       "bundle": "journal-window",
       "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.content.fallback.note\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e6e6f7465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e6e6f7465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.content.fallback.note",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e6e6f7465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Note",
+      "message_id": "journal.window.import.content.fallback.note",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.content.fallback.note\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e6e6f7465",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
         "arguments": [
           {
             "name": "month",
@@ -151681,55 +151711,43 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "notes",
+            "name": "count",
             "type": "string",
             "value": "sample"
           },
           {
-            "name": "first",
-            "type": "string",
-            "value": "sample"
-          },
-          {
-            "name": "last",
-            "type": "string",
-            "value": "sample"
-          },
-          {
-            "name": "attachments",
-            "type": "string",
-            "value": "sample"
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.import.response.evernote.counts.dated\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e6461746564",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e6461746564_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.import.response.evernote.count.attachment\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6174746163686d656e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6174746163686d656e74_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.import.response.evernote.counts.dated",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e6461746564",
-        "signed_quantity": null
+        "message_id": "journal.window.import.response.evernote.count.attachment",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6174746163686d656e74",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
       "expected": null,
       "folder": null,
       "inputs": {
-        "attachments": "sample",
-        "first": "sample",
-        "last": "sample",
-        "notes": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ notes, from ⁨sample⁩ to ⁨sample⁩. ⁨sample⁩ attachments.",
-      "message_id": "journal.window.import.response.evernote.counts.dated",
+      "logical_expected": "⁨sample⁩ attachments",
+      "message_id": "journal.window.import.response.evernote.count.attachment",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.counts.dated\", [[\"attachments\", \"sample\"], [\"first\", \"sample\"], [\"last\", \"sample\"], [\"notes\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.count.attachment\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e6461746564",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6174746163686d656e74",
       "target": "classic"
     },
     {
@@ -151740,78 +151758,40 @@
             "name": "count",
             "type": "string",
             "value": "sample"
-          }
-        ],
-        "bundle": "journal-window",
-        "entry": "render(locale, dotted_id, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.import.response.evernote.counts.encrypted\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e656e63727970746564",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e656e63727970746564_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.import.response.evernote.counts.encrypted",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e656e63727970746564",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "native-reader-required",
-      "expected": null,
-      "folder": null,
-      "inputs": {
-        "count": "sample"
-      },
-      "locale": "en-US",
-      "logical_expected": "⁨sample⁩ notes have an encrypted part that will be left out.",
-      "message_id": "journal.window.import.response.evernote.counts.encrypted",
-      "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.counts.encrypted\", [[\"count\", \"sample\"]])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e656e63727970746564",
-      "target": "classic"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [
-          {
-            "name": "notes",
-            "type": "string",
-            "value": "sample"
           },
           {
-            "name": "attachments",
-            "type": "string",
-            "value": "sample"
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.import.response.evernote.counts.undated\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e756e6461746564",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e756e6461746564_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.import.response.evernote.count.note\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6e6f7465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6e6f7465_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.import.response.evernote.counts.undated",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e756e6461746564",
-        "signed_quantity": null
+        "message_id": "journal.window.import.response.evernote.count.note",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6e6f7465",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
       "expected": null,
       "folder": null,
       "inputs": {
-        "attachments": "sample",
-        "notes": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ notes. ⁨sample⁩ attachments.",
-      "message_id": "journal.window.import.response.evernote.counts.undated",
+      "logical_expected": "⁨sample⁩ notes",
+      "message_id": "journal.window.import.response.evernote.count.note",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.counts.undated\", [[\"attachments\", \"sample\"], [\"notes\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.count.note\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e756e6461746564",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6e6f7465",
       "target": "classic"
     },
     {
@@ -151882,6 +151862,388 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.already.in.journal\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e616c72656164792e696e2e6a6f75726e616c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e616c72656164792e696e2e6a6f75726e616c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.already.in.journal",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e616c72656164792e696e2e6a6f75726e616c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "these notes are already in your journal.",
+      "message_id": "journal.window.import.response.evernote.finish.already.in.journal",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.already.in.journal\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e616c72656164792e696e2e6a6f75726e616c",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.attachments\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e7473_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.attachments",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e7473",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ attachments came in with them.",
+      "message_id": "journal.window.import.response.evernote.finish.attachments",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.attachments\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e7473",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.attachments.single.note\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e74732e73696e676c652e6e6f7465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e74732e73696e676c652e6e6f7465_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.attachments.single.note",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e74732e73696e676c652e6e6f7465",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ attachments came in with it.",
+      "message_id": "journal.window.import.response.evernote.finish.attachments.single.note",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.attachments.single.note\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e74732e73696e676c652e6e6f7465",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.brought.in\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.brought.in",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "brought in ⁨sample⁩ notes.",
+      "message_id": "journal.window.import.response.evernote.finish.brought.in",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.brought.in\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "new_part",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "changed_part",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.brought.in.both\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e626f7468",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e626f7468_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.brought.in.both",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e626f7468",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "changed_part": "sample",
+        "new_part": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ ⁨sample⁩",
+      "message_id": "journal.window.import.response.evernote.finish.brought.in.both",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.brought.in.both\", [[\"changed_part\", \"sample\"], [\"new_part\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e626f7468",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.brought.in.changed\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e6368616e676564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e6368616e676564_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.brought.in.changed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e6368616e676564",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "brought in changes to ⁨sample⁩ notes that were already here.",
+      "message_id": "journal.window.import.response.evernote.finish.brought.in.changed",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.brought.in.changed\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e6368616e676564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.dated.after.today\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e64617465642e61667465722e746f646179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e64617465642e61667465722e746f646179_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.dated.after.today",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e64617465642e61667465722e746f646179",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ notes are dated after today and were left out.",
+      "message_id": "journal.window.import.response.evernote.finish.dated.after.today",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.dated.after.today\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e64617465642e61667465722e746f646179",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.ended.early\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e656e6465642e6561726c79",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e656e6465642e6561726c79_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.ended.early",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e656e6465642e6561726c79",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "this export ended early. ⁨sample⁩ notes came in.",
+      "message_id": "journal.window.import.response.evernote.finish.ended.early",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.ended.early\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e656e6465642e6561726c79",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.no.date\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6e6f2e64617465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6e6f2e64617465_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.no.date",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6e6f2e64617465",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ notes have no date and were left out.",
+      "message_id": "journal.window.import.response.evernote.finish.no.date",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.no.date\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6e6f2e64617465",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.import.response.evernote.notebook\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e6e6f7465626f6f6b",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e6e6f7465626f6f6b_plural",
         "gettext_unsigned_quantity": null,
@@ -151902,6 +152264,150 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.notebook\", [])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e6e6f7465626f6f6b",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "notes",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "first",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "last",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "attachments",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.preview.dated\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e6461746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e6461746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.preview.dated",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e6461746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "attachments": "sample",
+        "first": "sample",
+        "last": "sample",
+        "notes": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩, from ⁨sample⁩ to ⁨sample⁩. ⁨sample⁩.",
+      "message_id": "journal.window.import.response.evernote.preview.dated",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.preview.dated\", [[\"attachments\", \"sample\"], [\"first\", \"sample\"], [\"last\", \"sample\"], [\"notes\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e6461746564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.preview.encrypted\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e656e63727970746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e656e63727970746564_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.preview.encrypted",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e656e63727970746564",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ notes have an encrypted part that will be left out.",
+      "message_id": "journal.window.import.response.evernote.preview.encrypted",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.preview.encrypted\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e656e63727970746564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "notes",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "attachments",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.preview.undated\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e756e6461746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e756e6461746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.preview.undated",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e756e6461746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "attachments": "sample",
+        "notes": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩. ⁨sample⁩.",
+      "message_id": "journal.window.import.response.evernote.preview.undated",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.preview.undated\", [[\"attachments\", \"sample\"], [\"notes\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e756e6461746564",
       "target": "classic"
     },
     {
@@ -262166,6 +262672,284 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.stored.event.with\", [[\"names\", \"sample\"]])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e6576656e742e77697468",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.attachment.missing\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.attachment.missing",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "an attachment is missing from this export.",
+      "message_id": "journal.window.stored.evernote.attachment.missing",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.attachment.missing\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6d697373696e67",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.attachment.oversized\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6f76657273697a6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6f76657273697a6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.attachment.oversized",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6f76657273697a6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "an attachment is over 25 MB, so it was left out.",
+      "message_id": "journal.window.stored.evernote.attachment.oversized",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.attachment.oversized\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6f76657273697a6564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.attachment.unmatched\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e756e6d617463686564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e756e6d617463686564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.attachment.unmatched",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e756e6d617463686564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "an attachment didn't match this note, so it was left out.",
+      "message_id": "journal.window.stored.evernote.attachment.unmatched",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.attachment.unmatched\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e756e6d617463686564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "author",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.author\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e617574686f72",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e617574686f72_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.author",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e617574686f72",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "author": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "author: ⁨sample⁩",
+      "message_id": "journal.window.stored.evernote.author",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.author\", [[\"author\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e617574686f72",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.encrypted\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e656e63727970746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e656e63727970746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.encrypted",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e656e63727970746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "a part of this note is encrypted in Evernote. it wasn't brought in.",
+      "message_id": "journal.window.stored.evernote.encrypted",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.encrypted\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e656e63727970746564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "tags",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.tags\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e74616773",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e74616773_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.tags",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e74616773",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "tags": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "tags: ⁨sample⁩",
+      "message_id": "journal.window.stored.evernote.tags",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.tags\", [[\"tags\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e74616773",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "title",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "due",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.task.due\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e7461736b2e647565",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e7461736b2e647565_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.task.due",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e7461736b2e647565",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "due": "sample",
+        "title": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩, due ⁨sample⁩",
+      "message_id": "journal.window.stored.evernote.task.due",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.task.due\", [[\"due\", \"sample\"], [\"title\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e7461736b2e647565",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "url",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.url\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e75726c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e75726c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.url",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e75726c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "url": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "url: ⁨sample⁩",
+      "message_id": "journal.window.stored.evernote.url",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.url\", [[\"url\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e75726c",
       "target": "classic"
     },
     {
@@ -447735,6 +448519,36 @@
     {
       "bundle": "journal-window",
       "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.content.fallback.note\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e6e6f7465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e6e6f7465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.content.fallback.note",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e6e6f7465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Note",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Note",
+      "message_id": "journal.window.import.content.fallback.note",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.content.fallback.note\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e6e6f7465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
         "arguments": [
           {
             "name": "month",
@@ -462081,55 +462895,43 @@
       "call_contract": {
         "arguments": [
           {
-            "name": "notes",
+            "name": "count",
             "type": "string",
             "value": "sample"
           },
           {
-            "name": "first",
-            "type": "string",
-            "value": "sample"
-          },
-          {
-            "name": "last",
-            "type": "string",
-            "value": "sample"
-          },
-          {
-            "name": "attachments",
-            "type": "string",
-            "value": "sample"
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.import.response.evernote.counts.dated\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e6461746564",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e6461746564_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.import.response.evernote.count.attachment\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6174746163686d656e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6174746163686d656e74_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.import.response.evernote.counts.dated",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e6461746564",
-        "signed_quantity": null
+        "message_id": "journal.window.import.response.evernote.count.attachment",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6174746163686d656e74",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ notes, from ⁨sample⁩ to ⁨sample⁩. ⁨sample⁩ attachments.",
+      "expected": "⁨sample⁩ attachments",
       "folder": null,
       "inputs": {
-        "attachments": "sample",
-        "first": "sample",
-        "last": "sample",
-        "notes": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ notes, from ⁨sample⁩ to ⁨sample⁩. ⁨sample⁩ attachments.",
-      "message_id": "journal.window.import.response.evernote.counts.dated",
+      "logical_expected": "⁨sample⁩ attachments",
+      "message_id": "journal.window.import.response.evernote.count.attachment",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.counts.dated\", &[(\"attachments\", Value::String(\"sample\")), (\"first\", Value::String(\"sample\")), (\"last\", Value::String(\"sample\")), (\"notes\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.count.attachment\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e6461746564",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6174746163686d656e74",
       "target": "rust"
     },
     {
@@ -462140,78 +462942,40 @@
             "name": "count",
             "type": "string",
             "value": "sample"
-          }
-        ],
-        "bundle": "journal-window",
-        "entry": "render(locale, MessageId, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.import.response.evernote.counts.encrypted\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e656e63727970746564",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e656e63727970746564_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.import.response.evernote.counts.encrypted",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e656e63727970746564",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ notes have an encrypted part that will be left out.",
-      "folder": null,
-      "inputs": {
-        "count": "sample"
-      },
-      "locale": "en-US",
-      "logical_expected": "⁨sample⁩ notes have an encrypted part that will be left out.",
-      "message_id": "journal.window.import.response.evernote.counts.encrypted",
-      "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.counts.encrypted\", &[(\"count\", Value::String(\"sample\"))])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e656e63727970746564",
-      "target": "rust"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [
-          {
-            "name": "notes",
-            "type": "string",
-            "value": "sample"
           },
           {
-            "name": "attachments",
-            "type": "string",
-            "value": "sample"
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.import.response.evernote.counts.undated\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e756e6461746564",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e756e6461746564_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.import.response.evernote.count.note\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6e6f7465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6e6f7465_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.import.response.evernote.counts.undated",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e756e6461746564",
-        "signed_quantity": null
+        "message_id": "journal.window.import.response.evernote.count.note",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6e6f7465",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ notes. ⁨sample⁩ attachments.",
+      "expected": "⁨sample⁩ notes",
       "folder": null,
       "inputs": {
-        "attachments": "sample",
-        "notes": "sample"
+        "count": "sample",
+        "quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ notes. ⁨sample⁩ attachments.",
-      "message_id": "journal.window.import.response.evernote.counts.undated",
+      "logical_expected": "⁨sample⁩ notes",
+      "message_id": "journal.window.import.response.evernote.count.note",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.counts.undated\", &[(\"attachments\", Value::String(\"sample\")), (\"notes\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.count.note\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e74732e756e6461746564",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e636f756e742e6e6f7465",
       "target": "rust"
     },
     {
@@ -462282,6 +463046,388 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.already.in.journal\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e616c72656164792e696e2e6a6f75726e616c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e616c72656164792e696e2e6a6f75726e616c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.already.in.journal",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e616c72656164792e696e2e6a6f75726e616c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "these notes are already in your journal.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "these notes are already in your journal.",
+      "message_id": "journal.window.import.response.evernote.finish.already.in.journal",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.already.in.journal\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e616c72656164792e696e2e6a6f75726e616c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.attachments\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e7473_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.attachments",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e7473",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ attachments came in with them.",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ attachments came in with them.",
+      "message_id": "journal.window.import.response.evernote.finish.attachments",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.attachments\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e7473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.attachments.single.note\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e74732e73696e676c652e6e6f7465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e74732e73696e676c652e6e6f7465_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.attachments.single.note",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e74732e73696e676c652e6e6f7465",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ attachments came in with it.",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ attachments came in with it.",
+      "message_id": "journal.window.import.response.evernote.finish.attachments.single.note",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.attachments.single.note\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6174746163686d656e74732e73696e676c652e6e6f7465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.brought.in\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.brought.in",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "brought in ⁨sample⁩ notes.",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "brought in ⁨sample⁩ notes.",
+      "message_id": "journal.window.import.response.evernote.finish.brought.in",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.brought.in\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "new_part",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "changed_part",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.brought.in.both\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e626f7468",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e626f7468_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.brought.in.both",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e626f7468",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "changed_part": "sample",
+        "new_part": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ ⁨sample⁩",
+      "message_id": "journal.window.import.response.evernote.finish.brought.in.both",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.brought.in.both\", &[(\"changed_part\", Value::String(\"sample\")), (\"new_part\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e626f7468",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.brought.in.changed\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e6368616e676564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e6368616e676564_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.brought.in.changed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e6368616e676564",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "brought in changes to ⁨sample⁩ notes that were already here.",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "brought in changes to ⁨sample⁩ notes that were already here.",
+      "message_id": "journal.window.import.response.evernote.finish.brought.in.changed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.brought.in.changed\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e62726f756768742e696e2e6368616e676564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.dated.after.today\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e64617465642e61667465722e746f646179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e64617465642e61667465722e746f646179_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.dated.after.today",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e64617465642e61667465722e746f646179",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ notes are dated after today and were left out.",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ notes are dated after today and were left out.",
+      "message_id": "journal.window.import.response.evernote.finish.dated.after.today",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.dated.after.today\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e64617465642e61667465722e746f646179",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.ended.early\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e656e6465642e6561726c79",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e656e6465642e6561726c79_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.ended.early",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e656e6465642e6561726c79",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "this export ended early. ⁨sample⁩ notes came in.",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "this export ended early. ⁨sample⁩ notes came in.",
+      "message_id": "journal.window.import.response.evernote.finish.ended.early",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.ended.early\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e656e6465642e6561726c79",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.finish.no.date\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6e6f2e64617465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6e6f2e64617465_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.finish.no.date",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6e6f2e64617465",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ notes have no date and were left out.",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ notes have no date and were left out.",
+      "message_id": "journal.window.import.response.evernote.finish.no.date",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.finish.no.date\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e66696e6973682e6e6f2e64617465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.import.response.evernote.notebook\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e6e6f7465626f6f6b",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e6e6f7465626f6f6b_plural",
         "gettext_unsigned_quantity": null,
@@ -462302,6 +463448,150 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.notebook\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e6e6f7465626f6f6b",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "notes",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "first",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "last",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "attachments",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.preview.dated\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e6461746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e6461746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.preview.dated",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e6461746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩, from ⁨sample⁩ to ⁨sample⁩. ⁨sample⁩.",
+      "folder": null,
+      "inputs": {
+        "attachments": "sample",
+        "first": "sample",
+        "last": "sample",
+        "notes": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩, from ⁨sample⁩ to ⁨sample⁩. ⁨sample⁩.",
+      "message_id": "journal.window.import.response.evernote.preview.dated",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.preview.dated\", &[(\"attachments\", Value::String(\"sample\")), (\"first\", Value::String(\"sample\")), (\"last\", Value::String(\"sample\")), (\"notes\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e6461746564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.preview.encrypted\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e656e63727970746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e656e63727970746564_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.preview.encrypted",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e656e63727970746564",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ notes have an encrypted part that will be left out.",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ notes have an encrypted part that will be left out.",
+      "message_id": "journal.window.import.response.evernote.preview.encrypted",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.preview.encrypted\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e656e63727970746564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "notes",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "attachments",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.response.evernote.preview.undated\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e756e6461746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e756e6461746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.response.evernote.preview.undated",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e756e6461746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩. ⁨sample⁩.",
+      "folder": null,
+      "inputs": {
+        "attachments": "sample",
+        "notes": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩. ⁨sample⁩.",
+      "message_id": "journal.window.import.response.evernote.preview.undated",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.response.evernote.preview.undated\", &[(\"attachments\", Value::String(\"sample\")), (\"notes\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e657665726e6f74652e707265766965772e756e6461746564",
       "target": "rust"
     },
     {
@@ -572566,6 +573856,284 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.stored.event.with\", &[(\"names\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e6576656e742e77697468",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.attachment.missing\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.attachment.missing",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "an attachment is missing from this export.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "an attachment is missing from this export.",
+      "message_id": "journal.window.stored.evernote.attachment.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.attachment.missing\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.attachment.oversized\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6f76657273697a6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6f76657273697a6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.attachment.oversized",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6f76657273697a6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "an attachment is over 25 MB, so it was left out.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "an attachment is over 25 MB, so it was left out.",
+      "message_id": "journal.window.stored.evernote.attachment.oversized",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.attachment.oversized\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e6f76657273697a6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.attachment.unmatched\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e756e6d617463686564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e756e6d617463686564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.attachment.unmatched",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e756e6d617463686564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "an attachment didn't match this note, so it was left out.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "an attachment didn't match this note, so it was left out.",
+      "message_id": "journal.window.stored.evernote.attachment.unmatched",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.attachment.unmatched\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e6174746163686d656e742e756e6d617463686564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "author",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.author\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e617574686f72",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e617574686f72_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.author",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e617574686f72",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "author: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "author": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "author: ⁨sample⁩",
+      "message_id": "journal.window.stored.evernote.author",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.author\", &[(\"author\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e617574686f72",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.encrypted\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e656e63727970746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e656e63727970746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.encrypted",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e656e63727970746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "a part of this note is encrypted in Evernote. it wasn't brought in.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "a part of this note is encrypted in Evernote. it wasn't brought in.",
+      "message_id": "journal.window.stored.evernote.encrypted",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.encrypted\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e656e63727970746564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "tags",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.tags\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e74616773",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e74616773_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.tags",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e74616773",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "tags: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "tags": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "tags: ⁨sample⁩",
+      "message_id": "journal.window.stored.evernote.tags",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.tags\", &[(\"tags\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e74616773",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "title",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "due",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.task.due\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e7461736b2e647565",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e7461736b2e647565_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.task.due",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e7461736b2e647565",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩, due ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "due": "sample",
+        "title": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩, due ⁨sample⁩",
+      "message_id": "journal.window.stored.evernote.task.due",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.task.due\", &[(\"due\", Value::String(\"sample\")), (\"title\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e7461736b2e647565",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "url",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.stored.evernote.url\u0004m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e75726c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e75726c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.stored.evernote.url",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e75726c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "url: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "url": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "url: ⁨sample⁩",
+      "message_id": "journal.window.stored.evernote.url",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.stored.evernote.url\", &[(\"url\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73746f7265642e657665726e6f74652e75726c",
       "target": "rust"
     },
     {

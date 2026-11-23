@@ -1,0 +1,30 @@
+{
+  "description": "Evernote import completion line when the export file ended early.",
+  "context": "Evernote import completion line when the export file ended early.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "681d75cc94de043b3c225234ffaefd7ab6848086ad1bd215286423b1089f1509",
+  "max_length": 390,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Task line with due date in an imported Evernote note transcript.",
+  "context": "Task line with due date in an imported Evernote note transcript.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "title",
+      "type": "string"
+    },
+    {
+      "name": "due",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "21a40617b198e35f663b67d269842a3641e34092a8488768def0af5e5ff1d99f",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

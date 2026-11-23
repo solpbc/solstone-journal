@@ -1,0 +1,25 @@
+{
+  "description": "Undated Evernote export preview count summary with singular/plural notes and attachments.",
+  "context": "Undated Evernote export preview count summary with singular/plural notes and attachments.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "notes",
+      "type": "string"
+    },
+    {
+      "name": "attachments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f973f10e37b8e4682875a27c3995f98a4adfe520796a74ac5659dd7616484be3",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -19,7 +19,7 @@ use serde_json::{Map, Value, json};
 use axum::Extension;
 use solstone_core_convey_http::{
     coalesce::ResponseLocale,
-    window_catalog::{response_locale, text},
+    window_catalog::{ENGLISH, response_locale, text},
 };
 
 use crate::{
@@ -240,7 +240,16 @@ fn duration_minutes(files: &Value) -> Option<i64> {
     (duration > 0).then_some(duration)
 }
 
+#[cfg(test)]
 pub(crate) fn load_import_info(root: &Path, timestamp: &str) -> Result<ImportInfo, std::io::Error> {
+    load_import_info_for_locale(root, timestamp, ENGLISH)
+}
+
+pub(crate) fn load_import_info_for_locale(
+    root: &Path,
+    timestamp: &str,
+    locale: &str,
+) -> Result<ImportInfo, std::io::Error> {
     let directory = root.join("imports").join(timestamp);
     let created_at = ctime(&directory)?;
     let mut values = Map::new();
@@ -337,8 +346,23 @@ pub(crate) fn load_import_info(root: &Path, timestamp: &str) -> Result<ImportInf
             .as_ref()
             .map_or(Value::Null, |stage| json!(stage)),
     );
-    if let Ok(finish) = std::fs::read_to_string(directory.join("finish.txt")) {
-        let finish = finish.trim();
+    if let Ok(finish_raw) = std::fs::read_to_string(directory.join("finish.txt")) {
+        let projected = if locale != ENGLISH {
+            std::fs::read(
+                directory.join(solstone_core_import_sources::evernote::copy::FINISH_DISPLAY_FILE),
+            )
+            .ok()
+            .and_then(|bytes| {
+                solstone_core_import_sources::evernote::copy::FinishDisplay::project_bytes(
+                    locale,
+                    &finish_raw,
+                    &bytes,
+                )
+            })
+        } else {
+            None
+        };
+        let finish = projected.as_deref().unwrap_or(&finish_raw).trim();
         if !finish.is_empty() {
             values.insert("finish".into(), json!(finish));
         }
@@ -468,7 +492,7 @@ pub(crate) async fn list(
         if timestamp.len() != 15 || timestamp.matches('_').count() != 1 || !entry.path().is_dir() {
             continue;
         }
-        let Ok(mut info) = load_import_info(&state.root, &timestamp) else {
+        let Ok(mut info) = load_import_info_for_locale(&state.root, &timestamp, locale) else {
             continue;
         };
         // Keep the selected-source row for reference recovery, and show its
@@ -673,7 +697,7 @@ pub(crate) async fn detail(
 }
 
 fn detail_sync(state: AppState, timestamp: String, locale: &str) -> Response {
-    let Ok(info) = load_import_info(&state.root, &timestamp) else {
+    let Ok(info) = load_import_info_for_locale(&state.root, &timestamp, locale) else {
         return import_not_found("Import not found");
     };
     let directory = state.root.join("imports").join(&timestamp);
@@ -1455,6 +1479,50 @@ mod tests {
                 "negative twin {neg} must omit needs_review: {:?}",
                 row_for(neg)
             );
+        }
+    }
+
+    #[test]
+    fn evernote_finish_display_projects_verified_receipt_and_rejects_tamper() {
+        use solstone_core_import_sources::evernote::copy::{
+            FINISH_DISPLAY_FILE, FinishCounts, FinishDisplay,
+        };
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let id = "20261123_120000";
+        let dir = root.join("imports").join(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        let counts = FinishCounts {
+            new_count: 1,
+            changed: 0,
+            attachments: 1,
+            future: 0,
+            undated: 0,
+            ended_early: false,
+            matched: 0,
+        };
+        let english = counts.render(ENGLISH);
+        std::fs::write(dir.join("finish.txt"), &english).unwrap();
+        let display = FinishDisplay::new(counts, &english);
+        std::fs::write(
+            dir.join(FINISH_DISPLAY_FILE),
+            serde_json::to_vec(&display).unwrap(),
+        )
+        .unwrap();
+
+        let en_info = load_import_info_for_locale(root, id, ENGLISH).unwrap();
+        assert_eq!(en_info.values["finish"], english);
+
+        let locale = solstone_core_convey_http::window_catalog::packaged_locale(Some("en-XA"));
+        let loc_info = load_import_info_for_locale(root, id, locale).unwrap();
+        if locale == ENGLISH {
+            assert_eq!(loc_info.values["finish"], english);
+        } else {
+            assert_ne!(loc_info.values["finish"], english);
+            std::fs::write(dir.join("finish.txt"), format!("{english}\ntampered")).unwrap();
+            let tampered = load_import_info_for_locale(root, id, locale).unwrap();
+            assert_eq!(tampered.values["finish"], format!("{english}\ntampered"));
         }
     }
 }

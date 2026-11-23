@@ -1,0 +1,16 @@
+{
+  "description": "Placeholder line written in an imported Evernote note for a missing attachment.",
+  "context": "Placeholder line written in an imported Evernote note for a missing attachment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4fcd5a69f6aed55d0391bf7d1efa12401bc154d214f6d4a3791e171025ad0d5f",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

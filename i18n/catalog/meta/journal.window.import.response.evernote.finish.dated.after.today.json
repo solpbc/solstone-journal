@@ -1,0 +1,30 @@
+{
+  "description": "Evernote import completion line for future-dated notes left out.",
+  "context": "Evernote import completion line for future-dated notes left out.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2049b7ec3bb45f9d7fc924c1fbf1ee002284a307b4ab1a3908db96661f96e724",
+  "max_length": 426,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

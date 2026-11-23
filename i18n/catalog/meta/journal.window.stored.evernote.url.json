@@ -1,0 +1,21 @@
+{
+  "description": "Source URL metadata line in an imported Evernote note transcript.",
+  "context": "Source URL metadata line in an imported Evernote note transcript.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "url",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fea8b3f54bf468b3a6230f9efbb0ec6a0cbf38c111c10c07d6f9ec081efce8ea",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

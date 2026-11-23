@@ -1,0 +1,16 @@
+{
+  "description": "Placeholder line written in an imported Evernote note where encrypted ENML content was omitted.",
+  "context": "Placeholder line written in an imported Evernote note where encrypted ENML content was omitted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "36c674e22f80d75a70c936a99540e54f1b1d0f900c86b96880e249c36c53cc93",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

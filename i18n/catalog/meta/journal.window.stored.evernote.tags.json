@@ -1,0 +1,21 @@
+{
+  "description": "Tags metadata line in an imported Evernote note transcript.",
+  "context": "Tags metadata line in an imported Evernote note transcript.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "tags",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3241ac45d1d19126756a4627d4eb1b257ac0a2584224e5cab3aa0df8edb3b600",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Evernote import completion line for updated existing notes.",
+  "context": "Evernote import completion line for updated existing notes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "84c73faa3d5da6e0e05d6733b0c4bb259520c32a20b75a9dae33af9668eee1ca",
+  "max_length": 459,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

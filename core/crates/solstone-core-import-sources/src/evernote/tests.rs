@@ -716,3 +716,107 @@ fn notes_six_minutes_apart_open_two_transcripts() {
     assert_eq!(planned.files[0].segment, "120000_300");
     assert_eq!(planned.files[1].segment, "120600_300");
 }
+
+#[test]
+fn evernote_notes_emit_receipts_and_carry_them_forward_on_append() {
+    let root = journal();
+    let first_export = write_export(
+        root.path(),
+        "first.enex",
+        &export(&note(
+            "Morning",
+            "20200101T120000Z",
+            "20200101T120000Z",
+            "<div>hello</div><en-crypt>SECRET</en-crypt>",
+        )),
+    );
+    let planned = plan_at(root.path(), &first_export, "Inbox");
+    assert_eq!(planned.files.len(), 1);
+    let file = &planned.files[0];
+    let receipt = file
+        .display_receipt
+        .as_deref()
+        .expect("evernote note emits receipt");
+    let transcript_path = root
+        .path()
+        .join("chronicle")
+        .join(&file.day)
+        .join(super::STREAM)
+        .join(&file.segment)
+        .join(solstone_core_format::obsidian::NOTE_TRANSCRIPT_FILE);
+    fs::create_dir_all(transcript_path.parent().unwrap()).unwrap();
+    fs::write(&transcript_path, &file.contents).unwrap();
+    let receipt_path =
+        solstone_core_format::stored_markdown::display_receipt_path(&transcript_path);
+    fs::create_dir_all(receipt_path.parent().unwrap()).unwrap();
+    fs::write(&receipt_path, receipt).unwrap();
+    super::commit(root.path(), &planned.updates).unwrap();
+
+    // Append an edit into the same segment and confirm both prior and appended spans verify.
+    let second_export = write_export(
+        root.path(),
+        "second.enex",
+        &export(&note(
+            "Morning",
+            "20200101T120000Z",
+            "20200101T120200Z",
+            "<div>hello world</div><en-crypt>SECRET</en-crypt>",
+        )),
+    );
+    let appended = plan_at(root.path(), &second_export, "Inbox");
+    assert_eq!(appended.files.len(), 1);
+    let updated_file = &appended.files[0];
+    let updated_receipt = updated_file
+        .display_receipt
+        .as_deref()
+        .expect("appended note carries receipt");
+    fs::write(&transcript_path, &updated_file.contents).unwrap();
+    fs::write(&receipt_path, updated_receipt).unwrap();
+    let locale = solstone_core_window_catalog::packaged_locale(Some("en-XA"));
+    if locale != solstone_core_window_catalog::ENGLISH {
+        let projected = solstone_core_format::stored_markdown::project_file(
+            root.path(),
+            &transcript_path,
+            updated_file.contents.trim(),
+            locale,
+            None,
+        )
+        .expect("combined receipt verifies");
+        assert_ne!(projected, updated_file.contents.trim());
+        assert!(projected.contains("hello"));
+        assert!(projected.contains("world"));
+        assert!(!projected.contains("[encrypted text]"));
+        assert!(!projected.contains("(edited)"));
+    }
+
+    // Legacy transcript without a receipt keeps its prior bytes untagged and marks only the new entry.
+    fs::remove_file(&receipt_path).unwrap();
+    let third_export = write_export(
+        root.path(),
+        "third.enex",
+        &export(&note(
+            "Morning",
+            "20200101T120000Z",
+            "20200101T120300Z",
+            "<div>hello world again</div><en-crypt>SECRET</en-crypt>",
+        )),
+    );
+    let legacy_appended = plan_at(root.path(), &third_export, "Inbox");
+    assert_eq!(legacy_appended.files.len(), 1);
+    let legacy_file = &legacy_appended.files[0];
+    assert!(legacy_file.display_receipt.is_some());
+    fs::write(&transcript_path, &legacy_file.contents).unwrap();
+    fs::write(
+        &receipt_path,
+        legacy_file.display_receipt.as_deref().unwrap(),
+    )
+    .unwrap();
+    assert!(
+        solstone_core_format::stored_markdown::index_stamp(
+            root.path(),
+            &transcript_path,
+            &legacy_file.contents
+        )
+        .is_some()
+    );
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Evernote export preview notice for notes containing encrypted sections.",
+  "context": "Evernote export preview notice for notes containing encrypted sections.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d09fa620bcde7806ad82d09ffb8cb892d9d57b8505082cb4b39cb5c85c21bbf1",
+  "max_length": 459,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

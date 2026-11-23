@@ -19496,12 +19496,6 @@ journal.window.import.response.error.your.journal.couldn.t.move.that = your jour
 
 journal.window.import.response.error.your.journal.s.background.service.isn = your journal's background service isn't running. start it, then try again.
 
-journal.window.import.response.evernote.counts.dated = { $notes }{ $slot1 }notes, from{ $slot2 }{ $first }{ $slot3 }to{ $slot4 }{ $last }.{ $slot5 }{ $attachments }{ $slot6 }attachments.
-
-journal.window.import.response.evernote.counts.encrypted = { $count }{ $slot1 }notes have an encrypted part that will be left out.
-
-journal.window.import.response.evernote.counts.undated = { $notes }{ $slot1 }notes.{ $slot2 }{ $attachments }{ $slot3 }attachments.
-
 journal.window.import.response.evernote.empty = this export has no notes.
 
 journal.window.import.response.evernote.ended.empty = this export ended early. 0 notes came in.
@@ -22082,3 +22076,79 @@ journal.window.stored.event.rrule.month.oct = Oct
 journal.window.stored.event.rrule.month.nov = Nov
 
 journal.window.stored.event.rrule.month.dec = Dec
+
+journal.window.import.response.evernote.preview.dated = { $notes }, from { $first } to { $last }. { $attachments }.
+
+journal.window.import.response.evernote.preview.undated = { $notes }. { $attachments }.
+
+journal.window.import.response.evernote.preview.encrypted = { $quantity ->
+    [one] 1 note has an encrypted part that will be left out.
+   *[other] { $count } notes have an encrypted part that will be left out.
+}
+
+journal.window.import.response.evernote.count.note = { $quantity ->
+    [one] 1 note
+   *[other] { $count } notes
+}
+
+journal.window.import.response.evernote.count.attachment = { $quantity ->
+    [one] 1 attachment
+   *[other] { $count } attachments
+}
+
+journal.window.import.response.evernote.finish.brought.in = { $quantity ->
+    [one] brought in 1 note.
+   *[other] brought in { $count } notes.
+}
+
+journal.window.import.response.evernote.finish.brought.in.changed = { $quantity ->
+    [one] brought in changes to 1 note that was already here.
+   *[other] brought in changes to { $count } notes that were already here.
+}
+
+journal.window.import.response.evernote.finish.brought.in.both = { $new_part } { $changed_part }
+
+journal.window.import.response.evernote.finish.attachments.single.note = { $quantity ->
+    [one] 1 attachment came in with it.
+   *[other] { $count } attachments came in with it.
+}
+
+journal.window.import.response.evernote.finish.attachments = { $quantity ->
+    [one] 1 attachment came in with them.
+   *[other] { $count } attachments came in with them.
+}
+
+journal.window.import.response.evernote.finish.dated.after.today = { $quantity ->
+    [one] 1 note is dated after today and was left out.
+   *[other] { $count } notes are dated after today and were left out.
+}
+
+journal.window.import.response.evernote.finish.no.date = { $quantity ->
+    [one] 1 note has no date and was left out.
+   *[other] { $count } notes have no date and were left out.
+}
+
+journal.window.import.response.evernote.finish.ended.early = { $quantity ->
+    [one] this export ended early. 1 note came in.
+   *[other] this export ended early. { $count } notes came in.
+}
+
+journal.window.import.response.evernote.finish.already.in.journal = these notes are already in your journal.
+
+journal.window.stored.evernote.encrypted = a part of this note is encrypted in Evernote. it wasn't brought in.
+
+journal.window.stored.evernote.attachment.missing = an attachment is missing from this export.
+
+journal.window.stored.evernote.attachment.unmatched = an attachment didn't match this note, so it was left out.
+
+journal.window.stored.evernote.attachment.oversized = an attachment is over 25 MB, so it was left out.
+
+journal.window.stored.evernote.tags = tags: { $tags }
+
+journal.window.stored.evernote.author = author: { $author }
+
+journal.window.stored.evernote.url = url: { $url }
+
+journal.window.stored.evernote.task.due = { $title }, due { $due }
+
+journal.window.import.content.fallback.note = Note

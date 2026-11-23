@@ -1,0 +1,21 @@
+{
+  "description": "Author metadata line in an imported Evernote note transcript.",
+  "context": "Author metadata line in an imported Evernote note transcript.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "author",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e747cf4b3509d77caeabcb082b957e06c7065187909ce8d5ba2ac75ce4ba45da",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

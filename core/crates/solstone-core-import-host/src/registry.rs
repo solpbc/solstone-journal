@@ -839,12 +839,29 @@ fn run_evernote(
         return source_failed(name, &error);
     }
     let finish_path = journal.join("imports").join(&import_id).join("finish.txt");
+    let finish_display_path = journal
+        .join("imports")
+        .join(&import_id)
+        .join(evernote::copy::FINISH_DISPLAY_FILE);
+    let _ = std::fs::remove_file(&finish_display_path);
     if let Err(error) = solstone_core_journal_io::atomic_replace(
         &finish_path,
         written.summary.as_bytes(),
         solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
     ) {
         return source_failed(name, &error);
+    }
+    if let Some(display_bytes) = planned.finish_display.as_deref()
+        && let Err(error) = solstone_core_journal_io::atomic_replace(
+            &finish_display_path,
+            display_bytes,
+            solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
+        )
+    {
+        log::warn!(
+            "evernote finish display receipt {}: {error}",
+            finish_display_path.display()
+        );
     }
     if let Err(error) = evernote::commit(journal, &planned.updates) {
         return source_failed(name, &error);
@@ -897,7 +914,7 @@ fn evernote_rendered(plan: &evernote::Plan) -> save::RenderedImport {
                 contents: file.contents.clone(),
                 units: file.units,
                 calendar: false,
-                display_receipt: None,
+                display_receipt: file.display_receipt.clone(),
             })
             .collect(),
         items: plan
@@ -910,6 +927,7 @@ fn evernote_rendered(plan: &evernote::Plan) -> save::RenderedImport {
                     "type": "note",
                     "preview": file.contents.chars().take(200).collect::<String>(),
                     "segments": [{"day": file.day, "key": file.segment}],
+                    "display": {"title_fallback": "note"},
                 })
             })
             .collect(),

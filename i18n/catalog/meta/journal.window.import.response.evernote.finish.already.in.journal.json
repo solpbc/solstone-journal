@@ -1,0 +1,16 @@
+{
+  "description": "Evernote import completion line when all exported notes were already present.",
+  "context": "Evernote import completion line when all exported notes were already present.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "16258191fb7b8c3738ab3828b20f9894909ec4660739b004f0de719e485c12b7",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

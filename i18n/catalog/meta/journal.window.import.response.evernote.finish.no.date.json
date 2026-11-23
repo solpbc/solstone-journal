@@ -1,0 +1,30 @@
+{
+  "description": "Evernote import completion line for undated notes left out.",
+  "context": "Evernote import completion line for undated notes left out.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "64eb4bf1a7ba6886b196da099729b79b97a8320ea3c2d2639304d8710675f54e",
+  "max_length": 372,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -26,8 +26,9 @@ use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_format::obsidian::{
-    NOTE_TRANSCRIPT_FILE, NoteEntry, render_edit, render_transcript,
+    NOTE_TRANSCRIPT_FILE, NoteEntry, render_edit_document, render_transcript_document,
 };
+use solstone_core_format::stored_markdown::{Document, Message};
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 
 use crate::shared::{self, WINDOW_SECONDS};
@@ -157,6 +158,7 @@ pub struct PlannedFile {
     pub segment: String,
     pub contents: String,
     pub units: u64,
+    pub display_receipt: Option<Vec<u8>>,
 }
 
 /// Bytes that go through the image or document importer with the note's time.
@@ -172,6 +174,7 @@ pub struct PlannedBinary {
 pub struct Plan {
     pub refusal: Option<String>,
     pub summary: String,
+    pub finish_display: Option<Vec<u8>>,
     pub files: Vec<PlannedFile>,
     pub images: Vec<PlannedBinary>,
     pub pdfs: Vec<PlannedBinary>,
@@ -239,6 +242,7 @@ fn refused(notebook: &str, line: &str) -> Plan {
     Plan {
         refusal: Some(line.to_owned()),
         summary: line.to_owned(),
+        finish_display: None,
         files: Vec::new(),
         images: Vec::new(),
         pdfs: Vec::new(),
@@ -263,7 +267,7 @@ enum Step {
     },
     Edit {
         index: usize,
-        body: String,
+        body: Document,
         memory: Timestamp,
         title: String,
     },
@@ -271,7 +275,7 @@ enum Step {
         index: usize,
         memory: Timestamp,
         title: String,
-        body: String,
+        body: Document,
         images: Vec<HeldBytes>,
         pdfs: Vec<HeldBytes>,
     },
@@ -373,7 +377,7 @@ fn decide(
                 steps.push(Step::Older);
                 continue;
             }
-            let Some(body) = render_edit(&working[index].rendered, &rendered) else {
+            let Some(body) = render_edit_document(&working[index].rendered, &rendered) else {
                 let time = (memory > stored_time).then_some(memory);
                 steps.push(Step::Unchanged { index, time });
                 continue;
@@ -409,7 +413,7 @@ fn decide(
                 index,
                 memory,
                 title,
-                body: rendered,
+                body: note.rendered_doc.clone(),
                 images: note.images.clone(),
                 pdfs: note.pdfs.clone(),
             });
@@ -471,14 +475,16 @@ fn decide(
                 let day = working[*index].day.clone();
                 let segment = working[*index].segment.clone();
                 working[*index].last_title = title.clone();
-                working[*index].rendered = body.clone();
+                working[*index].rendered = body.to_string();
                 working[*index].time = stamp(memory);
+                let mut status = Document::default();
+                status.push_message(Message::NoteEdited);
                 writes.push(Write {
                     day,
                     segment,
                     entry: NoteEntry {
                         path: format!("{title}.md"),
-                        status: Some("edited".to_owned()),
+                        status: Some(status),
                         body: body.clone(),
                     },
                 });
@@ -547,7 +553,7 @@ fn decide(
         duplicate.segment = current.segment;
     }
     let files = compose(journal, &writes)?;
-    let summary = finish_lines(FinishCounts {
+    let counts = copy::FinishCounts {
         new_count,
         changed,
         attachments: (images.len() + pdfs.len()) as u64,
@@ -555,11 +561,16 @@ fn decide(
         undated,
         ended_early,
         matched,
-    });
+    };
+    let summary = counts.render(solstone_core_window_catalog::ENGLISH);
+    let finish_display = (!summary.is_empty())
+        .then(|| serde_json::to_vec(&copy::FinishDisplay::new(counts, &summary)).ok())
+        .flatten();
     let updates = changed_notes(stored, &working);
     Ok(Plan {
         refusal: None,
         summary,
+        finish_display,
         files,
         images,
         pdfs,
@@ -572,12 +583,12 @@ fn decide(
 struct Write {
     day: String,
     segment: String,
-    entry: NoteEntry,
+    entry: NoteEntry<Document>,
 }
 
 fn compose(journal: &Path, writes: &[Write]) -> Result<Vec<PlannedFile>, String> {
     let mut order = Vec::new();
-    let mut groups: HashMap<(String, String), Vec<NoteEntry>> = HashMap::new();
+    let mut groups: HashMap<(String, String), Vec<NoteEntry<Document>>> = HashMap::new();
     for write in writes {
         let key = (write.day.clone(), write.segment.clone());
         if !groups.contains_key(&key) {
@@ -593,73 +604,37 @@ fn compose(journal: &Path, writes: &[Write]) -> Result<Vec<PlannedFile>, String>
         } else {
             None
         };
-        let contents = match prior {
-            Some(mut body) if !body.is_empty() => {
+        let doc = match prior {
+            Some(body) if !body.is_empty() => {
+                let transcript_path = journal
+                    .join("chronicle")
+                    .join(&key.0)
+                    .join(STREAM)
+                    .join(&key.1)
+                    .join(NOTE_TRANSCRIPT_FILE);
+                let mut doc = Document::resume_existing(journal, &transcript_path, body);
                 for entry in &entries {
-                    if !body.ends_with('\n') {
-                        body.push('\n');
+                    if !doc.ends_with('\n') {
+                        doc.push_str("\n");
                     }
-                    body.push('\n');
-                    body.push_str(&render_transcript(std::slice::from_ref(entry)));
+                    doc.push_str("\n");
+                    let rendered = render_transcript_document(std::slice::from_ref(entry));
+                    doc.push_document(&rendered);
                 }
-                body
+                doc
             }
-            _ => render_transcript(&entries),
+            _ => render_transcript_document(&entries),
         };
+        let display_receipt = doc.display_receipt_bytes().ok().flatten();
         files.push(PlannedFile {
             day: key.0,
             segment: key.1,
-            contents,
+            contents: doc.into_text(),
             units: u64::try_from(entries.len()).unwrap_or(0),
+            display_receipt,
         });
     }
     Ok(files)
-}
-
-struct FinishCounts {
-    new_count: u64,
-    changed: u64,
-    attachments: u64,
-    future: u64,
-    undated: u64,
-    ended_early: bool,
-    matched: u64,
-}
-
-fn finish_lines(counts: FinishCounts) -> String {
-    let FinishCounts {
-        new_count,
-        changed,
-        attachments,
-        future,
-        undated,
-        ended_early,
-        matched,
-    } = counts;
-    let mut lines = Vec::new();
-    if new_count > 0 && changed > 0 {
-        lines.push(copy::brought_in_new_and_changed(new_count, changed));
-    } else if new_count > 0 {
-        lines.push(copy::brought_in(new_count));
-    } else if changed > 0 {
-        lines.push(copy::brought_in_changed(changed));
-    }
-    if attachments > 0 {
-        lines.push(copy::attachments_came_in(attachments));
-    }
-    if future > 0 {
-        lines.push(copy::dated_after_today(future));
-    }
-    if undated > 0 {
-        lines.push(copy::no_date(undated));
-    }
-    if ended_early {
-        lines.push(copy::ended_early(new_count));
-    }
-    if new_count == 0 && changed == 0 && matched > 0 {
-        lines.push(copy::ALREADY_IN_JOURNAL.to_owned());
-    }
-    lines.join("\n")
 }
 
 fn indexes_for(notes: &[StoredNote], second: &str) -> Vec<usize> {

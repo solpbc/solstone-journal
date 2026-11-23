@@ -14,7 +14,10 @@ use axum::{
     response::Response,
 };
 use serde_json::{Value, json};
-use solstone_core_convey_http::{coalesce::ResponseLocale, window_catalog::ENGLISH};
+use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
+    window_catalog::{ENGLISH, text},
+};
 
 use crate::{
     AppState,
@@ -517,6 +520,12 @@ fn project_manifest_item(item: &mut Value, locale: &str) {
     let Some(Value::Object(display)) = display else {
         return;
     };
+    if display.get("title_fallback").and_then(Value::as_str) == Some("note") {
+        obj.insert(
+            "title".to_owned(),
+            json!(text(locale, "journal.window.import.content.fallback.note")),
+        );
+    }
     use solstone_core_format::stored_markdown::imported::{
         EventRecurrence, render_event_preview_days,
     };

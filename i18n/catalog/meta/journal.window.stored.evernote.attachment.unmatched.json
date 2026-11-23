@@ -1,0 +1,16 @@
+{
+  "description": "Placeholder line written in an imported Evernote note for an unmatched attachment.",
+  "context": "Placeholder line written in an imported Evernote note for an unmatched attachment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c2b00cfb840821c6cd374bfd0ca5318d45bd65c851e734e286de1e31b36f3e26",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
