@@ -27,6 +27,19 @@ pub fn solstone_exe() -> PathBuf {
     bin_dir().join("solstone.exe")
 }
 
+fn child_locale<'a>(args: &[&str], app_locale: &'a str) -> Option<&'a str> {
+    match args {
+        ["setup-copy", ..] => Some(app_locale),
+        ["service", "start" | "stop" | "restart" | "__sign-in", ..] => {
+            crate::i18n::non_english_locale_for(app_locale)
+        }
+        ["install-models", rest @ ..] if !rest.contains(&"--check") => {
+            crate::i18n::non_english_locale_for(app_locale)
+        }
+        _ => None,
+    }
+}
+
 fn command(args: &[&str]) -> Command {
     let mut command = Command::new(solstone_exe());
     command
@@ -34,8 +47,8 @@ fn command(args: &[&str]) -> Command {
         .args(args)
         .stdin(Stdio::null())
         .creation_flags(CREATE_NO_WINDOW);
-    if args.first() == Some(&"setup-copy") {
-        command.env("SOLSTONE_LOCALE", crate::i18n::locale());
+    if let Some(locale) = child_locale(args, crate::i18n::locale()) {
+        command.env("SOLSTONE_LOCALE", locale);
     }
     command
 }
@@ -187,4 +200,45 @@ pub fn setup(
 /// the same test the Mac app applies to a journal it finds on disk.
 pub fn holds_a_journal(folder: &Path) -> bool {
     folder.join("config").is_dir()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::child_locale;
+
+    #[test]
+    fn child_locale_tags_owner_stderr_commands_only_outside_english() {
+        for args in [
+            &["service", "start"][..],
+            &["service", "stop"][..],
+            &["service", "restart"][..],
+            &["service", "__sign-in", "on"][..],
+            &["service", "__sign-in", "off"][..],
+            &["install-models"][..],
+        ] {
+            assert_eq!(child_locale(args, "en-XA"), Some("en-XA"), "{args:?}");
+            assert_eq!(child_locale(args, "en-US"), None, "{args:?}");
+        }
+    }
+
+    #[test]
+    fn child_locale_keeps_machine_and_update_commands_neutral() {
+        for args in [
+            &["service", "__app-status"][..],
+            &["service", "__stop-for-update"][..],
+            &["service", "__restore-update-intent"][..],
+            &["install-models", "--check"][..],
+        ] {
+            assert_eq!(child_locale(args, "en-XA"), None, "{args:?}");
+            assert_eq!(child_locale(args, "en-US"), None, "{args:?}");
+        }
+        assert_eq!(
+            child_locale(&["setup-copy", "--json"], "en-US"),
+            Some("en-US")
+        );
+        assert_eq!(
+            child_locale(&["setup-copy", "--json"], "en-XA"),
+            Some("en-XA")
+        );
+    }
 }

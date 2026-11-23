@@ -10,8 +10,12 @@ mod compiled {
     include!("../../../../i18n/generated/windows-app/rust/journal-windows-app/api.rs");
 }
 
-const ENGLISH: &str = "en-US";
+pub(crate) const ENGLISH: &str = "en-US";
 const AVAILABLE: &[&str] = include!(concat!(env!("OUT_DIR"), "/languages.rs"));
+
+pub(crate) fn non_english_locale_for(tag: &str) -> Option<&str> {
+    (tag != ENGLISH).then_some(tag)
+}
 
 pub fn locale() -> &'static str {
     static TAG: OnceLock<String> = OnceLock::new();

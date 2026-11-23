@@ -68,13 +68,25 @@ pub fn is_own_journal(_journal: &str) -> bool {
 /// pipe. A link opens the page even if the account check on the port says no.
 #[cfg(windows)]
 pub fn mint_link(path: &str) -> Option<String> {
-    use solstone_core_local_endpoint as endpoint;
-    let pipe = endpoint::socket_path().ok().flatten()?;
-    let request = serde_json::json!({ "path": path }).to_string();
-    let response = endpoint::pipe_request(
+    let pipe = solstone_core_local_endpoint::socket_path().ok().flatten()?;
+    mint_link_on_pipe(
         &pipe,
+        path,
+        crate::i18n::non_english_locale_for(crate::i18n::locale()),
+    )
+}
+
+#[cfg(windows)]
+fn mint_link_on_pipe(pipe: &std::path::Path, path: &str, locale: Option<&str>) -> Option<String> {
+    use solstone_core_local_endpoint as endpoint;
+    let request = serde_json::json!({ "path": path }).to_string();
+    let header_pair = mint_link_header(locale);
+    let headers = header_pair.as_slice();
+    let response = endpoint::pipe_request_with_headers(
+        pipe,
         "POST",
         "/_solstone/browser-link",
+        headers,
         Some(request.as_bytes()),
         ANSWER_BOUND,
     )
@@ -84,6 +96,13 @@ pub fn mint_link(path: &str) -> Option<String> {
     }
     let body: Value = serde_json::from_slice(&response.body).ok()?;
     body.get("url")?.as_str().map(str::to_owned)
+}
+
+#[cfg(any(windows, test))]
+fn mint_link_header(locale: Option<&str>) -> Option<(&'static str, &str)> {
+    locale
+        .and_then(crate::i18n::non_english_locale_for)
+        .map(|tag| ("X-Solstone-Locale", tag))
 }
 
 #[cfg(not(windows))]
@@ -329,7 +348,7 @@ fn is_nonce(nonce: &str) -> bool {
 mod tests {
     use serde_json::json;
 
-    use super::{is_nonce, refusal};
+    use super::{is_nonce, mint_link_header, refusal};
 
     #[test]
     fn a_refusal_keeps_its_reason_code_for_the_page() {
@@ -658,5 +677,15 @@ mod tests {
             assert!(started.elapsed() >= SLOW * 3, "{:?}", started.elapsed());
             assert!(journal.lock().unwrap().done);
         }
+    }
+
+    #[test]
+    fn mint_link_header_sends_locale_only_outside_english() {
+        assert_eq!(mint_link_header(None), None);
+        assert_eq!(mint_link_header(Some("en-US")), None);
+        assert_eq!(
+            mint_link_header(Some("en-XA")),
+            Some(("X-Solstone-Locale", "en-XA"))
+        );
     }
 }

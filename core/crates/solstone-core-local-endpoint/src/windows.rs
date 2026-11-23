@@ -329,13 +329,36 @@ pub fn pipe_request(
     body: Option<&[u8]>,
     timeout: Duration,
 ) -> io::Result<PipeResponse> {
+    pipe_request_with_headers(pipe, method, path, &[], body, timeout)
+}
+
+/// One HTTP request over the owner's pipe with additional request headers.
+pub fn pipe_request_with_headers(
+    pipe: &Path,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Option<&[u8]>,
+    timeout: Duration,
+) -> io::Result<PipeResponse> {
+    for &(name, value) in headers {
+        if name.is_empty() || name.contains(['\r', '\n', ':']) || value.contains(['\r', '\n']) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid HTTP request header",
+            ));
+        }
+    }
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
     runtime.block_on(async {
-        tokio::time::timeout(timeout, exchange(pipe, method, path, body, timeout))
-            .await
-            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "the journal did not answer"))?
+        tokio::time::timeout(
+            timeout,
+            exchange(pipe, method, path, headers, body, timeout),
+        )
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "the journal did not answer"))?
     })
 }
 
@@ -343,6 +366,7 @@ async fn exchange(
     pipe: &Path,
     method: &str,
     path: &str,
+    headers: &[(&str, &str)],
     body: Option<&[u8]>,
     timeout: Duration,
 ) -> io::Result<PipeResponse> {
@@ -360,10 +384,17 @@ async fn exchange(
         }
     };
     let body = body.unwrap_or_default();
-    let head = format!(
-        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+    let mut head = format!(
+        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n",
         body.len()
     );
+    for &(name, value) in headers {
+        head.push_str(name);
+        head.push_str(": ");
+        head.push_str(value);
+        head.push_str("\r\n");
+    }
+    head.push_str("\r\n");
     client.write_all(head.as_bytes()).await?;
     client.write_all(body).await?;
     client.flush().await?;
@@ -618,6 +649,56 @@ mod tests {
             (200, &b"ok"[..])
         );
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn pipe_request_with_headers_forwards_extra_headers_and_rejects_crlf() {
+        let name = PathBuf::from(format!(
+            r"\\.\pipe\solstone-journal-headers-test-{}",
+            std::process::id()
+        ));
+        let invalid = pipe_request_with_headers(
+            &name,
+            "POST",
+            "/_solstone/browser-link",
+            &[("X-Solstone-Locale", "en-XA\r\nX-Injected: 1")],
+            Some(br#"{"path":"/"}"#),
+            Duration::from_secs(1),
+        );
+        assert_eq!(invalid.unwrap_err().kind(), io::ErrorKind::InvalidInput);
+
+        let mut listener = PipeListener::bind(&name).unwrap();
+        let server = tokio::spawn(async move {
+            let mut stream = listener.accept().await.unwrap();
+            let mut chunk = [0_u8; 4096];
+            let read = stream.read(&mut chunk).await.unwrap();
+            let raw = String::from_utf8_lossy(&chunk[..read]).into_owned();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                .await
+                .unwrap();
+            raw
+        });
+        let client_name = name.clone();
+        let response = tokio::task::spawn_blocking(move || {
+            pipe_request_with_headers(
+                &client_name,
+                "POST",
+                "/_solstone/browser-link",
+                &[("X-Solstone-Locale", "en-XA")],
+                Some(br#"{"path":"/"}"#),
+                Duration::from_secs(5),
+            )
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(response.status, 200);
+        let captured = server.await.unwrap();
+        assert!(
+            captured.contains("X-Solstone-Locale: en-XA\r\n"),
+            "missing locale header in {captured:?}"
+        );
     }
 }
 

@@ -1633,8 +1633,12 @@ impl<'a> ParserCopy<'a> {
 /// Select the language for a public terminal invocation. A switch consumed as
 /// an option value is ordinary data. Protocol-only verbs retain their source bytes.
 pub fn parser_locale(args: &[OsString]) -> &'static str {
-    use solstone_core_cli_copy::{ENGLISH, terminal_locale};
-    let Some(locale) = terminal_locale() else {
+    parser_locale_with(args, solstone_core_cli_copy::terminal_locale())
+}
+
+fn parser_locale_with(args: &[OsString], terminal: Option<&'static str>) -> &'static str {
+    use solstone_core_cli_copy::ENGLISH;
+    let Some(locale) = terminal else {
         return ENGLISH;
     };
     let Some((verb, rest)) = args.split_first() else {
@@ -1661,7 +1665,9 @@ pub fn parser_locale(args: &[OsString]) -> &'static str {
             }
             _ => &[],
         },
-        "service" if word(0).is_some_and(|s| s.starts_with("__")) => return ENGLISH,
+        "service" if word(0).is_some_and(|s| s.starts_with("__") && s != SERVICE_SIGN_IN) => {
+            return ENGLISH;
+        }
         "service" if word(0) == Some("install") => &[
             "--port",
             "--initial-start-at-sign-in",
@@ -10579,6 +10585,40 @@ mod tests {
             ]),
         ] {
             assert!(evaluate_args(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn parser_locale_honors_service_sign_in_and_keeps_other_internal_service_verbs_english() {
+        for cmd in [
+            &["service", "start"][..],
+            &["service", "stop"][..],
+            &["service", "restart"][..],
+            &["service", "__sign-in", "on"][..],
+            &["service", "__sign-in", "off"][..],
+            &["install-models"][..],
+        ] {
+            assert_eq!(
+                parser_locale_with(&args(cmd), Some("en-XA")),
+                "en-XA",
+                "{cmd:?}"
+            );
+            assert_eq!(
+                parser_locale_with(&args(cmd), None),
+                solstone_core_cli_copy::ENGLISH,
+                "{cmd:?}"
+            );
+        }
+        for cmd in [
+            &["service", "__app-status"][..],
+            &["service", "__stop-for-update"][..],
+            &["service", "__restore-update-intent"][..],
+        ] {
+            assert_eq!(
+                parser_locale_with(&args(cmd), Some("en-XA")),
+                solstone_core_cli_copy::ENGLISH,
+                "{cmd:?}"
+            );
         }
     }
 }
