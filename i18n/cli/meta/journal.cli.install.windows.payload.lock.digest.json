@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: invalid Cargo.lock digest.",
+  "context": "Windows signed payload refusal: invalid Cargo.lock digest.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "66e1475b5ed4c7e1da1572e0ade8b64cd264a1446ca33e995a749fa92f13704c",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

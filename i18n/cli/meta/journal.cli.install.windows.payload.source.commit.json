@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: invalid source commit.",
+  "context": "Windows signed payload refusal: invalid source commit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f13c1eb19e9c1f602c892bd813ce0824a1b00d6da3f48f35e26d3bb36564bb78",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

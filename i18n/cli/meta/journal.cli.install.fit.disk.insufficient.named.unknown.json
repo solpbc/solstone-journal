@@ -1,0 +1,37 @@
+{
+  "description": "Fit report insufficient disk space naming known and unknown downloads.",
+  "context": "Fit report insufficient disk space naming known and unknown downloads.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "requirement",
+      "type": "string"
+    },
+    {
+      "name": "required",
+      "type": "string"
+    },
+    {
+      "name": "available",
+      "type": "string"
+    },
+    {
+      "name": "known",
+      "type": "string"
+    },
+    {
+      "name": "unknown",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ed2ecb2157fc32a6850c6927192748f7862d0eafafa53a251782a961313154a",
+  "max_length": 447,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

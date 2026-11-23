@@ -1,0 +1,29 @@
+{
+  "description": "Fit report RAM check insufficient memory detail.",
+  "context": "Fit report RAM check insufficient memory detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "model",
+      "type": "string"
+    },
+    {
+      "name": "required",
+      "type": "string"
+    },
+    {
+      "name": "available",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f4083fea7d34011bc0085dcac4b75c30fb5692cf053d9c8a5f9d26cc9a7ddad5",
+  "max_length": 297,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

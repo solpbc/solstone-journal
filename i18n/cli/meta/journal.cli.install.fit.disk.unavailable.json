@@ -1,0 +1,25 @@
+{
+  "description": "Fit report disk space unavailable.",
+  "context": "Fit report disk space unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4f25c7c377d86edbae321056ece3b3af1c9584b8a8ba8da56cde9ac766586520",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

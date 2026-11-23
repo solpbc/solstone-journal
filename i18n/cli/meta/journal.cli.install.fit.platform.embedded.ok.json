@@ -1,0 +1,16 @@
+{
+  "description": "Fit report embedded local runtime ready detail.",
+  "context": "Fit report embedded local runtime ready detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "65e53dda69a88d52a2e04c8f7b14a08632620853e3a1bcabf4d1d140906cd9eb",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

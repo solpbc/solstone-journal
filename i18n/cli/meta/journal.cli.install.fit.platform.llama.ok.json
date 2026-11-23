@@ -1,0 +1,21 @@
+{
+  "description": "Fit report pinned llama-server platform ready detail.",
+  "context": "Fit report pinned llama-server platform ready detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "79bebdd01fbf6469f51aa77c88e658ec59b09f8c1ae8b4d8d891f7910efd00c9",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

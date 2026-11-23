@@ -1,0 +1,33 @@
+{
+  "description": "Fit report Vulkan GPU memory below minimum bar.",
+  "context": "Fit report Vulkan GPU memory below minimum bar.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "available",
+      "type": "string"
+    },
+    {
+      "name": "backend",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d37424d0af3b97f034cce3bbd387f9a359c003e0fe4189b6b70627734b0fe926",
+  "max_length": 381,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Fit report check name: platform.",
+  "context": "Fit report check name: platform.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "abd27f581e2d3a9ff49d68b518ca62d8948fb43fbbab2710c3c045a2383ebb5f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -39,7 +39,7 @@ use crate::{
     eprint_journal_path_error, resolve_process_journal_path,
 };
 
-use solstone_core_check::evaluate_host_rfdetr;
+use solstone_core_check::evaluate_host_rfdetr_in;
 
 fn rfdetr_ready_record(
     journal: &Path,
@@ -47,7 +47,7 @@ fn rfdetr_ready_record(
     arch: &str,
     record: rfdetr_install::RfdetrInstallRecord,
 ) -> Result<rfdetr_install::RfdetrInstallRecord, rfdetr_install::RfdetrInstallError> {
-    match evaluate_host_rfdetr(journal, os_name, arch) {
+    match evaluate_host_rfdetr_in(crate::host_locale(), journal, os_name, arch) {
         RfdetrReadiness::Ready { .. } => Ok(record),
         RfdetrReadiness::Unsupported { .. } => {
             Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable)
@@ -284,14 +284,21 @@ where
         ),
         ProviderInstallers {
             rfdetr: Box::new(|journal, os_name, arch, action| match action {
-                InstallerAction::Check => {
-                    rfdetr_install::check_rfdetr_model(journal, os_name, arch)
-                        .and_then(|record| rfdetr_ready_record(journal, os_name, arch, record))
-                }
-                InstallerAction::Install { force } => {
-                    rfdetr_install::install_rfdetr(journal, os_name, arch, force)
-                        .and_then(|record| rfdetr_ready_record(journal, os_name, arch, record))
-                }
+                InstallerAction::Check => rfdetr_install::check_rfdetr_model_in(
+                    crate::host_locale(),
+                    journal,
+                    os_name,
+                    arch,
+                )
+                .and_then(|record| rfdetr_ready_record(journal, os_name, arch, record)),
+                InstallerAction::Install { force } => rfdetr_install::install_rfdetr_in(
+                    crate::host_locale(),
+                    journal,
+                    os_name,
+                    arch,
+                    force,
+                )
+                .and_then(|record| rfdetr_ready_record(journal, os_name, arch, record)),
             }),
             coreml: Box::new(|journal, home_dir, config, action| match action {
                 InstallerAction::Check => {
@@ -518,9 +525,14 @@ where
     }
 
     let report = hooks.report_override.unwrap_or_else(|| {
-        fit_report::build_parakeet_fit_report(&journal, &host.os_name, &host.arch)
+        fit_report::build_parakeet_fit_report_in(
+            crate::host_locale(),
+            &journal,
+            &host.os_name,
+            &host.arch,
+        )
     });
-    let rendered = fit_report::render_fit_report(&report);
+    let rendered = fit_report::render_fit_report_in(crate::host_locale(), &report);
     if report.overall() == fit_report::FitSeverity::Blocked {
         return InstallModelsOutcome::failure_with_stdout(
             Some(variant),

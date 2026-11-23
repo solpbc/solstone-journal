@@ -1,0 +1,21 @@
+{
+  "description": "Fit report CUDA GPU check passing on unified memory with CPU transcription placement.",
+  "context": "Fit report CUDA GPU check passing on unified memory with CPU transcription placement.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f3524cb4367b5f3e534454aa50b4ce2aec5695fa24251805bfbefd311181ba76",
+  "max_length": 459,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

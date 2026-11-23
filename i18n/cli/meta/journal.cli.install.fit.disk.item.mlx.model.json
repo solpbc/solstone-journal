@@ -1,0 +1,16 @@
+{
+  "description": "Fit report disk item label for MLX model.",
+  "context": "Fit report disk item label for MLX model.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5325cec982e330e2321a88e816c37d0330996c4dbf78e9655e1130a1399983aa",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

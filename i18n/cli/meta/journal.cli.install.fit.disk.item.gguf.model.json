@@ -1,0 +1,16 @@
+{
+  "description": "Fit report disk item label for local GGUF model.",
+  "context": "Fit report disk item label for local GGUF model.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9ee98f61b667a9d8f7ef4634eb53494fbace39db356135f01b485d57fe6510e3",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

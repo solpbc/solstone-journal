@@ -1,0 +1,16 @@
+{
+  "description": "Fit report severity label: blocked.",
+  "context": "Fit report severity label: blocked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d97c90d79aa7cd63af048f73b1d81634d842537aa5bb9758fffae310f1bcdc1b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

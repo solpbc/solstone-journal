@@ -15745,6 +15745,447 @@
       "locales": []
     },
     {
+      "id": "journal.cli.install.fit.artifact.local",
+      "source": "93532494021b577adce35024dbfcfb27cda063967d1872e691edfb5278daf6eb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.artifact.parakeet",
+      "source": "23049253d5b68145fa8bcfd0878992c1759de73c97e93f96717b5e6b55bbd78b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.artifact.rfdetr",
+      "source": "d5ff8ba343676dee978ca70ab65a28f1b76d321d84cbae51e1304e370c64c1ae",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.check.disk",
+      "source": "8a4224f68110bd11faffebeb1a8964f70550d14e5379a096b7598fe1b5783feb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.check.gpu",
+      "source": "f2d660ced4fa76aae3dff0bb557a466c5caf95b69492198c7030e53c7561119f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.check.platform",
+      "source": "abd27f581e2d3a9ff49d68b518ca62d8948fb43fbbab2710c3c045a2383ebb5f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.check.ram",
+      "source": "2750968c13bedf67317f439cc84702ff38cf20f3e534c675eb9d1aa5c571b9fe",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.insufficient",
+      "source": "9096181151fafefac65aa40a5fcca427914a2413e94c3fb1bb6b636bd9c77642",
+      "contract": "1ce29e2cd6122f3dcf109011ad4bc7609224d707bca8c7d64ad0d8565b3bc722",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.insufficient.named",
+      "source": "1f9568fd723744cafcc679951e75fa43d396658659b4082fbaf6f8a51d31f396",
+      "contract": "27b565a534eb16f57cf79d046d2d6baece7c76e87803a070db45e41beef52c29",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.insufficient.named.unknown",
+      "source": "1ed2ecb2157fc32a6850c6927192748f7862d0eafafa53a251782a961313154a",
+      "contract": "931b508ba182c51e97e4fc8c885cd24276a20839d2495edf85047b3bee103719",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.insufficient.unknown",
+      "source": "17735f0ef16f1ad5e2416844dadeb1ae2d65b6777d8f8de54f06549cb0910e31",
+      "contract": "86d02a15706257255e2d767c0fe070c8f0becad725a11e94da990efc4e209a9b",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.item.cuda.tarball",
+      "source": "872d8ca001a8535b4ac7972cfd5c7bbfbb6996633ab1b869aa6f872ed722980b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.item.gguf.model",
+      "source": "9ee98f61b667a9d8f7ef4634eb53494fbace39db356135f01b485d57fe6510e3",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.item.llama.tarball",
+      "source": "85f1b15c9396176dc8f72512c4e1b9368fc8dfb4b4029f55068888a99f2c5df0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.item.mlx.model",
+      "source": "5325cec982e330e2321a88e816c37d0330996c4dbf78e9655e1130a1399983aa",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.item.mmproj",
+      "source": "9e5f20ddf1140bce90a0c592dac3dfb57a5913c42a4faac088fb144a79de83d8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.item.parakeet.cpu",
+      "source": "4e1ef7e5637b6a868217c9b2ab5f09b065eb062abe614d9741926282b1bd5539",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.item.parakeet.model",
+      "source": "a58ef05bdc225b84728612b1bbc6ba763ccc564027b604fed160b4fe17c0c8de",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.item.parakeet.vulkan",
+      "source": "8b353d88f7689059424dbb254303cb1a5f381fc28e646e4b7b4fbdabf16073a8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.item.rfdetr.cli",
+      "source": "3454736ebd47afbc0523767ffb660f104003a4678c20b96b4c1f3b66a30a3d70",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.item.rfdetr.model",
+      "source": "bda4bf1b633037d095b194a9ddf78eb8f0270145a9b763274e891f42138ac926",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.ok",
+      "source": "3a3bd0aae8a03bee104b31568e6249a02625b4cce9d71bc4802aea4425da8757",
+      "contract": "1ce29e2cd6122f3dcf109011ad4bc7609224d707bca8c7d64ad0d8565b3bc722",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.ok.unknown",
+      "source": "1b19f742506d11f2d7c4085279db37682a352b9dd0b3932c7f111669693cde6b",
+      "contract": "86d02a15706257255e2d767c0fe070c8f0becad725a11e94da990efc4e209a9b",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.overflow",
+      "source": "58d21ee09bb92ae2a5f42b0a162eb2ea6056e0f8e083e8a1ef203bee870ac308",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.requirement.bundled",
+      "source": "96d6eaa3628c6b86a702352da6352f424a82270708ca015269c7a8b835aba762",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.requirement.downloads",
+      "source": "dbddb4591f4f38bdcc45135928e2cde2f95c7fd39bfd642d1a13fa963cbee1ab",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.unavailable",
+      "source": "4f25c7c377d86edbae321056ece3b3af1c9584b8a8ba8da56cde9ac766586520",
+      "contract": "4c9e997d56ca51bf01881db8b969f5b70b3fdd2359b93c99d4992127ba72f48f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.unavailable.unknown",
+      "source": "bba2ce38679fdd439582eabb2865663743d26a9f9cfce7243623dc6996ed5c13",
+      "contract": "a5f459e6bb4d159c37bbaf9e22c0877984555252b0cae2648ad80447cb9c4600",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.disk.unsupported",
+      "source": "bec751960cec4778c84cc3ccfb74a7c9a9e67fb78d95640436c743afb154130b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.gpu.cuda.memory.unknown",
+      "source": "df109d09c277033fe3cb024aab3cab61cba93509891439ab14a8a6b465251c86",
+      "contract": "88da6577e822bae45cef0b26ef0d6f553c6bd5f6c34d3517f16d4a34b592cc4f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.gpu.cuda.ok",
+      "source": "ba908a5d80e008ade2d119c8a324ee1fcb6921f73a9c07ec10099d1340df06ea",
+      "contract": "59d2e3ecd32f990e4f3aabeb502e32f02d792e3c833c17a9fb91ea02b32115b6",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.gpu.cuda.ok.cpu",
+      "source": "41782466dac37a9365855f9d2b00eb0fc016f77c35dd1b47f7613b750401a26e",
+      "contract": "59d2e3ecd32f990e4f3aabeb502e32f02d792e3c833c17a9fb91ea02b32115b6",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.gpu.cuda.ok.unified",
+      "source": "f096e9e60f86af5a8c20ef16b98703b60c25e08ad4ebec5f51a3aed5a0f5291d",
+      "contract": "59d2e3ecd32f990e4f3aabeb502e32f02d792e3c833c17a9fb91ea02b32115b6",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.gpu.cuda.ok.unified.cpu",
+      "source": "f3524cb4367b5f3e534454aa50b4ce2aec5695fa24251805bfbefd311181ba76",
+      "contract": "59d2e3ecd32f990e4f3aabeb502e32f02d792e3c833c17a9fb91ea02b32115b6",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.gpu.cuda.probe.unavailable",
+      "source": "b2fc4d559a30894bb517c499ab37f4c5b00616f50a4988a20b067b6eb917332b",
+      "contract": "88da6577e822bae45cef0b26ef0d6f553c6bd5f6c34d3517f16d4a34b592cc4f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.gpu.vulkan.below.bar",
+      "source": "d37424d0af3b97f034cce3bbd387f9a359c003e0fe4189b6b70627734b0fe926",
+      "contract": "ea4476131320584e66e6ae7192312a48db44f734415c4389ed6cf0f3a6dbe1e8",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.gpu.vulkan.below.bar.cpu",
+      "source": "4095453abb627370ebdc10d69c961e4d0b436c4331e15bbc4727b42fd52353fb",
+      "contract": "ea4476131320584e66e6ae7192312a48db44f734415c4389ed6cf0f3a6dbe1e8",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.gpu.vulkan.eligible",
+      "source": "bdd6f87f3c4bfdcc7da577f8cade80c731ba0c75fc0961dd0ce8faa618dfef76",
+      "contract": "0c2d5c7de8941e9ab084a6c000bc108eabdbd4544f03ee7338031981bd9070bb",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.gpu.vulkan.eligible.cpu",
+      "source": "4afe18256c6005fc89e9e8d237cf879dc6d0143ea9e6e7e3b3befab707375c72",
+      "contract": "0c2d5c7de8941e9ab084a6c000bc108eabdbd4544f03ee7338031981bd9070bb",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.gpu.vulkan.memory.unknown",
+      "source": "9b39db5637538aaa6668cd9a2af67f5953734dc29150041a58ae88b4a74dfd59",
+      "contract": "88da6577e822bae45cef0b26ef0d6f553c6bd5f6c34d3517f16d4a34b592cc4f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.gpu.vulkan.no.hardware",
+      "source": "289094979c4bb84db732fb3afdde79e8b2bf118bbd556c88ba92218a28638060",
+      "contract": "88da6577e822bae45cef0b26ef0d6f553c6bd5f6c34d3517f16d4a34b592cc4f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.gpu.vulkan.probe.incomplete",
+      "source": "6707799cfe9fbe8df8435635e0dc2d1f6508bb01a985d3e6023ee3d249acdad5",
+      "contract": "88da6577e822bae45cef0b26ef0d6f553c6bd5f6c34d3517f16d4a34b592cc4f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.header",
+      "source": "8dd6d79b29d58926415f82298542149c6ddca857e5b2634bac2c45e41bb967fe",
+      "contract": "bd60143ea6d67bd5fd6c480b7f5a7e192701c2a1ecdffbf13c971539cc4e4aa3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.platform.embedded.blocked",
+      "source": "e6bdd8891863ad58067c8c9d517b5797949f1455ebea12286f7768b509eaa357",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.platform.embedded.ok",
+      "source": "65e53dda69a88d52a2e04c8f7b14a08632620853e3a1bcabf4d1d140906cd9eb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.platform.llama.blocked",
+      "source": "b47a3cfaaa51909aba55e7caafba563533e1e7bb20a317dd27ee245895588c17",
+      "contract": "7712d1465f00d6c514c68073655b7194e392d625eb26b37e719ff949527f884c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.platform.llama.ok",
+      "source": "79bebdd01fbf6469f51aa77c88e658ec59b09f8c1ae8b4d8d891f7910efd00c9",
+      "contract": "7712d1465f00d6c514c68073655b7194e392d625eb26b37e719ff949527f884c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.platform.mlx.blocked",
+      "source": "83129a8fdb8ff559a6992d9f62c500495336ddee4be4fb3fe24d732959555655",
+      "contract": "572b139ea68c160454909f99bcfe2ce975ca9487530ca29d426b8e443f207c7a",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.platform.mlx.ok",
+      "source": "6cb43c8989dd453347203cf5f00d3413a7ff11c0fedff5f4b8a6c45160e08305",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.platform.parakeet.ok",
+      "source": "2ba9291f9301f40af66b8096fcb22b7ed24fbdf2a3cbaa32fb818ff07b9dc513",
+      "contract": "7712d1465f00d6c514c68073655b7194e392d625eb26b37e719ff949527f884c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.platform.rfdetr.blocked",
+      "source": "b7ae0aaf8b97303450da8021bd288ed20369ce51ca6617b1ba692b72c7c7301a",
+      "contract": "572b139ea68c160454909f99bcfe2ce975ca9487530ca29d426b8e443f207c7a",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.platform.rfdetr.ok",
+      "source": "f3723a3289f99c0328f79a63a91db484d68260ac130e3577352a25b06d1e9adc",
+      "contract": "7712d1465f00d6c514c68073655b7194e392d625eb26b37e719ff949527f884c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.platform.rfdetr.windows.ok",
+      "source": "12ec56a8f4efe1417df5719c1336ff20fbf4ec9a6a1114f8a32d32c8b352966a",
+      "contract": "572b139ea68c160454909f99bcfe2ce975ca9487530ca29d426b8e443f207c7a",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.platform.windows.llama.blocked",
+      "source": "04217a9cab8fe06b71b15521663c36cb811abb4a3e113dc3d52f3548a1de85ed",
+      "contract": "572b139ea68c160454909f99bcfe2ce975ca9487530ca29d426b8e443f207c7a",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.platform.windows.llama.ok",
+      "source": "e91ab540c5464daa98fa78700575ab41c2484e54c66f132aa8cf0bacb5a5e46a",
+      "contract": "fb4a2bf36583904d325bdd90e20c043e904fe0233ae042835d2aba1dbbb0a8f3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.ram.insufficient",
+      "source": "f4083fea7d34011bc0085dcac4b75c30fb5692cf053d9c8a5f9d26cc9a7ddad5",
+      "contract": "a9d1a4af3c81bcece4a9efd367d8ba241f15ac50695e15752e6877b6fcaf1e56",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.ram.ok",
+      "source": "366679543beef90258aec874120def74f180f1fbfddda29749112de260ba2bc1",
+      "contract": "a9d1a4af3c81bcece4a9efd367d8ba241f15ac50695e15752e6877b6fcaf1e56",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.ram.unknown",
+      "source": "899d1a2b2d77bb7243df7f1909f9243ff46c491f108d1f7954b7adb1a4446589",
+      "contract": "abba5b090ee544a5eb6d50d0d48e194f454ef90ff3623373ce136c31d663716d",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.row",
+      "source": "2968dbf28590dd3c8e8a1ed53cf3b54e8ab36311d5238696cf9216da9ddf480d",
+      "contract": "4186e47000cd45c4ef3c66c7f3b1f3d2ac697738a922d100246c11a30a6bfa28",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.severity.blocked",
+      "source": "d97c90d79aa7cd63af048f73b1d81634d842537aa5bb9758fffae310f1bcdc1b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.severity.ok",
+      "source": "7215fe69aa21a2b073c5e6c8c18daaa73b91c9d619b7e8fb38d01d84f8d53a3f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.severity.unknown",
+      "source": "2642526c3fad2ee76ba9d4b61184c7918fd26f1c4e0c8484492f2e4b15ca7ce4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.fit.severity.warning",
+      "source": "83eb0bfdccfd138d753e475c5d64520601de69e5c8632340e7d5b0502b40b389",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.cli.install.hardware.apple.memory",
       "source": "145634f4e3f68e998c7e03c52ac46bb7470def549784a77178a8cb2c2e02d871",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -16053,6 +16494,55 @@
       "locales": []
     },
     {
+      "id": "journal.cli.install.pdfium.windows.executable.location",
+      "source": "73a348120330f6c1f3823f10809746b0e67136f801f792eee175fb0a44c3974c",
+      "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.pdfium.windows.executable.parent",
+      "source": "7b901f163c1982f1cab09972b002043bbc9e09681d345d59bccf43e85214bf63",
+      "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.pdfium.windows.executable.read",
+      "source": "4f20c0adc465f61ae057e307a02337ed816699d6e51940d51400a51978296559",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.pdfium.windows.package.root",
+      "source": "ec8d04426cde1da702381dcba67f448f3efaade38a26ab10a52b88bfae735334",
+      "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.pdfium.windows.payload.refuses",
+      "source": "63f65c001426553e13a7943efba5e75f694a70a96cb7842bc65b9f99e15980ba",
+      "contract": "d2b799457d1dbf3693691d5d4db7cbe3851f455ca0033013df8fc020df3d6e60",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.pdfium.windows.payload.verify",
+      "source": "e2642b6e2871842989c17e804d00260072e17e5fd245135757b68e55afcad12f",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.pdfium.windows.runtime",
+      "source": "3bbaee7792e076055510b73624b5f8f2553077c0d0a5687affc92299c70dc8ce",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.cli.install.pin.missing",
       "source": "04699da8ca11b8fc4fc56827caad17a981671a4728728040d1722d244bc0ddf7",
       "contract": "7712d1465f00d6c514c68073655b7194e392d625eb26b37e719ff949527f884c",
@@ -16077,6 +16567,153 @@
       "id": "journal.cli.install.registry.platform",
       "source": "eeced6ce3f5742ace153240c4b33e89879768817cd8b85896a105de986ab788a",
       "contract": "7712d1465f00d6c514c68073655b7194e392d625eb26b37e719ff949527f884c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.asset.missing",
+      "source": "ee021144b9cc58d3ab9cca0132856fa12693f6bdaa5980e67d93b8e3c5701894",
+      "contract": "cec471e840bbb44a2ffe2a72b3d629e67302e1f35a2a8c15824f8a1875e37d11",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.binary.missing",
+      "source": "5cc1921c8c63a5c7902476e0a2b97b30871abdef78003b2bdc4c1d63aa82bc62",
+      "contract": "76fb247d1ba5c95197c5331c03f53844b96486a220ebceecc66d8c090e69537c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.bundled.missing",
+      "source": "4229f50fdc2b69820557de29138bac0e4cdc725982a9bf57d156e4e5f1be8d7c",
+      "contract": "ecdc928149f38234265f5090c7aeab1e20349483e4a6bd3d4b73c75e773b87fd",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.contract.missing",
+      "source": "c85825eff38e74a1d41cff808df1170aa624e96b86471b10a9e768d6970a49f3",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.contract.slot",
+      "source": "02116e5aab5c3ff1c06d425bc1c2ffe700c8621ac9bdb9b70de3cdb403fbf78e",
+      "contract": "48261faa3d3da598eb714274caa3d4574c5b55f7b5e889cb0d5e67fe95d032bd",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.member.mismatch",
+      "source": "dd3e4eb18eb184ac623a788a7854ba84d5cea26c9e328620655c6f90935b8873",
+      "contract": "48261faa3d3da598eb714274caa3d4574c5b55f7b5e889cb0d5e67fe95d032bd",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.member.outside",
+      "source": "bf0a63013164161d4941b7529774cc57c9a82b9dcf2ccedbb96cf527774b1ca1",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.probe.failed",
+      "source": "5ed252a3bac7a58c6089670b6041d7cbc6e82b2f8d166185b169f281812534fb",
+      "contract": "7d8c7442699e328313d27e98a00057d33c61313c17bfa548519a32f4445f5a9d",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.sha256.mismatch",
+      "source": "91e3f3ed93b94f3b9640d01203ac9dba29ad41305bfac60f9250ebb598a4a3cf",
+      "contract": "cec471e840bbb44a2ffe2a72b3d629e67302e1f35a2a8c15824f8a1875e37d11",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.sidecar.invalid",
+      "source": "6c85b568e7611321a5cefc1279281fb3acb0094642081996c79ab89fd4100d89",
+      "contract": "4c9e997d56ca51bf01881db8b969f5b70b3fdd2359b93c99d4992127ba72f48f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.sidecar.mismatch",
+      "source": "91790a7f984c96d3d0b0bb0c066b13a956b6ceb2052c802606d55042ffa5e0c4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.sidecar.missing",
+      "source": "73f71c2f65268e30a855bf456634be96b9b8a6f55c5c2f0f4c7e774e7462ab86",
+      "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.size.mismatch",
+      "source": "8845583ee868617746937a09497c749f87084d97f8f0924fde83f112fb0d86bb",
+      "contract": "1fb5d056b796a3d8bca6d63206fc211e135950b9a4f728390a9fbc8759bf6890",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.windows.detect.failed",
+      "source": "0c60756c8bb40fb475eed17634625e77c17dc7c3f43bdf3110686b84c3d4284a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.windows.executable.location",
+      "source": "73a348120330f6c1f3823f10809746b0e67136f801f792eee175fb0a44c3974c",
+      "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.windows.executable.parent",
+      "source": "61db2e9118892332fe3914e1e29911e62c5f87cade6c9a7ffd20bd87a64569e2",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.windows.executable.read",
+      "source": "4f20c0adc465f61ae057e307a02337ed816699d6e51940d51400a51978296559",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.windows.package.root",
+      "source": "9788655f67ebd01d2ebc789bc3eb2df672fe2a7d967ed5f6256c287a2da74000",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.windows.result.limit",
+      "source": "72cd097b7a38a85d2175209267c3f2fadd64e3ed49b55613e29403a22588d667",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.windows.runtime",
+      "source": "7428ba8de1e11965961d5239377cc20a98164b563f7eef861e162964bd215eb5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.rfdetr.windows.verify.failed",
+      "source": "6da7aa6e7cf003ef2282763ee9df5b9753afd74d6ec402b6e9dcca3704c1611c",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
@@ -16308,6 +16945,125 @@
       "id": "journal.cli.install.windows.package.runtime",
       "source": "8a467cf0cbf27a24e7260c4ca1bb67e815bd8d595535cb3a408cd616a0b34346",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.bytes",
+      "source": "b5a48b14b8349a5fe8e4fb327ef70272a12aaa1fa33fd5c69de68db2af97485b",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.case.collision",
+      "source": "87f4423e40da6a2cf3a2c97edd394609c1d95f32c234a9630354e2771df47a6f",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.digest",
+      "source": "79255491bc9408f94a7260f15e73a26db2e8d777b8110536d059c830cd94fddb",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.empty",
+      "source": "7f76112e4b42a382e83d3ea3dba3658d860959c652204ad49414bdc64d4a8cbc",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.lock.digest",
+      "source": "66e1475b5ed4c7e1da1572e0ade8b64cd264a1446ca33e995a749fa92f13704c",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.manifest",
+      "source": "19b7ddfdc5ca55b7a1157c8c1fc1fa4f00d12ea2281fa32f61cf0d7db69ee9c1",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.missing",
+      "source": "71155b11a9d58c988dac9b4b800b4ee761031c136ba8f992a17615eb58750688",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.missing.member",
+      "source": "8d40d4a3a616ead21a36de62991cdc8f44d0e538dc9e377f5c40c3d92b06b203",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.not.regular",
+      "source": "8ba2f161dbd74fb1d517b6afaffa1dff40f16523be057894d0db202de651d259",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.reparse.or.symlink",
+      "source": "b25a9632a3a7fd477114c82b52425f3e62b295f994df242e4de1c92e3e2f2b1b",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.schema",
+      "source": "d6589038aad883a4e286be2b635f32ab1b4d53582dfbc2cef3e935718d059adb",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.signature",
+      "source": "e1fb2352db9d9a7a1494eaa9604d4c2dc7eb244daca936be4a74c2efc079637c",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.source.commit",
+      "source": "f13c1eb19e9c1f602c892bd813ce0824a1b00d6da3f48f35e26d3bb36564bb78",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.target",
+      "source": "baf317ec09ef2b4da07831f96fb7cc984bc9ab63a8279873c6433e51c061b668",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.unexpected.member",
+      "source": "d9baf458e6954bab29b6dc98371c5404ff572ebf1c564d7f07e73bf30406cdfc",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.unsafe.path",
+      "source": "702926a0c9541f1e9a752ee04088fba7b06ec1bfb299ddd88529ccefc696cd2a",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.windows.payload.unsorted.or.duplicate",
+      "source": "bda658fbaa99f07de617d7ef3ab409ce8416dca8b6e13e4a44874172a1841772",
+      "contract": "dcad0b2293f13450d7078a1bb90284944d48765ad0dd77911ab490c5608140c2",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },

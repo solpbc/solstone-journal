@@ -1,0 +1,21 @@
+{
+  "description": "Fit report no pinned llama-server artifact detail.",
+  "context": "Fit report no pinned llama-server artifact detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b47a3cfaaa51909aba55e7caafba563533e1e7bb20a317dd27ee245895588c17",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

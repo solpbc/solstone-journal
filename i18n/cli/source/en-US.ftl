@@ -12488,3 +12488,219 @@ journal.cli.think.sense.dry.would.process = { $quantity ->
     [one] Would process { $count } file ({ $breakdown }):
     *[other] Would process { $count } files ({ $breakdown }):
     }
+
+journal.cli.install.windows.payload.missing = missing{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.not.regular = not-regular{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.reparse.or.symlink = reparse-or-symlink{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.unsafe.path = unsafe-path{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.manifest = manifest{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.signature = signature{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.schema = schema{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.target = target{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.source.commit = source-commit{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.lock.digest = cargo-lock-sha256{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.empty = empty{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.unsorted.or.duplicate = unsorted-or-duplicate{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.case.collision = case-collision{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.digest = digest{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.bytes = bytes{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.missing.member = missing-member{ $line_break }  { $detail }
+
+journal.cli.install.windows.payload.unexpected.member = unexpected-member{ $line_break }  { $detail }
+
+journal.cli.install.pdfium.windows.executable.read = could not determine the running journal executable: { $error }
+
+journal.cli.install.pdfium.windows.executable.parent = running journal executable has no containing directory: { $path }
+
+journal.cli.install.pdfium.windows.executable.location = running journal executable is not in the package bin directory: { $path }
+
+journal.cli.install.pdfium.windows.package.root = package bin directory has no package root: { $path }
+
+journal.cli.install.pdfium.windows.payload.verify = could not verify the signed PDF app payload: { $error }
+
+journal.cli.install.pdfium.windows.payload.refuses = signed PDF app payload refuses { $member }: { $error }
+
+journal.cli.install.pdfium.windows.runtime = Windows PDF package verification requires a Windows runtime
+
+journal.cli.install.rfdetr.windows.executable.read = could not determine the running journal executable: { $error }
+
+journal.cli.install.rfdetr.windows.runtime = Windows RF-DETR package verification requires a Windows runtime
+
+journal.cli.install.rfdetr.windows.executable.parent = running journal executable has no containing directory
+
+journal.cli.install.rfdetr.windows.executable.location = running journal executable is not in the package bin directory: { $path }
+
+journal.cli.install.rfdetr.windows.package.root = package bin directory has no package root
+
+journal.cli.install.rfdetr.windows.detect.failed = rfdetr-cli detect failed
+
+journal.cli.install.rfdetr.windows.result.limit = RF-DETR result exceeded its byte limit
+
+journal.cli.install.rfdetr.windows.verify.failed = Windows RF-DETR package verification failed: { $error }
+
+journal.cli.install.rfdetr.probe.failed = rf-detr engine probe failed: { $result }
+
+journal.cli.install.rfdetr.contract.missing = compiled rf-detr delivery contract missing
+
+journal.cli.install.rfdetr.contract.slot = compiled rf-detr delivery contract slot { $actual } does not match { $expected }
+
+journal.cli.install.rfdetr.bundled.missing = bundled rf-detr asset missing: { $filename }; reinstall the journal package
+
+journal.cli.install.rfdetr.asset.missing = rf-detr asset missing: { $label }
+
+journal.cli.install.rfdetr.size.mismatch = size mismatch for { $label }: expected { $expected }, got { $actual }
+
+journal.cli.install.rfdetr.sha256.mismatch = sha256 mismatch for { $label }
+
+journal.cli.install.rfdetr.sidecar.missing = rf-detr sidecar missing: { $path }
+
+journal.cli.install.rfdetr.sidecar.invalid = rf-detr sidecar invalid: { $path }: { $error }
+
+journal.cli.install.rfdetr.sidecar.mismatch = rf-detr sidecar does not match pinned artifacts
+
+journal.cli.install.rfdetr.binary.missing = Extracted archive did not contain { $binary }
+
+journal.cli.install.rfdetr.member.outside = rf-detr binary was outside extraction root: { $error }
+
+journal.cli.install.rfdetr.member.mismatch = rf-detr binary member { $actual } does not match { $expected }
+
+journal.cli.install.fit.severity.ok = ok
+
+journal.cli.install.fit.severity.warning = warning
+
+journal.cli.install.fit.severity.blocked = blocked
+
+journal.cli.install.fit.severity.unknown = unknown
+
+journal.cli.install.fit.check.platform = platform
+
+journal.cli.install.fit.check.ram = ram
+
+journal.cli.install.fit.check.disk = disk
+
+journal.cli.install.fit.check.gpu = gpu
+
+journal.cli.install.fit.header = { $artifact } fit check: { $overall }
+
+journal.cli.install.fit.row = [{ $severity }] { $name }: { $detail }
+
+journal.cli.install.fit.artifact.parakeet = parakeet.cpp artifacts
+
+journal.cli.install.fit.artifact.rfdetr = rf-detr.cpp artifacts
+
+journal.cli.install.fit.artifact.local = local provider artifacts
+
+journal.cli.install.fit.platform.parakeet.ok = pinned parakeet.cpp artifacts are available for { $key }
+
+journal.cli.install.fit.platform.rfdetr.windows.ok = signed rf-detr.cpp package payload is supported for { $os }/{ $arch }
+
+journal.cli.install.fit.platform.rfdetr.ok = pinned rf-detr.cpp artifacts are available for { $key }
+
+journal.cli.install.fit.platform.rfdetr.blocked = rf-detr.cpp requires darwin/arm64, linux/x86_64, or linux/arm64; got { $os }/{ $arch }
+
+journal.cli.install.fit.platform.embedded.ok = local runtime is included in the journal app
+
+journal.cli.install.fit.platform.embedded.blocked = the journal app does not provide this local runtime
+
+journal.cli.install.fit.platform.mlx.ok = MLX runtime is included with the journal
+
+journal.cli.install.fit.platform.mlx.blocked = MLX requires macos on Apple silicon; got { $os }/{ $arch }
+
+journal.cli.install.fit.platform.windows.llama.ok = signed llama-server package payload is supported for windows/{ $arch }
+
+journal.cli.install.fit.platform.windows.llama.blocked = llama-server requires a supported windows architecture; got { $os }/{ $arch }
+
+journal.cli.install.fit.platform.llama.ok = pinned llama-server artifact is available for { $key }
+
+journal.cli.install.fit.platform.llama.blocked = No pinned llama-server artifact for platform { $key }
+
+journal.cli.install.fit.ram.unknown = available memory could not be verified for { $model }
+
+journal.cli.install.fit.ram.ok = { $available } GB available memory meets the { $required } GB requirement for { $model }
+
+journal.cli.install.fit.ram.insufficient = insufficient RAM for { $model } (need { $required } GB available, have { $available } GB available)
+
+journal.cli.install.fit.gpu.cuda.probe.unavailable = NVIDIA GPU probe unavailable; resolved backend is { $backend }: { $reason }
+
+journal.cli.install.fit.gpu.cuda.memory.unknown = resolved backend is { $backend }: { $reason }; GPU memory is unknown
+
+journal.cli.install.fit.gpu.cuda.ok = CUDA backend selected: { $reason }
+
+journal.cli.install.fit.gpu.cuda.ok.unified = CUDA backend selected: { $reason }; GPU tiering memory uses system MemAvailable
+
+journal.cli.install.fit.gpu.cuda.ok.cpu = CUDA backend selected: { $reason }; a model runs on your GPU; transcription runs on your CPU on this machine
+
+journal.cli.install.fit.gpu.cuda.ok.unified.cpu = CUDA backend selected: { $reason }; GPU tiering memory uses system MemAvailable; a model runs on your GPU; transcription runs on your CPU on this machine
+
+journal.cli.install.fit.gpu.vulkan.eligible = Vulkan GPU selected: { $name }; resolved backend is { $backend }: { $reason }
+
+journal.cli.install.fit.gpu.vulkan.eligible.cpu = Vulkan GPU selected: { $name }; resolved backend is { $backend }: { $reason }; a model runs on your GPU; transcription runs on your CPU on this machine
+
+journal.cli.install.fit.gpu.vulkan.below.bar = GPU { $name } has { $available } GB; the bundled local models need at least 6 GB; resolved backend is { $backend }: { $reason }
+
+journal.cli.install.fit.gpu.vulkan.below.bar.cpu = GPU { $name } has { $available } GB; the bundled local models need at least 6 GB; resolved backend is { $backend }: { $reason }; a model runs on your GPU; transcription runs on your CPU on this machine
+
+journal.cli.install.fit.gpu.vulkan.memory.unknown = GPU memory could not be read; resolved backend is { $backend }: { $reason }
+
+journal.cli.install.fit.gpu.vulkan.no.hardware = no hardware Vulkan GPU selected; resolved backend is { $backend }: { $reason }
+
+journal.cli.install.fit.gpu.vulkan.probe.incomplete = Vulkan GPU probe did not complete; resolved backend is { $backend }: { $reason }
+
+journal.cli.install.fit.disk.requirement.downloads = known downloads
+
+journal.cli.install.fit.disk.requirement.bundled = bundled asset installation
+
+journal.cli.install.fit.disk.item.parakeet.model = parakeet GGUF model
+
+journal.cli.install.fit.disk.item.parakeet.cpu = parakeet CPU server tarball
+
+journal.cli.install.fit.disk.item.parakeet.vulkan = parakeet Vulkan server tarball
+
+journal.cli.install.fit.disk.item.rfdetr.model = rf-detr GGUF model
+
+journal.cli.install.fit.disk.item.rfdetr.cli = rf-detr CLI binary
+
+journal.cli.install.fit.disk.item.mlx.model = MLX model
+
+journal.cli.install.fit.disk.item.gguf.model = GGUF model
+
+journal.cli.install.fit.disk.item.mmproj = mmproj
+
+journal.cli.install.fit.disk.item.cuda.tarball = CUDA llama-server tarball
+
+journal.cli.install.fit.disk.item.llama.tarball = llama-server tarball
+
+journal.cli.install.fit.disk.unavailable = available disk space could not be verified at { $path }: { $error }
+
+journal.cli.install.fit.disk.unavailable.unknown = available disk space could not be verified at { $path }: { $error }; unknown download size for { $unknown }
+
+journal.cli.install.fit.disk.insufficient = insufficient disk space for { $requirement } (need { $required } GB, have { $available } GB free)
+
+journal.cli.install.fit.disk.insufficient.named = insufficient disk space for { $requirement } (need { $required } GB, have { $available } GB free): { $known }
+
+journal.cli.install.fit.disk.insufficient.unknown = insufficient disk space for { $requirement } (need { $required } GB, have { $available } GB free); unknown download size for { $unknown }
+
+journal.cli.install.fit.disk.insufficient.named.unknown = insufficient disk space for { $requirement } (need { $required } GB, have { $available } GB free): { $known }; unknown download size for { $unknown }
+
+journal.cli.install.fit.disk.ok = { $available } GB free for { $required } GB { $requirement }
+
+journal.cli.install.fit.disk.ok.unknown = { $available } GB free; { $requirement } need { $required } GB; unknown download size for { $unknown }
+
+journal.cli.install.fit.disk.overflow = available disk space overflow
+
+journal.cli.install.fit.disk.unsupported = disk-space inspection is unsupported on this platform

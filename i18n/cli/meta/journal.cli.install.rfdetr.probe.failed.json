@@ -1,0 +1,21 @@
+{
+  "description": "RF-DETR readiness failed during binary probe.",
+  "context": "RF-DETR readiness failed during binary probe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5ed252a3bac7a58c6089670b6041d7cbc6e82b2f8d166185b169f281812534fb",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "RF-DETR verification error when file SHA-256 differs from pinned digest.",
+  "context": "RF-DETR verification error when file SHA-256 differs from pinned digest.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "91e3f3ed93b94f3b9640d01203ac9dba29ad41305bfac60f9250ebb598a4a3cf",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

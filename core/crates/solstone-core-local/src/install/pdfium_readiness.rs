@@ -9,6 +9,10 @@
 
 use std::path::PathBuf;
 
+use solstone_core_cli_copy::ENGLISH;
+#[cfg(windows)]
+use solstone_core_cli_copy::MessageDetail;
+
 #[cfg(windows)]
 use std::ffi::OsStr;
 #[cfg(windows)]
@@ -27,39 +31,97 @@ pub struct WindowsPdfiumPackage {
     pub library: PathBuf,
 }
 
+#[cfg(windows)]
+#[derive(Clone, Debug)]
+enum WindowsPdfiumPackageError {
+    ExecutableRead(String),
+    ExecutableParent(String),
+    ExecutableLocation(String),
+    PackageRoot(String),
+    PayloadVerify(MessageDetail),
+    PayloadRefuses {
+        member: &'static str,
+        detail: MessageDetail,
+    },
+}
+
+#[cfg(windows)]
+impl WindowsPdfiumPackageError {
+    fn render(&self, locale: &str) -> String {
+        match self {
+            Self::ExecutableRead(error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.pdfium.windows.executable.read",
+                [("error", error)],
+            ),
+            Self::ExecutableParent(path) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.pdfium.windows.executable.parent",
+                [("path", path)],
+            ),
+            Self::ExecutableLocation(path) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.pdfium.windows.executable.location",
+                [("path", path)],
+            ),
+            Self::PackageRoot(path) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.pdfium.windows.package.root",
+                [("path", path)],
+            ),
+            Self::PayloadVerify(detail) => {
+                let error = detail.render(locale);
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.pdfium.windows.payload.verify",
+                    [("error", &error)],
+                )
+            }
+            Self::PayloadRefuses { member, detail } => {
+                let error = detail.render(locale);
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.pdfium.windows.payload.refuses",
+                    [("member", member), ("error", &error)],
+                )
+            }
+        }
+    }
+}
+
 /// Resolve PDF worker inputs only from the complete, signed package containing
 /// the running journal executable.
-#[cfg(windows)]
 pub fn verified_windows_pdfium_package() -> Result<WindowsPdfiumPackage, String> {
-    static PACKAGE: OnceLock<Result<WindowsPdfiumPackage, String>> = OnceLock::new();
+    verified_windows_pdfium_package_in(ENGLISH)
+}
+
+#[cfg(windows)]
+pub fn verified_windows_pdfium_package_in(locale: &str) -> Result<WindowsPdfiumPackage, String> {
+    static PACKAGE: OnceLock<Result<WindowsPdfiumPackage, WindowsPdfiumPackageError>> =
+        OnceLock::new();
     match PACKAGE.get_or_init(|| {
-        let executable = std::env::current_exe().map_err(|error| {
-            format!("could not determine the running journal executable: {error}")
-        })?;
+        let executable = std::env::current_exe()
+            .map_err(|error| WindowsPdfiumPackageError::ExecutableRead(error.to_string()))?;
         let bin = executable.parent().ok_or_else(|| {
-            format!(
-                "running journal executable has no containing directory: {}",
-                executable.display()
-            )
+            WindowsPdfiumPackageError::ExecutableParent(executable.display().to_string())
         })?;
         if bin.file_name() != Some(OsStr::new("bin")) {
-            return Err(format!(
-                "running journal executable is not in the package bin directory: {}",
-                executable.display()
+            return Err(WindowsPdfiumPackageError::ExecutableLocation(
+                executable.display().to_string(),
             ));
         }
-        let package_root = bin.parent().ok_or_else(|| {
-            format!(
-                "package bin directory has no package root: {}",
-                bin.display()
-            )
+        let package_root = bin
+            .parent()
+            .ok_or_else(|| WindowsPdfiumPackageError::PackageRoot(bin.display().to_string()))?;
+        let payload = verify_windows_payload(package_root).map_err(|error| {
+            WindowsPdfiumPackageError::PayloadVerify(super::windows_engine::payload_error_detail(
+                &error,
+            ))
         })?;
-        let payload = verify_windows_payload(package_root)
-            .map_err(|error| format!("could not verify the signed PDF app payload: {error}"))?;
         declared_pdfium_members(package_root, &payload)
     }) {
         Ok(package) => Ok(package.clone()),
-        Err(error) => Err(error.clone()),
+        Err(error) => Err(error.render(locale)),
     }
 }
 
@@ -67,12 +129,18 @@ pub fn verified_windows_pdfium_package() -> Result<WindowsPdfiumPackage, String>
 fn declared_pdfium_members(
     package_root: &std::path::Path,
     payload: &VerifiedWindowsPayload,
-) -> Result<WindowsPdfiumPackage, String> {
+) -> Result<WindowsPdfiumPackage, WindowsPdfiumPackageError> {
     let worker = payload.pdfium_worker_path().map_err(|error| {
-        format!("signed PDF app payload refuses {WINDOWS_PDFIUM_WORKER}: {error}")
+        WindowsPdfiumPackageError::PayloadRefuses {
+            member: WINDOWS_PDFIUM_WORKER,
+            detail: super::windows_engine::payload_error_detail(&error),
+        }
     })?;
     let library = payload.pdfium_library_path().map_err(|error| {
-        format!("signed PDF app payload refuses {WINDOWS_PDFIUM_LIBRARY}: {error}")
+        WindowsPdfiumPackageError::PayloadRefuses {
+            member: WINDOWS_PDFIUM_LIBRARY,
+            detail: super::windows_engine::payload_error_detail(&error),
+        }
     })?;
     Ok(WindowsPdfiumPackage {
         package_root: package_root.to_path_buf(),
@@ -83,6 +151,10 @@ fn declared_pdfium_members(
 
 /// Non-Windows callers cannot establish the installed Windows package scope.
 #[cfg(not(windows))]
-pub fn verified_windows_pdfium_package() -> Result<WindowsPdfiumPackage, String> {
-    Err("Windows PDF package verification requires a Windows runtime".to_owned())
+pub fn verified_windows_pdfium_package_in(locale: &str) -> Result<WindowsPdfiumPackage, String> {
+    Err(solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.install.pdfium.windows.runtime",
+        &[],
+    ))
 }

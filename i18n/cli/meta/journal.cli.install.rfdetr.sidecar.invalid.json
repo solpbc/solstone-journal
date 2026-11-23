@@ -1,0 +1,25 @@
+{
+  "description": "RF-DETR check error when install sidecar JSON is invalid.",
+  "context": "RF-DETR check error when install sidecar JSON is invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6c85b568e7611321a5cefc1279281fb3acb0094642081996c79ab89fd4100d89",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

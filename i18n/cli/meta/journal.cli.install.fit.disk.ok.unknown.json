@@ -1,0 +1,33 @@
+{
+  "description": "Fit report sufficient disk space for known downloads with unknown download sizes.",
+  "context": "Fit report sufficient disk space for known downloads with unknown download sizes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "available",
+      "type": "string"
+    },
+    {
+      "name": "requirement",
+      "type": "string"
+    },
+    {
+      "name": "required",
+      "type": "string"
+    },
+    {
+      "name": "unknown",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1b19f742506d11f2d7c4085279db37682a352b9dd0b3932c7f111669693cde6b",
+  "max_length": 306,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Fit report artifact title for rf-detr.cpp.",
+  "context": "Fit report artifact title for rf-detr.cpp.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5ff8ba343676dee978ca70ab65a28f1b76d321d84cbae51e1304e370c64c1ae",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Fit report disk item label for rf-detr GGUF model.",
+  "context": "Fit report disk item label for rf-detr GGUF model.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bda4bf1b633037d095b194a9ddf78eb8f0270145a9b763274e891f42138ac926",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

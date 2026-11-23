@@ -1,0 +1,16 @@
+{
+  "description": "RF-DETR check error when sidecar metadata does not match pinned versions.",
+  "context": "RF-DETR check error when sidecar metadata does not match pinned versions.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "91790a7f984c96d3d0b0bb0c066b13a956b6ceb2052c802606d55042ffa5e0c4",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: path is not a regular file.",
+  "context": "Windows signed payload refusal: path is not a regular file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8ba2f161dbd74fb1d517b6afaffa1dff40f16523be057894d0db202de651d259",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

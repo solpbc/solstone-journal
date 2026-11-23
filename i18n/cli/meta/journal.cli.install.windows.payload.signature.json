@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: signature verification failed.",
+  "context": "Windows signed payload refusal: signature verification failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e1fb2352db9d9a7a1494eaa9604d4c2dc7eb244daca936be4a74c2efc079637c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: reparse point or symlink rejected.",
+  "context": "Windows signed payload refusal: reparse point or symlink rejected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b25a9632a3a7fd477114c82b52425f3e62b295f994df242e4de1c92e3e2f2b1b",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

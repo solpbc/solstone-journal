@@ -1,0 +1,16 @@
+{
+  "description": "Fit report Apple Silicon MLX runtime ready detail.",
+  "context": "Fit report Apple Silicon MLX runtime ready detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6cb43c8989dd453347203cf5f00d3413a7ff11c0fedff5f4b8a6c45160e08305",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

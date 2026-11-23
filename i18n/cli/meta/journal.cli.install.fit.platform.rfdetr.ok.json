@@ -1,0 +1,21 @@
+{
+  "description": "Fit report rf-detr platform ready detail.",
+  "context": "Fit report rf-detr platform ready detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f3723a3289f99c0328f79a63a91db484d68260ac130e3577352a25b06d1e9adc",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

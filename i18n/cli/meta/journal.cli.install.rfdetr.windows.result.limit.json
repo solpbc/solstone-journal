@@ -1,0 +1,16 @@
+{
+  "description": "Windows RF-DETR detection result exceeded maximum allowed bytes.",
+  "context": "Windows RF-DETR detection result exceeded maximum allowed bytes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "72cd097b7a38a85d2175209267c3f2fadd64e3ed49b55613e29403a22588d667",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

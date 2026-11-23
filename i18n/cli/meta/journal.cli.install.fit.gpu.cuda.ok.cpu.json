@@ -1,0 +1,21 @@
+{
+  "description": "Fit report CUDA GPU check passing with CPU transcription placement.",
+  "context": "Fit report CUDA GPU check passing with CPU transcription placement.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "41782466dac37a9365855f9d2b00eb0fc016f77c35dd1b47f7613b750401a26e",
+  "max_length": 324,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

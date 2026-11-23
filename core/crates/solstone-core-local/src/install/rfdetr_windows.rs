@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::Value;
+use solstone_core_cli_copy::ENGLISH;
 
 #[cfg(any(windows, test))]
 use solstone_core_distribution::windows_payload::{
@@ -41,6 +42,14 @@ pub fn rfdetr_degraded_guidance(os_name: &str, arch: &str) -> &'static str {
     }
 }
 
+pub fn rfdetr_degraded_guidance_in(locale: &str, os_name: &str, arch: &str) -> String {
+    if super::rfdetr_install::rfdetr_uses_package_payload(os_name, arch) {
+        solstone_core_cli_copy::render_for(locale, "journal.cli.host.health.rfdetr.package", &[])
+    } else {
+        solstone_core_cli_copy::render_for(locale, "journal.cli.host.health.rfdetr.assets", &[])
+    }
+}
+
 /// The verified package locations required for Windows RF-DETR operations.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WindowsRfdetrPackage {
@@ -60,58 +69,99 @@ pub enum WindowsRfdetrPackageError {
 #[cfg(any(windows, test))]
 impl From<WindowsPayloadError> for WindowsRfdetrPackageError {
     fn from(error: WindowsPayloadError) -> Self {
-        match error.kind {
-            WindowsPayloadRefusal::Missing | WindowsPayloadRefusal::MissingMember => {
-                Self::Missing(error.to_string())
-            }
-            _ => Self::Invalid(error.to_string()),
+        payload_error_in(ENGLISH, error)
+    }
+}
+
+#[cfg(any(windows, test))]
+fn payload_error_in(locale: &str, error: WindowsPayloadError) -> WindowsRfdetrPackageError {
+    let rendered = super::windows_engine::payload_error_detail(&error).render(locale);
+    match error.kind {
+        WindowsPayloadRefusal::Missing | WindowsPayloadRefusal::MissingMember => {
+            WindowsRfdetrPackageError::Missing(rendered)
         }
+        _ => WindowsRfdetrPackageError::Invalid(rendered),
     }
 }
 
 /// Resolve RF-DETR from the complete signed package containing the running
 /// journal executable. Every invocation verifies the current bytes.
-#[cfg(windows)]
 pub fn verified_windows_rfdetr_package() -> Result<WindowsRfdetrPackage, WindowsRfdetrPackageError>
 {
+    verified_windows_rfdetr_package_in(ENGLISH)
+}
+
+#[cfg(windows)]
+pub fn verified_windows_rfdetr_package_in(
+    locale: &str,
+) -> Result<WindowsRfdetrPackage, WindowsRfdetrPackageError> {
     let executable = std::env::current_exe().map_err(|error| {
-        WindowsRfdetrPackageError::Missing(format!(
-            "could not determine the running journal executable: {error}"
+        WindowsRfdetrPackageError::Missing(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.install.rfdetr.windows.executable.read",
+            [("error", &error)],
         ))
     })?;
-    verified_windows_rfdetr_package_at(&executable)
+    verified_windows_rfdetr_package_at_in(locale, &executable)
 }
 
 #[cfg(not(windows))]
-pub fn verified_windows_rfdetr_package() -> Result<WindowsRfdetrPackage, WindowsRfdetrPackageError>
-{
+pub fn verified_windows_rfdetr_package_in(
+    locale: &str,
+) -> Result<WindowsRfdetrPackage, WindowsRfdetrPackageError> {
     Err(WindowsRfdetrPackageError::Missing(
-        "Windows RF-DETR package verification requires a Windows runtime".to_owned(),
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.install.rfdetr.windows.runtime",
+            &[],
+        ),
     ))
 }
 
 #[cfg(any(windows, test))]
+#[allow(dead_code)]
 fn verified_windows_rfdetr_package_at(
+    executable: &Path,
+) -> Result<WindowsRfdetrPackage, WindowsRfdetrPackageError> {
+    verified_windows_rfdetr_package_at_in(ENGLISH, executable)
+}
+
+#[cfg(any(windows, test))]
+fn verified_windows_rfdetr_package_at_in(
+    locale: &str,
     executable: &Path,
 ) -> Result<WindowsRfdetrPackage, WindowsRfdetrPackageError> {
     use WindowsRfdetrPackageError::{Invalid, Missing};
     let bin = executable.parent().ok_or_else(|| {
-        Missing("running journal executable has no containing directory".to_owned())
+        Missing(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.install.rfdetr.windows.executable.parent",
+            &[],
+        ))
     })?;
     if bin.file_name() != Some(OsStr::new("bin")) {
-        return Err(Invalid(format!(
-            "running journal executable is not in the package bin directory: {}",
-            executable.display()
+        return Err(Invalid(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.install.rfdetr.windows.executable.location",
+            [("path", &executable.display())],
         )));
     }
-    let package_root = bin
-        .parent()
-        .ok_or_else(|| Missing("package bin directory has no package root".to_owned()))?;
-    let payload = verify_windows_payload(package_root)?;
+    let package_root = bin.parent().ok_or_else(|| {
+        Missing(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.install.rfdetr.windows.package.root",
+            &[],
+        ))
+    })?;
+    let payload = verify_windows_payload(package_root).map_err(|e| payload_error_in(locale, e))?;
     Ok(WindowsRfdetrPackage {
         package_root: package_root.to_path_buf(),
-        binary: payload.declared_path(WINDOWS_RFDETR_WORKER)?,
-        model: payload.declared_path(WINDOWS_RFDETR_MODEL)?,
+        binary: payload
+            .declared_path(WINDOWS_RFDETR_WORKER)
+            .map_err(|e| payload_error_in(locale, e))?,
+        model: payload
+            .declared_path(WINDOWS_RFDETR_MODEL)
+            .map_err(|e| payload_error_in(locale, e))?,
     })
 }
 
@@ -189,8 +239,20 @@ pub fn rfdetr_windows_detect_launch(
 }
 
 pub fn map_rfdetr_detect_completion(exit_ok: bool, output_path: &Path) -> Result<Value, String> {
+    map_rfdetr_detect_completion_in(ENGLISH, exit_ok, output_path)
+}
+
+pub fn map_rfdetr_detect_completion_in(
+    locale: &str,
+    exit_ok: bool,
+    output_path: &Path,
+) -> Result<Value, String> {
     if !exit_ok {
-        return Err("rfdetr-cli detect failed".to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.install.rfdetr.windows.detect.failed",
+            &[],
+        ));
     }
     let file = std::fs::File::open(output_path).map_err(|error| error.to_string())?;
     let mut bytes = Vec::new();
@@ -198,7 +260,11 @@ pub fn map_rfdetr_detect_completion(exit_ok: bool, output_path: &Path) -> Result
         .read_to_end(&mut bytes)
         .map_err(|error| error.to_string())?;
     if bytes.len() as u64 > RFDETR_RESULT_LIMIT_BYTES {
-        return Err("RF-DETR result exceeded its byte limit".to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.install.rfdetr.windows.result.limit",
+            &[],
+        ));
     }
     serde_json::from_slice(&bytes).map_err(|error| error.to_string())
 }

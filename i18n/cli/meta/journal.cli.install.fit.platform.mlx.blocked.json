@@ -1,0 +1,25 @@
+{
+  "description": "Fit report non-Apple-Silicon macOS MLX blocked detail.",
+  "context": "Fit report non-Apple-Silicon macOS MLX blocked detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "os",
+      "type": "string"
+    },
+    {
+      "name": "arch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "83129a8fdb8ff559a6992d9f62c500495336ddee4be4fb3fe24d732959555655",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

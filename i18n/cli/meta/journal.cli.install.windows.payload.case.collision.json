@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: case-insensitive path collision.",
+  "context": "Windows signed payload refusal: case-insensitive path collision.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "87f4423e40da6a2cf3a2c97edd394609c1d95f32c234a9630354e2771df47a6f",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

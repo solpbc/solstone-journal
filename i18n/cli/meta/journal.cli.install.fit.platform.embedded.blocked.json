@@ -1,0 +1,16 @@
+{
+  "description": "Fit report embedded local runtime unavailable detail.",
+  "context": "Fit report embedded local runtime unavailable detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e6bdd8891863ad58067c8c9d517b5797949f1455ebea12286f7768b509eaa357",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

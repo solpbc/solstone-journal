@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: member byte-length mismatch.",
+  "context": "Windows signed payload refusal: member byte-length mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b5a48b14b8349a5fe8e4fb327ef70272a12aaa1fa33fd5c69de68db2af97485b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

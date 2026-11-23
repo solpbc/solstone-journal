@@ -1,0 +1,33 @@
+{
+  "description": "Fit report insufficient disk space naming required downloads.",
+  "context": "Fit report insufficient disk space naming required downloads.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "requirement",
+      "type": "string"
+    },
+    {
+      "name": "required",
+      "type": "string"
+    },
+    {
+      "name": "available",
+      "type": "string"
+    },
+    {
+      "name": "known",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1f9568fd723744cafcc679951e75fa43d396658659b4082fbaf6f8a51d31f396",
+  "max_length": 327,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
+use solstone_core_cli_copy::ENGLISH;
 use thiserror::Error;
 
 use super::{archive, fit_report, rfdetr_compiled_expectation};
@@ -141,7 +142,12 @@ fn extract_path(journal: &Path, key: &str) -> PathBuf {
     binary_path(journal, key).parent().unwrap().join(".extract")
 }
 
+#[cfg(test)]
 fn engine_spec(key: &str) -> Result<&'static EngineSpec, RfdetrInstallError> {
+    engine_spec_in(ENGLISH, key)
+}
+
+fn engine_spec_in(locale: &str, key: &str) -> Result<&'static EngineSpec, RfdetrInstallError> {
     const X64: EngineSpec = EngineSpec {
         filename: "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
         tarball_sha256: RFDETR_ENGINE_LINUX_CPU_X64_TARBALL_SHA256,
@@ -159,27 +165,42 @@ fn engine_spec(key: &str) -> Result<&'static EngineSpec, RfdetrInstallError> {
     match key {
         "linux-cpu-x64" => Ok(&X64),
         "linux-cpu-arm64" => Ok(&ARM64),
-        "macos-metal-arm64" => macos_engine_spec(),
+        "macos-metal-arm64" => macos_engine_spec_in(locale),
         _ => unreachable!("only rfdetr_artifact_key outputs reach engine_spec"),
     }
 }
 
+#[cfg(test)]
 fn build_macos_engine_spec(
+    contract: Option<rfdetr_compiled_expectation::CompiledDeliveryContract>,
+) -> Result<EngineSpec, RfdetrInstallError> {
+    build_macos_engine_spec_in(ENGLISH, contract)
+}
+
+fn build_macos_engine_spec_in(
+    locale: &str,
     contract: Option<rfdetr_compiled_expectation::CompiledDeliveryContract>,
 ) -> Result<EngineSpec, RfdetrInstallError> {
     let contract = contract.ok_or_else(|| {
         RfdetrInstallError::new(
             "compiled_delivery_contract_missing",
-            "compiled rf-detr delivery contract missing",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.install.rfdetr.contract.missing",
+                &[],
+            ),
             65,
         )
     })?;
     if contract.slot_id != MACOS_DELIVERY_SLOT_ID {
+        let actual = format!("{:?}", contract.slot_id);
+        let expected = format!("{MACOS_DELIVERY_SLOT_ID:?}");
         return Err(RfdetrInstallError::new(
             "compiled_delivery_contract_invalid",
-            format!(
-                "compiled rf-detr delivery contract slot {:?} does not match {:?}",
-                contract.slot_id, MACOS_DELIVERY_SLOT_ID
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.rfdetr.contract.slot",
+                [("actual", &actual), ("expected", &expected)],
             ),
             65,
         ));
@@ -193,9 +214,10 @@ fn build_macos_engine_spec(
     })
 }
 
-fn macos_engine_spec() -> Result<&'static EngineSpec, RfdetrInstallError> {
+fn macos_engine_spec_in(locale: &str) -> Result<&'static EngineSpec, RfdetrInstallError> {
     static SPEC: OnceLock<EngineSpec> = OnceLock::new();
-    let spec = build_macos_engine_spec(rfdetr_compiled_expectation::MACOS_DELIVERY_CONTRACT)?;
+    let spec =
+        build_macos_engine_spec_in(locale, rfdetr_compiled_expectation::MACOS_DELIVERY_CONTRACT)?;
     Ok(SPEC.get_or_init(|| spec))
 }
 
@@ -209,7 +231,15 @@ fn model_spec() -> &'static ModelSpec {
 
 /// Locate a bundled RF-DETR payload without creating or changing any state.
 pub fn resolve_rfdetr_asset(filename: &str) -> Result<PathBuf, RfdetrInstallError> {
+    resolve_rfdetr_asset_for_locale(ENGLISH, filename)
+}
+
+pub fn resolve_rfdetr_asset_for_locale(
+    locale: &str,
+    filename: &str,
+) -> Result<PathBuf, RfdetrInstallError> {
     resolve_rfdetr_asset_from(
+        locale,
         filename,
         Path::new(env!("CARGO_MANIFEST_DIR")),
         std::env::current_exe()
@@ -220,6 +250,7 @@ pub fn resolve_rfdetr_asset(filename: &str) -> Result<PathBuf, RfdetrInstallErro
 }
 
 fn resolve_rfdetr_asset_from(
+    locale: &str,
     filename: &str,
     manifest_dir: &Path,
     executable_parent: Option<PathBuf>,
@@ -247,26 +278,39 @@ fn resolve_rfdetr_asset_from(
     }
     Err(RfdetrInstallError::new(
         "bundled_payload_missing",
-        format!("bundled rf-detr asset missing: {filename}; reinstall the journal package"),
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.install.rfdetr.bundled.missing",
+            [("filename", &filename)],
+        ),
         65,
     ))
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
-fn resolve_rfdetr_asset_in(root: &Path, filename: &str) -> Result<PathBuf, RfdetrInstallError> {
+fn resolve_rfdetr_asset_in(
+    locale: &str,
+    root: &Path,
+    filename: &str,
+) -> Result<PathBuf, RfdetrInstallError> {
     let candidate = root.join(filename);
     if candidate.is_file() {
         Ok(candidate)
     } else {
         Err(RfdetrInstallError::new(
             "bundled_payload_missing",
-            format!("bundled rf-detr asset missing: {filename}; reinstall the journal package"),
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.rfdetr.bundled.missing",
+                [("filename", &filename)],
+            ),
             65,
         ))
     }
 }
 
 fn verify(
+    locale: &str,
     path: &Path,
     expected: &str,
     size: Option<u64>,
@@ -275,14 +319,22 @@ fn verify(
     let metadata = fs::metadata(path).map_err(|_| {
         RfdetrInstallError::new(
             "file_missing",
-            format!("rf-detr asset missing: {label}"),
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.rfdetr.asset.missing",
+                [("label", &label)],
+            ),
             65,
         )
     })?;
     if !metadata.is_file() {
         return Err(RfdetrInstallError::new(
             "file_missing",
-            format!("rf-detr asset missing: {label}"),
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.rfdetr.asset.missing",
+                [("label", &label)],
+            ),
             65,
         ));
     }
@@ -291,9 +343,14 @@ fn verify(
     {
         return Err(RfdetrInstallError::new(
             "size_mismatch",
-            format!(
-                "size mismatch for {label}: expected {size}, got {}",
-                metadata.len()
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.rfdetr.size.mismatch",
+                [
+                    ("label", &label),
+                    ("expected", &size),
+                    ("actual", &metadata.len()),
+                ],
             ),
             65,
         ));
@@ -303,7 +360,11 @@ fn verify(
         .map_err(|_| {
             RfdetrInstallError::new(
                 "sha256_mismatch",
-                format!("sha256 mismatch for {label}"),
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.rfdetr.sha256.mismatch",
+                    [("label", &label)],
+                ),
                 65,
             )
         })
@@ -369,7 +430,7 @@ fn cleanup(journal: &Path, key: &str, model: &ModelSpec) {
     let _ = fs::remove_file(binary.with_file_name(format!("{BINARY}.tmp")));
     let _ = fs::remove_dir_all(extract_path(journal, key));
     let model_path = model_path(journal);
-    if verify(&model_path, model.sha256, None, MODEL_FILE).is_err() {
+    if verify(ENGLISH, &model_path, model.sha256, None, MODEL_FILE).is_err() {
         let _ = fs::remove_file(&model_path);
     }
     let _ = fs::remove_file(model_path.with_file_name(format!("{MODEL_FILE}.tmp")));
@@ -399,17 +460,34 @@ pub fn check_rfdetr_model(
     os_name: &str,
     arch: &str,
 ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
+    check_rfdetr_model_in(ENGLISH, journal, os_name, arch)
+}
+
+pub fn check_rfdetr_model_in(
+    locale: &str,
+    journal: &Path,
+    os_name: &str,
+    arch: &str,
+) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
     if rfdetr_uses_package_payload(os_name, arch) {
-        return check_windows_package_rfdetr();
+        return check_windows_package_rfdetr_in(locale);
     }
     let Some(key) = rfdetr_artifact_key(os_name, arch) else {
         return Ok(RfdetrInstallRecord::PlatformUnavailable);
     };
-    check_rfdetr_model_with_rows(journal, key, engine_spec(key)?, model_spec())
+    check_rfdetr_model_with_rows(
+        locale,
+        journal,
+        key,
+        engine_spec_in(locale, key)?,
+        model_spec(),
+    )
 }
 
-fn check_windows_package_rfdetr() -> Result<RfdetrInstallRecord, RfdetrInstallError> {
-    match super::rfdetr_windows::verified_windows_rfdetr_package() {
+fn check_windows_package_rfdetr_in(
+    locale: &str,
+) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
+    match super::rfdetr_windows::verified_windows_rfdetr_package_in(locale) {
         Ok(_) => Ok(RfdetrInstallRecord::Installed),
         Err(error) => {
             let reason = match &error {
@@ -424,6 +502,7 @@ fn check_windows_package_rfdetr() -> Result<RfdetrInstallRecord, RfdetrInstallEr
 }
 
 fn check_rfdetr_model_with_rows(
+    locale: &str,
     journal: &Path,
     key: &str,
     engine: &EngineSpec,
@@ -433,14 +512,22 @@ fn check_rfdetr_model_with_rows(
     let text = fs::read_to_string(&path).map_err(|_| {
         RfdetrInstallError::new(
             "sidecar_missing",
-            format!("rf-detr sidecar missing: {}", path.display()),
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.rfdetr.sidecar.missing",
+                [("path", &path.display())],
+            ),
             65,
         )
     })?;
     let stored: Sidecar = serde_json::from_str(&text).map_err(|error| {
         RfdetrInstallError::new(
             "sidecar_invalid",
-            format!("rf-detr sidecar invalid: {}: {error}", path.display()),
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.rfdetr.sidecar.invalid",
+                [("path", &path.display()), ("error", &error)],
+            ),
             65,
         )
     })?;
@@ -456,17 +543,23 @@ fn check_rfdetr_model_with_rows(
     {
         return Err(RfdetrInstallError::new(
             "sidecar_mismatch",
-            "rf-detr sidecar does not match pinned artifacts",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.install.rfdetr.sidecar.mismatch",
+                &[],
+            ),
             65,
         ));
     }
     verify(
+        locale,
         &binary_path(journal, key),
         engine.binary_sha256,
         None,
         BINARY,
     )?;
     verify(
+        locale,
         &model_path(journal),
         model.sha256,
         Some(model.size),
@@ -482,7 +575,7 @@ pub(crate) fn check_rfdetr_model_with_artifacts(
     engine: &EngineSpec,
     model: &ModelSpec,
 ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
-    check_rfdetr_model_with_rows(journal, key, engine, model)
+    check_rfdetr_model_with_rows(ENGLISH, journal, key, engine, model)
 }
 
 pub fn install_rfdetr(
@@ -491,10 +584,22 @@ pub fn install_rfdetr(
     arch: &str,
     force: bool,
 ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
-    install_rfdetr_with_sources(journal, os_name, arch, force, None, None, None)
+    install_rfdetr_in(ENGLISH, journal, os_name, arch, force)
 }
 
+pub fn install_rfdetr_in(
+    locale: &str,
+    journal: &Path,
+    os_name: &str,
+    arch: &str,
+    force: bool,
+) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
+    install_rfdetr_with_sources(locale, journal, os_name, arch, force, None, None, None)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn install_rfdetr_with_sources(
+    locale: &str,
     journal: &Path,
     os_name: &str,
     arch: &str,
@@ -505,7 +610,7 @@ fn install_rfdetr_with_sources(
     #[cfg(not(any(test, feature = "test-hooks")))] _fixture_assets: Option<&Path>,
 ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
     if rfdetr_uses_package_payload(os_name, arch) {
-        return check_windows_package_rfdetr();
+        return check_windows_package_rfdetr_in(locale);
     }
     let Some(key) = rfdetr_artifact_key(os_name, arch) else {
         let record = RfdetrInstallRecord::PlatformUnavailable;
@@ -515,14 +620,15 @@ fn install_rfdetr_with_sources(
     };
     let (engine, model) = match spec_override {
         Some(pair) => pair,
-        None => (engine_spec(key)?, model_spec()),
+        None => (engine_spec_in(locale, key)?, model_spec()),
     };
-    if !force && let Ok(record) = check_rfdetr_model_with_rows(journal, key, engine, model) {
+    if !force && let Ok(record) = check_rfdetr_model_with_rows(locale, journal, key, engine, model)
+    {
         return Ok(record);
     }
     let report = report_override
-        .unwrap_or_else(|| fit_report::build_rfdetr_fit_report(journal, os_name, arch));
-    let rendered = fit_report::render_fit_report(&report);
+        .unwrap_or_else(|| fit_report::build_rfdetr_fit_report_in(locale, journal, os_name, arch));
+    let rendered = fit_report::render_fit_report_in(locale, &report);
     if report.overall() == fit_report::FitSeverity::Blocked {
         return Err(RfdetrInstallError::new("host_unfit", rendered, 69));
     }
@@ -533,12 +639,13 @@ fn install_rfdetr_with_sources(
     let result = (|| {
         #[cfg(any(test, feature = "test-hooks"))]
         let tarball = match fixture_assets {
-            Some(root) => resolve_rfdetr_asset_in(root, engine.filename),
-            None => resolve_rfdetr_asset(engine.filename),
+            Some(root) => resolve_rfdetr_asset_in(locale, root, engine.filename),
+            None => resolve_rfdetr_asset_for_locale(locale, engine.filename),
         }?;
         #[cfg(not(any(test, feature = "test-hooks")))]
-        let tarball = resolve_rfdetr_asset(engine.filename)?;
+        let tarball = resolve_rfdetr_asset_for_locale(locale, engine.filename)?;
         verify(
+            locale,
             &tarball,
             engine.tarball_sha256,
             Some(engine.tarball_size),
@@ -563,12 +670,16 @@ fn install_rfdetr_with_sources(
         let found = find_binary(&extract).ok_or_else(|| {
             RfdetrInstallError::new(
                 "binary_missing",
-                format!("Extracted archive did not contain {BINARY}"),
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.rfdetr.binary.missing",
+                    [("binary", &BINARY)],
+                ),
                 65,
             )
         })?;
-        require_expected_member_path(&extract, &found, engine.expected_member_path)?;
-        verify(&found, engine.binary_sha256, None, BINARY)?;
+        require_expected_member_path(locale, &extract, &found, engine.expected_member_path)?;
+        verify(locale, &found, engine.binary_sha256, None, BINARY)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -588,16 +699,22 @@ fn install_rfdetr_with_sources(
         let _ = fs::remove_dir_all(&extract);
         #[cfg(any(test, feature = "test-hooks"))]
         let bundled_model = match fixture_assets {
-            Some(root) => resolve_rfdetr_asset_in(root, MODEL_FILE),
-            None => resolve_rfdetr_asset(MODEL_FILE),
+            Some(root) => resolve_rfdetr_asset_in(locale, root, MODEL_FILE),
+            None => resolve_rfdetr_asset_for_locale(locale, MODEL_FILE),
         }?;
         #[cfg(not(any(test, feature = "test-hooks")))]
-        let bundled_model = resolve_rfdetr_asset(MODEL_FILE)?;
-        verify(&bundled_model, model.sha256, Some(model.size), MODEL_FILE)?;
-        copy_verified(&bundled_model, &model_path(journal), model)?;
+        let bundled_model = resolve_rfdetr_asset_for_locale(locale, MODEL_FILE)?;
+        verify(
+            locale,
+            &bundled_model,
+            model.sha256,
+            Some(model.size),
+            MODEL_FILE,
+        )?;
+        copy_verified(locale, &bundled_model, &model_path(journal), model)?;
         let record = RfdetrInstallRecord::Installed;
         write_sidecar(journal, &record, Some((key, engine, model)))?;
-        check_rfdetr_model_with_rows(journal, key, engine, model)?;
+        check_rfdetr_model_with_rows(locale, journal, key, engine, model)?;
         let legacy_engine = root(journal).join("engine");
         if let Err(error) = fs::remove_dir_all(&legacy_engine)
             && error.kind() != std::io::ErrorKind::NotFound
@@ -616,6 +733,7 @@ fn install_rfdetr_with_sources(
 }
 
 fn require_expected_member_path(
+    locale: &str,
     extract: &Path,
     found: &Path,
     expected: Option<&str>,
@@ -626,7 +744,11 @@ fn require_expected_member_path(
     let relative = found.strip_prefix(extract).map_err(|error| {
         RfdetrInstallError::new(
             "member_path_mismatch",
-            format!("rf-detr binary was outside extraction root: {error}"),
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.rfdetr.member.outside",
+                [("error", &error)],
+            ),
             65,
         )
     })?;
@@ -634,14 +756,21 @@ fn require_expected_member_path(
     if actual == expected {
         return Ok(());
     }
+    let actual_quoted = format!("{actual:?}");
+    let expected_quoted = format!("{expected:?}");
     Err(RfdetrInstallError::new(
         "member_path_mismatch",
-        format!("rf-detr binary member {actual:?} does not match {expected:?}"),
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.install.rfdetr.member.mismatch",
+            [("actual", &actual_quoted), ("expected", &expected_quoted)],
+        ),
         65,
     ))
 }
 
 fn copy_verified(
+    locale: &str,
     source: &Path,
     destination: &Path,
     model: &ModelSpec,
@@ -654,7 +783,7 @@ fn copy_verified(
         .join(format!("tmp{}", uuid::Uuid::new_v4().simple()));
     let result = fs::copy(source, &tmp)
         .map_err(|error| RfdetrInstallError::new("install_failed", error.to_string(), 74))
-        .and_then(|_| verify(&tmp, model.sha256, Some(model.size), MODEL_FILE))
+        .and_then(|_| verify(locale, &tmp, model.sha256, Some(model.size), MODEL_FILE))
         .and_then(|_| {
             fs::rename(&tmp, destination)
                 .map_err(|error| RfdetrInstallError::new("install_failed", error.to_string(), 74))
@@ -722,6 +851,7 @@ mod tests {
         force: bool,
     ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
         install_rfdetr_with_sources(
+            ENGLISH,
             journal,
             "linux",
             "x86_64",
@@ -901,6 +1031,7 @@ mod tests {
         fs::write(&development, b"fixture").unwrap();
         assert_eq!(
             resolve_rfdetr_asset_from(
+                ENGLISH,
                 "fixture",
                 &root.path().join("core/crates/solstone-core-local"),
                 None,
@@ -918,6 +1049,7 @@ mod tests {
         fs::write(&installed, b"fixture").unwrap();
         assert_eq!(
             resolve_rfdetr_asset_from(
+                ENGLISH,
                 "fixture",
                 &root.path().join("unrelated"),
                 Some(root.path().join("bin")),
@@ -931,6 +1063,7 @@ mod tests {
         fs::write(&development, b"development").unwrap();
         assert_eq!(
             resolve_rfdetr_asset_from(
+                ENGLISH,
                 "fixture",
                 &root.path().join("core/crates/solstone-core-local"),
                 Some(root.path().join("bin")),
@@ -943,6 +1076,7 @@ mod tests {
         fs::remove_file(&installed).unwrap();
         assert_eq!(
             resolve_rfdetr_asset_from(
+                ENGLISH,
                 "fixture",
                 &root.path().join("core/crates/solstone-core-local"),
                 Some(root.path().join("bin")),
@@ -978,6 +1112,7 @@ mod tests {
             Ok(1),
         );
         let error = install_rfdetr_with_sources(
+            ENGLISH,
             journal.path(),
             "linux",
             "x86_64",
@@ -997,7 +1132,7 @@ mod tests {
         install_fixture(journal.path(), assets.path(), &engine, &model, false).unwrap();
         fs::write(model_path(journal.path()), b"wrong").unwrap();
         assert_eq!(
-            check_rfdetr_model_with_rows(journal.path(), "linux-cpu-x64", &engine, &model)
+            check_rfdetr_model_with_rows(ENGLISH, journal.path(), "linux-cpu-x64", &engine, &model)
                 .unwrap_err()
                 .reason_code,
             "sha256_mismatch"
@@ -1014,7 +1149,8 @@ mod tests {
         fs::write(binary_path(journal.path(), "linux-cpu-x64"), b"broken").unwrap();
         install_fixture(journal.path(), assets.path(), &engine, &model, false).unwrap();
         assert_eq!(
-            check_rfdetr_model_with_rows(journal.path(), "linux-cpu-x64", &engine, &model).unwrap(),
+            check_rfdetr_model_with_rows(ENGLISH, journal.path(), "linux-cpu-x64", &engine, &model)
+                .unwrap(),
             RfdetrInstallRecord::Installed
         );
     }

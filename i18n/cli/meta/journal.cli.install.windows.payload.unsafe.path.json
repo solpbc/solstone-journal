@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: unsafe path rejected.",
+  "context": "Windows signed payload refusal: unsafe path rejected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "702926a0c9541f1e9a752ee04088fba7b06ec1bfb299ddd88529ccefc696cd2a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

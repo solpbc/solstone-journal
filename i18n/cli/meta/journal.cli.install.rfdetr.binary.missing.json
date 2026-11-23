@@ -1,0 +1,21 @@
+{
+  "description": "RF-DETR install error when extracted tarball lacks the binary.",
+  "context": "RF-DETR install error when extracted tarball lacks the binary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "binary",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5cc1921c8c63a5c7902476e0a2b97b30871abdef78003b2bdc4c1d63aa82bc62",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Fit report single check row.",
+  "context": "Fit report single check row.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "severity",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2968dbf28590dd3c8e8a1ed53cf3b54e8ab36311d5238696cf9216da9ddf480d",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

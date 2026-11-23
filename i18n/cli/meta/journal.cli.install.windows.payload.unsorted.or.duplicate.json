@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: unsorted or duplicate manifest entries.",
+  "context": "Windows signed payload refusal: unsorted or duplicate manifest entries.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bda658fbaa99f07de617d7ef3ab409ce8416dca8b6e13e4a44874172a1841772",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

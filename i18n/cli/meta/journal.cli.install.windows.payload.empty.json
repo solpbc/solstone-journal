@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: manifest lists no files.",
+  "context": "Windows signed payload refusal: manifest lists no files.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7f76112e4b42a382e83d3ea3dba3658d860959c652204ad49414bdc64d4a8cbc",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

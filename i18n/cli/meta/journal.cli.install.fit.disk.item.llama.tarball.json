@@ -1,0 +1,16 @@
+{
+  "description": "Fit report disk item label for llama-server tarball.",
+  "context": "Fit report disk item label for llama-server tarball.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "85f1b15c9396176dc8f72512c4e1b9368fc8dfb4b4029f55068888a99f2c5df0",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

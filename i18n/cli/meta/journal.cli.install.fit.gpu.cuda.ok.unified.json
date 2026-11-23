@@ -1,0 +1,21 @@
+{
+  "description": "Fit report CUDA GPU check passing on unified memory.",
+  "context": "Fit report CUDA GPU check passing on unified memory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f096e9e60f86af5a8c20ef16b98703b60c25e08ad4ebec5f51a3aed5a0f5291d",
+  "max_length": 237,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

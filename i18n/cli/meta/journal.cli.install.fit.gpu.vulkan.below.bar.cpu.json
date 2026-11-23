@@ -1,0 +1,33 @@
+{
+  "description": "Fit report Vulkan GPU memory below minimum bar with CPU transcription placement.",
+  "context": "Fit report Vulkan GPU memory below minimum bar with CPU transcription placement.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "available",
+      "type": "string"
+    },
+    {
+      "name": "backend",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4095453abb627370ebdc10d69c961e4d0b436c4331e15bbc4727b42fd52353fb",
+  "max_length": 603,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

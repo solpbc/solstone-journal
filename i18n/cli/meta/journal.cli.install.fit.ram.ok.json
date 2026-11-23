@@ -1,0 +1,29 @@
+{
+  "description": "Fit report RAM check passing detail.",
+  "context": "Fit report RAM check passing detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "available",
+      "type": "string"
+    },
+    {
+      "name": "required",
+      "type": "string"
+    },
+    {
+      "name": "model",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "366679543beef90258aec874120def74f180f1fbfddda29749112de260ba2bc1",
+  "max_length": 264,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

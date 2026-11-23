@@ -1,0 +1,16 @@
+{
+  "description": "Windows RF-DETR package check failed because bin has no parent package root.",
+  "context": "Windows RF-DETR package check failed because bin has no parent package root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9788655f67ebd01d2ebc789bc3eb2df672fe2a7d967ed5f6256c287a2da74000",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

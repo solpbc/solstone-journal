@@ -68,13 +68,48 @@ impl WindowsLlamaPackage {
 }
 
 #[cfg(any(windows, test))]
+pub(super) fn payload_error_detail(error: &WindowsPayloadError) -> MessageDetail {
+    let id = match error.kind {
+        WindowsPayloadRefusal::Missing => "journal.cli.install.windows.payload.missing",
+        WindowsPayloadRefusal::NotRegular => "journal.cli.install.windows.payload.not.regular",
+        WindowsPayloadRefusal::ReparseOrSymlink => {
+            "journal.cli.install.windows.payload.reparse.or.symlink"
+        }
+        WindowsPayloadRefusal::UnsafePath => "journal.cli.install.windows.payload.unsafe.path",
+        WindowsPayloadRefusal::Manifest => "journal.cli.install.windows.payload.manifest",
+        WindowsPayloadRefusal::Signature => "journal.cli.install.windows.payload.signature",
+        WindowsPayloadRefusal::Schema => "journal.cli.install.windows.payload.schema",
+        WindowsPayloadRefusal::Target => "journal.cli.install.windows.payload.target",
+        WindowsPayloadRefusal::SourceCommit => "journal.cli.install.windows.payload.source.commit",
+        WindowsPayloadRefusal::LockDigest => "journal.cli.install.windows.payload.lock.digest",
+        WindowsPayloadRefusal::Empty => "journal.cli.install.windows.payload.empty",
+        WindowsPayloadRefusal::UnsortedOrDuplicate => {
+            "journal.cli.install.windows.payload.unsorted.or.duplicate"
+        }
+        WindowsPayloadRefusal::CaseCollision => {
+            "journal.cli.install.windows.payload.case.collision"
+        }
+        WindowsPayloadRefusal::Digest => "journal.cli.install.windows.payload.digest",
+        WindowsPayloadRefusal::Bytes => "journal.cli.install.windows.payload.bytes",
+        WindowsPayloadRefusal::MissingMember => {
+            "journal.cli.install.windows.payload.missing.member"
+        }
+        WindowsPayloadRefusal::UnexpectedMember => {
+            "journal.cli.install.windows.payload.unexpected.member"
+        }
+    };
+    MessageDetail::message(id, [("detail", &error.detail), ("line_break", &"\n")])
+}
+
+#[cfg(any(windows, test))]
 impl From<WindowsPayloadError> for WindowsLlamaPackageError<MessageDetail> {
     fn from(error: WindowsPayloadError) -> Self {
+        let detail = payload_error_detail(&error);
         match error.kind {
             WindowsPayloadRefusal::Missing | WindowsPayloadRefusal::MissingMember => {
-                Self::Missing(error.to_string().into())
+                Self::Missing(detail)
             }
-            _ => Self::Invalid(error.to_string().into()),
+            _ => Self::Invalid(detail),
         }
     }
 }

@@ -296,9 +296,13 @@ where
 
     // Unlike install-models, this owner-facing Python-parity command reports
     // all refusal and installation failures as exit 1 rather than sysexits.
-    let report = report_override
-        .unwrap_or_else(|| fit_report::build_parakeet_fit_report(&journal, os_name, arch));
-    stderr.push(fit_report::render_fit_report(&report));
+    let report = report_override.unwrap_or_else(|| {
+        fit_report::build_parakeet_fit_report_in(crate::host_locale(), &journal, os_name, arch)
+    });
+    stderr.push(fit_report::render_fit_report_in(
+        crate::host_locale(),
+        &report,
+    ));
     if report.overall() == fit_report::FitSeverity::Blocked {
         return InstallProviderOutcome {
             exit_code: 1,
@@ -540,12 +544,15 @@ where
         (None, None) => match build_platform_report(&journal, os_name, arch) {
             Ok((report, admission)) => (report, admission),
             Err(error) => {
-                if let Err(persistence_error) =
-                    status::record_terminal_refusal(&journal, "local", "install_failed", &error)
-                {
+                if let Err(persistence_error) = status::record_terminal_refusal_detail(
+                    &journal,
+                    "local",
+                    "install_failed",
+                    &error,
+                ) {
                     stderr.push(persistence_error.into_detail().render(crate::host_locale()));
                 }
-                stderr.push(error);
+                stderr.push(error.render(crate::host_locale()));
                 return InstallProviderOutcome {
                     exit_code: 1,
                     stdout: Vec::new(),
@@ -554,7 +561,10 @@ where
             }
         },
     };
-    stderr.push(fit_report::render_fit_report(&report));
+    stderr.push(fit_report::render_fit_report_in(
+        crate::host_locale(),
+        &report,
+    ));
     match install_executor(&journal, admission) {
         Ok(result) => {
             let install = result["status"].clone();
@@ -592,7 +602,7 @@ fn build_platform_report(
         fit_report::FitReport,
         solstone_core_local::LocalHardwareAdmission,
     ),
-    String,
+    solstone_core_cli_copy::MessageDetail,
 > {
     build_local_report(journal, os_name, arch)
 }
@@ -606,7 +616,7 @@ fn build_local_report(
         fit_report::FitReport,
         solstone_core_local::LocalHardwareAdmission,
     ),
-    String,
+    solstone_core_cli_copy::MessageDetail,
 > {
     build_local_report_with(
         journal,
@@ -630,7 +640,7 @@ fn build_local_report_with<N, V, A>(
         fit_report::FitReport,
         solstone_core_local::LocalHardwareAdmission,
     ),
-    String,
+    solstone_core_cli_copy::MessageDetail,
 >
 where
     N: FnOnce() -> solstone_core_local::nvidia::NvidiaProbe,
@@ -646,7 +656,7 @@ where
     let vulkan_obs = vulkan_observe_fn();
     let devices = vulkan_obs.devices;
     let (override_index, brain_lane_active) =
-        local_override_and_brain_lane(journal).map_err(|error| error.to_string())?;
+        local_override_and_brain_lane(journal).map_err(|error| error.diagnostic())?;
     let selected = select_device(&devices, override_index);
     let unified_memory = nvidia_probe.memory_source() == MemorySource::SystemAvailable;
     let force_cpu = parakeet_placement_for_devices(
@@ -659,15 +669,20 @@ where
     let choice = match local_backend_choice(journal, Some(nvidia_probe.clone())) {
         solstone_core_local::BackendSelection::Selected(choice) => choice,
         solstone_core_local::BackendSelection::IntegrityBlocked => {
-            return Err("cuda runtime integrity failure".to_string());
+            return Err(solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.install.cuda.integrity",
+                [],
+            ));
         }
     };
-    let report = fit_report::build_local_fit_report(
+    let locale = crate::host_locale();
+    let report = fit_report::build_local_fit_report_in(
+        locale,
         journal,
         "local/qwen3.5-4b",
         os_name,
         arch,
-        fit_report::free_bytes(&pins::cache_root(journal)),
+        fit_report::free_bytes_in(locale, &pins::cache_root(journal)),
         available_memory_bytes(),
         &nvidia_probe,
         &choice,
@@ -2961,7 +2976,10 @@ mod tests {
             },
             || None,
         );
-        assert_eq!(report_res.unwrap_err(), "cuda runtime integrity failure");
+        assert_eq!(
+            report_res.unwrap_err().to_string(),
+            "cuda runtime integrity failure"
+        );
         assert_eq!(
             TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get),
             0

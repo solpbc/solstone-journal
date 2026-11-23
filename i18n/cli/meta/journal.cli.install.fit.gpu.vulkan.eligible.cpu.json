@@ -1,0 +1,29 @@
+{
+  "description": "Fit report Vulkan GPU check eligible with CPU transcription placement.",
+  "context": "Fit report Vulkan GPU check eligible with CPU transcription placement.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "backend",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4afe18256c6005fc89e9e8d237cf879dc6d0143ea9e6e7e3b3befab707375c72",
+  "max_length": 453,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

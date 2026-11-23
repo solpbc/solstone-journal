@@ -1,0 +1,21 @@
+{
+  "description": "RF-DETR verification error when asset file is missing.",
+  "context": "RF-DETR verification error when asset file is missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ee021144b9cc58d3ab9cca0132856fa12693f6bdaa5980e67d93b8e3c5701894",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

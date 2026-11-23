@@ -1,0 +1,25 @@
+{
+  "description": "Fit report summary header line.",
+  "context": "Fit report summary header line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "artifact",
+      "type": "string"
+    },
+    {
+      "name": "overall",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8dd6d79b29d58926415f82298542149c6ddca857e5b2634bac2c45e41bb967fe",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

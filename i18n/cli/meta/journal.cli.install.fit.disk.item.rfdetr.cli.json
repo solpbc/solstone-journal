@@ -1,0 +1,16 @@
+{
+  "description": "Fit report disk item label for rf-detr CLI binary.",
+  "context": "Fit report disk item label for rf-detr CLI binary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3454736ebd47afbc0523767ffb660f104003a4678c20b96b4c1f3b66a30a3d70",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

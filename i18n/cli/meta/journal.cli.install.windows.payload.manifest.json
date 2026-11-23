@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: manifest error.",
+  "context": "Windows signed payload refusal: manifest error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "19b7ddfdc5ca55b7a1157c8c1fc1fa4f00d12ea2281fa32f61cf0d7db69ee9c1",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

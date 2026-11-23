@@ -1,0 +1,16 @@
+{
+  "description": "Windows RF-DETR detection worker exited with failure.",
+  "context": "Windows RF-DETR detection worker exited with failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c60756c8bb40fb475eed17634625e77c17dc7c3f43bdf3110686b84c3d4284a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

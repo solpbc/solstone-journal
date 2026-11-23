@@ -1,0 +1,21 @@
+{
+  "description": "Windows PDFium signed package verification failed.",
+  "context": "Windows PDFium signed package verification failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e2642b6e2871842989c17e804d00260072e17e5fd245135757b68e55afcad12f",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use nix::sys::statvfs::statvfs;
 use solstone_core_assets::resolve;
+use solstone_core_cli_copy::ENGLISH;
 use solstone_core_installed_payload::WindowsArchitecture;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
@@ -16,7 +17,7 @@ use super::{
     pins,
     rfdetr_install::{rfdetr_artifact_key, rfdetr_uses_package_payload},
 };
-use crate::vulkan::{cpu_placement_suffix, select_device};
+use crate::vulkan::select_device;
 use crate::{Backend, BackendChoice, MemorySource, NvidiaProbe, VulkanDevice};
 
 const LOCAL_MIN_RAM_BYTES: u64 = 8 * 1024 * 1024 * 1024;
@@ -30,13 +31,34 @@ pub enum FitSeverity {
 }
 
 impl FitSeverity {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Ok => "ok",
-            Self::Warning => "warning",
-            Self::Blocked => "blocked",
-            Self::Unknown => "unknown",
+    fn label(self, locale: &str) -> String {
+        let id = match self {
+            Self::Ok => "journal.cli.install.fit.severity.ok",
+            Self::Warning => "journal.cli.install.fit.severity.warning",
+            Self::Blocked => "journal.cli.install.fit.severity.blocked",
+            Self::Unknown => "journal.cli.install.fit.severity.unknown",
+        };
+        solstone_core_cli_copy::render_for(locale, id, &[])
+    }
+}
+
+fn check_name_label(locale: &str, name: &str) -> String {
+    match name {
+        "platform" => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.install.fit.check.platform",
+            &[],
+        ),
+        "ram" => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.install.fit.check.ram", &[])
         }
+        "disk" => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.install.fit.check.disk", &[])
+        }
+        "gpu" => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.install.fit.check.gpu", &[])
+        }
+        other => other.to_owned(),
     }
 }
 
@@ -74,28 +96,48 @@ impl FitReport {
 }
 
 pub fn render_fit_report(report: &FitReport) -> String {
-    let mut lines = vec![format!(
-        "{} fit check: {}",
-        report.artifact,
-        report.overall().as_str()
+    render_fit_report_in(ENGLISH, report)
+}
+
+pub fn render_fit_report_in(locale: &str, report: &FitReport) -> String {
+    let overall = report.overall().label(locale);
+    let mut lines = vec![solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.install.fit.header",
+        [("artifact", &report.artifact), ("overall", &overall)],
     )];
     lines.extend(report.checks.iter().map(|check| {
-        format!(
-            "[{}] {}: {}",
-            check.severity.as_str(),
-            check.name,
-            check.detail
+        let severity = check.severity.label(locale);
+        let name = check_name_label(locale, check.name);
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.install.fit.row",
+            [
+                ("severity", &severity),
+                ("name", &name),
+                ("detail", &check.detail),
+            ],
         )
     }));
     lines.join("\n")
 }
 
 pub fn build_parakeet_fit_report(journal: &Path, os_name: &str, arch: &str) -> FitReport {
-    build_parakeet_fit_report_with_free_bytes(
+    build_parakeet_fit_report_in(ENGLISH, journal, os_name, arch)
+}
+
+pub fn build_parakeet_fit_report_in(
+    locale: &str,
+    journal: &Path,
+    os_name: &str,
+    arch: &str,
+) -> FitReport {
+    build_parakeet_fit_report_with_free_bytes_in(
+        locale,
         journal,
         os_name,
         arch,
-        free_bytes(&pins::parakeet_cache_root(journal)),
+        free_bytes_in(locale, &pins::parakeet_cache_root(journal)),
     )
 }
 
@@ -105,16 +147,34 @@ pub fn build_parakeet_fit_report_with_free_bytes(
     arch: &str,
     available: Result<u64, String>,
 ) -> FitReport {
+    build_parakeet_fit_report_with_free_bytes_in(ENGLISH, journal, os_name, arch, available)
+}
+
+pub fn build_parakeet_fit_report_with_free_bytes_in(
+    locale: &str,
+    journal: &Path,
+    os_name: &str,
+    arch: &str,
+    available: Result<u64, String>,
+) -> FitReport {
     let platform = match pins::parakeet_artifact_key(os_name, arch) {
         Ok(key) => FitCheck {
             name: "platform",
             severity: FitSeverity::Ok,
-            detail: format!("pinned parakeet.cpp artifacts are available for {key}"),
+            detail: solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.fit.platform.parakeet.ok",
+                [("key", &key)],
+            ),
         },
         Err(error) => FitCheck {
             name: "platform",
             severity: FitSeverity::Blocked,
-            detail: error.to_string(),
+            detail: solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.speech.platform",
+                [("os_name", &error.os_name), ("arch", &error.arch)],
+            ),
         },
     };
     let cache = pins::parakeet_cache_root(journal);
@@ -129,28 +189,60 @@ pub fn build_parakeet_fit_report_with_free_bytes(
         digest,
         size,
     ));
-    let disk = disk_check(
+    let parakeet_model_label = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.install.fit.disk.item.parakeet.model",
+        &[],
+    );
+    let parakeet_cpu_label = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.install.fit.disk.item.parakeet.cpu",
+        &[],
+    );
+    let parakeet_vulkan_label = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.install.fit.disk.item.parakeet.vulkan",
+        &[],
+    );
+    let requirement_label = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.install.fit.disk.requirement.downloads",
+        &[],
+    );
+    let disk = disk_check_in(
+        locale,
         &cache,
         available,
-        &[("parakeet GGUF model", remaining)],
-        &[
-            "parakeet CPU server tarball",
-            "parakeet Vulkan server tarball",
-        ],
-        "known downloads",
+        &[(parakeet_model_label.as_str(), remaining)],
+        &[parakeet_cpu_label.as_str(), parakeet_vulkan_label.as_str()],
+        &requirement_label,
     );
     FitReport {
-        artifact: "parakeet.cpp artifacts".to_string(),
+        artifact: solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.install.fit.artifact.parakeet",
+            &[],
+        ),
         checks: vec![platform, disk],
     }
 }
 
 pub fn build_rfdetr_fit_report(journal: &Path, os_name: &str, arch: &str) -> FitReport {
-    build_rfdetr_fit_report_with_free_bytes(
+    build_rfdetr_fit_report_in(ENGLISH, journal, os_name, arch)
+}
+
+pub fn build_rfdetr_fit_report_in(
+    locale: &str,
+    journal: &Path,
+    os_name: &str,
+    arch: &str,
+) -> FitReport {
+    build_rfdetr_fit_report_with_free_bytes_in(
+        locale,
         journal,
         os_name,
         arch,
-        free_bytes(&journal.join("cache/providers/rfdetr")),
+        free_bytes_in(locale, &journal.join("cache/providers/rfdetr")),
     )
 }
 
@@ -160,14 +252,28 @@ pub fn build_rfdetr_fit_report_with_free_bytes(
     arch: &str,
     available: Result<u64, String>,
 ) -> FitReport {
+    build_rfdetr_fit_report_with_free_bytes_in(ENGLISH, journal, os_name, arch, available)
+}
+
+pub fn build_rfdetr_fit_report_with_free_bytes_in(
+    locale: &str,
+    journal: &Path,
+    os_name: &str,
+    arch: &str,
+    available: Result<u64, String>,
+) -> FitReport {
+    let artifact =
+        solstone_core_cli_copy::render_for(locale, "journal.cli.install.fit.artifact.rfdetr", &[]);
     if rfdetr_uses_package_payload(os_name, arch) {
         return FitReport {
-            artifact: "rf-detr.cpp artifacts".to_string(),
+            artifact,
             checks: vec![FitCheck {
                 name: "platform",
                 severity: FitSeverity::Ok,
-                detail: format!(
-                    "signed rf-detr.cpp package payload is supported for {os_name}/{arch}"
+                detail: solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.platform.rfdetr.windows.ok",
+                    [("os", &os_name), ("arch", &arch)],
                 ),
             }],
         };
@@ -176,29 +282,51 @@ pub fn build_rfdetr_fit_report_with_free_bytes(
         Some(key) => FitCheck {
             name: "platform",
             severity: FitSeverity::Ok,
-            detail: format!("pinned rf-detr.cpp artifacts are available for {key}"),
+            detail: solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.fit.platform.rfdetr.ok",
+                [("key", &key)],
+            ),
         },
         None => FitCheck {
             name: "platform",
             severity: FitSeverity::Blocked,
-            detail: format!(
-                "rf-detr.cpp requires darwin/arm64, linux/x86_64, or linux/arm64; got {os_name}/{arch}"
+            detail: solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.fit.platform.rfdetr.blocked",
+                [("os", &os_name), ("arch", &arch)],
             ),
         },
     };
     let cache = journal.join("cache/providers/rfdetr");
-    let disk = disk_check(
+    let model_label = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.install.fit.disk.item.rfdetr.model",
+        &[],
+    );
+    let cli_label = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.install.fit.disk.item.rfdetr.cli",
+        &[],
+    );
+    let requirement_label = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.install.fit.disk.requirement.bundled",
+        &[],
+    );
+    let disk = disk_check_in(
+        locale,
         &cache,
         available,
         &[
-            ("rf-detr GGUF model", 63_439_488),
-            ("rf-detr CLI binary", 1_048_576),
+            (model_label.as_str(), 63_439_488),
+            (cli_label.as_str(), 1_048_576),
         ],
         &[],
-        "bundled asset installation",
+        &requirement_label,
     );
     FitReport {
-        artifact: "rf-detr.cpp artifacts".to_string(),
+        artifact,
         checks: vec![platform, disk],
     }
 }
@@ -207,6 +335,39 @@ pub fn build_rfdetr_fit_report_with_free_bytes(
 /// verb. Windows also verifies the current signed package once for this report.
 #[allow(clippy::too_many_arguments)]
 pub fn build_local_fit_report(
+    journal: &Path,
+    model_id: &str,
+    os_name: &str,
+    arch: &str,
+    available_disk: Result<u64, String>,
+    available_ram: Option<u64>,
+    nvidia_probe: &NvidiaProbe,
+    backend_choice: &BackendChoice,
+    vulkan_probe_ok: bool,
+    vulkan_devices: &[VulkanDevice],
+    override_index: Option<u32>,
+    force_cpu: bool,
+) -> FitReport {
+    build_local_fit_report_in(
+        ENGLISH,
+        journal,
+        model_id,
+        os_name,
+        arch,
+        available_disk,
+        available_ram,
+        nvidia_probe,
+        backend_choice,
+        vulkan_probe_ok,
+        vulkan_devices,
+        override_index,
+        force_cpu,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_local_fit_report_in(
+    locale: &str,
     journal: &Path,
     model_id: &str,
     os_name: &str,
@@ -230,11 +391,15 @@ pub fn build_local_fit_report(
             } else {
                 FitSeverity::Blocked
             },
-            detail: if ready {
-                "local runtime is included in the journal app".into()
-            } else {
-                "the journal app does not provide this local runtime".into()
-            },
+            detail: solstone_core_cli_copy::render_for(
+                locale,
+                if ready {
+                    "journal.cli.install.fit.platform.embedded.ok"
+                } else {
+                    "journal.cli.install.fit.platform.embedded.blocked"
+                },
+                &[],
+            ),
         }
     } else if os_name == "darwin" {
         let supported = matches!(arch, "arm64" | "aarch64");
@@ -246,40 +411,50 @@ pub fn build_local_fit_report(
                 FitSeverity::Blocked
             },
             detail: if supported {
-                "MLX runtime is included with the journal".to_owned()
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.install.fit.platform.mlx.ok",
+                    &[],
+                )
             } else {
-                format!("MLX requires macos on Apple silicon; got {os_name}/{arch}")
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.platform.mlx.blocked",
+                    [("os", &os_name), ("arch", &arch)],
+                )
             },
         }
     } else if os_name == "windows" {
         if let Some(windows_arch) = WindowsArchitecture::from_architecture(arch) {
-            match super::windows_engine::verified_windows_llama_package()
-                .and_then(|pkg| pkg.require_runtime_key(windows_arch.runtime_key()))
+            match super::windows_engine::verified_windows_llama_package_detail()
+                .and_then(|pkg| pkg.require_runtime_key_detail(windows_arch.runtime_key()))
             {
                 Ok(_) => FitCheck {
                     name: "platform",
                     severity: FitSeverity::Ok,
-                    detail: format!(
-                        "signed llama-server package payload is supported for windows/{arch}"
+                    detail: solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.install.fit.platform.windows.llama.ok",
+                        [("arch", &arch)],
                     ),
                 },
-                Err(super::windows_engine::WindowsLlamaPackageError::Missing(detail)) => FitCheck {
+                Err(
+                    super::windows_engine::WindowsLlamaPackageError::Missing(detail)
+                    | super::windows_engine::WindowsLlamaPackageError::Invalid(detail),
+                ) => FitCheck {
                     name: "platform",
                     severity: FitSeverity::Blocked,
-                    detail,
-                },
-                Err(super::windows_engine::WindowsLlamaPackageError::Invalid(detail)) => FitCheck {
-                    name: "platform",
-                    severity: FitSeverity::Blocked,
-                    detail,
+                    detail: detail.render(locale),
                 },
             }
         } else {
             FitCheck {
                 name: "platform",
                 severity: FitSeverity::Blocked,
-                detail: format!(
-                    "llama-server requires a supported windows architecture; got {os_name}/{arch}"
+                detail: solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.platform.windows.llama.blocked",
+                    [("os", &os_name), ("arch", &arch)],
                 ),
             }
         }
@@ -288,22 +463,34 @@ pub fn build_local_fit_report(
             Some(_) => FitCheck {
                 name: "platform",
                 severity: FitSeverity::Ok,
-                detail: format!("pinned llama-server artifact is available for {artifact_key}"),
+                detail: solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.platform.llama.ok",
+                    [("key", &artifact_key)],
+                ),
             },
             None => FitCheck {
                 name: "platform",
                 severity: FitSeverity::Blocked,
-                detail: format!("No pinned llama-server artifact for platform {artifact_key}"),
+                detail: solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.platform.llama.blocked",
+                    [("key", &artifact_key)],
+                ),
             },
         }
     };
-    let ram = local_ram_check(model_id, available_ram);
-    let mut known = if os_name == "darwin" {
+    let ram = local_ram_check_in(locale, model_id, available_ram);
+    let mut known: Vec<(String, u64)> = if os_name == "darwin" {
         let fetch = pins::cache_root(journal)
             .join("downloads/local-model-mlx")
             .join(pins::mlx_model_generation().key());
         vec![(
-            "MLX model",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.install.fit.disk.item.mlx.model",
+                &[],
+            ),
             pins::MLX_QWEN_PINS
                 .iter()
                 .map(|pin| {
@@ -317,7 +504,7 @@ pub fn build_local_fit_report(
                 .sum(),
         )]
     } else {
-        local_model_downloads(model_id)
+        local_model_downloads_in(locale, model_id)
     };
     if os_name != "darwin"
         && let (Some(generation), Some(staging)) = (
@@ -337,7 +524,7 @@ pub fn build_local_fit_report(
             }
         }
     }
-    let unknown = if matches!(os_name, "windows" | "darwin" | "android" | "ios") {
+    let unknown: Vec<String> = if matches!(os_name, "windows" | "darwin" | "android" | "ios") {
         Vec::new()
     } else if os_name == "linux" && backend_choice.backend == Backend::Cuda {
         match pins::cuda_pin(&artifact_key) {
@@ -349,25 +536,52 @@ pub fn build_local_fit_report(
                 let remaining = size.saturating_sub(
                     solstone_core_artifact_download::retained_prefix_bytes(&archive, digest, size),
                 );
-                known.push(("CUDA llama-server tarball", remaining));
+                known.push((
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.install.fit.disk.item.cuda.tarball",
+                        &[],
+                    ),
+                    remaining,
+                ));
                 Vec::new()
             }
-            None => vec!["llama-server tarball"],
+            None => vec![solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.install.fit.disk.item.llama.tarball",
+                &[],
+            )],
         }
     } else {
-        vec!["llama-server tarball"]
+        vec![solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.install.fit.disk.item.llama.tarball",
+            &[],
+        )]
     };
-    let disk = disk_check(
+    let known_refs: Vec<(&str, u64)> = known
+        .iter()
+        .map(|(label, size)| (label.as_str(), *size))
+        .collect();
+    let unknown_refs: Vec<&str> = unknown.iter().map(String::as_str).collect();
+    let requirement_label = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.install.fit.disk.requirement.downloads",
+        &[],
+    );
+    let disk = disk_check_in(
+        locale,
         &pins::cache_root(journal),
         available_disk,
-        &known,
-        &unknown,
-        "known downloads",
+        &known_refs,
+        &unknown_refs,
+        &requirement_label,
     );
     let platform_ready = platform.severity == FitSeverity::Ok;
     let mut checks = vec![platform, ram, disk];
     if os_name == "linux" || os_name == "windows" {
-        let mut gpu = local_gpu_check(
+        let mut gpu = local_gpu_check_in(
+            locale,
             os_name,
             nvidia_probe,
             backend_choice,
@@ -382,7 +596,11 @@ pub fn build_local_fit_report(
         checks.push(gpu);
     }
     FitReport {
-        artifact: "local provider artifacts".to_string(),
+        artifact: solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.install.fit.artifact.local",
+            &[],
+        ),
         checks,
     }
 }
@@ -401,20 +619,40 @@ fn assess_local_memory(available: Option<u64>) -> MemoryVerdict {
     MemoryVerdict { severity }
 }
 
-fn local_ram_check(model_id: &str, available: Option<u64>) -> FitCheck {
+fn local_ram_check_in(locale: &str, model_id: &str, available: Option<u64>) -> FitCheck {
     let verdict = assess_local_memory(available);
     let detail = match available {
-        None => format!("available memory could not be verified for {model_id}"),
-        Some(available) if available >= LOCAL_MIN_RAM_BYTES => format!(
-            "{} GB available memory meets the {} GB requirement for {model_id}",
-            gb_label(available),
-            gb_label(LOCAL_MIN_RAM_BYTES),
+        None => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.install.fit.ram.unknown",
+            [("model", &model_id)],
         ),
-        Some(available) => format!(
-            "insufficient RAM for {model_id} (need {} GB available, have {} GB available)",
-            gb_label(LOCAL_MIN_RAM_BYTES),
-            gb_label(available),
-        ),
+        Some(available) if available >= LOCAL_MIN_RAM_BYTES => {
+            let available_gb = gb_label(available);
+            let required_gb = gb_label(LOCAL_MIN_RAM_BYTES);
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.fit.ram.ok",
+                [
+                    ("available", &available_gb),
+                    ("required", &required_gb),
+                    ("model", &model_id),
+                ],
+            )
+        }
+        Some(available) => {
+            let required_gb = gb_label(LOCAL_MIN_RAM_BYTES);
+            let available_gb = gb_label(available);
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.fit.ram.insufficient",
+                [
+                    ("model", &model_id),
+                    ("required", &required_gb),
+                    ("available", &available_gb),
+                ],
+            )
+        }
     };
     FitCheck {
         name: "ram",
@@ -423,7 +661,12 @@ fn local_ram_check(model_id: &str, available: Option<u64>) -> FitCheck {
     }
 }
 
-fn local_model_downloads(model_id: &str) -> Vec<(&'static str, u64)> {
+#[cfg(test)]
+fn local_model_downloads(model_id: &str) -> Vec<(String, u64)> {
+    local_model_downloads_in(ENGLISH, model_id)
+}
+
+fn local_model_downloads_in(locale: &str, model_id: &str) -> Vec<(String, u64)> {
     assert_eq!(model_id, "local/qwen3.5-4b", "unsupported local model");
     let assets = resolve("local-model", None, None);
     let gguf = assets
@@ -435,8 +678,22 @@ fn local_model_downloads(model_id: &str) -> Vec<(&'static str, u64)> {
         .find(|artifact| artifact.filename == "mmproj-F16.gguf")
         .expect("local mmproj asset is catalogued");
     vec![
-        ("GGUF model", gguf.size_bytes),
-        ("mmproj", mmproj.size_bytes),
+        (
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.install.fit.disk.item.gguf.model",
+                &[],
+            ),
+            gguf.size_bytes,
+        ),
+        (
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.install.fit.disk.item.mmproj",
+                &[],
+            ),
+            mmproj.size_bytes,
+        ),
     ]
 }
 
@@ -452,6 +709,8 @@ fn local_artifact_key(os_name: &str, arch: &str) -> String {
     }
 }
 
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 fn local_gpu_check(
     os_name: &str,
     probe: &NvidiaProbe,
@@ -461,8 +720,31 @@ fn local_gpu_check(
     override_index: Option<u32>,
     force_cpu: bool,
 ) -> FitCheck {
+    local_gpu_check_in(
+        ENGLISH,
+        os_name,
+        probe,
+        choice,
+        vulkan_probe_ok,
+        devices,
+        override_index,
+        force_cpu,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn local_gpu_check_in(
+    locale: &str,
+    os_name: &str,
+    probe: &NvidiaProbe,
+    choice: &BackendChoice,
+    vulkan_probe_ok: bool,
+    devices: &[VulkanDevice],
+    override_index: Option<u32>,
+    force_cpu: bool,
+) -> FitCheck {
     let selected = select_device(devices, override_index);
-    let suffix = cpu_placement_suffix(selected.as_ref(), force_cpu);
+    let cpu_placement = selected.is_some() && force_cpu;
     let backend = match choice.backend {
         Backend::Cuda => "cuda",
         Backend::Vulkan => "vulkan",
@@ -472,9 +754,10 @@ fn local_gpu_check(
             return FitCheck {
                 name: "gpu",
                 severity: FitSeverity::Unknown,
-                detail: format!(
-                    "NVIDIA GPU probe unavailable; resolved backend is {backend}: {}",
-                    choice.reason
+                detail: solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.gpu.cuda.probe.unavailable",
+                    [("backend", &backend), ("reason", &choice.reason)],
                 ),
             };
         }
@@ -482,25 +765,24 @@ fn local_gpu_check(
             return FitCheck {
                 name: "gpu",
                 severity: FitSeverity::Unknown,
-                detail: format!(
-                    "resolved backend is {backend}: {}; GPU memory is unknown",
-                    choice.reason
+                detail: solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.gpu.cuda.memory.unknown",
+                    [("backend", &backend), ("reason", &choice.reason)],
                 ),
             };
         }
         let unified = probe.memory_source() == MemorySource::SystemAvailable;
-        let unified_clause = if unified {
-            "; GPU tiering memory uses system MemAvailable"
-        } else {
-            ""
+        let id = match (unified, cpu_placement) {
+            (false, false) => "journal.cli.install.fit.gpu.cuda.ok",
+            (true, false) => "journal.cli.install.fit.gpu.cuda.ok.unified",
+            (false, true) => "journal.cli.install.fit.gpu.cuda.ok.cpu",
+            (true, true) => "journal.cli.install.fit.gpu.cuda.ok.unified.cpu",
         };
         return FitCheck {
             name: "gpu",
             severity: FitSeverity::Ok,
-            detail: format!(
-                "CUDA backend selected: {}{unified_clause}{suffix}",
-                choice.reason
-            ),
+            detail: solstone_core_cli_copy::display_for(locale, id, [("reason", &choice.reason)]),
         };
     }
     if os_name == "windows" {
@@ -511,42 +793,64 @@ fn local_gpu_check(
         ) {
             crate::vulkan::GpuDeviceLocalVerdict::Eligible { .. } => {
                 let selected = selected.expect("eligible verdict requires a selected device");
+                let id = if cpu_placement {
+                    "journal.cli.install.fit.gpu.vulkan.eligible.cpu"
+                } else {
+                    "journal.cli.install.fit.gpu.vulkan.eligible"
+                };
                 FitCheck {
                     name: "gpu",
                     severity: FitSeverity::Ok,
-                    detail: format!(
-                        "Vulkan GPU selected: {}; resolved backend is {backend}: {}{suffix}",
-                        selected.name, choice.reason
+                    detail: solstone_core_cli_copy::display_for(
+                        locale,
+                        id,
+                        [
+                            ("name", &selected.name),
+                            ("backend", &backend),
+                            ("reason", &choice.reason),
+                        ],
                     ),
                 }
             }
             crate::vulkan::GpuDeviceLocalVerdict::BelowBar { available_bytes } => {
                 let selected = selected.expect("below-bar verdict requires a selected device");
+                let available_gb = gb_label(available_bytes);
+                let id = if cpu_placement {
+                    "journal.cli.install.fit.gpu.vulkan.below.bar.cpu"
+                } else {
+                    "journal.cli.install.fit.gpu.vulkan.below.bar"
+                };
                 FitCheck {
                     name: "gpu",
                     severity: FitSeverity::Blocked,
-                    detail: format!(
-                        "GPU {} has {} GB; the bundled local models need at least 6 GB; resolved backend is {backend}: {}{suffix}",
-                        selected.name,
-                        gb_label(available_bytes),
-                        choice.reason
+                    detail: solstone_core_cli_copy::display_for(
+                        locale,
+                        id,
+                        [
+                            ("name", &selected.name),
+                            ("available", &available_gb),
+                            ("backend", &backend),
+                            ("reason", &choice.reason),
+                        ],
                     ),
                 }
             }
             crate::vulkan::GpuDeviceLocalVerdict::Unknown => FitCheck {
                 name: "gpu",
                 severity: FitSeverity::Unknown,
-                detail: format!(
-                    "GPU memory could not be read; resolved backend is {backend}: {}",
-                    choice.reason
+                detail: solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.gpu.vulkan.memory.unknown",
+                    [("backend", &backend), ("reason", &choice.reason)],
                 ),
             },
             crate::vulkan::GpuDeviceLocalVerdict::NoHardwareDevice => FitCheck {
                 name: "gpu",
                 severity: FitSeverity::Blocked,
-                detail: format!(
-                    "no hardware Vulkan GPU selected; resolved backend is {backend}: {}",
-                    choice.reason
+                detail: solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.gpu.vulkan.no.hardware",
+                    [("backend", &backend), ("reason", &choice.reason)],
                 ),
             },
         };
@@ -555,9 +859,10 @@ fn local_gpu_check(
         return FitCheck {
             name: "gpu",
             severity: FitSeverity::Unknown,
-            detail: format!(
-                "Vulkan GPU probe did not complete; resolved backend is {backend}: {}",
-                choice.reason
+            detail: solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.fit.gpu.vulkan.probe.incomplete",
+                [("backend", &backend), ("reason", &choice.reason)],
             ),
         };
     }
@@ -565,46 +870,73 @@ fn local_gpu_check(
         None => FitCheck {
             name: "gpu",
             severity: FitSeverity::Warning,
-            detail: format!(
-                "no hardware Vulkan GPU selected; resolved backend is {backend}: {}",
-                choice.reason
+            detail: solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.fit.gpu.vulkan.no.hardware",
+                [("backend", &backend), ("reason", &choice.reason)],
             ),
         },
         Some(selected) => {
             match crate::vulkan::gpu_device_local_verdict(vulkan_probe_ok, devices, override_index)
             {
-                crate::vulkan::GpuDeviceLocalVerdict::Eligible { .. } => FitCheck {
-                    name: "gpu",
-                    severity: FitSeverity::Ok,
-                    detail: format!(
-                        "Vulkan GPU selected: {}; resolved backend is {backend}: {}{suffix}",
-                        selected.name, choice.reason
-                    ),
-                },
-                crate::vulkan::GpuDeviceLocalVerdict::BelowBar { available_bytes } => FitCheck {
-                    name: "gpu",
-                    severity: FitSeverity::Blocked,
-                    detail: format!(
-                        "GPU {} has {} GB; the bundled local models need at least 6 GB; resolved backend is {backend}: {}{suffix}",
-                        selected.name,
-                        gb_label(available_bytes),
-                        choice.reason
-                    ),
-                },
+                crate::vulkan::GpuDeviceLocalVerdict::Eligible { .. } => {
+                    let id = if cpu_placement {
+                        "journal.cli.install.fit.gpu.vulkan.eligible.cpu"
+                    } else {
+                        "journal.cli.install.fit.gpu.vulkan.eligible"
+                    };
+                    FitCheck {
+                        name: "gpu",
+                        severity: FitSeverity::Ok,
+                        detail: solstone_core_cli_copy::display_for(
+                            locale,
+                            id,
+                            [
+                                ("name", &selected.name),
+                                ("backend", &backend),
+                                ("reason", &choice.reason),
+                            ],
+                        ),
+                    }
+                }
+                crate::vulkan::GpuDeviceLocalVerdict::BelowBar { available_bytes } => {
+                    let available_gb = gb_label(available_bytes);
+                    let id = if cpu_placement {
+                        "journal.cli.install.fit.gpu.vulkan.below.bar.cpu"
+                    } else {
+                        "journal.cli.install.fit.gpu.vulkan.below.bar"
+                    };
+                    FitCheck {
+                        name: "gpu",
+                        severity: FitSeverity::Blocked,
+                        detail: solstone_core_cli_copy::display_for(
+                            locale,
+                            id,
+                            [
+                                ("name", &selected.name),
+                                ("available", &available_gb),
+                                ("backend", &backend),
+                                ("reason", &choice.reason),
+                            ],
+                        ),
+                    }
+                }
                 crate::vulkan::GpuDeviceLocalVerdict::Unknown => FitCheck {
                     name: "gpu",
                     severity: FitSeverity::Unknown,
-                    detail: format!(
-                        "GPU memory could not be read; resolved backend is {backend}: {}",
-                        choice.reason
+                    detail: solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.install.fit.gpu.vulkan.memory.unknown",
+                        [("backend", &backend), ("reason", &choice.reason)],
                     ),
                 },
                 crate::vulkan::GpuDeviceLocalVerdict::NoHardwareDevice => FitCheck {
                     name: "gpu",
                     severity: FitSeverity::Blocked,
-                    detail: format!(
-                        "no hardware Vulkan GPU selected; resolved backend is {backend}: {}",
-                        choice.reason
+                    detail: solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.install.fit.gpu.vulkan.no.hardware",
+                        [("backend", &backend), ("reason", &choice.reason)],
                     ),
                 },
             }
@@ -612,7 +944,8 @@ fn local_gpu_check(
     }
 }
 
-fn disk_check(
+fn disk_check_in(
+    locale: &str,
     cache: &Path,
     available: Result<u64, String>,
     known: &[(&str, u64)],
@@ -625,38 +958,74 @@ fn disk_check(
         .map(|(name, _)| *name)
         .collect::<Vec<_>>()
         .join(", ");
-    let unknown = if unknown.is_empty() {
-        String::new()
-    } else {
-        format!("unknown download size for {}", unknown.join(", "))
-    };
+    let unknown_names = unknown.join(", ");
     match available {
         Err(error) => FitCheck {
             name: "disk",
             severity: FitSeverity::Unknown,
             detail: if unknown.is_empty() {
-                format!(
-                    "available disk space could not be verified at {}: {error}",
-                    cache.display()
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.disk.unavailable",
+                    [("path", &cache.display()), ("error", &error)],
                 )
             } else {
-                format!(
-                    "available disk space could not be verified at {}: {error}; {unknown}",
-                    cache.display()
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.disk.unavailable.unknown",
+                    [
+                        ("path", &cache.display()),
+                        ("error", &error),
+                        ("unknown", &unknown_names),
+                    ],
                 )
             },
         },
         Ok(available) if available < required => {
-            let mut detail = format!(
-                "insufficient disk space for {requirement} (need {} GB, have {} GB free){}{}",
-                gb_label(required),
-                gb_label(available),
-                if known_names.is_empty() { "" } else { ": " },
-                known_names,
-            );
-            if !unknown.is_empty() {
-                detail.push_str(&format!("; {unknown}"));
-            }
+            let required_gb = gb_label(required);
+            let available_gb = gb_label(available);
+            let detail = match (known_names.is_empty(), unknown.is_empty()) {
+                (true, true) => solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.disk.insufficient",
+                    [
+                        ("requirement", &requirement),
+                        ("required", &required_gb),
+                        ("available", &available_gb),
+                    ],
+                ),
+                (false, true) => solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.disk.insufficient.named",
+                    [
+                        ("requirement", &requirement),
+                        ("required", &required_gb),
+                        ("available", &available_gb),
+                        ("known", &known_names),
+                    ],
+                ),
+                (true, false) => solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.disk.insufficient.unknown",
+                    [
+                        ("requirement", &requirement),
+                        ("required", &required_gb),
+                        ("available", &available_gb),
+                        ("unknown", &unknown_names),
+                    ],
+                ),
+                (false, false) => solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.disk.insufficient.named.unknown",
+                    [
+                        ("requirement", &requirement),
+                        ("required", &required_gb),
+                        ("available", &available_gb),
+                        ("known", &known_names),
+                        ("unknown", &unknown_names),
+                    ],
+                ),
+            };
             FitCheck {
                 name: "disk",
                 severity: FitSeverity::Blocked,
@@ -664,17 +1033,28 @@ fn disk_check(
             }
         }
         Ok(available) => {
+            let available_gb = gb_label(available);
+            let required_gb = gb_label(required);
             let detail = if unknown.is_empty() {
-                format!(
-                    "{} GB free for {} GB {requirement}",
-                    gb_label(available),
-                    gb_label(required)
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.disk.ok",
+                    [
+                        ("available", &available_gb),
+                        ("required", &required_gb),
+                        ("requirement", &requirement),
+                    ],
                 )
             } else {
-                format!(
-                    "{} GB free; {requirement} need {} GB; {unknown}",
-                    gb_label(available),
-                    gb_label(required)
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.fit.disk.ok.unknown",
+                    [
+                        ("available", &available_gb),
+                        ("requirement", &requirement),
+                        ("required", &required_gb),
+                        ("unknown", &unknown_names),
+                    ],
                 )
             };
             FitCheck {
@@ -690,19 +1070,23 @@ fn disk_check(
     }
 }
 
-#[cfg(unix)]
 pub fn free_bytes(target: &Path) -> Result<u64, String> {
+    free_bytes_in(ENGLISH, target)
+}
+
+#[cfg(unix)]
+pub fn free_bytes_in(locale: &str, target: &Path) -> Result<u64, String> {
     let usage_root = nearest_existing_ancestor(target);
     let stats = statvfs(&usage_root).map_err(|error| error.to_string())?;
     let blocks = stats.blocks_available() as u64;
     let fragment_size = stats.fragment_size() as u64;
-    blocks
-        .checked_mul(fragment_size)
-        .ok_or_else(|| "available disk space overflow".to_owned())
+    blocks.checked_mul(fragment_size).ok_or_else(|| {
+        solstone_core_cli_copy::render_for(locale, "journal.cli.install.fit.disk.overflow", &[])
+    })
 }
 
 #[cfg(windows)]
-pub fn free_bytes(target: &Path) -> Result<u64, String> {
+pub fn free_bytes_in(_locale: &str, target: &Path) -> Result<u64, String> {
     let usage_root = nearest_existing_ancestor(target);
     let mut path = usage_root.as_os_str().encode_wide().collect::<Vec<_>>();
     path.push(0);
@@ -721,8 +1105,12 @@ pub fn free_bytes(target: &Path) -> Result<u64, String> {
 }
 
 #[cfg(not(any(unix, windows)))]
-pub fn free_bytes(_target: &Path) -> Result<u64, String> {
-    Err("disk-space inspection is unsupported on this platform".to_owned())
+pub fn free_bytes_in(locale: &str, _target: &Path) -> Result<u64, String> {
+    Err(solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.install.fit.disk.unsupported",
+        &[],
+    ))
 }
 
 #[cfg(windows)]

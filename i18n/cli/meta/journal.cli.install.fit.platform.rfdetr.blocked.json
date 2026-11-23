@@ -1,0 +1,25 @@
+{
+  "description": "Fit report rf-detr unsupported platform detail.",
+  "context": "Fit report rf-detr unsupported platform detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "os",
+      "type": "string"
+    },
+    {
+      "name": "arch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b7ae0aaf8b97303450da8021bd288ed20369ce51ca6617b1ba692b72c7c7301a",
+  "max_length": 258,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

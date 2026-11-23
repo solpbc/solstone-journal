@@ -18,7 +18,7 @@ use solstone_core_local::install::ced_readiness::CedVerdict;
 #[cfg(test)]
 use solstone_core_local::install::rfdetr_readiness::RFDETR_UNAVAILABLE_GUIDANCE;
 use solstone_core_local::install::rfdetr_readiness::{
-    RfdetrDegradedCause, RfdetrReadiness, evaluate_rfdetr_readiness,
+    RfdetrDegradedCause, RfdetrReadiness, evaluate_rfdetr_readiness_in,
 };
 use solstone_core_local::{
     APPLE_SILICON_TOTAL_MEMORY_MIN_BYTES, AppleTotalMemoryVerdict, GPU_DEVICE_LOCAL_MIN_BYTES,
@@ -467,12 +467,22 @@ where
     }
 }
 pub fn evaluate_host_rfdetr(journal: &Path, os: &str, arch: &str) -> RfdetrReadiness {
+    evaluate_host_rfdetr_in(solstone_core_cli_copy::ENGLISH, journal, os, arch)
+}
+
+pub fn evaluate_host_rfdetr_in(
+    locale: &str,
+    journal: &Path,
+    os: &str,
+    arch: &str,
+) -> RfdetrReadiness {
     if solstone_core_local::install::rfdetr_install::rfdetr_uses_package_payload(os, arch) {
-        solstone_core_local::install::rfdetr_readiness::evaluate_windows_rfdetr_readiness(
+        solstone_core_local::install::rfdetr_readiness::evaluate_windows_rfdetr_readiness_in(
+            locale,
             probe_windows_rfdetr_help,
         )
     } else {
-        evaluate_rfdetr_readiness(journal, os, arch)
+        evaluate_rfdetr_readiness_in(locale, journal, os, arch)
     }
 }
 

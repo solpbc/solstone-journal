@@ -1,0 +1,21 @@
+{
+  "description": "RF-DETR check error when install sidecar file is missing.",
+  "context": "RF-DETR check error when install sidecar file is missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "73f71c2f65268e30a855bf456634be96b9b8a6f55c5c2f0f4c7e774e7462ab86",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

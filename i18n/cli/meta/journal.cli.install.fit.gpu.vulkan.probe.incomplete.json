@@ -1,0 +1,25 @@
+{
+  "description": "Fit report Vulkan GPU probe did not complete.",
+  "context": "Fit report Vulkan GPU probe did not complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6707799cfe9fbe8df8435635e0dc2d1f6508bb01a985d3e6023ee3d249acdad5",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Windows PDFium verification called on a non-Windows runtime.",
+  "context": "Windows PDFium verification called on a non-Windows runtime.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3bbaee7792e076055510b73624b5f8f2553077c0d0a5687affc92299c70dc8ce",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

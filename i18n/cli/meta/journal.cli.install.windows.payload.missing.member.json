@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: declared member missing.",
+  "context": "Windows signed payload refusal: declared member missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8d40d4a3a616ead21a36de62991cdc8f44d0e538dc9e377f5c40c3d92b06b203",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

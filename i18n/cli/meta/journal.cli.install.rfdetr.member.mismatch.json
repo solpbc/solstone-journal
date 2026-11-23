@@ -1,0 +1,25 @@
+{
+  "description": "RF-DETR install error when extracted binary member path mismatches contract.",
+  "context": "RF-DETR install error when extracted binary member path mismatches contract.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "actual",
+      "type": "string"
+    },
+    {
+      "name": "expected",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dd3e4eb18eb184ac623a788a7854ba84d5cea26c9e328620655c6f90935b8873",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

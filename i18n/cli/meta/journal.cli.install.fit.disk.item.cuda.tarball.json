@@ -1,0 +1,16 @@
+{
+  "description": "Fit report disk item label for CUDA llama-server tarball.",
+  "context": "Fit report disk item label for CUDA llama-server tarball.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "872d8ca001a8535b4ac7972cfd5c7bbfbb6996633ab1b869aa6f872ed722980b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

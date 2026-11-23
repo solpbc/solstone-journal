@@ -1,0 +1,25 @@
+{
+  "description": "Fit report CUDA GPU probe unavailable.",
+  "context": "Fit report CUDA GPU probe unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b2fc4d559a30894bb517c499ab37f4c5b00616f50a4988a20b067b6eb917332b",
+  "max_length": 225,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

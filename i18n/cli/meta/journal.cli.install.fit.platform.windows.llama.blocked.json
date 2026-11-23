@@ -1,0 +1,25 @@
+{
+  "description": "Fit report unsupported Windows architecture detail.",
+  "context": "Fit report unsupported Windows architecture detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "os",
+      "type": "string"
+    },
+    {
+      "name": "arch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "04217a9cab8fe06b71b15521663c36cb811abb4a3e113dc3d52f3548a1de85ed",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: unexpected file in package.",
+  "context": "Windows signed payload refusal: unexpected file in package.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d9baf458e6954bab29b6dc98371c5404ff572ebf1c564d7f07e73bf30406cdfc",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

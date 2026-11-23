@@ -1,0 +1,16 @@
+{
+  "description": "Fit report disk requirement label for downloads.",
+  "context": "Fit report disk requirement label for downloads.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dbddb4591f4f38bdcc45135928e2cde2f95c7fd39bfd642d1a13fa963cbee1ab",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Fit report disk requirement label for bundled assets.",
+  "context": "Fit report disk requirement label for bundled assets.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "96d6eaa3628c6b86a702352da6352f424a82270708ca015269c7a8b835aba762",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

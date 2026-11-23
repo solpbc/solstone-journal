@@ -1,0 +1,25 @@
+{
+  "description": "Fit report Windows signed rf-detr package supported detail.",
+  "context": "Fit report Windows signed rf-detr package supported detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "os",
+      "type": "string"
+    },
+    {
+      "name": "arch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "12ec56a8f4efe1417df5719c1336ff20fbf4ec9a6a1114f8a32d32c8b352966a",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

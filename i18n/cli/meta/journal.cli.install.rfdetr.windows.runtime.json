@@ -1,0 +1,16 @@
+{
+  "description": "Windows RF-DETR verification called on a non-Windows runtime.",
+  "context": "Windows RF-DETR verification called on a non-Windows runtime.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7428ba8de1e11965961d5239377cc20a98164b563f7eef861e162964bd215eb5",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

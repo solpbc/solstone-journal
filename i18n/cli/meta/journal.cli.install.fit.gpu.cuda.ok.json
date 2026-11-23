@@ -1,0 +1,21 @@
+{
+  "description": "Fit report CUDA GPU check passing.",
+  "context": "Fit report CUDA GPU check passing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ba908a5d80e008ade2d119c8a324ee1fcb6921f73a9c07ec10099d1340df06ea",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

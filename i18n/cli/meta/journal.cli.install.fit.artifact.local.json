@@ -1,0 +1,16 @@
+{
+  "description": "Fit report artifact title for local provider.",
+  "context": "Fit report artifact title for local provider.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "93532494021b577adce35024dbfcfb27cda063967d1872e691edfb5278daf6eb",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Fit report disk item label for parakeet Vulkan tarball.",
+  "context": "Fit report disk item label for parakeet Vulkan tarball.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8b353d88f7689059424dbb254303cb1a5f381fc28e646e4b7b4fbdabf16073a8",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "RF-DETR install error when bundled asset file is missing.",
+  "context": "RF-DETR install error when bundled asset file is missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "filename",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4229f50fdc2b69820557de29138bac0e4cdc725982a9bf57d156e4e5f1be8d7c",
+  "max_length": 225,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

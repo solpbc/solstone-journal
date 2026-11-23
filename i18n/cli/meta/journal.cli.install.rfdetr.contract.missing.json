@@ -1,0 +1,16 @@
+{
+  "description": "RF-DETR macOS install error when compiled delivery contract is absent.",
+  "context": "RF-DETR macOS install error when compiled delivery contract is absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c85825eff38e74a1d41cff808df1170aa624e96b86471b10a9e768d6970a49f3",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

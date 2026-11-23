@@ -1,0 +1,25 @@
+{
+  "description": "Fit report CUDA GPU memory unknown.",
+  "context": "Fit report CUDA GPU memory unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "df109d09c277033fe3cb024aab3cab61cba93509891439ab14a8a6b465251c86",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

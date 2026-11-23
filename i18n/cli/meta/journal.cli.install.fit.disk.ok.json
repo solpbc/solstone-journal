@@ -1,0 +1,29 @@
+{
+  "description": "Fit report sufficient disk space.",
+  "context": "Fit report sufficient disk space.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "available",
+      "type": "string"
+    },
+    {
+      "name": "required",
+      "type": "string"
+    },
+    {
+      "name": "requirement",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3a3bd0aae8a03bee104b31568e6249a02625b4cce9d71bc4802aea4425da8757",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

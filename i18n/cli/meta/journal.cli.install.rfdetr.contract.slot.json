@@ -1,0 +1,25 @@
+{
+  "description": "RF-DETR macOS install error when compiled delivery contract slot mismatches.",
+  "context": "RF-DETR macOS install error when compiled delivery contract slot mismatches.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "actual",
+      "type": "string"
+    },
+    {
+      "name": "expected",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "02116e5aab5c3ff1c06d425bc1c2ffe700c8621ac9bdb9b70de3cdb403fbf78e",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

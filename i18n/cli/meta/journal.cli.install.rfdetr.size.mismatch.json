@@ -1,0 +1,29 @@
+{
+  "description": "RF-DETR verification error when file size differs from pinned expectation.",
+  "context": "RF-DETR verification error when file size differs from pinned expectation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    },
+    {
+      "name": "expected",
+      "type": "string"
+    },
+    {
+      "name": "actual",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8845583ee868617746937a09497c749f87084d97f8f0924fde83f112fb0d86bb",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

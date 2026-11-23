@@ -1,0 +1,25 @@
+{
+  "description": "Fit report no hardware Vulkan GPU selected.",
+  "context": "Fit report no hardware Vulkan GPU selected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "289094979c4bb84db732fb3afdde79e8b2bf118bbd556c88ba92218a28638060",
+  "max_length": 234,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

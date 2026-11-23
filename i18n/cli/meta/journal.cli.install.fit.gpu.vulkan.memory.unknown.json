@@ -1,0 +1,25 @@
+{
+  "description": "Fit report Vulkan GPU memory unreadable.",
+  "context": "Fit report Vulkan GPU memory unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9b39db5637538aaa6668cd9a2af67f5953734dc29150041a58ae88b4a74dfd59",
+  "max_length": 225,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

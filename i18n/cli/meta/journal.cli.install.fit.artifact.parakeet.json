@@ -1,0 +1,16 @@
+{
+  "description": "Fit report artifact title for parakeet.cpp.",
+  "context": "Fit report artifact title for parakeet.cpp.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "23049253d5b68145fa8bcfd0878992c1759de73c97e93f96717b5e6b55bbd78b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

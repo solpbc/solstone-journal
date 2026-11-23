@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: missing file or manifest.",
+  "context": "Windows signed payload refusal: missing file or manifest.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "71155b11a9d58c988dac9b4b800b4ee761031c136ba8f992a17615eb58750688",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

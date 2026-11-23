@@ -1,0 +1,21 @@
+{
+  "description": "Windows RF-DETR readiness failed during package verification.",
+  "context": "Windows RF-DETR readiness failed during package verification.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6da7aa6e7cf003ef2282763ee9df5b9753afd74d6ec402b6e9dcca3704c1611c",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

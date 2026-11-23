@@ -1,0 +1,29 @@
+{
+  "description": "Fit report disk space unavailable with unknown download sizes.",
+  "context": "Fit report disk space unavailable with unknown download sizes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    },
+    {
+      "name": "unknown",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bba2ce38679fdd439582eabb2865663743d26a9f9cfce7243623dc6996ed5c13",
+  "max_length": 321,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

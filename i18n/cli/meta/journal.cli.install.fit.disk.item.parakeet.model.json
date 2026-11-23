@@ -1,0 +1,16 @@
+{
+  "description": "Fit report disk item label for parakeet GGUF model.",
+  "context": "Fit report disk item label for parakeet GGUF model.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a58ef05bdc225b84728612b1bbc6ba763ccc564027b604fed160b4fe17c0c8de",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

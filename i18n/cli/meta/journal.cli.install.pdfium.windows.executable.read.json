@@ -1,0 +1,21 @@
+{
+  "description": "Windows PDFium package check failed reading current executable path.",
+  "context": "Windows PDFium package check failed reading current executable path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4f20c0adc465f61ae057e307a02337ed816699d6e51940d51400a51978296559",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

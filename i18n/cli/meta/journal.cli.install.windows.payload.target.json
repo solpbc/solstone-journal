@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: manifest target mismatch.",
+  "context": "Windows signed payload refusal: manifest target mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "baf317ec09ef2b4da07831f96fb7cc984bc9ab63a8279873c6433e51c061b668",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

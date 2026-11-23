@@ -1,0 +1,33 @@
+{
+  "description": "Fit report insufficient disk space with unknown download sizes.",
+  "context": "Fit report insufficient disk space with unknown download sizes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "requirement",
+      "type": "string"
+    },
+    {
+      "name": "required",
+      "type": "string"
+    },
+    {
+      "name": "available",
+      "type": "string"
+    },
+    {
+      "name": "unknown",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "17735f0ef16f1ad5e2416844dadeb1ae2d65b6777d8f8de54f06549cb0910e31",
+  "max_length": 411,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

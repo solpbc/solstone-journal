@@ -1,0 +1,21 @@
+{
+  "description": "Windows PDFium package check failed because bin has no parent package root.",
+  "context": "Windows PDFium package check failed because bin has no parent package root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ec8d04426cde1da702381dcba67f448f3efaade38a26ab10a52b88bfae735334",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

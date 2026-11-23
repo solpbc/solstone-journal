@@ -1,0 +1,21 @@
+{
+  "description": "Fit report Windows signed llama-server package supported detail.",
+  "context": "Fit report Windows signed llama-server package supported detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "arch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e91ab540c5464daa98fa78700575ab41c2484e54c66f132aa8cf0bacb5a5e46a",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

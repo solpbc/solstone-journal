@@ -1,0 +1,16 @@
+{
+  "description": "Fit report disk item label for parakeet CPU tarball.",
+  "context": "Fit report disk item label for parakeet CPU tarball.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e1ef7e5637b6a868217c9b2ab5f09b065eb062abe614d9741926282b1bd5539",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

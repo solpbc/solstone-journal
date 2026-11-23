@@ -1,0 +1,16 @@
+{
+  "description": "Fit report disk item label for local mmproj file.",
+  "context": "Fit report disk item label for local mmproj file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9e5f20ddf1140bce90a0c592dac3dfb57a5913c42a4faac088fb144a79de83d8",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

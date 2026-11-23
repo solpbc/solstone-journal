@@ -1,0 +1,21 @@
+{
+  "description": "Fit report parakeet platform ready detail.",
+  "context": "Fit report parakeet platform ready detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2ba9291f9301f40af66b8096fcb22b7ed24fbdf2a3cbaa32fb818ff07b9dc513",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Windows signed payload refusal: unsupported manifest schema.",
+  "context": "Windows signed payload refusal: unsupported manifest schema.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d6589038aad883a4e286be2b635f32ab1b4d53582dfbc2cef3e935718d059adb",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Fit report Vulkan GPU check eligible.",
+  "context": "Fit report Vulkan GPU check eligible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "backend",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bdd6f87f3c4bfdcc7da577f8cade80c731ba0c75fc0961dd0ce8faa618dfef76",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -7,21 +7,31 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use solstone_core_cli_copy::ENGLISH;
 
 use super::readiness::probe_binary_with_arg;
 use super::rfdetr_install::{
-    RfdetrInstallError, RfdetrInstallRecord, binary_path, check_rfdetr_model, model_path,
+    RfdetrInstallError, RfdetrInstallRecord, binary_path, check_rfdetr_model_in, model_path,
     rfdetr_artifact_key,
 };
 
 pub use super::rfdetr_windows::{
     RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE, RfdetrWindowsLaunchSpec, WindowsRfdetrPackage,
-    map_rfdetr_detect_completion, rfdetr_degraded_guidance, rfdetr_windows_detect_launch,
-    rfdetr_windows_help_launch, verified_windows_rfdetr_package,
+    map_rfdetr_detect_completion, map_rfdetr_detect_completion_in, rfdetr_degraded_guidance,
+    rfdetr_degraded_guidance_in, rfdetr_windows_detect_launch, rfdetr_windows_help_launch,
+    verified_windows_rfdetr_package, verified_windows_rfdetr_package_in,
 };
 
 pub const RFDETR_READY_DETAIL: &str = "rf-detr.cpp object-detection engine and model are ready";
 pub const RFDETR_UNAVAILABLE_GUIDANCE: &str = "Object detection is degraded because its RF-DETR assets are unavailable. Screen descriptions will continue. Use `solstone journal install-models` to check or repair the RF-DETR assets.";
+
+pub fn rfdetr_ready_detail_in(locale: &str) -> String {
+    solstone_core_cli_copy::render_for(locale, "journal.cli.host.health.rfdetr.ready", &[])
+}
+
+pub fn rfdetr_unavailable_guidance_in(locale: &str) -> String {
+    solstone_core_cli_copy::render_for(locale, "journal.cli.host.health.rfdetr.assets", &[])
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -51,6 +61,14 @@ pub fn evaluate_windows_rfdetr_readiness_from(
     package: Result<WindowsRfdetrPackage, super::rfdetr_windows::WindowsRfdetrPackageError>,
     probe: impl FnOnce(&WindowsRfdetrPackage) -> Value,
 ) -> RfdetrReadiness {
+    evaluate_windows_rfdetr_readiness_from_in(ENGLISH, package, probe)
+}
+
+pub fn evaluate_windows_rfdetr_readiness_from_in(
+    locale: &str,
+    package: Result<WindowsRfdetrPackage, super::rfdetr_windows::WindowsRfdetrPackageError>,
+    probe: impl FnOnce(&WindowsRfdetrPackage) -> Value,
+) -> RfdetrReadiness {
     let package = match package {
         Ok(package) => package,
         Err(error) => {
@@ -64,7 +82,11 @@ pub fn evaluate_windows_rfdetr_readiness_from(
             };
             return RfdetrReadiness::Degraded {
                 cause,
-                detail: format!("Windows RF-DETR package verification failed: {error}"),
+                detail: solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.install.rfdetr.windows.verify.failed",
+                    [("error", &error)],
+                ),
             };
         }
     };
@@ -81,7 +103,11 @@ pub fn evaluate_windows_rfdetr_readiness_from(
     } else {
         RfdetrReadiness::Degraded {
             cause: RfdetrDegradedCause::Unrunnable,
-            detail: format!("rf-detr engine probe failed: {result}"),
+            detail: solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.install.rfdetr.probe.failed",
+                [("result", &result)],
+            ),
         }
     }
 }
@@ -89,25 +115,59 @@ pub fn evaluate_windows_rfdetr_readiness_from(
 pub fn evaluate_windows_rfdetr_readiness(
     probe: impl FnOnce(&WindowsRfdetrPackage) -> Value,
 ) -> RfdetrReadiness {
-    evaluate_windows_rfdetr_readiness_from(verified_windows_rfdetr_package(), probe)
+    evaluate_windows_rfdetr_readiness_in(ENGLISH, probe)
+}
+
+pub fn evaluate_windows_rfdetr_readiness_in(
+    locale: &str,
+    probe: impl FnOnce(&WindowsRfdetrPackage) -> Value,
+) -> RfdetrReadiness {
+    evaluate_windows_rfdetr_readiness_from_in(
+        locale,
+        verified_windows_rfdetr_package_in(locale),
+        probe,
+    )
 }
 
 pub fn evaluate_rfdetr_readiness(journal: &Path, os: &str, arch: &str) -> RfdetrReadiness {
+    evaluate_rfdetr_readiness_in(ENGLISH, journal, os, arch)
+}
+
+pub fn evaluate_rfdetr_readiness_in(
+    locale: &str,
+    journal: &Path,
+    os: &str,
+    arch: &str,
+) -> RfdetrReadiness {
     if super::rfdetr_install::rfdetr_uses_package_payload(os, arch) {
-        return evaluate_windows_rfdetr_readiness_from(
-            verified_windows_rfdetr_package(),
+        return evaluate_windows_rfdetr_readiness_from_in(
+            locale,
+            verified_windows_rfdetr_package_in(locale),
             |_| json!({"runnable": false, "reason_code": "bounded_helper_probe_required"}),
         );
     }
     let key = rfdetr_artifact_key(os, arch);
     let checked = match key {
-        Some(_) => check_rfdetr_model(journal, os, arch),
+        Some(_) => check_rfdetr_model_in(locale, journal, os, arch),
         None => Ok(RfdetrInstallRecord::PlatformUnavailable),
     };
-    evaluate_rfdetr_readiness_from(journal, os, arch, key, checked, probe_rfdetr)
+    evaluate_rfdetr_readiness_from_in(locale, journal, os, arch, key, checked, probe_rfdetr)
 }
 
+#[cfg(test)]
 fn evaluate_rfdetr_readiness_from(
+    journal: &Path,
+    os: &str,
+    arch: &str,
+    key: Option<&str>,
+    checked: Result<RfdetrInstallRecord, RfdetrInstallError>,
+    probe: impl FnOnce(&Path) -> Value,
+) -> RfdetrReadiness {
+    evaluate_rfdetr_readiness_from_in(ENGLISH, journal, os, arch, key, checked, probe)
+}
+
+fn evaluate_rfdetr_readiness_from_in(
+    locale: &str,
     journal: &Path,
     os: &str,
     arch: &str,
@@ -139,7 +199,11 @@ fn evaluate_rfdetr_readiness_from(
             } else {
                 RfdetrReadiness::Degraded {
                     cause: RfdetrDegradedCause::Unrunnable,
-                    detail: format!("rf-detr engine probe failed: {result}"),
+                    detail: solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.install.rfdetr.probe.failed",
+                        [("result", &result)],
+                    ),
                 }
             }
         }

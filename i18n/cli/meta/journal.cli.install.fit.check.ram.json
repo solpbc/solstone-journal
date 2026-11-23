@@ -1,0 +1,16 @@
+{
+  "description": "Fit report check name: ram.",
+  "context": "Fit report check name: ram.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2750968c13bedf67317f439cc84702ff38cf20f3e534c675eb9d1aa5c571b9fe",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Fit report RAM check when available memory is unknown.",
+  "context": "Fit report RAM check when available memory is unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "model",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "899d1a2b2d77bb7243df7f1909f9243ff46c491f108d1f7954b7adb1a4446589",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
