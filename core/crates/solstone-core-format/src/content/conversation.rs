@@ -510,7 +510,7 @@ fn verdict_medium(verdict: &Value) -> ConversationMedium {
 /// A WhatsApp notice counts only when parsed as a senderless exporter event.
 pub fn verdict_medium_with_notice(verdict: &Value, whatsapp_notice: bool) -> ConversationMedium {
     use ConversationMedium::{Spoken, Unresolved, Written};
-    let Some(version @ 1..=7) = verdict["ruleset_version"].as_u64() else {
+    let Some(version @ 1..=8) = verdict["ruleset_version"].as_u64() else {
         return Unresolved;
     };
     let Some(reasons) = verdict["reasons"].as_array() else {
@@ -529,10 +529,16 @@ pub fn verdict_medium_with_notice(verdict: &Value, whatsapp_notice: bool) -> Con
             Some("otter_export") if version >= 3 => Spoken,
             Some("macwhisper_stacked") if version >= 5 => Spoken,
             Some("dated_bold_speaker") if version >= 5 => continue,
+            Some("macwhisper_json" | "podcast_transcript_json" | "fireflies_csv")
+                if version >= 8 =>
+            {
+                Spoken
+            }
             Some(
                 "zoom_chat" | "discord_export" | "signal_sigtop_long" | "sms_backup_xml"
                 | "slack_text",
             ) => Written,
+            Some("telegram_json" | "telegram_html" | "slack_json") if version >= 8 => Written,
             Some("whatsapp_bracketed" | "whatsapp_dash") if whatsapp_notice => Written,
             Some("whatsapp_bracketed" | "whatsapp_dash") => continue,
             // Other rules describe shapes shared by more than one medium.
@@ -790,7 +796,7 @@ mod tests {
         sidecar["import_id"] = json!("neighbor");
         assert_eq!(imported_text_medium(&header, Some(&sidecar)), Unresolved);
         sidecar["import_id"] = json!("first");
-        sidecar["ruleset_version"] = json!(8);
+        sidecar["ruleset_version"] = json!(9);
         assert_eq!(imported_text_medium(&header, Some(&sidecar)), Unresolved);
         assert_eq!(imported_text_medium(&header, None), Unresolved);
     }
@@ -802,6 +808,18 @@ mod tests {
             ("macwhisper_stacked", 5, Spoken),
             ("dated_bold_speaker", 4, Unresolved),
             ("dated_bold_speaker", 5, Written),
+            ("macwhisper_json", 7, Unresolved),
+            ("macwhisper_json", 8, Spoken),
+            ("podcast_transcript_json", 7, Unresolved),
+            ("podcast_transcript_json", 8, Spoken),
+            ("fireflies_csv", 7, Unresolved),
+            ("fireflies_csv", 8, Spoken),
+            ("telegram_json", 7, Unresolved),
+            ("telegram_json", 8, Written),
+            ("telegram_html", 7, Unresolved),
+            ("telegram_html", 8, Written),
+            ("slack_json", 7, Unresolved),
+            ("slack_json", 8, Written),
         ] {
             let reasons = if reason == "dated_bold_speaker" {
                 json!(["zoom_chat", reason])
@@ -809,7 +827,35 @@ mod tests {
                 json!([reason])
             };
             let header = json!({"imported":{"id":"one","triage":{"ruleset_version":version, "kind":"transcripts","reasons":reasons}}});
-            assert_eq!(imported_text_medium(&header, None), expected);
+            assert_eq!(
+                imported_text_medium(&header, None),
+                expected,
+                "{reason}@v{version}"
+            );
+        }
+    }
+
+    #[test]
+    fn raising_ruleset_version_to_8_preserves_existing_text_import_mediums() {
+        for (reason, expected) in [
+            ("zoom_chat", Written),
+            ("slack_text", Written),
+            ("discord_export", Written),
+            ("webvtt_cues", Spoken),
+            ("subrip_cues", Spoken),
+            ("whisper_tsv", Spoken),
+            ("whisper_json", Spoken),
+            ("otter_export", Spoken),
+            ("macwhisper_stacked", Spoken),
+        ] {
+            for version in [7, 8] {
+                let header = json!({"imported":{"id":"one","triage":{"ruleset_version":version,"kind":"transcripts","reasons":[reason]}}});
+                assert_eq!(
+                    imported_text_medium(&header, None),
+                    expected,
+                    "{reason}@v{version}"
+                );
+            }
         }
     }
 

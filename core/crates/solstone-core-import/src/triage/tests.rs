@@ -20,7 +20,7 @@ fn expected(name: &str, bytes: impl AsRef<[u8]>, kind: Kind, reasons: &[&str]) {
     let found = verdict(name, bytes.as_ref());
     assert_eq!(found.kind, kind, "{name}: {:?}", found.reasons);
     assert_eq!(found.reasons, reasons, "{name}");
-    assert_eq!(found.ruleset_version, 7);
+    assert_eq!(found.ruleset_version, 8);
     let shuffled = RULES
         .iter()
         .rev()
@@ -2077,4 +2077,172 @@ fn screenshot_metadata_is_field_specific() {
         Kind::Photos,
         &["image_default"],
     );
+}
+
+#[test]
+fn structured_chat_and_meeting_exports_classify_as_transcripts() {
+    let telegram_json = r#"{
+        "name": "Boat Repair",
+        "type": "personal_chat",
+        "id": 9001,
+        "messages": [
+            {"id": 1, "type": "service", "date": "2026-04-01T08:00:00", "date_unixtime": "1775030400", "action": "create_group", "text": ""},
+            {"id": 2, "type": "message", "date": "2026-04-01T08:05:00", "date_unixtime": "1775030700", "from": "Mira", "from_id": "user101", "text": "Did the varnish dry?"},
+            {"id": 3, "type": "message", "date": "2026-04-01T08:06:10", "date_unixtime": "1775030770", "from": null, "from_id": "user202", "text": ["Almost, check ", {"type": "bold", "text": "port side"}, "."]}
+        ]
+    }"#;
+    let telegram_html = r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Exported Data</title></head>
+<body><div class="page_wrap"><div class="page_body chat_page"><div class="history">
+<div class="message service" id="message-1"><div class="body details">1 April 2026</div></div>
+<div class="message default clearfix" id="message1"><div class="body">
+<div class="pull_right date details" title="01.04.2026 11:05:00 UTC+03:00">11:05</div>
+<div class="from_name">Mira</div>
+<div class="text">Did the varnish &amp; primer dry?<br>Check the bow.</div>
+</div></div>
+<div class="message default clearfix joined" id="message2"><div class="body">
+<div class="pull_right date details" title="01.04.2026 11:06:10 UTC+03:00">11:06</div>
+<div class="text">Looks ready.</div>
+</div></div>
+</div></div></div></body></html>"#;
+    let slack_named = r#"[
+        {"type":"message","user":"U111AAA","text":"Bringing the planks.","ts":"1743494400.000100","user_profile":{"real_name":"Mira Alder"}},
+        {"type":"message","user":"U222BBB","text":"Great, dock four.","ts":"1743494460.000200","user_profile":{"display_name":"Theo"}}
+    ]"#;
+    let slack_ids_only = r#"[
+        {"type":"message","user":"U111AAA","text":"Gate is open.","ts":"1743494400.000100"},
+        {"type":"message","user":"U222BBB","text":"On my way.","ts":"1743494460.000200"}
+    ]"#;
+    let fireflies_csv = "Speaker,Start Time,End Time,Sentence\r\nMira,00:00:01,00:00:03,\"Hello, \"\"team\"\"\"\r\nTheo,00:00:04,00:00:07,\"Ready for the list.\"\r\n";
+    let macwhisper_json = r#"{
+        "text": "Hello everyone. Let us begin.",
+        "segments": [
+            {"id": "11111111-2222-3333-4444-555555555555", "start": 0, "end": 1800, "text": "Hello everyone.", "speaker": "Speaker 1"},
+            {"id": "66666666-7777-8888-9999-aaaaaaaaaaaa", "start": 1900, "end": 3500, "text": "Let us begin.", "speaker": "Speaker 2"}
+        ]
+    }"#;
+    let podcast_json = r#"{
+        "version": "1.0.0",
+        "language": "en",
+        "segments": [
+            {"speaker": "Mira", "startTime": 0.0, "endTime": 1.2, "body": "Welcome "},
+            {"speaker": "Mira", "startTime": 1.2, "endTime": 2.4, "body": "aboard."},
+            {"speaker": "Theo", "startTime": 2.5, "endTime": 4.0, "body": "Glad to be here."}
+        ]
+    }"#;
+
+    for (name, body, rule) in [
+        ("result.json", telegram_json, "telegram_json"),
+        ("messages.html", telegram_html, "telegram_html"),
+        ("2026-04-01.json", slack_named, "slack_json"),
+        ("dock.json", slack_ids_only, "slack_json"),
+        ("retro.csv", fireflies_csv, "fireflies_csv"),
+        ("meeting.json", macwhisper_json, "macwhisper_json"),
+        ("episode.json", podcast_json, "podcast_transcript_json"),
+    ] {
+        expected(name, body, Kind::Transcripts, &[rule]);
+    }
+}
+
+#[test]
+fn non_export_and_out_of_scope_structured_files_do_not_classify_as_transcripts() {
+    let config_json = r#"{"host":"127.0.0.1","port":8080,"features":{"search":true}}"#;
+    let table_csv = "item,qty,unit_price\nbolts,12,3.50\nnuts,24,1.25\n";
+    let table_tsv = "item\tqty\tunit_price\nbolts\t12\t3.50\nnuts\t24\t1.25\n";
+    let web_page_html = "<!DOCTYPE html><html><head><title>Weather</title></head><body><main><h1>Harbor Forecast</h1><p>Light winds from the north.</p></main></body></html>";
+    let broken_json = "{\"items\":[{\"text\":\"line one \\\n line two\"}]}";
+    let fathom_api_json = r#"{"items":[{"title":"Weekly Sync","default_summary":{"markdown_formatted":"Summary"},"calendar_invitees":[{"name":"Mira"}],"transcript":[{"speaker":{"display_name":"Mira"},"text":"Hi","timestamp":"00:00:01"}]}]}"#;
+    let fireflies_graphql_json = r#"{"data":{"transcript":{"title":"Review","summary":{"overview":"Done"},"sentences":[{"speaker_name":"Mira","text":"Hello","start_time":1.0,"end_time":2.0}]}}}"#;
+    let tldv_api_json =
+        r#"{"id":"m1","data":[{"speaker":"Mira","text":"Hello","startTime":1,"endTime":3}]}"#;
+    let scraper_json = r#"{"metadata":{"title":"Sync"},"transcript":[{"speaker":"Mira","timestamp":"00:01","text":"Hello"}]}"#;
+    let agent_jsonl = "{\"type\":\"user\",\"message\":{\"content\":\"hi\"}}\n{\"type\":\"assistant\",\"message\":{\"content\":\"hello\"}}\n";
+    let telegram_whole_account = r#"{"personal_information":{"user_id":1,"phone_number":"+1000"},"chats":{"about":"List","list":[{"name":"A","type":"personal_chat","id":1,"messages":[{"id":1,"type":"message","date":"2026-04-01T08:00:00","date_unixtime":"1775030400","from":"Mira","text":"Hi"}]}]}}"#;
+    let telegram_batch_list = r#"{"chats":{"list":[{"name":"A","type":"personal_chat","id":1,"messages":[{"id":1,"type":"message","date":"2026-04-01T08:00:00","date_unixtime":"1775030400","from":"Mira","text":"Hi"}]}]}}"#;
+    let chatgpt_bare = r#"[{"title":"Notes","create_time":1700000000,"mapping":{"a":{"id":"a","message":{"author":{"role":"user"},"content":{"parts":["hello"]}}}}}]"#;
+    let claude_bare = r#"[{"uuid":"1111","name":"Chat","chat_messages":[{"uuid":"2222","sender":"human","text":"hello"}]}]"#;
+    let gemini_bare = r#"[{"header":"Gemini Apps","title":"Prompted hello","time":"2026-04-01T12:00:00Z","safeHtmlItem":[{"html":"<p>answer</p>"}]}]"#;
+    let granola_csv = "id,title,created_at,summary,notes,transcript\n1,Sync,2026-04-01,Summary,Notes,\"Mira: Hi\"\n";
+
+    for (name, body) in [
+        ("config.json", config_json),
+        ("table.csv", table_csv),
+        ("table.tsv", table_tsv),
+        ("page.html", web_page_html),
+        ("broken.json", broken_json),
+        ("fathom.json", fathom_api_json),
+        ("fireflies-api.json", fireflies_graphql_json),
+        ("tldv-api.json", tldv_api_json),
+        ("scraper.json", scraper_json),
+        ("session.jsonl", agent_jsonl),
+        ("account.json", telegram_whole_account),
+        ("batch.json", telegram_batch_list),
+        ("conversations.json", chatgpt_bare),
+        ("claude.json", claude_bare),
+        ("gemini.json", gemini_bare),
+        ("granola.csv", granola_csv),
+    ] {
+        let found = verdict(name, body);
+        assert_ne!(
+            found.kind,
+            Kind::Transcripts,
+            "{name} must not classify as transcripts (got {:?})",
+            found.reasons
+        );
+    }
+}
+
+#[test]
+fn pathological_structured_inputs_are_refused_within_bounds() {
+    let deep_json = format!("{}{}{}", "[".repeat(80), "1", "]".repeat(80));
+    let huge_csv_cell = format!(
+        "Speaker,Start Time,End Time,Sentence\nMira,00:00:01,00:00:02,\"{}\"\n",
+        "x".repeat(9 * 1024)
+    );
+    let unclosed_csv =
+        "Speaker,Start Time,End Time,Sentence\nMira,00:00:01,00:00:02,\"unterminated\n";
+    let wide_csv = format!(
+        "Speaker,Start Time,End Time,Sentence{}\nMira,00:00:01,00:00:02,Hi{}\n",
+        ",extra".repeat(20),
+        ",v".repeat(20)
+    );
+    let huge_tsv_cell = format!("start\tend\ttext\n0\t1000\t{}\n", "x".repeat(9 * 1024));
+    let deep_html = format!(
+        "<!DOCTYPE html><html><body><div class=\"page_body chat_page\"><div class=\"history\">{}{}{}</div></div></body></html>",
+        "<div>".repeat(80),
+        r#"<div class="message default"><div class="body"><div class="pull_right date details" title="01.04.2026 11:05:00 UTC+03:00">11:05</div><div class="from_name">Mira</div><div class="text">Hi</div></div></div>"#,
+        "</div>".repeat(80)
+    );
+    let huge_html_tag = format!(
+        r#"<!DOCTYPE html><html><body><div class="page_body chat_page"><div class="history"><div class="message default" data-pad="{}"><div class="body"><div class="pull_right date details" title="01.04.2026 11:05:00 UTC+03:00">11:05</div><div class="from_name">Mira</div><div class="text">Hi</div></div></div></div></div></body></html>"#,
+        "a".repeat(20 * 1024)
+    );
+    let truncated_html = r#"<!DOCTYPE html><html><body><div class="page_body chat_page"><div class="history"><div class="message default"><div class="body"><div class="text">unterminated"#;
+    let many_attrs_html = format!(
+        r#"<!DOCTYPE html><html><body><div class="page_body chat_page"><div class="history"><div class="message default" {}><div class="body"><div class="pull_right date details" title="01.04.2026 11:05:00 UTC+03:00">11:05</div><div class="from_name">Mira</div><div class="text">Hi</div></div></div></div></div></body></html>"#,
+        (0..40)
+            .map(|i| format!(r#"a{i}="1""#))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+
+    for (name, body) in [
+        ("deep.json", deep_json.as_str()),
+        ("huge.csv", huge_csv_cell.as_str()),
+        ("unclosed.csv", unclosed_csv),
+        ("wide.csv", wide_csv.as_str()),
+        ("huge.tsv", huge_tsv_cell.as_str()),
+        ("deep.html", deep_html.as_str()),
+        ("huge-tag.html", huge_html_tag.as_str()),
+        ("truncated.html", truncated_html),
+        ("many-attrs.html", many_attrs_html.as_str()),
+    ] {
+        let found = verdict(name, body);
+        assert_ne!(
+            found.kind,
+            Kind::Transcripts,
+            "{name} must be refused within safety bounds (got {:?})",
+            found.reasons
+        );
+    }
 }

@@ -44,6 +44,7 @@ pub mod strava_names;
 pub mod strava_refile;
 pub mod stream_name;
 pub mod stretch_trash;
+pub mod structured_exports;
 pub mod sync_plaud;
 pub mod sync_state;
 pub mod text;

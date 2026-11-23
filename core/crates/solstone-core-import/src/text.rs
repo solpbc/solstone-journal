@@ -339,7 +339,7 @@ fn import(
     if !crate::work_continues() {
         return Err(early(TextImportError::Stopped));
     }
-    let (text, verdict, bytes) = read_source(path).map_err(early)?;
+    let (text, verdict, bytes, preparsed) = read_source(path, stream).map_err(early)?;
     let raw_filename = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -360,14 +360,9 @@ fn import(
     let mut model_available = true;
     let mut created = Vec::new();
 
-    let (planned, untimed) = plan_tiles(
-        reading_for(&text, &verdict, stream),
-        day_dir,
-        start_time,
-        stream,
-        source_instant,
-    )
-    .map_err(early)?;
+    let reading = preparsed.unwrap_or_else(|| reading_for(&text, &verdict, stream));
+    let (planned, untimed) =
+        plan_tiles(reading, day_dir, start_time, stream, source_instant).map_err(early)?;
     let filename = match verdict.kind {
         ContentKind::Documents => "document_transcript.md",
         ContentKind::Notes => "note_transcript.md",
@@ -586,14 +581,9 @@ pub fn preview(
     stream: &str,
     source_instant: Option<Timestamp>,
 ) -> Result<crate::size::ImportSize, TextImportError> {
-    let (text, verdict, _) = read_source(path)?;
-    let (planned, _) = plan_tiles(
-        reading_for(&text, &verdict, stream),
-        day_dir,
-        start_time,
-        stream,
-        source_instant,
-    )?;
+    let (text, verdict, _, preparsed) = read_source(path, stream)?;
+    let reading = preparsed.unwrap_or_else(|| reading_for(&text, &verdict, stream));
+    let (planned, _) = plan_tiles(reading, day_dir, start_time, stream, source_instant)?;
     Ok(crate::size::ImportSize {
         recordings: planned
             .into_iter()
@@ -1432,29 +1422,22 @@ fn clock_seconds(value: &str) -> Option<u64> {
         .then_some(hours * 3600 + minutes * 60 + seconds)
 }
 
-fn read_source(path: &Path) -> Result<(String, Verdict, Vec<u8>), TextImportError> {
-    let supported = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(crate::detect::is_generic_text_extension);
-    if !supported {
-        return Err(TextImportError::UnsupportedFormat {
-            path: path.to_path_buf(),
-        });
-    }
-    let source_error = |source| TextImportError::SourceRead {
-        path: path.to_path_buf(),
-        source,
+/// Returns whether `path` is a structured export (`.json`, `.csv`, `.tsv`, `.html`)
+/// whose bounded contents triage as a recognised conversation export for that extension
+/// and parse into readable turns.
+pub(crate) fn is_admitted_structured_export(path: &Path) -> bool {
+    let Some(ext) = path.extension().and_then(|value| value.to_str()) else {
+        return false;
     };
-    let bytes = fs::read(path).map_err(source_error)?;
-    let text = triage::decode_text(&bytes)
-        .ok_or_else(|| {
-            source_error(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "stream did not contain valid UTF-8",
-            ))
-        })?
-        .into_owned();
+    if !crate::detect::is_structured_export_extension(ext) {
+        return false;
+    }
+    let Ok(Some(bytes)) = crate::structured_exports::read_bounded_bytes(path) else {
+        return false;
+    };
+    let Some(text) = crate::structured_exports::decode_structured_utf8(&bytes) else {
+        return false;
+    };
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     let verdict = triage::classify(
         &bytes,
@@ -1463,15 +1446,95 @@ fn read_source(path: &Path) -> Result<(String, Verdict, Vec<u8>), TextImportErro
         None,
         None,
     );
-    if !matches!(
-        verdict.kind,
-        ContentKind::Notes | ContentKind::Documents | ContentKind::Transcripts
-    ) {
+    if !triage::is_structured_export_verdict_for_extension(&verdict, ext) {
+        return false;
+    }
+    let Some(reading) = export_turns::read(text, &verdict.reasons) else {
+        return false;
+    };
+    readable_export(&reading, &verdict, "import.text")
+}
+
+fn read_source(
+    path: &Path,
+    stream: &str,
+) -> Result<(String, Verdict, Vec<u8>, Option<Reading>), TextImportError> {
+    let Some(ext) = path.extension().and_then(|extension| extension.to_str()) else {
         return Err(TextImportError::UnsupportedFormat {
             path: path.to_path_buf(),
         });
+    };
+    let source_error = |source| TextImportError::SourceRead {
+        path: path.to_path_buf(),
+        source,
+    };
+    if crate::detect::is_generic_text_extension(ext) {
+        let bytes = fs::read(path).map_err(source_error)?;
+        let text = triage::decode_text(&bytes)
+            .ok_or_else(|| {
+                source_error(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "stream did not contain valid UTF-8",
+                ))
+            })?
+            .into_owned();
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        let verdict = triage::classify(
+            &bytes,
+            &name,
+            path.parent().unwrap_or(Path::new("")),
+            None,
+            None,
+        );
+        if !matches!(
+            verdict.kind,
+            ContentKind::Notes | ContentKind::Documents | ContentKind::Transcripts
+        ) {
+            return Err(TextImportError::UnsupportedFormat {
+                path: path.to_path_buf(),
+            });
+        }
+        return Ok((text, verdict, bytes, None));
     }
-    Ok((text, verdict, bytes))
+    if crate::detect::is_structured_export_extension(ext) {
+        let Some(bytes) =
+            crate::structured_exports::read_bounded_bytes(path).map_err(source_error)?
+        else {
+            return Err(TextImportError::UnsupportedFormat {
+                path: path.to_path_buf(),
+            });
+        };
+        let Some(text) = crate::structured_exports::decode_structured_utf8(&bytes) else {
+            return Err(TextImportError::UnsupportedFormat {
+                path: path.to_path_buf(),
+            });
+        };
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        let verdict = triage::classify(
+            &bytes,
+            &name,
+            path.parent().unwrap_or(Path::new("")),
+            None,
+            None,
+        );
+        if !triage::is_structured_export_verdict_for_extension(&verdict, ext) {
+            return Err(TextImportError::UnsupportedFormat {
+                path: path.to_path_buf(),
+            });
+        }
+        let Some(reading) = export_turns::read(text, &verdict.reasons)
+            .filter(|reading| readable_export(reading, &verdict, stream))
+        else {
+            return Err(TextImportError::UnsupportedFormat {
+                path: path.to_path_buf(),
+            });
+        };
+        let owned = text.to_owned();
+        return Ok((owned, verdict, bytes, Some(reading)));
+    }
+    Err(TextImportError::UnsupportedFormat {
+        path: path.to_path_buf(),
+    })
 }
 
 /// What a model may add to a segment.

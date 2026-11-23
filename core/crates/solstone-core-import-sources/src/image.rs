@@ -2299,7 +2299,7 @@ mod tests {
             decision_json["reasons"],
             serde_json::json!(["aosp_screenshot_name"])
         );
-        assert_eq!(decision_json["ruleset_version"], 7);
+        assert_eq!(decision_json["ruleset_version"], 8);
         assert!(description.ends_with("screenshot_transcript.md"));
         let description_rel = format!(
             "{}/import.image/{}/screenshot_transcript.md",

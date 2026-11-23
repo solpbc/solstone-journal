@@ -509,3 +509,148 @@ async fn newly_saved_original_custody_follows_owner_date() {
     assert!(!root.path().join("imports").join(id).exists());
     slot.retire().unwrap();
 }
+
+#[tokio::test]
+async fn import_page_and_native_host_refuse_non_exports_and_admit_known_structured_exports() {
+    let root = tempfile::tempdir().unwrap();
+    let route = LiveRoute::new(root.path().to_path_buf());
+    let slot = Arc::new(ImportRouteSlot::new());
+    slot.install(route.clone()).unwrap();
+    let app = routes_with_embedded(root.path().to_path_buf(), slot.clone());
+
+    let expected_detail = "could not tell what kind of export this is; name it with --source, for example --source chatgpt\n";
+    let non_exports = [
+        (
+            "config.json",
+            "application/json",
+            r#"{"host":"127.0.0.1","port":8080}"#,
+        ),
+        ("table.csv", "text/csv", "item,qty,price\nbolts,12,3.50\n"),
+        (
+            "table.tsv",
+            "text/tab-separated-values",
+            "item\tqty\tprice\nbolts\t12\t3.50\n",
+        ),
+        (
+            "page.html",
+            "text/html",
+            "<!DOCTYPE html><html><head><title>Weather</title></head><body><p>Clear.</p></body></html>",
+        ),
+    ];
+
+    for (idx, (filename, mime, content)) in non_exports.iter().enumerate() {
+        let boundary = format!("refuse-structured-{idx}");
+        let body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nrefuse-item-{idx}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: {mime}\r\n\r\n{content}\r\n--{boundary}--\r\n"
+        );
+        let saved = app
+            .clone()
+            .oneshot(
+                Request::post(mobile_import_contract::SAVE_PATH)
+                    .header(
+                        "content-type",
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(saved.status(), StatusCode::OK, "{filename}");
+        let saved = json_body(saved).await;
+        assert_eq!(saved["source"], "text", "{filename}");
+        let id = saved["timestamp"].as_str().unwrap();
+        let path = saved["path"].as_str().unwrap();
+
+        // Import page flow: POST /app/import/api/preview refuses with 400 import_preview_failed.
+        let payload = json!({"path": path, "timestamp": id});
+        let preview = app
+            .clone()
+            .oneshot(post_json("/app/import/api/preview", &payload))
+            .await
+            .unwrap();
+        assert_eq!(preview.status(), StatusCode::BAD_REQUEST, "{filename}");
+        let preview_body = json_body(preview).await;
+        assert_eq!(
+            preview_body["reason_code"], "import_preview_failed",
+            "{filename}"
+        );
+        assert_eq!(
+            preview_body["error"], "the import could not be prepared.",
+            "{filename}"
+        );
+        assert_eq!(preview_body["detail"], expected_detail, "{filename}");
+        assert_eq!(preview_body["kind"], "plan_failed", "{filename}");
+
+        // Native host flow: POST /app/import/api/start without preview_token refuses with 409.
+        let started = app
+            .clone()
+            .oneshot(post_json(mobile_import_contract::START_PATH, &payload))
+            .await
+            .unwrap();
+        assert_eq!(started.status(), StatusCode::CONFLICT, "{filename}");
+        let start_body = json_body(started).await;
+        assert_eq!(
+            start_body["reason_code"], "import_preview_required",
+            "{filename}"
+        );
+        assert_eq!(
+            start_body["error"], "the import could not be prepared.",
+            "{filename}"
+        );
+        assert_eq!(start_body["detail"], expected_detail, "{filename}");
+        assert_eq!(start_body["kind"], "plan_failed", "{filename}");
+    }
+
+    // Recognised structured export goes through save -> preview -> start cleanly.
+    let telegram_json = r#"{"name":"Harbor","type":"personal_chat","id":1,"messages":[{"id":1,"type":"message","date":"2026-04-01T08:05:00","date_unixtime":"1775030700","from":"Mira","text":"Ready?"},{"id":2,"type":"message","date":"2026-04-01T08:06:00","date_unixtime":"1775030760","from":"Theo","text":"Yes."}]}"#;
+    let boundary = "admit-telegram-json";
+    let body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nadmit-telegram-item\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"result.json\"\r\nContent-Type: application/json\r\n\r\n{telegram_json}\r\n--{boundary}--\r\n"
+    );
+    let saved = app
+        .clone()
+        .oneshot(
+            Request::post(mobile_import_contract::SAVE_PATH)
+                .header(
+                    "content-type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(saved.status(), StatusCode::OK);
+    let saved = json_body(saved).await;
+    let id = saved["timestamp"].as_str().unwrap();
+    let path = saved["path"].as_str().unwrap();
+    let selected = "20261012_091500";
+    let mut data = json!({
+        "path": path,
+        "import_id": id,
+        "timestamp": selected,
+        "timestamp_override": true
+    });
+    let preview = app
+        .clone()
+        .oneshot(post_json("/app/import/api/preview", &data))
+        .await
+        .unwrap();
+    assert_eq!(preview.status(), StatusCode::OK);
+    let preview_body = json_body(preview).await;
+    data["preview_token"] = preview_body["preview_token"].clone();
+    let started = app
+        .clone()
+        .oneshot(post_json(mobile_import_contract::START_PATH, &data))
+        .await
+        .unwrap();
+    assert_eq!(started.status(), StatusCode::OK);
+    let run = route.wait_run();
+    assert_eq!(run.exit_code, 0, "{}{}", run.stdout, run.stderr);
+    let conv = root
+        .path()
+        .join("chronicle/20261012/import.text/091500_300/conversation_transcript.jsonl");
+    assert!(conv.is_file(), "expected {}", conv.display());
+    slot.retire().unwrap();
+}

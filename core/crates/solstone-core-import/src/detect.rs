@@ -33,11 +33,24 @@ pub const OURA_SYNC_REMEDY: &str =
 // `cli.py:549` skips the registry sweep for generic audio/text extensions.
 const DETECTION_SKIP_EXTENSIONS: &[&str] = &["m4a", "txt", "md"];
 const TEXT_STREAM_EXTENSIONS: &[&str] = &["txt", "md", "vtt", "srt", "log"];
+const STRUCTURED_EXPORT_EXTENSIONS: &[&str] = &["json", "csv", "tsv", "html"];
 
 pub fn is_generic_text_extension(extension: &str) -> bool {
     TEXT_STREAM_EXTENSIONS
         .iter()
         .any(|supported| extension.eq_ignore_ascii_case(supported))
+}
+
+pub fn is_structured_export_extension(extension: &str) -> bool {
+    STRUCTURED_EXPORT_EXTENSIONS
+        .iter()
+        .any(|supported| extension.eq_ignore_ascii_case(supported))
+}
+
+/// Content-first check: true only when `path` has a structured export extension and
+/// deterministic triage plus bounded turn parsing recognise it as a known conversation export.
+pub fn is_admitted_structured_export(path: &Path) -> bool {
+    crate::text::is_admitted_structured_export(path)
 }
 
 /// A compiled-in file importer selection.
@@ -182,6 +195,9 @@ pub enum ResolutionError<AE, ME> {
     StreamName(StreamNameError),
     /// Deliberate divergence: Python later dies staging an unclaimed directory.
     UnclaimedDirectory,
+    /// Structured file (`.json`, `.csv`, `.tsv`, `.html`) claimed by no registry importer
+    /// and not recognised as a known conversation export.
+    UnrecognisedStructuredExport,
 }
 
 impl<AE, ME> ResolutionError<AE, ME> {
@@ -211,6 +227,9 @@ impl<AE, ME> ResolutionError<AE, ME> {
             Self::StreamName(_) => Cow::Borrowed("could not derive import stream name"),
             Self::UnclaimedDirectory => Cow::Borrowed(
                 "path is a directory and no importer claimed it; select an importer or import a file",
+            ),
+            Self::UnrecognisedStructuredExport => Cow::Borrowed(
+                "could not tell what kind of export this is; name it with --source, for example --source chatgpt",
             ),
         }
     }
@@ -266,6 +285,17 @@ where
         Some(RegistrySource::Oura) => return Err(ResolutionError::OuraRequiresSync),
         _ => {}
     }
+    let admitted_structured = if selected.is_none()
+        && !options.media.is_dir()
+        && has_extension_in(options.media, STRUCTURED_EXPORT_EXTENSIONS)
+    {
+        if !is_admitted_structured_export(options.media) {
+            return Err(ResolutionError::UnrecognisedStructuredExport);
+        }
+        true
+    } else {
+        false
+    };
     if selected.is_none() && !options.dry_run {
         let hash = hash_source(options.media).map_err(ResolutionError::Hash)?;
         if !options.force
@@ -357,7 +387,7 @@ where
     }
     let source = match selected {
         Some(source) => ResolvedSource::Registry(source),
-        None if has_extension_in(options.media, TEXT_STREAM_EXTENSIONS) => {
+        None if has_extension_in(options.media, TEXT_STREAM_EXTENSIONS) || admitted_structured => {
             ResolvedSource::GenericText
         }
         None => ResolvedSource::GenericAudio,

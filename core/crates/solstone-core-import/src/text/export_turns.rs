@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use super::{ExportTime, Reading, Turn};
+use crate::structured_exports::{self, StructuredTiming, StructuredTurn};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -17,6 +18,25 @@ fn turn(speaker: Option<&str>, text: &str) -> Turn {
     }
 }
 
+fn from_structured(parsed: Vec<StructuredTurn>) -> Vec<Turn> {
+    parsed
+        .into_iter()
+        .map(|row| Turn {
+            speaker: row.speaker,
+            recipient: None,
+            text: row.text,
+            offset: row.offset,
+            stated: None,
+            exporter_notice: false,
+            export_time: match row.timing {
+                StructuredTiming::Sent(instant) => ExportTime::Sent(instant),
+                StructuredTiming::NoSendInstant => ExportTime::NoSendInstant,
+                StructuredTiming::Caption { start, end } => ExportTime::Caption { start, end },
+            },
+        })
+        .collect()
+}
+
 pub(super) fn read(text: &str, reasons: &[&str]) -> Option<Reading> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let turns = if reasons.contains(&"webvtt_cues") {
@@ -25,6 +45,22 @@ pub(super) fn read(text: &str, reasons: &[&str]) -> Option<Reading> {
         slack(text)?
     } else if reasons.contains(&"whatsapp_bracketed") || reasons.contains(&"whatsapp_dash") {
         whatsapp(text, reasons.contains(&"whatsapp_bracketed"))?
+    } else if reasons.contains(&"whisper_tsv") {
+        from_structured(structured_exports::parse_whisper_tsv(text)?)
+    } else if reasons.contains(&"whisper_json") {
+        from_structured(structured_exports::parse_whisper_json(text)?)
+    } else if reasons.contains(&"macwhisper_json") {
+        from_structured(structured_exports::parse_macwhisper_json(text)?)
+    } else if reasons.contains(&"podcast_transcript_json") {
+        from_structured(structured_exports::parse_podcast_transcript_json(text)?)
+    } else if reasons.contains(&"telegram_json") {
+        from_structured(structured_exports::parse_telegram_json(text)?)
+    } else if reasons.contains(&"telegram_html") {
+        from_structured(structured_exports::parse_telegram_html(text)?)
+    } else if reasons.contains(&"slack_json") {
+        from_structured(structured_exports::parse_slack_json(text)?)
+    } else if reasons.contains(&"fireflies_csv") {
+        from_structured(structured_exports::parse_fireflies_csv(text)?)
     } else {
         return None;
     };
@@ -329,5 +365,107 @@ mod tests {
         assert_eq!(rows[2]["cue_start"], "00:08.125");
         assert_eq!(rows[2]["cue_end"], "00:12.000");
         assert!(rows[2]["speaker"].is_null());
+    }
+
+    #[test]
+    fn structured_exports_preserve_speakers_order_times_and_mediums() {
+        let (medium, tg_json) = rows(
+            "result.json",
+            r#"{"name":"Harbor","type":"personal_chat","id":1,"messages":[
+                {"id":1,"type":"message","date":"2026-04-01T08:05:00","date_unixtime":"1775030700","from":"Mira","from_id":"user101","text":"Did the varnish dry?"},
+                {"id":2,"type":"message","date":"2026-04-01T08:06:10","date_unixtime":"1775030770","from":null,"from_id":"user202","text":["Almost, check ",{"type":"bold","text":"port side"},"."]}
+            ]}"#,
+        );
+        assert_eq!(medium, ConversationMedium::Written);
+        assert_eq!(tg_json.len(), 3);
+        assert_eq!(tg_json[0]["first_sent_at"], "2026-04-01T08:05:00Z");
+        assert_eq!(tg_json[0]["last_sent_at"], "2026-04-01T08:06:10Z");
+        assert_eq!(tg_json[1]["speaker"], "Mira");
+        assert_eq!(tg_json[1]["sent_at"], "2026-04-01T08:05:00Z");
+        assert_eq!(tg_json[2]["speaker"], "user202");
+        assert_eq!(tg_json[2]["text"], "Almost, check port side.");
+
+        let (medium, tg_html) = rows(
+            "messages.html",
+            r#"<!DOCTYPE html><html><body><div class="page_body chat_page"><div class="history">
+            <div class="message default clearfix" id="message1"><div class="body">
+            <div class="pull_right date details" title="01.04.2026 11:05:00 UTC+03:00">11:05</div>
+            <div class="from_name">Mira</div>
+            <div class="text">Use &amp;lt;tag&amp;gt; &amp; check.<br>Line two.</div>
+            </div></div>
+            <div class="message default clearfix joined" id="message2"><div class="body">
+            <div class="pull_right date details" title="01.04.2026 11:06:10 UTC+03:00">11:06</div>
+            <div class="text">Second burst.</div>
+            </div></div></div></div></body></html>"#,
+        );
+        assert_eq!(medium, ConversationMedium::Written);
+        assert_eq!(tg_html.len(), 3);
+        assert_eq!(tg_html[1]["speaker"], "Mira");
+        assert_eq!(tg_html[1]["sent_at"], "2026-04-01T08:05:00Z");
+        // Single-pass entity decode: &amp;lt; becomes literal &lt;, never <.
+        assert_eq!(tg_html[1]["text"], "Use &lt;tag&gt; & check.\nLine two.");
+        assert_eq!(tg_html[2]["speaker"], "Mira");
+        assert_eq!(tg_html[2]["text"], "Second burst.");
+
+        let (medium, slack_ids) = rows(
+            "chan.json",
+            r#"[{"type":"message","user":"U111AAA","text":"Gate open.","ts":"1743494400.000100"},{"type":"message","user":"U222BBB","text":"Heading in.","ts":"1743494460.000200","user_profile":{"real_name":"Theo Park"}}]"#,
+        );
+        assert_eq!(medium, ConversationMedium::Written);
+        assert_eq!(slack_ids.len(), 3);
+        assert_eq!(slack_ids[1]["speaker"], "U111AAA");
+        assert_eq!(slack_ids[2]["speaker"], "Theo Park");
+        assert!(slack_ids[1]["sent_at"].is_string());
+
+        let (medium, ff_csv) = rows(
+            "retro.csv",
+            "Speaker,Start Time,End Time,Sentence\r\nMira,00:00:01,00:00:03,\"Hello, \"\"team\"\"\"\r\nTheo,00:00:05,00:00:08,Next item.\r\n",
+        );
+        assert_eq!(medium, ConversationMedium::Spoken);
+        assert_eq!(ff_csv.len(), 3);
+        assert_eq!(ff_csv[1]["speaker"], "Mira");
+        assert_eq!(ff_csv[1]["text"], "Hello, \"team\"");
+        assert_eq!(ff_csv[1]["cue_start"], "00:00:01");
+        assert_eq!(ff_csv[1]["cue_end"], "00:00:03");
+
+        let (medium, mw) = rows(
+            "meeting.json",
+            r#"{"text":"Hi. Bye.","segments":[{"id":"11111111-2222-3333-4444-555555555555","start":0,"end":1600,"text":"Hi.","speaker":"Speaker 1"},{"id":"66666666-7777-8888-9999-aaaaaaaaaaaa","start":1700,"end":3200,"text":"Bye.","speaker":"Speaker 2"}]}"#,
+        );
+        assert_eq!(medium, ConversationMedium::Spoken);
+        assert_eq!(mw.len(), 3);
+        assert_eq!(mw[1]["speaker"], "Speaker 1");
+        assert_eq!(mw[1]["cue_end"], "00:00:01.600");
+
+        let (medium, pod) = rows(
+            "ep.json",
+            r#"{"version":"1.0.0","language":"en","segments":[{"speaker":"Mira","startTime":0.0,"endTime":1.0,"body":"Good "},{"speaker":"Mira","startTime":1.0,"endTime":2.0,"body":"morning."},{"speaker":"Theo","startTime":2.2,"endTime":3.5,"body":"Morning."}]}"#,
+        );
+        assert_eq!(medium, ConversationMedium::Spoken);
+        assert_eq!(pod.len(), 3);
+        assert_eq!(pod[1]["speaker"], "Mira");
+        assert_eq!(pod[1]["text"], "Good morning.");
+        assert_eq!(pod[1]["cue_start"], "00:00:00.000");
+        assert_eq!(pod[1]["cue_end"], "00:00:02.000");
+        assert_eq!(pod[2]["speaker"], "Theo");
+
+        let (medium, wj) = rows(
+            "whisper.json",
+            r#"{"text":"Ready.","language":"en","segments":[{"start":1.5,"end":3.25,"text":"Ready."}]}"#,
+        );
+        assert_eq!(medium, ConversationMedium::Spoken);
+        assert_eq!(wj.len(), 2);
+        assert_eq!(wj[1]["cue_start"], "00:00:01.500");
+        assert_eq!(wj[1]["cue_end"], "00:00:03.250");
+
+        let (medium, wt) = rows(
+            "whisper.tsv",
+            "start\tend\ttext\n0\t1200\tFirst line.\n1300\t2600\tSecond line.\n",
+        );
+        assert_eq!(medium, ConversationMedium::Spoken);
+        assert_eq!(wt.len(), 3);
+        assert_eq!(wt[1]["cue_start"], "00:00:00.000");
+        assert_eq!(wt[1]["cue_end"], "00:00:01.200");
+        assert_eq!(wt[2]["text"], "Second line.");
     }
 }

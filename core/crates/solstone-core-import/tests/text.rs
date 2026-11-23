@@ -511,7 +511,7 @@ fn an_unmarked_note_is_kept_complete_at_the_import_start() {
             .unwrap();
     assert_eq!(verdict["kind"], "notes");
     assert_eq!(verdict["reasons"], json!(["note_default"]));
-    assert_eq!(verdict["ruleset_version"], 7);
+    assert_eq!(verdict["ruleset_version"], 8);
     assert_eq!(verdict["topics"], "roadmap, imports");
 }
 
@@ -596,7 +596,7 @@ fn header_keeps_caller_and_model_setting_slots_distinct() {
         json!({
             "imported": {
                 "id": "id", "facet": "work", "setting": "caller-setting",
-                "triage": {"kind": "transcripts", "ruleset_version": 7, "reasons": ["webvtt_cues"]}
+                "triage": {"kind": "transcripts", "ruleset_version": 8, "reasons": ["webvtt_cues"]}
             },
             "raw": "../../../imports/id/t.txt",
             "topics": "planning",
@@ -1572,4 +1572,171 @@ fn stop_after_the_second_model_keeps_the_first_tile_and_starts_no_later_one() {
     assert!(!day.join("import.text/123000_300").exists());
     assert!(!day.join("import.text/130000_300").exists());
     assert_stream_generation(&day, 1);
+}
+
+#[test]
+fn recognised_structured_exports_import_as_conversations_and_unrecognised_ones_fail() {
+    use solstone_core_format::content::conversation::{
+        ConversationMedium::{Spoken, Written},
+        imported_text_medium,
+    };
+
+    let cases = [
+        (
+            "telegram.json",
+            r#"{"name":"Harbor","type":"personal_chat","id":1,"messages":[{"id":1,"type":"message","date":"2026-04-01T08:05:00","date_unixtime":"1775030700","from":"Mira","text":"Ready?"},{"id":2,"type":"message","date":"2026-04-01T08:06:00","date_unixtime":"1775030760","from":"Theo","text":"Yes."}]}"#,
+            "telegram_json",
+            Written,
+            2usize,
+        ),
+        (
+            "messages.html",
+            r#"<!DOCTYPE html><html><body><div class="page_body chat_page"><div class="history"><div class="message default" id="m1"><div class="body"><div class="pull_right date details" title="01.04.2026 11:05:00 UTC+03:00">11:05</div><div class="from_name">Mira</div><div class="text">Ready?</div></div></div><div class="message default joined" id="m2"><div class="body"><div class="pull_right date details" title="01.04.2026 11:06:00 UTC+03:00">11:06</div><div class="text">Now.</div></div></div></div></div></body></html>"#,
+            "telegram_html",
+            Written,
+            2,
+        ),
+        (
+            "slack.json",
+            r#"[{"type":"message","user":"U01","text":"Ready?","ts":"1743494400.000100"},{"type":"message","user":"U02","text":"Yes.","ts":"1743494460.000200"}]"#,
+            "slack_json",
+            Written,
+            2,
+        ),
+        (
+            "fireflies.csv",
+            "Speaker,Start Time,End Time,Sentence\nMira,00:00:01,00:00:02,Ready?\nTheo,00:00:03,00:00:04,Yes.\n",
+            "fireflies_csv",
+            Spoken,
+            2,
+        ),
+        (
+            "macwhisper.json",
+            r#"{"text":"Ready? Yes.","segments":[{"id":"11111111-2222-3333-4444-555555555555","start":0,"end":1200,"text":"Ready?","speaker":"Speaker 1"},{"id":"66666666-7777-8888-9999-aaaaaaaaaaaa","start":1300,"end":2400,"text":"Yes.","speaker":"Speaker 2"}]}"#,
+            "macwhisper_json",
+            Spoken,
+            2,
+        ),
+        (
+            "podcast.json",
+            r#"{"version":"1.0.0","language":"en","segments":[{"speaker":"Mira","startTime":0.0,"endTime":1.5,"body":"Ready?"},{"speaker":"Theo","startTime":1.6,"endTime":2.8,"body":"Yes."}]}"#,
+            "podcast_transcript_json",
+            Spoken,
+            2,
+        ),
+        (
+            "whisper.json",
+            r#"{"text":"Ready? Yes.","language":"en","segments":[{"start":0.0,"end":1.2,"text":"Ready?"},{"start":1.3,"end":2.4,"text":"Yes."}]}"#,
+            "whisper_json",
+            Spoken,
+            2,
+        ),
+        (
+            "whisper.tsv",
+            "start\tend\ttext\n0\t1200\tReady?\n1300\t2400\tYes.\n",
+            "whisper_tsv",
+            Spoken,
+            2,
+        ),
+    ];
+
+    for (name, body, rule, expected_medium, expected_turns) in cases {
+        let (_tmp, source, day) = setup(name, body);
+        let created = run_ok(&source, &day, "12:00:00", &RecordingWire::always(wire_down));
+        assert_eq!(created.len(), 1, "{name}");
+        assert_eq!(
+            created[0].path.file_name().unwrap(),
+            "conversation_transcript.jsonl",
+            "{name}"
+        );
+        let saved = rows(&created[0].path);
+        assert_eq!(saved.len(), expected_turns + 1, "{name}");
+        assert_eq!(
+            imported_text_medium(&saved[0], None),
+            expected_medium,
+            "{name}"
+        );
+        assert_eq!(
+            saved[0]["imported"]["triage"]["ruleset_version"], 8,
+            "{name}"
+        );
+        assert_eq!(
+            saved[0]["imported"]["triage"]["reasons"],
+            json!([rule]),
+            "{name}"
+        );
+    }
+
+    // Existing txt imports keep their exact medium at ruleset_version 8.
+    let (_tmp, txt_source, txt_day) = setup(
+        "zoom.txt",
+        "10:07:10 From Mira : Hold it.\n10:07:12 From Theo to Everyone : Holding.\n",
+    );
+    let txt_created = run_ok(
+        &txt_source,
+        &txt_day,
+        "12:00:00",
+        &RecordingWire::always(wire_down),
+    );
+    let txt_header = &rows(&txt_created[0].path)[0];
+    assert_eq!(txt_header["imported"]["triage"]["ruleset_version"], 8);
+    assert_eq!(imported_text_medium(txt_header, None), Written);
+
+    // Non-export structured files and mismatched extensions are refused cleanly with zero writes.
+    let refused_cases = [
+        ("config.json", r#"{"host":"127.0.0.1","port":8080}"#),
+        ("table.csv", "item,qty\nbolts,12\n"),
+        ("table.tsv", "item\tqty\nbolts\t12\n"),
+        (
+            "page.html",
+            "<!DOCTYPE html><html><body><h1>News</h1><p>Hello.</p></body></html>",
+        ),
+        ("session.jsonl", "{\"type\":\"user\",\"text\":\"hi\"}\n"),
+        (
+            "wrong_ext.html",
+            r#"{"name":"Harbor","type":"personal_chat","id":1,"messages":[{"id":1,"type":"message","date":"2026-04-01T08:05:00","date_unixtime":"1775030700","from":"Mira","text":"Ready?"}]}"#,
+        ),
+        ("wrong_ext.csv", "start\tend\ttext\n0\t1200\tReady?\n"),
+    ];
+    for (name, body) in refused_cases {
+        let (_tmp, source, day) = setup(name, body);
+        let outcome = run(&source, &day, "12:00:00", &RecordingWire::always(wire_down));
+        let TextImportOutcome::Failed { created, error } = outcome else {
+            panic!("{name} must be refused");
+        };
+        assert!(created.created.is_empty(), "{name}");
+        assert!(
+            matches!(error, TextImportError::UnsupportedFormat { .. }),
+            "{name}: unexpected error {error}"
+        );
+        assert!(files_named(&day, "note_transcript.md").is_empty(), "{name}");
+        assert!(
+            files_named(&day, "document_transcript.md").is_empty(),
+            "{name}"
+        );
+        assert!(
+            files_named(&day, "conversation_transcript.jsonl").is_empty(),
+            "{name}"
+        );
+    }
+
+    // Oversize structured export exceeds the byte cap and is refused cleanly.
+    let (_tmp, oversize, day) = setup("oversize.json", "{}");
+    let file = fs::OpenOptions::new().write(true).open(&oversize).unwrap();
+    file.set_len(solstone_core_import::structured_exports::MAX_STRUCTURED_EXPORT_BYTES as u64 + 1)
+        .unwrap();
+    drop(file);
+    let outcome = run(
+        &oversize,
+        &day,
+        "12:00:00",
+        &RecordingWire::always(wire_down),
+    );
+    assert!(matches!(
+        outcome,
+        TextImportOutcome::Failed {
+            ref created,
+            error: TextImportError::UnsupportedFormat { .. }
+        } if created.created.is_empty()
+    ));
 }

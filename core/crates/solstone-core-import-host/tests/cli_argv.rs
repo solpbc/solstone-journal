@@ -1198,6 +1198,169 @@ fn partial_remux_without_failed_or_stalled_wait_still_succeeds() {
     );
 }
 
+#[test]
+fn cli_admits_recognised_structured_exports_and_refuses_non_exports() {
+    use solstone_core_format::content::conversation::{
+        ConversationMedium::{Spoken, Written},
+        file_medium,
+    };
+
+    let sources = tempfile::tempdir().unwrap();
+    let refusal = "could not tell what kind of export this is; name it with --source, for example --source chatgpt\n";
+
+    // Unrecognised JSON, CSV, TSV, HTML, JSONL, bare ChatGPT/Claude JSON, and Granola CSV
+    // are refused with the exact same error as before.
+    let refused = [
+        ("config.json", r#"{"host":"127.0.0.1","port":8080}"#),
+        ("table.csv", "item,qty,price\nbolts,12,3.50\n"),
+        ("table.tsv", "item\tqty\tprice\nbolts\t12\t3.50\n"),
+        (
+            "page.html",
+            "<!DOCTYPE html><html><head><title>Weather</title></head><body><p>Clear.</p></body></html>",
+        ),
+        ("session.jsonl", "{\"type\":\"user\",\"text\":\"hi\"}\n"),
+        (
+            "conversations.json",
+            r#"[{"title":"Notes","create_time":1700000000,"mapping":{}}]"#,
+        ),
+        (
+            "claude.json",
+            r#"[{"uuid":"1111","name":"Chat","chat_messages":[{"uuid":"2222","sender":"human","text":"hi"}]}]"#,
+        ),
+        (
+            "granola.csv",
+            "id,title,summary,notes,transcript\n1,Sync,Summary,Notes,Hi\n",
+        ),
+    ];
+    for (name, body) in refused {
+        let journal = tempfile::tempdir().unwrap();
+        let file = sources.path().join(name);
+        fs::write(&file, body).unwrap();
+        let run = run_at(
+            journal.path(),
+            &[
+                file.to_str().unwrap(),
+                "--timestamp",
+                "20261122_120000",
+                "--dry-run",
+                "--json",
+            ],
+            |k| (k == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+            || false,
+        );
+        assert_eq!(run.exit_code, 1, "{name}: stdout={}", run.stdout);
+        assert_eq!(run.stderr, refusal, "{name}");
+    }
+
+    // Recognised structured exports preview cleanly and import as conversation_transcript.jsonl.
+    let admitted = [
+        (
+            "telegram.json",
+            r#"{"name":"Harbor","type":"personal_chat","id":1,"messages":[{"id":1,"type":"message","date":"2026-04-01T08:05:00","date_unixtime":"1775030700","from":"Mira","text":"Ready?"},{"id":2,"type":"message","date":"2026-04-01T08:06:00","date_unixtime":"1775030760","from":"Theo","text":"Yes."}]}"#,
+            Written,
+        ),
+        (
+            "messages.html",
+            r#"<!DOCTYPE html><html><body><div class="page_body chat_page"><div class="history"><div class="message default" id="m1"><div class="body"><div class="pull_right date details" title="01.04.2026 11:05:00 UTC+03:00">11:05</div><div class="from_name">Mira</div><div class="text">Ready?</div></div></div><div class="message default joined" id="m2"><div class="body"><div class="pull_right date details" title="01.04.2026 11:06:00 UTC+03:00">11:06</div><div class="text">Yes.</div></div></div></div></div></body></html>"#,
+            Written,
+        ),
+        (
+            "slack.json",
+            r#"[{"type":"message","user":"U01","text":"Ready?","ts":"1743494400.000100"},{"type":"message","user":"U02","text":"Yes.","ts":"1743494460.000200"}]"#,
+            Written,
+        ),
+        (
+            "fireflies.csv",
+            "Speaker,Start Time,End Time,Sentence\nMira,00:00:01,00:00:02,Ready?\nTheo,00:00:03,00:00:04,Yes.\n",
+            Spoken,
+        ),
+        (
+            "macwhisper.json",
+            r#"{"text":"Ready? Yes.","segments":[{"id":"11111111-2222-3333-4444-555555555555","start":0,"end":1200,"text":"Ready?","speaker":"Speaker 1"},{"id":"66666666-7777-8888-9999-aaaaaaaaaaaa","start":1300,"end":2400,"text":"Yes.","speaker":"Speaker 2"}]}"#,
+            Spoken,
+        ),
+        (
+            "podcast.json",
+            r#"{"version":"1.0.0","language":"en","segments":[{"speaker":"Mira","startTime":0.0,"endTime":1.2,"body":"Ready?"},{"speaker":"Theo","startTime":1.3,"endTime":2.4,"body":"Yes."}]}"#,
+            Spoken,
+        ),
+        (
+            "whisper.json",
+            r#"{"text":"Ready? Yes.","language":"en","segments":[{"start":0.0,"end":1.2,"text":"Ready?"},{"start":1.3,"end":2.4,"text":"Yes."}]}"#,
+            Spoken,
+        ),
+        (
+            "whisper.tsv",
+            "start\tend\ttext\n0\t1200\tReady?\n1300\t2400\tYes.\n",
+            Spoken,
+        ),
+    ];
+
+    for (name, body, expected_medium) in admitted {
+        let journal = tempfile::tempdir().unwrap();
+        let file = sources.path().join(name);
+        fs::write(&file, body).unwrap();
+        let preview = run_at(
+            journal.path(),
+            &[
+                file.to_str().unwrap(),
+                "--timestamp",
+                "20261122_120000",
+                "--dry-run",
+                "--json",
+            ],
+            |k| (k == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+            || false,
+        );
+        assert_eq!(preview.exit_code, 0, "{name}: stderr={}", preview.stderr);
+        let live = run_at(
+            journal.path(),
+            &[file.to_str().unwrap(), "--timestamp", "20261122_120000"],
+            |k| (k == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+            || false,
+        );
+        assert_eq!(
+            live.exit_code, 0,
+            "{name}: stdout={} stderr={}",
+            live.stdout, live.stderr
+        );
+        let rel = "20261122/import.text/120000_300/conversation_transcript.jsonl";
+        let conv = journal.path().join("chronicle").join(rel);
+        assert!(conv.is_file(), "{name}: missing {}", conv.display());
+        assert_eq!(file_medium(&conv, rel), Some(expected_medium), "{name}");
+    }
+
+    // Existing registry importer (Gemini Takeout JSON) still wins before generic text.
+    let gemini_journal = tempfile::tempdir().unwrap();
+    let gemini_file = sources.path().join("gemini-takeout.json");
+    fs::write(
+        &gemini_file,
+        r#"[{"header":"Gemini Apps","title":"Prompted check tide","time":"2026-01-05T18:40:30.500Z","safeHtmlItem":[{"html":"<p>Low tide is at six.</p>"}]}]"#,
+    )
+    .unwrap();
+    let gemini_outcome = run_cli_with(
+        &[
+            gemini_file.to_str().unwrap().to_owned(),
+            "--timestamp".to_owned(),
+            "20261122_120000".to_owned(),
+            "--dry-run".to_owned(),
+            "--json".to_owned(),
+        ],
+        gemini_journal.path(),
+        |k| (k == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+        || false,
+    );
+    match gemini_outcome {
+        CliOutcome::Registry(dispatch) => {
+            assert_eq!(
+                dispatch.source,
+                solstone_core_import::RegistrySource::Gemini
+            );
+        }
+        other => panic!("expected Registry(Gemini), got {other:?}"),
+    }
+}
+
 #[cfg(feature = "full-tests")]
 mod audio_archive {
     use super::*;

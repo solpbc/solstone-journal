@@ -826,3 +826,102 @@ fn fallback_is_an_explicit_option_for_generic_files_and_unknown_date_images() {
     };
     assert_eq!(timestamp.as_str(), "20260701_100000");
 }
+
+#[test]
+fn structured_exports_route_to_generic_text_only_when_recognised_and_unclaimed() {
+    let tree = Tree::new();
+    let recognised = [
+        (
+            "telegram.json",
+            r#"{"name":"Harbor","type":"personal_chat","id":1,"messages":[{"id":1,"type":"message","date":"2026-04-01T08:05:00","date_unixtime":"1775030700","from":"Mira","text":"Ready?"}]}"#,
+        ),
+        (
+            "fireflies.csv",
+            "Speaker,Start Time,End Time,Sentence\nMira,00:00:01,00:00:02,Ready?\n",
+        ),
+        ("whisper.tsv", "start\tend\ttext\n0\t1200\tReady?\n"),
+        (
+            "messages.html",
+            r#"<!DOCTYPE html><html><body><div class="page_body chat_page"><div class="history"><div class="message default" id="m1"><div class="body"><div class="pull_right date details" title="01.04.2026 11:05:00 UTC+03:00">11:05</div><div class="from_name">Mira</div><div class="text">Ready?</div></div></div></div></div></body></html>"#,
+        ),
+    ];
+    for (name, body) in recognised {
+        let file = tree.file(name);
+        fs::write(&file, body).unwrap();
+        let mut options = opt(&file);
+        options.timestamp = Some("20260701_100000");
+        let mut seam = seams();
+        let outcome = solstone_core_import::detect::resolve_import(&options, &mut seam).unwrap();
+        assert!(
+            matches!(
+                outcome,
+                ResolutionOutcome::Resolved {
+                    source: ResolvedSource::GenericText,
+                    ref stream,
+                    ..
+                } if stream == "import.text"
+            ),
+            "{name} should route to GenericText, got {outcome:?}"
+        );
+    }
+
+    // Unrecognised structured files are refused and never fall through to GenericAudio.
+    let unrecognised = [
+        ("config.json", r#"{"host":"127.0.0.1","port":8080}"#),
+        ("table.csv", "item,qty\nbolts,12\n"),
+        ("table.tsv", "item\tqty\nbolts\t12\n"),
+        (
+            "page.html",
+            "<!DOCTYPE html><html><body><p>Hello.</p></body></html>",
+        ),
+    ];
+    for (name, body) in unrecognised {
+        let file = tree.file(name);
+        fs::write(&file, body).unwrap();
+        let mut options = opt(&file);
+        options.timestamp = Some("20260701_100000");
+        let mut seam = seams();
+        let err = solstone_core_import::detect::resolve_import(&options, &mut seam).unwrap_err();
+        assert!(
+            matches!(err, ResolutionError::UnrecognisedStructuredExport),
+            "{name} must fail with UnrecognisedStructuredExport, got {err:?}"
+        );
+        assert_eq!(
+            err.message(),
+            "could not tell what kind of export this is; name it with --source, for example --source chatgpt"
+        );
+    }
+
+    // Registry sweep still runs first: a claimed JSON or CSV goes to its registry source.
+    let gemini = tree.file("gemini.json");
+    fs::write(&gemini, r#"{"host":"ignored"}"#).unwrap();
+    let mut gemini_opts = opt(&gemini);
+    gemini_opts.timestamp = Some("20260701_100000");
+    let mut gemini_seams = seams();
+    gemini_seams.claims = |src, _| Ok(src == RegistrySource::Gemini);
+    let outcome =
+        solstone_core_import::detect::resolve_import(&gemini_opts, &mut gemini_seams).unwrap();
+    assert!(matches!(
+        outcome,
+        ResolutionOutcome::Resolved {
+            source: ResolvedSource::Registry(RegistrySource::Gemini),
+            ..
+        }
+    ));
+
+    let strava = tree.file("activities.csv");
+    fs::write(&strava, "item,qty\nbolts,12\n").unwrap();
+    let mut strava_opts = opt(&strava);
+    strava_opts.timestamp = Some("20260701_100000");
+    let mut strava_seams = seams();
+    strava_seams.claims = |src, _| Ok(src == RegistrySource::Strava);
+    let outcome =
+        solstone_core_import::detect::resolve_import(&strava_opts, &mut strava_seams).unwrap();
+    assert!(matches!(
+        outcome,
+        ResolutionOutcome::Resolved {
+            source: ResolvedSource::Registry(RegistrySource::Strava),
+            ..
+        }
+    ));
+}

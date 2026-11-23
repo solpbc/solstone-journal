@@ -143,6 +143,60 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             true
         ),
         rule!(
+            24,
+            "macwhisper_json",
+            Signature,
+            Transcripts,
+            "MacWhisper JSON export: text and segments with speaker or UUID segment IDs",
+            |e| crate::structured_exports::parse_macwhisper_json(e.text).is_some(),
+            true
+        ),
+        rule!(
+            25,
+            "podcast_transcript_json",
+            Signature,
+            Transcripts,
+            "Podcasting 2.0 JSON transcript: version and segments with startTime, endTime and body",
+            |e| crate::structured_exports::parse_podcast_transcript_json(e.text).is_some(),
+            true
+        ),
+        rule!(
+            26,
+            "telegram_json",
+            Signature,
+            Transcripts,
+            "Telegram Desktop single-chat JSON export: messages with Telegram type, timestamp and text",
+            |e| crate::structured_exports::parse_telegram_json(e.text).is_some(),
+            true
+        ),
+        rule!(
+            27,
+            "telegram_html",
+            Signature,
+            Transcripts,
+            "Telegram Desktop HTML chat export: chat_page history and message blocks",
+            |e| crate::structured_exports::parse_telegram_html(e.text).is_some(),
+            true
+        ),
+        rule!(
+            28,
+            "slack_json",
+            Signature,
+            Transcripts,
+            "Slack channel export JSON: message array with Slack ts timestamps and user IDs",
+            |e| crate::structured_exports::parse_slack_json(e.text).is_some(),
+            true
+        ),
+        rule!(
+            29,
+            "fireflies_csv",
+            Signature,
+            Transcripts,
+            "Fireflies CSV transcript export: Speaker, Start Time, End Time, Sentence",
+            |e| crate::structured_exports::parse_fireflies_csv(e.text).is_some(),
+            true
+        ),
+        rule!(
             30,
             "webvtt_cues",
             Signature,
@@ -166,7 +220,7 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             Signature,
             Transcripts,
             "openai/whisper utils.py: TSV column header and offsets",
-            |e| whisper_tsv(e.lines),
+            |e| crate::structured_exports::parse_whisper_tsv(e.text).is_some(),
             true
         ),
         rule!(
@@ -175,7 +229,7 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             Signature,
             Transcripts,
             "openai/whisper utils.py: JSON output fields",
-            |e| whisper_json(e.text),
+            |e| crate::structured_exports::parse_whisper_json(e.text).is_some(),
             true
         ),
         rule!(
@@ -1600,49 +1654,6 @@ fn is_export_notice(line: &str) -> bool {
             && line
                 .trim_matches(|c: char| c == '|' || c.is_whitespace())
                 .is_empty()
-}
-
-fn whisper_tsv(lines: &[&str]) -> bool {
-    let mut lines = nonblank(lines);
-    if lines.next() != Some("start\tend\ttext") {
-        return false;
-    }
-    let mut rows = 0;
-    for row in lines {
-        let mut parts = row.splitn(3, '\t');
-        let endpoints = (
-            parts.next().and_then(|n| n.parse::<u64>().ok()),
-            parts.next().and_then(|n| n.parse::<u64>().ok()),
-        );
-        if !matches!(endpoints, (Some(start), Some(end)) if end >= start)
-            || parts.next().is_none_or(str::is_empty)
-        {
-            return false;
-        }
-        rows += 1;
-    }
-    rows > 0
-}
-
-fn whisper_json(text: &str) -> bool {
-    let trimmed = text.trim_start();
-    if !trimmed.starts_with('{') {
-        return false;
-    }
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) else {
-        return false;
-    };
-    let Some(segments) = json["segments"].as_array() else {
-        return false;
-    };
-    json["text"].is_string()
-        && json["language"].is_string()
-        && !segments.is_empty()
-        && segments.iter().all(|segment| {
-            segment["start"].is_number()
-                && segment["end"].is_number()
-                && segment["text"].is_string()
-        })
 }
 
 fn discord(lines: &[&str]) -> bool {

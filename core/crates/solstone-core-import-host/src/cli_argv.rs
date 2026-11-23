@@ -1502,6 +1502,7 @@ fn resolve(
     {
         return Err(format!("unknown importer source: {source}"));
     }
+    let mut admitted_structured = false;
     if options.source.is_none()
         && options.media.exists()
         && requires_registry_classification(options.media)
@@ -1510,14 +1511,24 @@ fn resolve(
         )?
     {
         // An export dropped with no source named is recognised by its content, in registry
-        // order, as each source's own detector reads it.
-        options.source = Some(classify_export(options.media).ok_or_else(|| {
-            "could not tell what kind of export this is; name it with --source, for example --source chatgpt"
-                .to_owned()
-        })?);
+        // order, as each source's own detector reads it. When no registry source claims a
+        // structured file (`.json`, `.csv`, `.tsv`, `.html`), admit it into generic text
+        // only when deterministic triage recognises it as a known conversation export.
+        if let Some(source) = classify_export(options.media) {
+            options.source = Some(source);
+        } else if !options.media.is_dir()
+            && solstone_core_import::detect::is_admitted_structured_export(options.media)
+        {
+            admitted_structured = true;
+        } else {
+            return Err(
+                "could not tell what kind of export this is; name it with --source, for example --source chatgpt"
+                    .to_owned(),
+            );
+        }
     }
     if options.source.is_none()
-        && is_generic_media(options.media)
+        && (is_generic_media(options.media) || admitted_structured)
         && !options.force
         && let Some(manifest) = generic_manifest_summary(journal_path, options.media)?
         && manifest.entry_count > 0

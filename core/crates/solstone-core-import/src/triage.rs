@@ -20,8 +20,18 @@ mod rules;
 pub(crate) use rules::{BIDI_MARKS, whatsapp_notice, whatsapp_row};
 use rules::{Evidence, RULES, Rule, Stage};
 
-pub const RULESET_VERSION: u32 = 7;
+pub const RULESET_VERSION: u32 = 8;
 pub use solstone_core_format::content::IMPORT_KIND_FILENAME as METADATA_FILENAME;
+
+/// Whether `verdict` recognizes a known structured export admitted for `extension`.
+pub fn is_structured_export_verdict_for_extension(verdict: &Verdict, extension: &str) -> bool {
+    verdict.kind == Kind::Transcripts
+        && !verdict.reasons.is_empty()
+        && verdict
+            .reasons
+            .iter()
+            .all(|rule| crate::structured_exports::rule_matches_extension(rule, extension))
+}
 
 /// Rule provenance is static for the version written with each verdict.
 pub fn rule_provenance(id: &str) -> Option<(&'static str, bool)> {
