@@ -1,0 +1,16 @@
+{
+  "description": "Strava summary paragraph when the owner explicitly chose no facet for this import.",
+  "context": "Strava summary paragraph when the owner explicitly chose no facet for this import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c30b1196644f24478f482745be18631fcb2ea0c748efbdc30a285cb45f932d01",
+  "max_length": 651,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

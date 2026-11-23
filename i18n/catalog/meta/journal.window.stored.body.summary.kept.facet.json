@@ -1,0 +1,30 @@
+{
+  "description": "Paragraph in a body import summary reporting journal parts keeping a facet from an earlier import.",
+  "context": "Paragraph in a body import summary reporting journal parts keeping a facet from an earlier import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dfa017dbbf26aaf87096852ac602f1fe4bb335fd690a5af29436ae43cca65227",
+  "max_length": 924,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

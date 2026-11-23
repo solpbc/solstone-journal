@@ -1,0 +1,21 @@
+{
+  "description": "Strava summary paragraph when new workouts use the remembered Strava default facet.",
+  "context": "Strava summary paragraph when new workouts use the remembered Strava default facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0d44c686957d404523a806f5b8b434188db779dc96b7f52018b6b2d372f75f0f",
+  "max_length": 264,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

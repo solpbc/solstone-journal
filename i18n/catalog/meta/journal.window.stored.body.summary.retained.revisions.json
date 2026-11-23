@@ -1,0 +1,34 @@
+{
+  "description": "Paragraph in a body import summary reporting updated entries that stayed under their existing facets.",
+  "context": "Paragraph in a body import summary reporting updated entries that stayed under their existing facets.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "facets",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "787b60f279d6be789f5a4f80e6ec8d346f4ca0371d28ed38fb0786424607d70d",
+  "max_length": 576,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

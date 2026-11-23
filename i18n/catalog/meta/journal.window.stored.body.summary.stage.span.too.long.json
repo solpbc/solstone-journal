@@ -1,0 +1,16 @@
+{
+  "description": "Body summary refusal reason when an item spans longer than the maximum allowed window.",
+  "context": "Body summary refusal reason when an item spans longer than the maximum allowed window.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f1055fbc7102efef72801c9871bd5ba1819ec3b01a994f719778aa297032cadf",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for Oura daily stress.",
+  "context": "Body summary metric label for Oura daily stress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4b610f96f4a7cbe4538c2f7c6ebde0a0895495e69f4927f89748cd6e23e4a3b2",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

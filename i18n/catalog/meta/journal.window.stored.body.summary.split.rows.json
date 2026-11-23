@@ -1,0 +1,30 @@
+{
+  "description": "Paragraph in a body import summary reporting entries saved separately to preserve their facets.",
+  "context": "Paragraph in a body import summary reporting entries saved separately to preserve their facets.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ed24bacdfdc6d7049a84cc08687c414f2becac418d2294e5e2b64bb4998e2095",
+  "max_length": 786,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

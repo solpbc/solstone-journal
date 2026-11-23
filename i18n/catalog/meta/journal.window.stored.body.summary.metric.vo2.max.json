@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for VO2 max.",
+  "context": "Body summary metric label for VO2 max.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b763a4115b0456c9662629ce8d5cb7203c460b7d7068033e55916c57be522bb5",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

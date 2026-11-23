@@ -1,0 +1,16 @@
+{
+  "description": "Markdown heading for per-endpoint fetch results in an Oura import summary.",
+  "context": "Markdown heading for per-endpoint fetch results in an Oura import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "14159cfb6e5d4b30b7c059802a22a37ed22876acfbc218fb949d92165d27dc06",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

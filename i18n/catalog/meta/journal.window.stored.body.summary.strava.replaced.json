@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph for workouts relocated to the right time.",
+  "context": "Strava summary paragraph for workouts relocated to the right time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "38a0c8c2c5add0c67ee8b62dbd7036cb68856bbd3b03c9a712caca02f216a89c",
+  "max_length": 855,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Localized import error stage label for interrupted imports.",
+  "context": "Localized import error stage label for interrupted imports.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9426c2bd05a4e515e40e665fa2784601085e0f38b8058aba18e0944aa51730eb",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

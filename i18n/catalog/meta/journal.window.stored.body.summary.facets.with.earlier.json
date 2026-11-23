@@ -1,0 +1,21 @@
+{
+  "description": "Facet list phrase combining named facets with an unnamed earlier filing.",
+  "context": "Facet list phrase combining named facets with an unnamed earlier filing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "named",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8c818327cc1d4097eca04c3d254bb421c5910b6418790a86a1e6665870da1c05",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

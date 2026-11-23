@@ -1,0 +1,16 @@
+{
+  "description": "Fallback facet phrase when no specific facet title is listed.",
+  "context": "Fallback facet phrase when no specific facet title is listed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3101b045368f71360efbf4a88c677628e53ab37ff3c861a42eb24dfc624173ba",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

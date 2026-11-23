@@ -1,0 +1,16 @@
+{
+  "description": "Strava summary paragraph when no facet is configured or active for Strava imports.",
+  "context": "Strava summary paragraph when no facet is configured or active for Strava imports.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f0c208d4f0433c992db511c525cd5c37f9c2015e2b1a329f2907c463fdf90b79",
+  "max_length": 954,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

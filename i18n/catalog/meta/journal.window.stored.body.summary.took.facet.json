@@ -1,0 +1,30 @@
+{
+  "description": "Paragraph in a body import summary reporting journal parts that inherited a moved Oura entry's facet.",
+  "context": "Paragraph in a body import summary reporting journal parts that inherited a moved Oura entry's facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dc371081081dee70140e6b0aee0e32461031cce49fa3943a006e6c8df085a105",
+  "max_length": 867,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

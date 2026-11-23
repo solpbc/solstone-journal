@@ -1,0 +1,25 @@
+{
+  "description": "Oura hole bullet for an item whose destination segment could not be read.",
+  "context": "Oura hole bullet for an item whose destination segment could not be read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "endpoint",
+      "type": "string"
+    },
+    {
+      "name": "place",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "288fb790f7ee578aaa7aa1885ebf0f6465a6f1dedd23078a3b4b515b269d56ad",
+  "max_length": 405,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

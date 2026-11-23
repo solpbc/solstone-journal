@@ -1,0 +1,16 @@
+{
+  "description": "Synthesized status error message shown when an import's metadata or records cannot be read.",
+  "context": "Synthesized status error message shown when an import's metadata or records cannot be read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "52933dda7db003a92fac9eccd0d5fb6fe712e5271638ccf5d9118149a613c9d3",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

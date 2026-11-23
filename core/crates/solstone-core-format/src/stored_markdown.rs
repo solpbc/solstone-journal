@@ -4,6 +4,7 @@
 //! Source-English Markdown with presentation identities for the words supplied by its writer.
 
 pub mod body_day;
+pub mod body_summary;
 pub mod imported;
 pub mod location_day;
 pub mod week;
@@ -94,6 +95,9 @@ pub enum Message<T = String> {
     BodyDay {
         copy: body_day::Copy<T>,
     },
+    BodySummary {
+        copy: Box<body_summary::Copy<T>>,
+    },
     Imported {
         copy: Box<imported::Copy<T>>,
     },
@@ -164,6 +168,9 @@ impl<T> Message<T> {
             },
             Self::BodyDay { copy } => Message::BodyDay {
                 copy: copy.map_text(f)?,
+            },
+            Self::BodySummary { copy } => Message::BodySummary {
+                copy: Box::new(copy.map_text(f)?),
             },
             Self::Imported { copy } => Message::Imported {
                 copy: Box::new(copy.map_text(f)?),
@@ -300,6 +307,7 @@ impl Message {
         match self {
             Self::LocationDay { copy } => copy.render(locale),
             Self::BodyDay { copy } => copy.render(locale),
+            Self::BodySummary { copy } => copy.render(locale),
             Self::Imported { copy } => copy.render(locale),
             Self::WeekMemories { count } => solstone_core_window_catalog::render(
                 locale,
@@ -757,6 +765,11 @@ impl Document {
             copy: Box::new(copy),
         });
     }
+    pub fn push_body_summary(&mut self, copy: body_summary::Copy) {
+        self.push_message(Message::BodySummary {
+            copy: Box::new(copy),
+        });
+    }
     pub(crate) fn render_from(&self, start: usize, locale: &str) -> String {
         let mut out = String::with_capacity(self.text.len() - start);
         let mut end = start;
@@ -1098,10 +1111,33 @@ pub fn day_projection_receipt(root: &Path, path: &Path) -> Option<std::path::Pat
     Some(path.parent()?.join("health").join(name))
 }
 
+/// A journal-written body import summary (`imports/<id>/summary.md`) keeps its
+/// display metadata beside it inside the journal-owned import directory.
+pub fn import_summary_receipt(root: &Path, path: &Path) -> Option<std::path::PathBuf> {
+    let relative = path.strip_prefix(root).ok()?;
+    let mut parts = relative.components();
+    let std::path::Component::Normal(first) = parts.next()? else {
+        return None;
+    };
+    let std::path::Component::Normal(_id) = parts.next()? else {
+        return None;
+    };
+    let std::path::Component::Normal(file) = parts.next()? else {
+        return None;
+    };
+    if parts.next().is_some() || first != "imports" || file != "summary.md" {
+        return None;
+    }
+    Some(path.parent()?.join("summary.md.display"))
+}
+
 /// Locate the writer's receipt without accepting a companion supplied in a device upload.
 pub fn talent_receipt_path(root: &Path, path: &Path) -> Option<std::path::PathBuf> {
     let relative = path.strip_prefix(root).ok()?;
     if let Some(receipt) = day_projection_receipt(root, path) {
+        return Some(receipt);
+    }
+    if let Some(receipt) = import_summary_receipt(root, path) {
         return Some(receipt);
     }
     let mut hash = Sha256::new();
@@ -1155,12 +1191,14 @@ fn read_document(
         return None;
     }
     let day_receipt = day_projection_receipt(root, path);
+    let summary_receipt = import_summary_receipt(root, path);
     let name = path.file_name()?.to_str()?;
     if !receipt.spans.iter().all(|span| match &span.copy {
         Message::LocationDay { .. } => day_receipt.is_some() && name == "location.md",
         Message::BodyDay { .. } => day_receipt.is_some() && name == "body.md",
+        Message::BodySummary { .. } => summary_receipt.is_some() && name == "summary.md",
         Message::PartialInput => true,
-        _ => day_receipt.is_none(),
+        _ => day_receipt.is_none() && summary_receipt.is_none(),
     }) {
         return None;
     }
@@ -1396,6 +1434,7 @@ impl IndexedDisplay {
                         Message::Entity { .. }
                             | Message::LocationDay { .. }
                             | Message::BodyDay { .. }
+                            | Message::BodySummary { .. }
                             | Message::NoteSource { .. }
                             | Message::NoteRenamed { .. }
                     ) && !restored
@@ -1784,5 +1823,68 @@ mod tests {
         });
         assert!(unavail.contains("pages/page-0002.png"));
         assert!(unavail.display_receipt_bytes().unwrap().is_some());
+    }
+
+    #[test]
+    fn body_summary_receipt_projects_for_non_english_locale_and_rejects_tamper() {
+        use body_summary::{Copy, KnownMetric, MetricLabel};
+
+        let root = tempfile::tempdir().unwrap();
+        let summary_path = root.path().join("imports/20261123_120000/summary.md");
+        std::fs::create_dir_all(summary_path.parent().unwrap()).unwrap();
+        let mut doc = Document::default();
+        doc.push_body_summary(Copy::Heading {
+            source: "Apple Health".into(),
+        });
+        doc.push_str("\n\n");
+        doc.push_body_summary(Copy::CountsBase {
+            written: 1,
+            unchanged: 0,
+            unreadable: 0,
+        });
+        doc.push_str(" ");
+        doc.push_body_summary(Copy::PlacedZone {
+            zone: "America/Denver".into(),
+        });
+        doc.push_str("\n\n");
+        doc.push_body_summary(Copy::SectionRead);
+        doc.push_str("\n\n");
+        doc.push_body_summary(Copy::MetricCountBullet {
+            metric: MetricLabel::Known {
+                metric: KnownMetric::Heartrate,
+            },
+            count: 5,
+        });
+        doc.push_str("\n\n");
+        std::fs::write(&summary_path, doc.as_bytes()).unwrap();
+        doc.save_display_receipt_private(&summary_path).unwrap();
+
+        assert!(
+            summary_path
+                .parent()
+                .unwrap()
+                .join("summary.md.display")
+                .is_file()
+        );
+        assert!(index_stamp(root.path(), &summary_path, &doc).is_some());
+
+        let locale = solstone_core_window_catalog::packaged_locale(Some("en-XA"));
+        if locale != ENGLISH {
+            let projected = project_talent_output(root.path(), &summary_path, &doc, locale)
+                .expect("verified body summary projects");
+            assert_ne!(projected, &*doc);
+            assert!(projected.contains("America/Denver"));
+            assert!(projected.contains("5"));
+            std::fs::write(&summary_path, format!("{}\ntampered", &*doc)).unwrap();
+            assert!(
+                project_talent_output(
+                    root.path(),
+                    &summary_path,
+                    &format!("{}\ntampered", &*doc),
+                    locale
+                )
+                .is_none()
+            );
+        }
     }
 }

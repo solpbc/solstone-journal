@@ -1,0 +1,16 @@
+{
+  "description": "Markdown heading for the activities section of a Strava import summary.",
+  "context": "Markdown heading for the activities section of a Strava import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ecdb95008e33be102672f7ba5152b5b9b3f47d2e474bb8fd589bc7288695e63d",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

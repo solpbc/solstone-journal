@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph when workout word reading stopped before finishing.",
+  "context": "Strava summary paragraph when workout word reading stopped before finishing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "287a68c417b30b67dabfa47434fa61121094b7f4a3ea83e10a2ad4d9c0b605b6",
+  "max_length": 609,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Synthesized status error message shown when an import attempt's completion could not be confirmed.",
+  "context": "Synthesized status error message shown when an import attempt's completion could not be confirmed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bbfc1c4803ba68927d6f879616954394fc06c2dd09bbdf25f713417f2c1b7873",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

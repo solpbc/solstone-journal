@@ -1,0 +1,29 @@
+{
+  "description": "Summary sentence of written, unchanged, and unreadable parts in a body import summary.",
+  "context": "Summary sentence of written, unchanged, and unreadable parts in a body import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "written",
+      "type": "string"
+    },
+    {
+      "name": "unchanged",
+      "type": "string"
+    },
+    {
+      "name": "unreadable",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "09829804f9f7065d65d6adaf00df94c410a335ceca57fd185411b7caec6b5760",
+  "max_length": 270,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

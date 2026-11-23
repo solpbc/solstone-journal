@@ -1,0 +1,16 @@
+{
+  "description": "Strava summary paragraph when the names store was unavailable.",
+  "context": "Strava summary paragraph when the names store was unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "99ddfd9ff8d98564e023b3cd278f2b220b80b2ec206b8d9a315683962d6621ca",
+  "max_length": 525,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

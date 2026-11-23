@@ -1,0 +1,16 @@
+{
+  "description": "Strava summary paragraph when some workouts could not be listed on the activities page.",
+  "context": "Strava summary paragraph when some workouts could not be listed on the activities page.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "628c11437cc0043dc6d872faa2313c670831f18095fa169b59b59112641fae84",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

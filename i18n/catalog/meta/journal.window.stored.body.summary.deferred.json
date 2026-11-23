@@ -1,0 +1,34 @@
+{
+  "description": "Paragraph in a body import summary reporting entries moved across midnight that stayed at their first saved time.",
+  "context": "Paragraph in a body import summary reporting entries moved across midnight that stayed at their first saved time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6702fa8a98be743862d1fdb0af0936435676ff2f15264cdd32710264f8fb6873",
+  "max_length": 756,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

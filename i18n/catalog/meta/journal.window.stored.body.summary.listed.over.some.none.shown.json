@@ -1,0 +1,30 @@
+{
+  "description": "Paragraph when some listed records moved and the rest stayed because none of the overflow were shown.",
+  "context": "Paragraph when some listed records moved and the rest stayed because none of the overflow were shown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "bfad4f69279d8dc007f85c93c07285ad7dc0acc8698d603038a47f778edffe33",
+  "max_length": 840,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "description": "Oura endpoint report line when non-heart-rate entries were fetched.",
+  "context": "Oura endpoint report line when non-heart-rate entries were fetched.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "endpoint",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6249d8281eb7356d30e28f2598b2641892bec61dc0d90fc3c29bce9b67a29857",
+  "max_length": 417,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

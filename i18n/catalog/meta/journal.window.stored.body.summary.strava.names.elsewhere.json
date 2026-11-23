@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph when another import is currently reading workout words.",
+  "context": "Strava summary paragraph when another import is currently reading workout words.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "df634bcbb3bd97f3bf0a1ba4f188674c7a2385a999929fc36698fb5141f4e3fc",
+  "max_length": 915,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

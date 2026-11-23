@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary sentence reporting workouts whose words could not be read.",
+  "context": "Strava summary sentence reporting workouts whose words could not be read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "601d8ba6febd06a0f15337ecac87de07a326ea1b7e0a9256e2f7a75958adf9c1",
+  "max_length": 534,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -22180,3 +22180,491 @@ journal.window.transcripts.message.unknown = Unknown
 journal.window.search.message.assistant = Assistant
 
 journal.window.search.message.unknown = Unknown
+
+journal.window.import.status.error.failed = import failed
+
+journal.window.import.status.error.unconfirmed = this import couldn't be confirmed as finished.
+
+journal.window.import.status.error.unavailable = import status unavailable
+
+journal.window.import.status.error.never.completed = Import never completed
+
+journal.window.import.status.error.with.stage = { $error } ({ $stage })
+
+journal.window.import.status.stage.storage = Storage
+
+journal.window.import.status.stage.timeout = Timeout
+
+journal.window.import.status.stage.publication = Publication
+
+journal.window.import.status.stage.finalization = Finalization
+
+journal.window.import.status.stage.interrupted = Interrupted
+
+journal.window.import.status.stage.execution = Execution
+
+journal.window.import.response.error.could.not.read.progress = could not read import progress
+
+journal.window.stored.body.summary.heading = # { $source } import
+
+journal.window.stored.body.summary.windows.count =
+    { $quantity ->
+        [one] 1 part of your journal
+       *[other] { $count } parts of your journal
+    }
+
+journal.window.stored.body.summary.counts.base = { $written } written, { $unchanged } unchanged, { $unreadable } unreadable and left alone.
+
+journal.window.stored.body.summary.counts.stayed = { $written } written, { $unchanged } unchanged, { $stayed_deleted } stayed deleted, { $unreadable } unreadable and left alone.
+
+journal.window.stored.body.summary.held.back.reading =
+    { $quantity ->
+        [one] 1 reading wasn't added, because the part of the journal it belongs to couldn't be read.
+       *[other] { $count } readings weren't added, because the part of the journal they belong to couldn't be read.
+    }
+
+journal.window.stored.body.summary.placed.zone = Days and times placed using { $zone }.
+
+journal.window.stored.body.summary.facet.chosen = new entries are filed under the { $facet } facet.
+
+journal.window.stored.body.summary.facet.none = no facet was chosen for this import. entries without a facet are readable to an agent that can read your whole journal, and not to one limited to chosen facets.
+
+journal.window.stored.body.summary.split.rows =
+    { $quantity ->
+        [one] 1 new entry was saved separately from earlier entries in the same time span, so each keeps its own facet.
+       *[other] { $count } new entries were saved separately from earlier entries in the same time span, so each keeps its own facet.
+    }
+
+journal.window.stored.body.summary.retained.revisions =
+    { $quantity ->
+        [one] 1 updated entry stayed under { $facets }, where it was already filed.
+       *[other] { $count } updated entries stayed under { $facets }, where they were already filed.
+    }
+
+journal.window.stored.body.summary.kept.unfiled = some earlier entries stayed without a facet. only an agent that can read your whole journal can read them.
+
+journal.window.stored.body.summary.took.facet =
+    { $quantity ->
+        [one] 1 part of your journal took the facet of the entry Oura moved into it, so what's in it is readable under that facet.
+       *[other] { $count } parts of your journal each took the facet of the entry Oura moved into it, so what's in them is readable under that facet.
+    }
+
+journal.window.stored.body.summary.kept.facet =
+    { $quantity ->
+        [one] 1 part of your journal already carries a facet from an earlier import, so what this import added is readable under that facet too.
+       *[other] { $count } parts of your journal already carry a facet from an earlier import, so what this import added is readable under that facet too.
+    }
+
+journal.window.stored.body.summary.refiled =
+    { $quantity ->
+        [one] 1 part of your journal already held records, and those are now filed under this facet instead of the one they had.
+       *[other] { $count } parts of your journal already held records, and those are now filed under this facet instead of the one they had.
+    }
+
+journal.window.stored.body.summary.listed.moved =
+    { $quantity ->
+        [one] 1 record already listed on the activities page moved to this import's facet, from { $facets }.
+       *[other] { $count } records already listed on the activities page moved to this import's facet, from { $facets }.
+    }
+
+journal.window.stored.body.summary.listed.over.some.none.shown =
+    { $quantity ->
+        [one] the rest of what's already listed stayed where it was: 1 record would have moved in all, and you weren't shown any.
+       *[other] the rest of what's already listed stayed where it was: { $count } records would have moved in all, and you weren't shown any.
+    }
+
+journal.window.stored.body.summary.listed.over.some.shown =
+    { $quantity ->
+        [one] the rest of what's already listed stayed where it was: 1 record would have moved in all, and you were told { $shown }.
+       *[other] the rest of what's already listed stayed where it was: { $count } records would have moved in all, and you were told { $shown }.
+    }
+
+journal.window.stored.body.summary.listed.over.none.none.shown =
+    { $quantity ->
+        [one] nothing already listed moved: 1 record would have, and you weren't shown any.
+       *[other] nothing already listed moved: { $count } records would have, and you weren't shown any.
+    }
+
+journal.window.stored.body.summary.listed.over.none.shown =
+    { $quantity ->
+        [one] nothing already listed moved: 1 record would have, and you were told { $shown }.
+       *[other] nothing already listed moved: { $count } records would have, and you were told { $shown }.
+    }
+
+journal.window.stored.body.summary.joined.hidden =
+    { $quantity ->
+        [one] 1 record joined a workout you'd hidden, so it's hidden too.
+       *[other] { $count } records joined a workout you'd hidden, so they're hidden too.
+    }
+
+journal.window.stored.body.summary.earlier.waiting =
+    { $quantity ->
+        [one] 1 earlier Strava workout couldn't be updated yet, so it can show twice beside what this import added until it is.
+       *[other] { $count } earlier Strava workouts couldn't be updated yet, so they can show twice beside what this import added until they are.
+    }
+
+journal.window.stored.body.summary.activities.shown =
+    { $quantity ->
+        [one] 1 workout, night of sleep or mindfulness session now shows on its day.
+       *[other] { $count } of the workouts, nights of sleep and mindfulness sessions now show on their days.
+    }
+
+journal.window.stored.body.summary.activities.no.facet =
+    { $quantity ->
+        [one] 1 workout, night of sleep or mindfulness session isn't listed on the activities page, because that part of your journal has no facet.
+       *[other] { $count } of the workouts, nights of sleep and mindfulness sessions aren't listed on the activities page, because those parts of your journal have no facet.
+    }
+
+journal.window.stored.body.summary.activities.refreshed =
+    { $quantity ->
+        [one] 1 workout, night of sleep or mindfulness session changed its times or type in this import, and now shows the new ones.
+       *[other] { $count } of the workouts, nights of sleep and mindfulness sessions changed their times or type in this import, and now show the new ones.
+    }
+
+journal.window.stored.body.summary.activities.refused = Some workouts, nights of sleep or mindfulness sessions couldn't be shown under { $facets }. The next import tries again.
+
+journal.window.stored.body.summary.overlapping.nights = { $count } of Oura's nights in this import overlap another. Each is kept as Oura gave it, so if Oura filed a changed night as a new one, both show.
+
+journal.window.stored.body.summary.entries.stayed.deleted =
+    { $quantity ->
+        [one] 1 entry wasn't added, because you deleted the part of the journal it belongs to.
+       *[other] { $count } entries weren't added, because you deleted the part of the journal they belong to.
+    }
+
+journal.window.stored.body.summary.deferred =
+    { $quantity ->
+        [one] { $source } moved 1 entry to the other side of midnight; your journal keeps the time it first saved.
+       *[other] { $source } moved { $count } entries to the other side of midnight; your journal keeps the times it first saved.
+    }
+
+journal.window.stored.body.summary.moved.far =
+    { $quantity ->
+        [one] { $source } moved 1 entry by more than a day; your journal keeps it where it was first saved.
+       *[other] { $source } moved { $count } entries by more than a day; your journal keeps them where they were first saved.
+    }
+
+journal.window.stored.body.summary.moved =
+    { $quantity ->
+        [one] { $source } has since changed the time of 1 entry; the journal now shows it at the new time.
+       *[other] { $source } has since changed the times of { $count } entries; the journal now shows them at the new times.
+    }
+
+journal.window.stored.body.summary.section.held.back = ## Held back
+
+journal.window.stored.body.summary.section.held.back.intro = Not added yet: each may already be in a part of the journal that couldn't be read. The next import tries again.
+
+journal.window.stored.body.summary.section.read = ## read
+
+journal.window.stored.body.summary.section.not.read = ## not read
+
+journal.window.stored.body.summary.section.couldnt.be.read = ## couldn't be read
+
+journal.window.stored.body.summary.section.not.saved.yet = ## not saved yet
+
+journal.window.stored.body.summary.section.from.oura = ## From Oura
+
+journal.window.stored.body.summary.section.not.written.in.full = ## Not written in full
+
+journal.window.stored.body.summary.section.not.written.in.full.intro = Oura answered for these, and the journal couldn't write all of it.
+
+journal.window.stored.body.summary.unsure.bullet =
+    { $quantity ->
+        [one] - { $endpoint }: 1 not added; the journal can't tell whether it was in what you deleted from { $days }
+       *[other] - { $endpoint }: { $count } not added; the journal can't tell whether they were in what you deleted from { $days }
+    }
+
+journal.window.stored.body.summary.replaced = This import was replaced by a later one before it finished.
+
+journal.window.stored.body.summary.metric.heartrate = heart rate
+
+journal.window.stored.body.summary.metric.daily.spo2 = blood oxygen
+
+journal.window.stored.body.summary.metric.vo2.max = VO2 max
+
+journal.window.stored.body.summary.metric.daily.readiness = readiness
+
+journal.window.stored.body.summary.metric.daily.sleep = sleep scores
+
+journal.window.stored.body.summary.metric.daily.activity = daily activity
+
+journal.window.stored.body.summary.metric.daily.stress = stress
+
+journal.window.stored.body.summary.metric.daily.resilience = resilience
+
+journal.window.stored.body.summary.metric.daily.cardiovascular.age = cardiovascular age
+
+journal.window.stored.body.summary.metric.sleep.time = suggested bedtimes
+
+journal.window.stored.body.summary.metric.rest.mode.period = rest periods
+
+journal.window.stored.body.summary.metric.ring.configuration = ring details
+
+journal.window.stored.body.summary.metric.tags = tags
+
+journal.window.stored.body.summary.metric.session = sessions
+
+journal.window.stored.body.summary.metric.workout = workouts
+
+journal.window.stored.body.summary.stage.end.before.start = ended before it started
+
+journal.window.stored.body.summary.stage.row.too.large = too large to keep
+
+journal.window.stored.body.summary.stage.time = no time the journal could read
+
+journal.window.stored.body.summary.stage.span.too.long = covers too long a stretch of time
+
+journal.window.stored.body.summary.stage.type = no kind the journal could read
+
+journal.window.stored.body.summary.facets.another = another facet
+
+journal.window.stored.body.summary.facets.one = your { $facet } facet
+
+journal.window.stored.body.summary.facets.many = your { $rest } and { $last } facets
+
+journal.window.stored.body.summary.facets.earlier.only = an earlier filing
+
+journal.window.stored.body.summary.facets.with.earlier = { $named } and an earlier filing
+
+journal.window.stored.body.summary.hole.deferred = - { $endpoint }, { $place }: Oura moved this to the other side of midnight; your journal keeps the time it first saved
+
+journal.window.stored.body.summary.hole.moved.far = - { $endpoint }, { $place }: Oura moved this by more than a day; your journal keeps it where it was first saved
+
+journal.window.stored.body.summary.hole.held.back = - { $endpoint }, { $place }: not added yet: it may already be in a part of the journal that couldn't be read; an import that asks for this day again tries again
+
+journal.window.stored.body.summary.hole.unreadable = - { $endpoint }, { $place }: the part of the journal it belongs in couldn't be read; an import that asks for this day again tries again
+
+journal.window.stored.body.summary.hole.record.refused = - { $endpoint }, { $place }: it couldn't be shown on its day; an import that asks for this day again tries again
+
+journal.window.stored.body.summary.hole.converging = - { $endpoint }, { $place }: changed in Oura since, and the journal hasn't finished moving it to its new time; an import that asks for this day again finishes it
+
+journal.window.stored.body.summary.oura.days.heartrate = { $from } to { $to }
+
+journal.window.stored.body.summary.oura.days.other = Oura's days { $from } to { $to }
+
+journal.window.stored.body.summary.oura.through.day = Oura's day { $day }
+
+journal.window.stored.body.summary.oura.read.heartrate =
+    { $quantity ->
+        [one] - { $endpoint }: read: 1 reading for { $days }
+       *[other] - { $endpoint }: read: { $count } readings for { $days }
+    }
+
+journal.window.stored.body.summary.oura.read.entries =
+    { $quantity ->
+        [one] - { $endpoint }: read: 1 entry for { $days }
+       *[other] - { $endpoint }: read: { $count } entries for { $days }
+    }
+
+journal.window.stored.body.summary.oura.empty = - { $endpoint }: empty: nothing for { $days }
+
+journal.window.stored.body.summary.oura.refusal.named = Oura says this needs the { $scopes } permission; to bring it in, connect Oura again and allow it
+
+journal.window.stored.body.summary.oura.refusal.documented = this needs the "{ $scope }" permission; to bring it in, connect Oura again and allow it
+
+journal.window.stored.body.summary.oura.refusal.not.named = Oura didn't say which permission this needs
+
+journal.window.stored.body.summary.oura.refusal.said = Oura said: { $detail }
+
+journal.window.stored.body.summary.oura.refused = - { $endpoint }: refused: { $why }
+
+journal.window.stored.body.summary.oura.refused.part.way = - { $endpoint }: refused part-way: read in full through { $through }, then { $why }
+
+journal.window.stored.body.summary.oura.failed = - { $endpoint }: failed: { $error }
+
+journal.window.stored.body.summary.oura.failed.part.way = - { $endpoint }: failed part-way: read in full through { $through }, then { $error }
+
+journal.window.stored.body.summary.strava.added.none = no new workouts.
+
+journal.window.stored.body.summary.strava.added.only =
+    { $quantity ->
+        [one] 1 workout added.
+       *[other] { $count } workouts added.
+    }
+
+journal.window.stored.body.summary.strava.updated.only =
+    { $quantity ->
+        [one] no new workouts, 1 workout changed since the last import and brought up to date.
+       *[other] no new workouts, { $updated } workouts changed since the last import and brought up to date.
+    }
+
+journal.window.stored.body.summary.strava.added.count =
+    { $quantity ->
+        [one] 1 workout added
+       *[other] { $count } workouts added
+    }
+
+journal.window.stored.body.summary.strava.added.and.updated =
+    { $quantity ->
+        [one] { $added }, 1 workout changed since the last import and brought up to date.
+       *[other] { $added }, { $updated } workouts changed since the last import and brought up to date.
+    }
+
+journal.window.stored.body.summary.strava.replaced =
+    { $quantity ->
+        [one] 1 workout was placed again at the right time, where an earlier version of your journal had put it at the wrong time.
+       *[other] { $count } workouts were placed again at the right time, where an earlier version of your journal had put them at the wrong time.
+    }
+
+journal.window.stored.body.summary.strava.section.facet = ## facet
+
+journal.window.stored.body.summary.strava.facet.chosen = you chose the { $facet } facet for this import.
+
+journal.window.stored.body.summary.strava.listed.moved =
+    { $quantity ->
+        [one] 1 workout moved to this import's facet, from { $facets }.
+       *[other] { $count } workouts moved to this import's facet, from { $facets }.
+    }
+
+journal.window.stored.body.summary.strava.listed.over.none.shown =
+    { $quantity ->
+        [one] nothing already filed moved: 1 workout would have, and you weren't shown any.
+       *[other] nothing already filed moved: { $count } workouts would have, and you weren't shown any.
+    }
+
+journal.window.stored.body.summary.strava.listed.over.shown =
+    { $quantity ->
+        [one] nothing already filed moved: 1 workout would have, and you were told { $shown }.
+       *[other] nothing already filed moved: { $count } workouts would have, and you were told { $shown }.
+    }
+
+journal.window.stored.body.summary.strava.facet.default = new workouts are filed under the { $facet } facet, the one you chose for Strava imports.
+
+journal.window.stored.body.summary.strava.facet.chosen.none = you chose no facet for this import: a workout with no facet isn't listed on the activities page, no people or things come from it, and agents limited to some facets won't see it. search and the body app still show it.
+
+journal.window.stored.body.summary.strava.facet.unset = new workouts have no facet, because none was chosen for this import and none is set for Strava imports, or the one set is muted or gone: a workout with no facet isn't listed on the activities page, no people or things come from it, and agents limited to some facets won't see it. search and the body app still show it.
+
+journal.window.stored.body.summary.strava.filed =
+    { $quantity ->
+        [one] 1 workout is now filed under { $facet }.
+       *[other] { $count } workouts are now filed under { $facet }.
+    }
+
+journal.window.stored.body.summary.strava.filed.one.moved = 1 workout is now filed under { $facet }. it moved from another facet.
+
+journal.window.stored.body.summary.strava.filed.some.moved =
+    { $quantity ->
+        [one] 1 workout is now filed under { $facet }. { $moved } of them moved from another facet.
+       *[other] { $count } workouts are now filed under { $facet }. { $moved } of them moved from another facet.
+    }
+
+journal.window.stored.body.summary.strava.kept.filed =
+    { $quantity ->
+        [one] 1 workout stayed under { $facet }, where it was already filed.
+       *[other] { $count } workouts stayed under { $facet }, where they were already filed.
+    }
+
+journal.window.stored.body.summary.strava.kept.sensed =
+    { $quantity ->
+        [one] 1 workout was left where it was, because it's already listed on the activities page.
+       *[other] { $count } workouts were left where they were, because they're already listed on the activities page.
+    }
+
+journal.window.stored.body.summary.strava.kept.unreadable =
+    { $quantity ->
+        [one] 1 workout was left where it was, because your journal couldn't read what's listed on the activities page on its day. importing again tries once more.
+       *[other] { $count } workouts were left where they were, because your journal couldn't read what's listed on the activities page on their day. importing again tries once more.
+    }
+
+journal.window.stored.body.summary.strava.section.activities = ## activities
+
+journal.window.stored.body.summary.strava.records.written =
+    { $quantity ->
+        [one] 1 workout is newly listed on the activities page for its day.
+       *[other] { $count } workouts are newly listed on the activities page for their days.
+    }
+
+journal.window.stored.body.summary.strava.records.no.facet =
+    { $quantity ->
+        [one] 1 workout has no facet, so it isn't listed on the activities page.
+       *[other] { $count } workouts have no facet, so they aren't listed on the activities page.
+    }
+
+journal.window.stored.body.summary.strava.records.refused = not every workout could be listed on the activities page this time. importing again tries once more.
+
+journal.window.stored.body.summary.strava.conversion.waiting = some earlier workouts couldn't be updated yet. your journal tries again the next time it starts.
+
+journal.window.stored.body.summary.strava.conversion.no.workout =
+    { $quantity ->
+        [one] 1 earlier record was left unchanged because your journal couldn't confirm which workout it belonged to.
+       *[other] { $count } earlier records were left unchanged because your journal couldn't confirm which workouts they belonged to.
+    }
+
+journal.window.stored.body.summary.strava.conversion.moves.open =
+    { $quantity ->
+        [one] 1 record couldn't finish moving yet. your journal tries again the next time it starts, and you can edit it after that.
+       *[other] { $count } records couldn't finish moving yet. your journal tries again the next time it starts, and you can edit them after that.
+    }
+
+journal.window.stored.body.summary.strava.section.people.and.gear = ## people and gear
+
+journal.window.stored.body.summary.strava.names.store.unavailable = your journal couldn't open or save what it noted from your workouts, so not every person or piece of gear in them was read or added this time. importing again tries once more.
+
+journal.window.stored.body.summary.strava.names.read =
+    { $quantity ->
+        [one] 1 workout's own words were read for the people and gear they name.
+       *[other] { $count } workouts' own words were read for the people and gear they name.
+    }
+
+journal.window.stored.body.summary.strava.names.cached =
+    { $quantity ->
+        [one] 1 workout's were read on an earlier import.
+       *[other] { $count } workouts' were read on an earlier import.
+    }
+
+journal.window.stored.body.summary.strava.names.failed =
+    { $quantity ->
+        [one] 1 workout couldn't be read, and importing again tries once more.
+       *[other] { $count } workouts couldn't be read, and importing again tries once more.
+    }
+
+journal.window.stored.body.summary.strava.names.waiting.window =
+    { $quantity ->
+        [one] 1 workout's words weren't read this time: they're read when you import during your processing window.
+       *[other] { $count } workouts' words weren't read this time: they're read when you import during your processing window.
+    }
+
+journal.window.stored.body.summary.strava.names.waiting.no.condition =
+    { $quantity ->
+        [one] 1 workout's words weren't read this time: your journal waits for a processing window, and none is set up, so they're read once one is and you import again.
+       *[other] { $count } workouts' words weren't read this time: your journal waits for a processing window, and none is set up, so they're read once one is and you import again.
+    }
+
+journal.window.stored.body.summary.strava.names.waiting.lane =
+    { $quantity ->
+        [one] 1 workout's words weren't read this time: no thinking is set up that may read them, so they're read once it is and you import again.
+       *[other] { $count } workouts' words weren't read this time: no thinking is set up that may read them, so they're read once it is and you import again.
+    }
+
+journal.window.stored.body.summary.strava.names.waiting.settings =
+    { $quantity ->
+        [one] 1 workout's words weren't read this time: your journal's settings couldn't be read, so they're read when you import again.
+       *[other] { $count } workouts' words weren't read this time: your journal's settings couldn't be read, so they're read when you import again.
+    }
+
+journal.window.stored.body.summary.strava.names.waiting.stopped =
+    { $quantity ->
+        [one] 1 workout's words weren't read this time: they're read when you import again.
+       *[other] { $count } workouts' words weren't read this time: they're read when you import again.
+    }
+
+journal.window.stored.body.summary.strava.names.elsewhere =
+    { $quantity ->
+        [one] 1 workout's words weren't read, because another import is reading workouts' words right now. they're read when you import again.
+       *[other] { $count } workouts' words weren't read, because another import is reading workouts' words right now. they're read when you import again.
+    }
+
+journal.window.stored.body.summary.strava.names.set.aside =
+    { $quantity ->
+        [one] 1 workout's words weren't read, because it's filed under a facet that's muted or gone. they're read once that facet is on again, or an import files them under another.
+       *[other] { $count } workouts' words weren't read, because they're filed under a facet that's muted or gone. they're read once that facet is on again, or an import files them under another.
+    }
+
+journal.window.stored.body.summary.strava.names.promotion.unavailable = no people or things could be added this time, because your journal couldn't read your facets. importing again tries once more.
+
+journal.window.stored.body.summary.strava.names.created =
+    { $quantity ->
+        [one] 1 person or thing was added from your workouts.
+       *[other] { $count } people and things were added from your workouts.
+    }
+
+journal.window.stored.body.summary.strava.names.none.created = no people or things were added this time.

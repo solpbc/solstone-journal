@@ -1,0 +1,16 @@
+{
+  "description": "Paragraph in a body import summary noting earlier entries that remained without a facet.",
+  "context": "Paragraph in a body import summary noting earlier entries that remained without a facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9885509a8567a381f4f7b7a5f0ffcfb5eb4f60fc6e106414a4901ae728c97a35",
+  "max_length": 318,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

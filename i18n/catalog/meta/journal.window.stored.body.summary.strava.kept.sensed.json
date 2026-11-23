@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph reporting workouts left in place because they were already listed.",
+  "context": "Strava summary paragraph reporting workouts left in place because they were already listed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1e33f0caa906e137ac9a99075e6d76490351c96d24e98fa4d4ac90d1d6a294ce",
+  "max_length": 675,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

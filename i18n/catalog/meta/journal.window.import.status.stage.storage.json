@@ -1,0 +1,16 @@
+{
+  "description": "Localized import error stage label for storage failures.",
+  "context": "Localized import error stage label for storage failures.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5bbabb20ca272572d61c45282a763dc3ea5b1678079e9c47c301437301bf55d7",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

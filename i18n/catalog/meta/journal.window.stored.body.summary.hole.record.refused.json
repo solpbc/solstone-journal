@@ -1,0 +1,25 @@
+{
+  "description": "Oura hole bullet for an activity record that could not be written on its day.",
+  "context": "Oura hole bullet for an activity record that could not be written on its day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "endpoint",
+      "type": "string"
+    },
+    {
+      "name": "place",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "46742c6d2d6d63ac9bfc1bac5eaec6f216f9aec31770c753f1c22a0d26daf264",
+  "max_length": 336,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Markdown heading for unread item counts in a body import summary.",
+  "context": "Markdown heading for unread item counts in a body import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1297280fe8cbf6a6daa999b81ef64aa4fed73d4ed9409d97fd652e268f3efb38",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for Oura rest periods.",
+  "context": "Body summary metric label for Oura rest periods.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "52e44ab18f052ad93167ae7d6a8ae1f23ee3c8c0f6cbe2c1708319f3b1cd1db3",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

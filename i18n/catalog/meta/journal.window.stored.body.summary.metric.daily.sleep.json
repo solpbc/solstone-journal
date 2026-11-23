@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for Oura sleep scores.",
+  "context": "Body summary metric label for Oura sleep scores.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "26eed2d9c47446d003446c14102f6e6f6a0bf0849200cb6467625ce5963a4d53",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

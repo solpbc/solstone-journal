@@ -1,0 +1,16 @@
+{
+  "description": "Body summary refusal reason when a row exceeds the maximum allowed size.",
+  "context": "Body summary refusal reason when a row exceeds the maximum allowed size.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eb4fcf71395689578d362b5061c11fb7225171a535c11d0c5147a37d7f602594",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

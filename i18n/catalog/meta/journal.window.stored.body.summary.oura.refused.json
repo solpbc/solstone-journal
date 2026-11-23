@@ -1,0 +1,25 @@
+{
+  "description": "Oura endpoint report line when Oura refused the endpoint before any chunk succeeded.",
+  "context": "Oura endpoint report line when Oura refused the endpoint before any chunk succeeded.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "endpoint",
+      "type": "string"
+    },
+    {
+      "name": "why",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "805d31cac1654fc328ed339c96a55d55c971ea08bce2660a2adb963c483f6f57",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

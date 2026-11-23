@@ -1,0 +1,30 @@
+{
+  "description": "Added-workouts count clause used in the combined Strava added-and-updated summary line.",
+  "context": "Added-workouts count clause used in the combined Strava added-and-updated summary line.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "bf8a71f9b48da89e304989736df59393b9795079ffaa8d321ef978d9cf1b16b2",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

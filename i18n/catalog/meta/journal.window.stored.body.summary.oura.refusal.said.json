@@ -1,0 +1,21 @@
+{
+  "description": "Oura refusal explanation relaying a non-scope detail from Oura.",
+  "context": "Oura refusal explanation relaying a non-scope detail from Oura.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a29badcb92c8f277d721f95761c6018df60549217abf25dcce89ddc462c76eec",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

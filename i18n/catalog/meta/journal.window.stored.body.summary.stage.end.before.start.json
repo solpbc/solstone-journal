@@ -1,0 +1,16 @@
+{
+  "description": "Body summary refusal reason when an item's end timestamp precedes its start.",
+  "context": "Body summary refusal reason when an item's end timestamp precedes its start.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4c5f4b9c5b12f8cf821e301f7d41d80f66fb148d46e679da4bf39e49d612800d",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

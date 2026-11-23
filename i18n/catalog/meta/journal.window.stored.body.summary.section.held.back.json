@@ -1,0 +1,16 @@
+{
+  "description": "Markdown heading for held-back items in a body import summary.",
+  "context": "Markdown heading for held-back items in a body import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "62fafcf4df12a51ca7a330df56c8ee1096f48c815564f44324e649735271c326",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

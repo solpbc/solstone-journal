@@ -1,0 +1,25 @@
+{
+  "description": "Oura hole bullet for an item held back due to an unreadable journal segment.",
+  "context": "Oura hole bullet for an item held back due to an unreadable journal segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "endpoint",
+      "type": "string"
+    },
+    {
+      "name": "place",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bfbcf45c70f98caf7877d4a68afbca5a4a48c4b8f9f640f10688ff508ffe073d",
+  "max_length": 480,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

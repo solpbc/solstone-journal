@@ -1,0 +1,21 @@
+{
+  "description": "Strava summary paragraph naming the facet explicitly chosen for this import.",
+  "context": "Strava summary paragraph naming the facet explicitly chosen for this import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d2ddf27811af6050053a48d7e9166556ebeb248807152aa4b86e859840f8112f",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

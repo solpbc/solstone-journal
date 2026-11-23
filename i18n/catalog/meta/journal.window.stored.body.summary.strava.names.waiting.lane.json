@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph when workout words are waiting because no thinking lane is configured.",
+  "context": "Strava summary paragraph when workout words are waiting because no thinking lane is configured.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "899969765a8030f1f5ccf47de734704626e0e509464f6b45488cd59563e92935",
+  "max_length": 939,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

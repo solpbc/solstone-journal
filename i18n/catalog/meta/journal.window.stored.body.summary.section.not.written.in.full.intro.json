@@ -1,0 +1,16 @@
+{
+  "description": "Explanatory paragraph under the Not written in full heading in an Oura import summary.",
+  "context": "Explanatory paragraph under the Not written in full heading in an Oura import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "94a3e98438b3a55adcaf9747f25e7a60c80b47662c612adc3265c645181818e4",
+  "max_length": 198,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

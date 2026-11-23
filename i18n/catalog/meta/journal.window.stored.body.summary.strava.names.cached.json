@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary sentence reporting workouts whose words were read on an earlier import.",
+  "context": "Strava summary sentence reporting workouts whose words were read on an earlier import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "83a5b5b7d2dcb2147f6699c864aacead9420a8ef8e1a0421cffebbcaa256effd",
+  "max_length": 405,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

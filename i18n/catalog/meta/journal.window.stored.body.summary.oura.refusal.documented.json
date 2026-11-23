@@ -1,0 +1,21 @@
+{
+  "description": "Oura refusal explanation using the endpoint's documented scope.",
+  "context": "Oura refusal explanation using the endpoint's documented scope.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "scope",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8c352ddb92550989872aac87a4f538abace63ea00489b9097e3dad9937a1ba68",
+  "max_length": 261,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

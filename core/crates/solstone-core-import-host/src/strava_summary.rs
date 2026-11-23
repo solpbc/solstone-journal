@@ -9,7 +9,12 @@
 
 #[cfg(test)]
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
+
+use solstone_core_format::stored_markdown::{
+    Document,
+    body_summary::{Copy, FacetsSpec, StravaWaitReason},
+};
+use solstone_core_import_sources::apple_health::UNNAMED_FILING;
 
 use crate::body_activity::RecordCounts;
 use crate::strava_filing::{FacetBasis, Filing, RunFacet};
@@ -36,51 +41,37 @@ pub(crate) struct StravaRunSummary {
     pub listed_over: Option<(usize, usize)>,
 }
 
-fn plural(count: u64, one: &str, many: &str) -> String {
-    if count == 1 {
-        format!("1 {one}")
-    } else {
-        format!("{count} {many}")
-    }
-}
-
-const NO_FACET_MEANS: &str = "a workout with no facet isn't listed on the activities page, no people or things come from it, and agents limited to some facets won't see it. search and the body app still show it.";
-
-/// `one` when `count` is 1, otherwise `many`.
-fn either<'a>(count: u64, one: &'a str, many: &'a str) -> &'a str {
-    if count == 1 { one } else { many }
-}
-
 impl StravaRunSummary {
     /// The summary's text, in the owner's words.
+    #[cfg(test)]
     #[must_use]
     pub(crate) fn text(&self) -> String {
-        let mut text = String::from("# Strava import\n\n");
-        let added = match self.new_workouts {
-            0 => "no new workouts".to_owned(),
-            count => format!("{} added", plural(count, "workout", "workouts")),
-        };
-        if self.updated_workouts > 0 {
-            let _ = writeln!(
-                text,
-                "{added}, {} changed since the last import and brought up to date.\n",
-                plural(self.updated_workouts, "workout", "workouts"),
-            );
-        } else {
-            let _ = writeln!(text, "{added}.\n");
-        }
+        self.document().into_text()
+    }
+
+    /// The summary as a stored Markdown document carrying verified display spans.
+    #[must_use]
+    pub(crate) fn document(&self) -> Document {
+        let mut doc = Document::default();
+        doc.push_body_summary(Copy::Heading {
+            source: "Strava".to_owned(),
+        });
+        doc.push_str("\n\n");
+        doc.push_body_summary(Copy::StravaOpening {
+            new_workouts: self.new_workouts,
+            updated_workouts: self.updated_workouts,
+        });
+        doc.push_str("\n\n");
         if self.replaced_workouts > 0 {
-            let _ = writeln!(
-                text,
-                "{} placed again at the right time, where an earlier version of your journal had put {} at the wrong time.\n",
-                plural(self.replaced_workouts, "workout was", "workouts were"),
-                either(self.replaced_workouts, "it", "them"),
-            );
+            doc.push_body_summary(Copy::StravaReplaced {
+                count: self.replaced_workouts,
+            });
+            doc.push_str("\n\n");
         }
-        self.facet_section(&mut text);
-        self.records_section(&mut text);
-        self.names_section(&mut text);
-        text
+        self.facet_section(&mut doc);
+        self.records_section(&mut doc);
+        self.names_section(&mut doc);
+        doc
     }
 
     /// The facet as the owner names it: its title, or its folder's name.
@@ -91,239 +82,187 @@ impl StravaRunSummary {
             .or(self.facet.facet.as_deref())
     }
 
-    fn facet_section(&self, text: &mut String) {
-        let _ = writeln!(text, "## facet\n");
+    fn facet_section(&self, doc: &mut Document) {
+        doc.push_body_summary(Copy::StravaSectionFacet);
+        doc.push_str("\n\n");
         match (self.shown_facet(), self.facet.basis) {
             (Some(facet), FacetBasis::Chosen) => {
-                let _ = writeln!(text, "you chose the {facet} facet for this import.\n");
+                doc.push_body_summary(Copy::StravaFacetChosen {
+                    facet: facet.to_owned(),
+                });
+                doc.push_str("\n\n");
                 if let Some((count, from)) = &self.listed_moved {
-                    let _ = writeln!(
-                        text,
-                        "{} moved to this import's facet, from {}.\n",
-                        plural(*count as u64, "workout", "workouts"),
-                        solstone_core_import_sources::apple_health::facets_words(from)
-                    );
+                    doc.push_body_summary(Copy::StravaListedMoved {
+                        count: *count as u64,
+                        facets: FacetsSpec::from_titles(from, UNNAMED_FILING),
+                    });
+                    doc.push_str("\n\n");
                 }
                 if let Some((shown, count)) = self.listed_over {
-                    let _ = writeln!(
-                        text,
-                        "nothing already filed moved: {} would have, and you {}.\n",
-                        plural(count as u64, "workout", "workouts"),
-                        if shown == 0 {
-                            "weren't shown any".to_owned()
-                        } else {
-                            format!("were told {shown}")
-                        },
-                    );
+                    doc.push_body_summary(Copy::StravaListedOver {
+                        shown,
+                        count: count as u64,
+                    });
+                    doc.push_str("\n\n");
                 }
             }
             (Some(facet), _) => {
-                let _ = writeln!(
-                    text,
-                    "new workouts are filed under the {facet} facet, the one you chose for Strava imports.\n"
-                );
+                doc.push_body_summary(Copy::StravaFacetDefault {
+                    facet: facet.to_owned(),
+                });
+                doc.push_str("\n\n");
             }
             (None, FacetBasis::ChosenNone) => {
-                let _ = writeln!(
-                    text,
-                    "you chose no facet for this import: {NO_FACET_MEANS}\n"
-                );
+                doc.push_body_summary(Copy::StravaFacetChosenNone);
+                doc.push_str("\n\n");
             }
             (None, _) => {
-                let _ = writeln!(
-                    text,
-                    "new workouts have no facet, because none was chosen for this import and none is set for Strava imports, or the one set is muted or gone: {NO_FACET_MEANS}\n"
-                );
+                doc.push_body_summary(Copy::StravaFacetUnset);
+                doc.push_str("\n\n");
             }
         }
         let filing = &self.filing;
         if let Some(facet) = self.shown_facet()
             && filing.filed > 0
         {
-            let _ = writeln!(
-                text,
-                "{} now filed under {facet}.{}\n",
-                plural(filing.filed, "workout is", "workouts are"),
-                match filing.moved {
-                    0 => String::new(),
-                    1 if filing.filed == 1 => " it moved from another facet.".to_owned(),
-                    moved => format!(" {moved} of them moved from another facet."),
-                }
-            );
+            doc.push_body_summary(Copy::StravaFiled {
+                count: filing.filed,
+                facet: facet.to_owned(),
+                moved: filing.moved,
+            });
+            doc.push_str("\n\n");
         }
         for (earlier, count) in &filing.kept_filed {
-            let _ = writeln!(
-                text,
-                "{} stayed under {earlier}, where {} already filed.\n",
-                plural(*count, "workout", "workouts"),
-                either(*count, "it was", "they were")
-            );
+            doc.push_body_summary(Copy::StravaKeptFiled {
+                count: *count,
+                facet: earlier.clone(),
+            });
+            doc.push_str("\n\n");
         }
         if filing.kept_sensed > 0 {
-            let _ = writeln!(
-                text,
-                "{} left where {}, because {} already listed on the activities page.\n",
-                plural(filing.kept_sensed, "workout was", "workouts were"),
-                either(filing.kept_sensed, "it was", "they were"),
-                either(filing.kept_sensed, "it's", "they're"),
-            );
+            doc.push_body_summary(Copy::StravaKeptSensed {
+                count: filing.kept_sensed,
+            });
+            doc.push_str("\n\n");
         }
         if filing.kept_unreadable > 0 {
-            let _ = writeln!(
-                text,
-                "{} left where {}, because your journal couldn't read what's listed on the activities page on {} day. importing again tries once more.\n",
-                plural(filing.kept_unreadable, "workout was", "workouts were"),
-                either(filing.kept_unreadable, "it was", "they were"),
-                either(filing.kept_unreadable, "its", "their"),
-            );
+            doc.push_body_summary(Copy::StravaKeptUnreadable {
+                count: filing.kept_unreadable,
+            });
+            doc.push_str("\n\n");
         }
     }
 
-    fn records_section(&self, text: &mut String) {
-        let _ = writeln!(text, "## activities\n");
+    fn records_section(&self, doc: &mut Document) {
+        doc.push_body_summary(Copy::StravaSectionActivities);
+        doc.push_str("\n\n");
         let records = &self.records;
         if records.written > 0 {
-            let _ = writeln!(
-                text,
-                "{} newly listed on the activities page for {}.\n",
-                plural(records.written, "workout is", "workouts are"),
-                either(records.written, "its day", "their days"),
-            );
+            doc.push_body_summary(Copy::StravaRecordsWritten {
+                count: records.written,
+            });
+            doc.push_str("\n\n");
         }
         if records.no_facet > 0 {
-            let _ = writeln!(
-                text,
-                "{} no facet, so {} listed on the activities page.\n",
-                plural(records.no_facet, "workout has", "workouts have"),
-                either(records.no_facet, "it isn't", "they aren't"),
-            );
+            doc.push_body_summary(Copy::StravaRecordsNoFacet {
+                count: records.no_facet,
+            });
+            doc.push_str("\n\n");
         }
         if !records.refused.is_empty() {
-            let _ = writeln!(
-                text,
-                "not every workout could be listed on the activities page this time. importing again tries once more.\n"
-            );
+            doc.push_body_summary(Copy::StravaRecordsRefused);
+            doc.push_str("\n\n");
         }
         if self.conversion.waiting + self.conversion.skipped_locked > 0 {
-            let _ = writeln!(
-                text,
-                "some earlier workouts couldn't be updated yet. your journal tries again the next time it starts.\n"
-            );
+            doc.push_body_summary(Copy::StravaConversionWaiting);
+            doc.push_str("\n\n");
         }
         if self.conversion.no_workout > 0 {
-            let count = self.conversion.no_workout;
-            let _ = writeln!(
-                text,
-                "{} left unchanged because your journal couldn't confirm which {} belonged to.\n",
-                plural(count, "earlier record was", "earlier records were"),
-                either(count, "workout it", "workouts they"),
-            );
+            doc.push_body_summary(Copy::StravaConversionNoWorkout {
+                count: self.conversion.no_workout,
+            });
+            doc.push_str("\n\n");
         }
         if self.conversion.moves_open > 0 {
-            let _ = writeln!(
-                text,
-                "{} couldn't finish moving yet. your journal tries again the next time it starts, and you can edit {} after that.\n",
-                plural(self.conversion.moves_open, "record", "records"),
-                either(self.conversion.moves_open, "it", "them"),
-            );
+            doc.push_body_summary(Copy::StravaConversionMovesOpen {
+                count: self.conversion.moves_open,
+            });
+            doc.push_str("\n\n");
         }
     }
 
-    fn names_section(&self, text: &mut String) {
-        let _ = writeln!(text, "## people and gear\n");
+    fn names_section(&self, doc: &mut Document) {
+        doc.push_body_summary(Copy::StravaSectionPeopleAndGear);
+        doc.push_str("\n\n");
         let names = &self.names;
         if names.store_unavailable {
-            let _ = writeln!(
-                text,
-                "your journal couldn't open or save what it noted from your workouts, so not every person or piece of gear in them was read or added this time. importing again tries once more.\n"
-            );
+            doc.push_body_summary(Copy::StravaNamesStoreUnavailable);
+            doc.push_str("\n\n");
         }
         let read = names.calls - names.failed;
-        let mut parts = Vec::new();
+        let mut any_part = false;
         if read > 0 {
-            parts.push(format!(
-                "{} read for the people and gear they name.",
-                plural(read, "workout's own words were", "workouts' own words were")
-            ));
+            doc.push_body_summary(Copy::StravaNamesRead { count: read });
+            any_part = true;
         }
         if names.cached > 0 {
-            parts.push(format!(
-                "{} read on an earlier import.",
-                plural(names.cached, "workout's were", "workouts' were")
-            ));
+            if any_part {
+                doc.push_str(" ");
+            }
+            doc.push_body_summary(Copy::StravaNamesCached {
+                count: names.cached,
+            });
+            any_part = true;
         }
         if names.failed > 0 {
-            parts.push(format!(
-                "{} couldn't be read, and importing again tries once more.",
-                plural(names.failed, "workout", "workouts")
-            ));
+            if any_part {
+                doc.push_str(" ");
+            }
+            doc.push_body_summary(Copy::StravaNamesFailed {
+                count: names.failed,
+            });
+            any_part = true;
         }
-        if !parts.is_empty() {
-            let _ = writeln!(text, "{}\n", parts.join(" "));
+        if any_part {
+            doc.push_str("\n\n");
         }
         if names.waiting > 0 {
-            let waiting = plural(
-                names.waiting,
-                "workout's words weren't",
-                "workouts' words weren't",
-            );
-            let when = match names.wait {
-                Some(NamesWait::WaitingForWindow) => {
-                    "they're read when you import during your processing window"
-                }
-                Some(NamesWait::NoCondition) => {
-                    "your journal waits for a processing window, and none is set up, so they're read once one is and you import again"
-                }
-                Some(NamesWait::LaneUnavailable) => {
-                    "no thinking is set up that may read them, so they're read once it is and you import again"
-                }
-                Some(NamesWait::SettingsUnreadable) => {
-                    "your journal's settings couldn't be read, so they're read when you import again"
-                }
-                Some(NamesWait::Stopped) | None => "they're read when you import again",
+            let reason = match names.wait {
+                Some(NamesWait::WaitingForWindow) => StravaWaitReason::WaitingForWindow,
+                Some(NamesWait::NoCondition) => StravaWaitReason::NoCondition,
+                Some(NamesWait::LaneUnavailable) => StravaWaitReason::LaneUnavailable,
+                Some(NamesWait::SettingsUnreadable) => StravaWaitReason::SettingsUnreadable,
+                Some(NamesWait::Stopped) | None => StravaWaitReason::Stopped,
             };
-            let _ = writeln!(text, "{waiting} read this time: {when}.\n");
+            doc.push_body_summary(Copy::StravaNamesWaiting {
+                count: names.waiting,
+                reason,
+            });
+            doc.push_str("\n\n");
         }
         if names.elsewhere > 0 {
-            let _ = writeln!(
-                text,
-                "{} read, because another import is reading workouts' words right now. they're read when you import again.\n",
-                plural(
-                    names.elsewhere,
-                    "workout's words weren't",
-                    "workouts' words weren't"
-                ),
-            );
+            doc.push_body_summary(Copy::StravaNamesElsewhere {
+                count: names.elsewhere,
+            });
+            doc.push_str("\n\n");
         }
         if names.set_aside > 0 {
-            let _ = writeln!(
-                text,
-                "{} read, because {} filed under a facet that's muted or gone. they're read once that facet is on again, or an import files them under another.\n",
-                plural(
-                    names.set_aside,
-                    "workout's words weren't",
-                    "workouts' words weren't"
-                ),
-                either(names.set_aside, "it's", "they're"),
-            );
+            doc.push_body_summary(Copy::StravaNamesSetAside {
+                count: names.set_aside,
+            });
+            doc.push_str("\n\n");
         }
         if names.promotion_unavailable {
-            let _ = writeln!(
-                text,
-                "no people or things could be added this time, because your journal couldn't read your facets. importing again tries once more.\n"
-            );
+            doc.push_body_summary(Copy::StravaNamesPromotionUnavailable);
+            doc.push_str("\n\n");
         } else if names.created > 0 {
-            let _ = writeln!(
-                text,
-                "{} added from your workouts.\n",
-                plural(
-                    names.created,
-                    "person or thing was",
-                    "people and things were"
-                ),
-            );
+            doc.push_body_summary(Copy::StravaNamesCreated {
+                count: names.created,
+            });
+            doc.push_str("\n\n");
         } else {
-            let _ = writeln!(text, "no people or things were added this time.\n");
+            doc.push_body_summary(Copy::StravaNamesNoneCreated);
+            doc.push_str("\n\n");
         }
     }
 

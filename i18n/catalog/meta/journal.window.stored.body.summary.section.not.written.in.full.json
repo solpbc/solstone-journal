@@ -1,0 +1,16 @@
+{
+  "description": "Markdown heading for Oura coverage holes in an Oura import summary.",
+  "context": "Markdown heading for Oura coverage holes in an Oura import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2453c9b61afe9e7d1b48fa65ca4db4fe4edfbdf26aa9af659cdaeb0a2f92c692",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

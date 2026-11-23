@@ -1,0 +1,16 @@
+{
+  "description": "Strava summary paragraph when no new people or things were added from workouts.",
+  "context": "Strava summary paragraph when no new people or things were added from workouts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c39967a3d7703e597b354acab18209c8d15b46494003cb07a5b6a396aef52da9",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

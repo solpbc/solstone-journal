@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph reporting workouts left in place because their day's activities page could not be read.",
+  "context": "Strava summary paragraph reporting workouts left in place because their day's activities page could not be read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "45ce3b0792f4697bbe64e32640d55428157e3e8ae5fb70a4b2bba913307544cb",
+  "max_length": 1062,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Paragraph in a body import summary explaining when no facet was chosen.",
+  "context": "Paragraph in a body import summary explaining when no facet was chosen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d0d34950b576de89f97d7a323ebc7907f3be8142708338da1e640375429a3129",
+  "max_length": 480,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

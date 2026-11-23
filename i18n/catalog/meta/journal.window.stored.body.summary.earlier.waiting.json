@@ -1,0 +1,30 @@
+{
+  "description": "Paragraph in a body import summary reporting earlier Strava workouts still waiting to update.",
+  "context": "Paragraph in a body import summary reporting earlier Strava workouts still waiting to update.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "76fc84581572d468b50040e55924806c1371db01db695f74be7a1f9e47141393",
+  "max_length": 843,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Markdown heading for items not yet saved in a body import summary.",
+  "context": "Markdown heading for items not yet saved in a body import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7b1b0f589eab43b8aecbb84389247d3a2d43dfd38cd5a33baa2fe5f4aa0d6ad7",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for Oura ring details.",
+  "context": "Body summary metric label for Oura ring details.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f5fea368bf2c0826625b2c1f334903f654266f2bfbdd082879b1ec7da08f1707",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

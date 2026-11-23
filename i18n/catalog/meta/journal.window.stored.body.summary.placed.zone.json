@@ -1,0 +1,21 @@
+{
+  "description": "Sentence in a body import summary naming the time zone used to place days and times.",
+  "context": "Sentence in a body import summary naming the time zone used to place days and times.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "zone",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b23d8f150f52a3008f5b8b9d4d80d6960cfb67f836645ed57a4c080867459a17",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

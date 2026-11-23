@@ -1,0 +1,16 @@
+{
+  "description": "Markdown heading for the facet section of a Strava import summary.",
+  "context": "Markdown heading for the facet section of a Strava import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "65ccd71fe4eb589f8dd20a0cda793bde61a56d5298a97ccdd2e5ec3be1e3b4d6",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

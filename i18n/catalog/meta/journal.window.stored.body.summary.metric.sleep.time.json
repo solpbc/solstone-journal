@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for Oura suggested bedtimes.",
+  "context": "Body summary metric label for Oura suggested bedtimes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a62f3b4bb524e80e1230524777525708d615918ba37d613804a89a216023fda5",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

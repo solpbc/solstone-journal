@@ -1,0 +1,34 @@
+{
+  "description": "Paragraph when no listed records moved because more would have moved than told.",
+  "context": "Paragraph when no listed records moved because more would have moved than told.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "shown",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "21f076a2d9873dd670437f3c148a95a9fa5345f1139617f32cb0737ada6cc97b",
+  "max_length": 630,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

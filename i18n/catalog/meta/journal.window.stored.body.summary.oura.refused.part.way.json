@@ -1,0 +1,29 @@
+{
+  "description": "Oura endpoint report line when Oura refused part-way through fetching.",
+  "context": "Oura endpoint report line when Oura refused part-way through fetching.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "endpoint",
+      "type": "string"
+    },
+    {
+      "name": "through",
+      "type": "string"
+    },
+    {
+      "name": "why",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a2b5ad31a289a6aba12bee904e73e29fdd452ada457da93458454714f8526993",
+  "max_length": 249,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

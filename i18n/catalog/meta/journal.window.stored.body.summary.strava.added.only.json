@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary opening line when new workouts were added and none updated.",
+  "context": "Strava summary opening line when new workouts were added and none updated.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b922955777859101fd5b6da7588a411a49ff5b21d0b6d0a60bd39a885d2f2ab9",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

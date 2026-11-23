@@ -49,7 +49,6 @@ use solstone_core_import::text::TextCreated;
 use solstone_core_import_sources::apple_health::{
     DayRows, Decision, SummaryCounts, WindowId, decide_filing, facet_file_text,
     read_or_create_zone, settle_readings_noting, stored_rows, stored_windows_of_day, stream_days,
-    summary_text,
 };
 use solstone_core_import_sources::apple_health_run::{
     DEFAULT_SPILL_BYTES, Days, PlaceResult, ScanCounts, place, runs_in, scan, sync_folder,
@@ -1778,24 +1777,40 @@ fn take_back(journal: &Path, source: &BodySource, holes: &BTreeSet<Hole>) -> Res
     update_coverage(journal, |coverage| coverage.take_back(holes))
 }
 
-/// The summary's list of holes.
-fn holes_section(holes: &BTreeSet<Hole>) -> String {
+/// Append the summary's list of holes onto a stored Markdown document.
+fn push_holes_section(
+    doc: &mut solstone_core_format::stored_markdown::Document,
+    holes: &BTreeSet<Hole>,
+) {
+    use solstone_core_format::stored_markdown::body_summary::{Copy, MetricLabel, OuraHoleKind};
+
     if holes.is_empty() {
-        return String::new();
+        return;
     }
-    let mut text = String::from(
-        "## Not written in full\n\nOura answered for these, and the journal couldn't write all of it.\n\n",
-    );
+    doc.push_body_summary(Copy::SectionNotWrittenInFullHeading);
+    doc.push_str("\n\n");
+    doc.push_body_summary(Copy::SectionNotWrittenInFullIntro);
+    doc.push_str("\n\n");
     for hole in holes {
-        text.push_str(&format!(
-            "- {}, {}: {}\n",
-            solstone_core_import_sources::apple_health::name_words(&hole.endpoint),
-            hole_place(&hole.endpoint, &hole.at),
-            hole.reason.words()
-        ));
+        let reason = match hole.reason {
+            HoleReason::Deferred => OuraHoleKind::Deferred,
+            HoleReason::MovedFar => OuraHoleKind::MovedFar,
+            HoleReason::HeldBack | HoleReason::ReadingHeldBack => OuraHoleKind::HeldBack,
+            HoleReason::Unreadable => OuraHoleKind::Unreadable,
+            HoleReason::RecordRefused => OuraHoleKind::RecordRefused,
+            HoleReason::Converging => OuraHoleKind::Converging,
+        };
+        doc.push_body_summary(Copy::OuraHoleLine {
+            endpoint: MetricLabel::from_raw(
+                &hole.endpoint,
+                solstone_core_import_sources::apple_health::name_words(&hole.endpoint),
+            ),
+            place: hole_place(&hole.endpoint, &hole.at),
+            reason,
+        });
+        doc.push_str("\n");
     }
-    text.push('\n');
-    text
+    doc.push_str("\n");
 }
 
 /// Clear the `converging` hole of every document this run wrote everywhere it was
@@ -1925,21 +1940,24 @@ fn close_superseded(
     {
         return;
     }
-    let summary = summary_text(
+    let mut summary = solstone_core_import_sources::apple_health::summary_document(
         source,
         &summary_counts(journal, state),
         state.facet.as_deref(),
         zone,
     );
-    let _ = atomic_replace(
-        journal
-            .join("imports")
-            .join(&state.import_id)
-            .join("summary.md"),
-        format!("{summary}This import was replaced by a later one before it finished.\n")
-            .as_bytes(),
-        PRIVATE,
+    summary.push_body_summary(
+        solstone_core_format::stored_markdown::body_summary::Copy::ReplacedByLater,
     );
+    summary.push_str("\n");
+    let summary_path = journal
+        .join("imports")
+        .join(&state.import_id)
+        .join("summary.md");
+    let _ = solstone_core_format::stored_markdown::remove_display_receipt(&summary_path);
+    if atomic_replace(&summary_path, summary.as_bytes(), PRIVATE).is_ok() {
+        let _ = summary.save_display_receipt_private(&summary_path);
+    }
     if let Some(successor) = successor {
         if let Ok(Some(metadata)) = read_provenance(journal, &state.import_id)
             && let AttemptRead::Present(facts) = read_attempt_facts(&metadata)
@@ -2984,17 +3002,29 @@ fn run_phases(
     // until they're saved, and any endpoint Oura refused or that failed.
     let mut counts = summary_counts(journal, &state);
     counts.earlier_waiting = request.earlier_waiting;
-    let mut summary = summary_text(source, &counts, request.facet, zone);
+    let mut summary = solstone_core_import_sources::apple_health::summary_document(
+        source,
+        &counts,
+        request.facet,
+        zone,
+    );
     if let Some(fetched) = &state.fetch {
-        summary.push_str(&fetched.summary_section(zone));
+        fetched.push_summary_section(&mut summary, zone);
     }
     if source.source == OURA.source {
-        summary.push_str(&holes_section(&holes_in(&state)));
+        push_holes_section(&mut summary, &holes_in(&state));
     }
     let import_dir = run.import_dir();
     let summary_path = import_dir.join("summary.md");
+    let _ = solstone_core_format::stored_markdown::remove_display_receipt(&summary_path);
     atomic_replace(&summary_path, summary.as_bytes(), PRIVATE)
         .map_err(|error| error.to_string())?;
+    if let Err(error) = summary.save_display_receipt_private(&summary_path) {
+        log::warn!(
+            "body import {}: its summary display receipt wasn't written: {error}",
+            run.import_id
+        );
+    }
     let days: Vec<String> = state.totals.days.iter().cloned().collect();
     solstone_core_import::write_manifest(&solstone_core_import::ManifestWriteRequest {
         journal_root: journal,
@@ -3084,7 +3114,7 @@ fn run_phases(
     run.write_progress(&state);
     Ok(RunOutcome {
         import_id: run.import_id.clone(),
-        summary,
+        summary: summary.into_text(),
         published: state.totals.published,
         finished,
         holes: holes_in(&state).into_iter().collect(),

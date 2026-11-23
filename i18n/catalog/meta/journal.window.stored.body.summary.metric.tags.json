@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for Oura tags.",
+  "context": "Body summary metric label for Oura tags.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd6b5746096702fd0f612dac9cad402425f6357c11a5e753445a6191d31e93d2",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Body summary refusal reason when a row carries no readable timestamp.",
+  "context": "Body summary refusal reason when a row carries no readable timestamp.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b2301966496617b3d11713675badb9d491c8dc066866fa8047223768a8c44f21",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

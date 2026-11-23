@@ -1,0 +1,16 @@
+{
+  "description": "Localized import error stage label for publication failures.",
+  "context": "Localized import error stage label for publication failures.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "044ec9b0d908328b630d17597565648d8f9e05bb6948767474e75c16fe786b62",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

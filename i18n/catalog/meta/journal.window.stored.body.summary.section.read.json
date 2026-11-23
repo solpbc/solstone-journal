@@ -1,0 +1,16 @@
+{
+  "description": "Markdown heading for read item counts in a body import summary.",
+  "context": "Markdown heading for read item counts in a body import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "74d8024521adaa86c2f00fbb12db9bba22958600f79c86a14e16f62595eb7270",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Explanatory paragraph under the Held back heading in a body import summary.",
+  "context": "Explanatory paragraph under the Held back heading in a body import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9c2af5e64d91cab2796ea9d2d0f0ab277a63bade1438ed56676c8b2a46dc8a8f",
+  "max_length": 333,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

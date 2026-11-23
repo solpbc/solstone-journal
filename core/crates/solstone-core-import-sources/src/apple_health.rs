@@ -1569,14 +1569,6 @@ impl Plan {
     }
 }
 
-fn count_of_windows(count: u64) -> String {
-    if count == 1 {
-        "1 part of your journal".to_owned()
-    } else {
-        format!("{count} parts of your journal")
-    }
-}
-
 /// What a run did, for its summary. Names and counts only, never a value.
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SummaryCounts {
@@ -1695,14 +1687,6 @@ impl SummaryCounts {
     }
 }
 
-fn count_of_records(count: u64) -> String {
-    if count == 1 {
-        "1 record".to_owned()
-    } else {
-        format!("{count} records")
-    }
-}
-
 /// An assignment whose facet names cannot all be identified.
 pub const UNNAMED_FILING: &str = "\0";
 
@@ -1807,337 +1791,271 @@ pub fn summary_text(
     facet: Option<&str>,
     zone: &TimeZone,
 ) -> String {
+    summary_document(source, counts, facet, zone).into_text()
+}
+
+/// The import's summary as a stored Markdown document carrying verified display spans.
+#[must_use]
+pub fn summary_document(
+    source: &BodySource,
+    counts: &SummaryCounts,
+    facet: Option<&str>,
+    zone: &TimeZone,
+) -> solstone_core_format::stored_markdown::Document {
+    use solstone_core_format::stored_markdown::{
+        Document,
+        body_summary::{Copy, FacetsSpec, MetricLabel, StageLabel},
+    };
+
     let source = source_words(source.source);
-    // What stayed deleted is said only when something did: a re-import brings
-    // back what the owner deleted, so for it this is 0.
-    let stayed = match counts.stayed_deleted {
-        0 => String::new(),
-        n => format!("{n} stayed deleted, "),
-    };
-    let mut text = format!(
-        "# {source} import\n\n{} written, {} unchanged, {stayed}{} unreadable and left alone.{} Days and times placed using {}.\n\n",
-        count_of_windows(counts.written),
-        counts.unchanged,
-        counts.unreadable,
-        match counts.held_back {
-            0 => String::new(),
-            1 => " 1 reading wasn't added, because the part of the journal it belongs to couldn't be read.".to_owned(),
-            n => format!(" {n} readings weren't added, because the part of the journal they belong to couldn't be read."),
-        },
-        zone_name(zone).unwrap_or("UTC")
-    );
-    match facet {
-        Some(facet) => {
-            let _ = writeln!(text, "new entries are filed under the {facet} facet.\n");
-        }
-        None => text.push_str(
-            "no facet was chosen for this import. entries without a facet are readable to an agent that can read your whole journal, and not to one limited to chosen facets.\n\n",
-        ),
-    }
-    if counts.split_rows > 0 {
-        let subject = if counts.split_rows == 1 {
-            "1 new entry was".to_owned()
-        } else {
-            format!("{} new entries were", counts.split_rows)
-        };
-        let _ = writeln!(
-            text,
-            "{subject} saved separately from earlier entries in the same time span, so each keeps its own facet.\n"
-        );
-    }
-    for (facets, count) in &counts.retained_revisions {
-        let (noun, earlier) = if *count == 1 {
-            ("entry", "it was")
-        } else {
-            ("entries", "they were")
-        };
-        let _ = writeln!(
-            text,
-            "{count} updated {noun} stayed under {facets}, where {earlier} already filed.\n"
-        );
-    }
-    if counts.kept_unfiled {
-        text.push_str("some earlier entries stayed without a facet. only an agent that can read your whole journal can read them.\n\n");
-    }
-    if counts.took_facet > 0 {
-        let _ = writeln!(
-            text,
-            "{}\n",
-            if counts.took_facet == 1 {
-                "1 part of your journal took the facet of the entry Oura moved into it, so what's in it is readable under that facet.".to_owned()
-            } else {
-                format!(
-                    "{} parts of your journal each took the facet of the entry Oura moved into it, so what's in them is readable under that facet.",
-                    counts.took_facet
-                )
-            }
-        );
-    }
-    if counts.kept_facet > 0 {
-        let _ = writeln!(
-            text,
-            "{} a facet from an earlier import, so what this import added is readable under that facet too.\n",
-            if counts.kept_facet == 1 {
-                "1 part of your journal already carries".to_owned()
-            } else {
-                format!("{} parts of your journal already carry", counts.kept_facet)
-            }
-        );
-    }
-    if counts.refiled > 0 {
-        let _ = writeln!(
-            text,
-            "{} already held records, and those are now filed under this facet instead of the one they had.\n",
-            count_of_windows(counts.refiled)
-        );
-    }
-    if counts.listed_moved > 0 {
-        let _ = writeln!(
-            text,
-            "{} already listed on the activities page moved to this import's facet, from {}.\n",
-            count_of_records(counts.listed_moved),
-            facets_words(&counts.listed_moved_from)
-        );
-    }
-    if let Some((shown, count)) = counts.listed_over {
-        let told = if shown == 0 {
-            "you weren't shown any".to_owned()
-        } else {
-            format!("you were told {shown}")
-        };
-        let _ = if counts.listed_moved > 0 {
-            writeln!(
-                text,
-                "the rest of what's already listed stayed where it was: {} would have moved in all, and {told}.\n",
-                count_of_records(count as u64)
-            )
-        } else {
-            writeln!(
-                text,
-                "nothing already listed moved: {} would have, and {told}.\n",
-                count_of_records(count as u64)
-            )
-        };
-    }
-    if counts.joined_hidden > 0 {
-        let _ = writeln!(
-            text,
-            "{}\n",
-            if counts.joined_hidden == 1 {
-                "1 record joined a workout you'd hidden, so it's hidden too.".to_owned()
-            } else {
-                format!(
-                    "{} records joined a workout you'd hidden, so they're hidden too.",
-                    counts.joined_hidden
-                )
-            }
-        );
-    }
-    if counts.earlier_waiting > 0 {
-        let _ = writeln!(
-            text,
-            "{}\n",
-            if counts.earlier_waiting == 1 {
-                "1 earlier Strava workout couldn't be updated yet, so it can show twice beside what this import added until it is.".to_owned()
-            } else {
-                format!(
-                    "{} earlier Strava workouts couldn't be updated yet, so they can show twice beside what this import added until they are.",
-                    counts.earlier_waiting
-                )
-            }
-        );
-    }
-    if counts.activities > 0 {
-        let _ = writeln!(
-            text,
-            "{}\n",
-            if counts.activities == 1 {
-                "1 workout, night of sleep or mindfulness session now shows on its day.".to_owned()
-            } else {
-                format!(
-                    "{} of the workouts, nights of sleep and mindfulness sessions now show on their days.",
-                    counts.activities
-                )
-            }
-        );
-    }
-    if counts.activities_no_facet > 0 {
-        let _ = writeln!(
-            text,
-            "{}\n",
-            if counts.activities_no_facet == 1 {
-                "1 workout, night of sleep or mindfulness session isn't listed on the activities page, because that part of your journal has no facet.".to_owned()
-            } else {
-                format!(
-                    "{} of the workouts, nights of sleep and mindfulness sessions aren't listed on the activities page, because those parts of your journal have no facet.",
-                    counts.activities_no_facet
-                )
-            }
-        );
-    }
-    if counts.activities_refreshed > 0 {
-        let _ = writeln!(
-            text,
-            "{}\n",
-            if counts.activities_refreshed == 1 {
-                "1 workout, night of sleep or mindfulness session changed its times or type in this import, and now shows the new ones.".to_owned()
-            } else {
-                format!(
-                    "{} of the workouts, nights of sleep and mindfulness sessions changed their times or type in this import, and now show the new ones.",
-                    counts.activities_refreshed
-                )
-            }
-        );
-    }
-    if !counts.activities_refused.is_empty() {
-        let facets = facets_words(&counts.activities_refused);
-        let _ = writeln!(
-            text,
-            "Some workouts, nights of sleep or mindfulness sessions couldn't be shown under {facets}. The next import tries again.\n"
-        );
-    }
-    if counts.overlapping_nights > 0 {
-        let _ = writeln!(
-            text,
-            "{} of Oura's nights in this import overlap another. Each is kept as Oura gave it, so if Oura filed a changed night as a new one, both show.\n",
-            counts.overlapping_nights
-        );
-    }
-    if counts.entries_stayed_deleted > 0 {
-        let _ = writeln!(
-            text,
-            "{}\n",
-            if counts.entries_stayed_deleted == 1 {
-                "1 entry wasn't added, because you deleted the part of the journal it belongs to."
-                    .to_owned()
-            } else {
-                format!(
-                    "{} entries weren't added, because you deleted the part of the journal they belong to.",
-                    counts.entries_stayed_deleted
-                )
-            }
-        );
-    }
-    if counts.deferred > 0 {
-        let _ = writeln!(
-            text,
-            "{source} moved {} to the other side of midnight; your journal keeps the {} it first saved.\n",
-            if counts.deferred == 1 {
-                "1 entry".to_owned()
-            } else {
-                format!("{} entries", counts.deferred)
-            },
-            if counts.deferred == 1 {
-                "time"
-            } else {
-                "times"
-            }
-        );
-    }
-    if counts.moved_far > 0 {
-        let _ = writeln!(
-            text,
-            "{source} moved {} by more than a day; your journal keeps {} where {} first saved.\n",
-            if counts.moved_far == 1 {
-                "1 entry".to_owned()
-            } else {
-                format!("{} entries", counts.moved_far)
-            },
-            if counts.moved_far == 1 { "it" } else { "them" },
-            if counts.moved_far == 1 {
-                "it was"
-            } else {
-                "they were"
-            },
-        );
-    }
-    if counts.moved > 0 {
-        let _ = writeln!(
-            text,
-            "{source} has since changed the {}; the journal now shows {} at the new {}.\n",
-            if counts.moved == 1 {
-                "time of 1 entry".to_owned()
-            } else {
-                format!("times of {} entries", counts.moved)
-            },
-            if counts.moved == 1 { "it" } else { "them" },
-            if counts.moved == 1 { "time" } else { "times" }
-        );
-    }
-    if !counts.held.is_empty() {
-        text.push_str(
-            "## Held back\n\nNot added yet: each may already be in a part of the journal that couldn't be read. The next import tries again.\n\n",
-        );
-        for (name, count) in &counts.held {
-            let _ = writeln!(text, "- {}: {count}", name_words(name));
-        }
-        text.push('\n');
-    }
-    let mut section = |title: &str, items: Vec<(String, u64)>| {
-        if !items.is_empty() {
-            let _ = writeln!(text, "## {title}\n");
-            for (name, count) in items {
-                let _ = writeln!(text, "- {}: {count}", name_words(&name));
-            }
-            text.push('\n');
-        }
-    };
-    section(
-        "read",
-        counts
-            .read
-            .iter()
-            .map(|(name, count)| (name.clone(), *count))
-            .collect(),
-    );
-    section(
-        "not read",
-        counts
-            .not_read
-            .iter()
-            .map(|(name, count)| (name.clone(), *count))
-            .collect(),
-    );
-    let mut refused: Vec<String> = counts
-        .refused
-        .iter()
-        .map(|(name, count)| format!("{}: {count}", stage_words(name)))
-        .collect();
-    for (endpoint, days, count) in &counts.unsure {
-        let endpoint = name_words(endpoint);
-        let days = match days.as_slice() {
-            [one] => one.clone(),
-            [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
-            [] => String::new(),
-        };
-        refused.push(if *count == 1 {
-            format!(
-                "{endpoint}: 1 not added; the journal can't tell whether it was in what you deleted from {days}"
-            )
-        } else {
-            format!(
-                "{endpoint}: {count} not added; the journal can't tell whether they were in what you deleted from {days}"
-            )
+    let mut doc = Document::default();
+    doc.push_body_summary(Copy::Heading {
+        source: source.to_owned(),
+    });
+    doc.push_str("\n\n");
+    if counts.stayed_deleted == 0 {
+        doc.push_body_summary(Copy::CountsBase {
+            written: counts.written,
+            unchanged: counts.unchanged,
+            unreadable: counts.unreadable,
+        });
+    } else {
+        doc.push_body_summary(Copy::CountsStayed {
+            written: counts.written,
+            unchanged: counts.unchanged,
+            stayed_deleted: counts.stayed_deleted,
+            unreadable: counts.unreadable,
         });
     }
-    if !refused.is_empty() {
-        let _ = writeln!(text, "## couldn't be read\n");
-        for line in refused {
-            let _ = writeln!(text, "- {line}");
+    if counts.held_back > 0 {
+        doc.push_str(" ");
+        doc.push_body_summary(Copy::HeldBackReading {
+            count: counts.held_back,
+        });
+    }
+    doc.push_str(" ");
+    doc.push_body_summary(Copy::PlacedZone {
+        zone: zone_name(zone).unwrap_or("UTC").to_owned(),
+    });
+    doc.push_str("\n\n");
+
+    match facet {
+        Some(facet) => {
+            doc.push_body_summary(Copy::FacetChosen {
+                facet: facet.to_owned(),
+            });
+            doc.push_str("\n\n");
         }
-        text.push('\n');
+        None => {
+            doc.push_body_summary(Copy::FacetNone);
+            doc.push_str("\n\n");
+        }
+    }
+    if counts.split_rows > 0 {
+        doc.push_body_summary(Copy::SplitRows {
+            count: counts.split_rows,
+        });
+        doc.push_str("\n\n");
+    }
+    for (facets, count) in &counts.retained_revisions {
+        doc.push_body_summary(Copy::RetainedRevisions {
+            count: *count,
+            facets: facets.clone(),
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.kept_unfiled {
+        doc.push_body_summary(Copy::KeptUnfiled);
+        doc.push_str("\n\n");
+    }
+    if counts.took_facet > 0 {
+        doc.push_body_summary(Copy::TookFacet {
+            count: counts.took_facet,
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.kept_facet > 0 {
+        doc.push_body_summary(Copy::KeptFacet {
+            count: counts.kept_facet,
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.refiled > 0 {
+        doc.push_body_summary(Copy::Refiled {
+            count: counts.refiled,
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.listed_moved > 0 {
+        doc.push_body_summary(Copy::ListedMoved {
+            count: counts.listed_moved,
+            facets: FacetsSpec::from_titles(&counts.listed_moved_from, UNNAMED_FILING),
+        });
+        doc.push_str("\n\n");
+    }
+    if let Some((shown, count)) = counts.listed_over {
+        doc.push_body_summary(Copy::ListedOver {
+            some_moved: counts.listed_moved > 0,
+            shown,
+            count: count as u64,
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.joined_hidden > 0 {
+        doc.push_body_summary(Copy::JoinedHidden {
+            count: counts.joined_hidden,
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.earlier_waiting > 0 {
+        doc.push_body_summary(Copy::EarlierWaiting {
+            count: counts.earlier_waiting,
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.activities > 0 {
+        doc.push_body_summary(Copy::ActivitiesShown {
+            count: counts.activities,
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.activities_no_facet > 0 {
+        doc.push_body_summary(Copy::ActivitiesNoFacet {
+            count: counts.activities_no_facet,
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.activities_refreshed > 0 {
+        doc.push_body_summary(Copy::ActivitiesRefreshed {
+            count: counts.activities_refreshed,
+        });
+        doc.push_str("\n\n");
+    }
+    if !counts.activities_refused.is_empty() {
+        doc.push_body_summary(Copy::ActivitiesRefused {
+            facets: FacetsSpec::from_titles(&counts.activities_refused, UNNAMED_FILING),
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.overlapping_nights > 0 {
+        doc.push_body_summary(Copy::OverlappingNights {
+            count: counts.overlapping_nights,
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.entries_stayed_deleted > 0 {
+        doc.push_body_summary(Copy::EntriesStayedDeleted {
+            count: counts.entries_stayed_deleted,
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.deferred > 0 {
+        doc.push_body_summary(Copy::Deferred {
+            source: source.to_owned(),
+            count: counts.deferred,
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.moved_far > 0 {
+        doc.push_body_summary(Copy::MovedFar {
+            source: source.to_owned(),
+            count: counts.moved_far,
+        });
+        doc.push_str("\n\n");
+    }
+    if counts.moved > 0 {
+        doc.push_body_summary(Copy::Moved {
+            source: source.to_owned(),
+            count: counts.moved,
+        });
+        doc.push_str("\n\n");
+    }
+    if !counts.held.is_empty() {
+        doc.push_body_summary(Copy::SectionHeldBackHeading);
+        doc.push_str("\n\n");
+        doc.push_body_summary(Copy::SectionHeldBackIntro);
+        doc.push_str("\n\n");
+        for (name, count) in &counts.held {
+            doc.push_body_summary(Copy::MetricCountBullet {
+                metric: MetricLabel::from_raw(name, name_words(name)),
+                count: *count,
+            });
+            doc.push_str("\n");
+        }
+        doc.push_str("\n");
+    }
+    if !counts.read.is_empty() {
+        doc.push_body_summary(Copy::SectionRead);
+        doc.push_str("\n\n");
+        for (name, count) in &counts.read {
+            doc.push_body_summary(Copy::MetricCountBullet {
+                metric: MetricLabel::from_raw(name, name_words(name)),
+                count: *count,
+            });
+            doc.push_str("\n");
+        }
+        doc.push_str("\n");
+    }
+    if !counts.not_read.is_empty() {
+        doc.push_body_summary(Copy::SectionNotRead);
+        doc.push_str("\n\n");
+        for (name, count) in &counts.not_read {
+            doc.push_body_summary(Copy::MetricCountBullet {
+                metric: MetricLabel::from_raw(name, name_words(name)),
+                count: *count,
+            });
+            doc.push_str("\n");
+        }
+        doc.push_str("\n");
+    }
+    if !counts.refused.is_empty() || !counts.unsure.is_empty() {
+        doc.push_body_summary(Copy::SectionCouldntBeRead);
+        doc.push_str("\n\n");
+        for (name, count) in &counts.refused {
+            let (metric, stage) = match name.split_once(": ") {
+                Some((metric, why)) => (
+                    Some(MetricLabel::from_raw(metric, name_words(metric))),
+                    StageLabel::from_raw(why),
+                ),
+                None => (None, StageLabel::from_raw(name)),
+            };
+            doc.push_body_summary(Copy::StageCountBullet {
+                metric,
+                stage,
+                count: *count,
+            });
+            doc.push_str("\n");
+        }
+        for (endpoint, days, count) in &counts.unsure {
+            let days = match days.as_slice() {
+                [one] => one.clone(),
+                [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+                [] => String::new(),
+            };
+            doc.push_body_summary(Copy::UnsureBullet {
+                endpoint: MetricLabel::from_raw(endpoint, name_words(endpoint)),
+                count: *count,
+                days,
+            });
+            doc.push_str("\n");
+        }
+        doc.push_str("\n");
     }
     if !counts.not_saved.is_empty() {
-        let _ = writeln!(text, "## not saved yet\n");
+        doc.push_body_summary(Copy::SectionNotSavedYet);
+        doc.push_str("\n\n");
         for line in &counts.not_saved {
-            let _ = writeln!(text, "- {line}");
+            doc.push_str("- ");
+            doc.push_str(line);
+            doc.push_str("\n");
         }
-        text.push('\n');
+        doc.push_str("\n");
     }
     for note in &counts.notes {
-        let _ = writeln!(text, "{note}\n");
+        doc.push_str(note);
+        doc.push_str("\n\n");
     }
-    text
+    doc
 }
 
 #[cfg(test)]

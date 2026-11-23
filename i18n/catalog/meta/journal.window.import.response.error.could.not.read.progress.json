@@ -1,0 +1,16 @@
+{
+  "description": "Error message returned when an import progress task fails to read.",
+  "context": "Error message returned when an import progress task fails to read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "abdc888cf29ae3ce5ed7dee71b3dfd675a196b6cc40bbc84099ce8706dd27436",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

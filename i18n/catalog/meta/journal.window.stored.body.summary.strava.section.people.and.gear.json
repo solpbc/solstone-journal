@@ -1,0 +1,16 @@
+{
+  "description": "Markdown heading for the people and gear section of a Strava import summary.",
+  "context": "Markdown heading for the people and gear section of a Strava import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "203149f6a2fced22d1891cce8eab1b1319ffb5e2709c01cff52b3a23e83234d7",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

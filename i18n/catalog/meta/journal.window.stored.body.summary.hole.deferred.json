@@ -1,0 +1,25 @@
+{
+  "description": "Oura hole bullet for an item moved across midnight.",
+  "context": "Oura hole bullet for an item moved across midnight.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "endpoint",
+      "type": "string"
+    },
+    {
+      "name": "place",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "44ac1ff72274b98c126a5a330a95dac3c3960e8bd2ce7aac0c2dcfcb1b0ccfb8",
+  "max_length": 354,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

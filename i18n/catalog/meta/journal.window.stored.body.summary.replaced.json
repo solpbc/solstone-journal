@@ -1,0 +1,16 @@
+{
+  "description": "Closing paragraph added to a body import summary when a later import superseded it.",
+  "context": "Closing paragraph added to a body import summary when a later import superseded it.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be60471be2dff202bb13b06c125a15752628839a454f158d4178da37aa18b9e6",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

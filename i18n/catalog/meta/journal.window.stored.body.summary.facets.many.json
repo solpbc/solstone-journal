@@ -1,0 +1,25 @@
+{
+  "description": "Facet list phrase for two or more named facets.",
+  "context": "Facet list phrase for two or more named facets.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "rest",
+      "type": "string"
+    },
+    {
+      "name": "last",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ad77596043fe8f93e9c795b07be9c284f172e47bc282777760b107fd279b70fa",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

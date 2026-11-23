@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for Oura daily activity.",
+  "context": "Body summary metric label for Oura daily activity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2bc1084f311553d2515c1a051cd453994e3d51916e8e57161f6b590a4238a721",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

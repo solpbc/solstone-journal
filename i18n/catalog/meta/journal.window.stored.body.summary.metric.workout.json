@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for Oura workouts.",
+  "context": "Body summary metric label for Oura workouts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9efefbf940861c193c32725e867a6866618ed5fda276e107e62aac1d41adb1ba",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

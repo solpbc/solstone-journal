@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for Oura cardiovascular age.",
+  "context": "Body summary metric label for Oura cardiovascular age.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "964912c53bbf9b39857045f94e4112c8ae15da7fb15c1516117cb428ae59ed54",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

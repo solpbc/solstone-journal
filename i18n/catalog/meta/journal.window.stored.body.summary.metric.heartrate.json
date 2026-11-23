@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for heart rate.",
+  "context": "Body summary metric label for heart rate.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70dbebb72cc4de287737d23663a769bc95800f5dd0cdb2b9e5e58f086d1b8867",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

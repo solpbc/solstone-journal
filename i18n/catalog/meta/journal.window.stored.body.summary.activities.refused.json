@@ -1,0 +1,21 @@
+{
+  "description": "Paragraph in a body import summary reporting activities that could not be shown under specific facets.",
+  "context": "Paragraph in a body import summary reporting activities that could not be shown under specific facets.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facets",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "01fb1b078ee1cd764c335181e3b02c297a3f5457ce891013450a8b8a59d874fb",
+  "max_length": 360,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

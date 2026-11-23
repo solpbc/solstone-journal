@@ -1,0 +1,21 @@
+{
+  "description": "Oura refusal explanation when Oura named required scopes.",
+  "context": "Oura refusal explanation when Oura named required scopes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "scopes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d857df19443f4cdcf950f9779ccf713727bbddd7ccdef2904974e36b275b5867",
+  "max_length": 288,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

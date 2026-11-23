@@ -1,0 +1,16 @@
+{
+  "description": "Body summary refusal reason when an item has no readable type.",
+  "context": "Body summary refusal reason when an item has no readable type.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d535184c61cd48cdabff1266deba4bd1179f14f89aea54033f5b1cb47cfd3ba1",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

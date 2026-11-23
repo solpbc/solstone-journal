@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph for records whose move is still open.",
+  "context": "Strava summary paragraph for records whose move is still open.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "41c232669a0effcd69f899dc700fab8c25e1b00f79520fe4a23abbbff7fb9d09",
+  "max_length": 864,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

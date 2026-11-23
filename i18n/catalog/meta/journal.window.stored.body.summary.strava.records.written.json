@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph reporting workouts newly listed on the activities page.",
+  "context": "Strava summary paragraph reporting workouts newly listed on the activities page.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "15ea2526807a18bba8d065f1fa36aa3f1e82b5a6f741fcb802ed4f979aa35442",
+  "max_length": 528,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

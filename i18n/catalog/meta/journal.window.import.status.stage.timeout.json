@@ -1,0 +1,16 @@
+{
+  "description": "Localized import error stage label for timed-out imports.",
+  "context": "Localized import error stage label for timed-out imports.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a1e8fb650ec6594175ee552d4d7475e59bb3163b5f3a144750a0eb8114797ede",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

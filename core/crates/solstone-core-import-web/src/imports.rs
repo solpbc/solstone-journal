@@ -240,6 +240,25 @@ fn duration_minutes(files: &Value) -> Option<i64> {
     (duration > 0).then_some(duration)
 }
 
+fn localize_projected_error(locale: &str, message: &str) -> String {
+    let locale = solstone_core_convey_http::window_catalog::packaged_locale(Some(locale));
+    if locale == ENGLISH {
+        return message.to_owned();
+    }
+    let key = match message {
+        solstone_core_import::metadata::IMPORT_FAILED_REASON => {
+            "journal.window.import.status.error.failed"
+        }
+        solstone_core_import::metadata::IMPORT_UNCONFIRMED_REASON => {
+            "journal.window.import.status.error.unconfirmed"
+        }
+        "import status unavailable" => "journal.window.import.status.error.unavailable",
+        "Import never completed" => "journal.window.import.status.error.never.completed",
+        _ => return message.to_owned(),
+    };
+    text(locale, key)
+}
+
 #[cfg(test)]
 pub(crate) fn load_import_info(root: &Path, timestamp: &str) -> Result<ImportInfo, std::io::Error> {
     load_import_info_for_locale(root, timestamp, ENGLISH)
@@ -338,7 +357,9 @@ pub(crate) fn load_import_info_for_locale(
     values.insert("status".into(), json!(proj.status.as_str()));
     values.insert(
         "error".into(),
-        proj.error.as_ref().map_or(Value::Null, |err| json!(err)),
+        proj.error.as_ref().map_or(Value::Null, |err| {
+            json!(localize_projected_error(locale, err))
+        }),
     );
     values.insert(
         "error_stage".into(),
@@ -691,7 +712,7 @@ pub(crate) async fn detail(
         Ok(response) => response,
         Err(_) => json_response(
             StatusCode::INTERNAL_SERVER_ERROR,
-            json!({"error":"could not read import progress"}),
+            json!({"error": text(locale, "journal.window.import.response.error.could.not.read.progress")}),
         ),
     }
 }
@@ -1524,5 +1545,27 @@ mod tests {
             let tampered = load_import_info_for_locale(root, id, locale).unwrap();
             assert_eq!(tampered.values["finish"], format!("{english}\ntampered"));
         }
+    }
+
+    #[test]
+    fn projected_status_errors_localize_known_tokens_and_keep_raw_errors() {
+        let locale = solstone_core_convey_http::window_catalog::packaged_locale(Some("en-XA"));
+        for known in [
+            solstone_core_import::metadata::IMPORT_FAILED_REASON,
+            solstone_core_import::metadata::IMPORT_UNCONFIRMED_REASON,
+            "import status unavailable",
+            "Import never completed",
+        ] {
+            assert_eq!(localize_projected_error(ENGLISH, known), known);
+            let localized = localize_projected_error(locale, known);
+            if locale == ENGLISH {
+                assert_eq!(localized, known);
+            } else {
+                assert_ne!(localized, known);
+            }
+        }
+        let custom = "legacy custom parser detail";
+        assert_eq!(localize_projected_error(ENGLISH, custom), custom);
+        assert_eq!(localize_projected_error(locale, custom), custom);
     }
 }

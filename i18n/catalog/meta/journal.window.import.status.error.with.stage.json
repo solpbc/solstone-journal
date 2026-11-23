@@ -1,0 +1,25 @@
+{
+  "description": "Import status error line combining the error summary and the stage where it occurred.",
+  "context": "Import status error line combining the error summary and the stage where it occurred.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    },
+    {
+      "name": "stage",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "374924a2ad8ee7942cf892c604c4b2b9807f3f712cd942f2e7dab743fd3c045d",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

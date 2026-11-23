@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary sentence reporting workouts whose words were read for people and gear.",
+  "context": "Strava summary sentence reporting workouts whose words were read for people and gear.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "fa0f298635329ce0c0b8a2beaa8d2a82b7633689187ba8d9aa84d593c4dde208",
+  "max_length": 543,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

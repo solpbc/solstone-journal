@@ -10640,6 +10640,8 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e6170706c652e696e7
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e6572726f722e612e72657175697265642e6669656c642e69732e6d697373696e67 = a required field is missing.
 
+m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e6572726f722e636f756c642e6e6f742e726561642e70726f6772657373 = could not read import progress
+
 m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e6572726f722e6f6e652e6f662e74686f73652e76616c7565732e636f756c646e2e74 = one of those values couldn't be used.
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e726573706f6e73652e6572726f722e736f6d657468696e672e6368616e6765642e736f2e63686f6f73652e7468652e736f75726365 = something changed, so choose the source again.
@@ -10924,6 +10926,16 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e636f6e666c6963742e616
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e636f6e666c6963742e6368616e676564 = this import has changed. refresh the page and try again.
 
+m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e6572726f722e6661696c6564 = import failed
+
+m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e6572726f722e6e657665722e636f6d706c65746564 = Import never completed
+
+m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e6572726f722e756e617661696c61626c65 = import status unavailable
+
+m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e6572726f722e756e636f6e6669726d6564 = this import couldn't be confirmed as finished.
+
+m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e6572726f722e776974682e7374616765 = { $error } ({ $stage })
+
 m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e6661696c6564 = failed
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e70656e64696e67 = pending
@@ -10931,6 +10943,18 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e70656e64696e67 = pend
 m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e72756e6e696e67 = running
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e7361766564 = saved
+
+m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e73746167652e657865637574696f6e = Execution
+
+m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e73746167652e66696e616c697a6174696f6e = Finalization
+
+m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e73746167652e696e746572727570746564 = Interrupted
+
+m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e73746167652e7075626c69636174696f6e = Publication
+
+m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e73746167652e73746f72616765 = Storage
+
+m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e73746167652e74696d656f7574 = Timeout
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e7374617475732e7374617475732e756e617661696c61626c65 = status unavailable
 
@@ -19802,6 +19826,418 @@ m6a6f75726e616c2e77696e646f772e73746174732e76697369626c652e746578742e73696e63652
 m6a6f75726e616c2e77696e646f772e73746174732e76697369626c652e746578742e7468652e63686172742e73686f77732e7468652e6461696c792e73756d6d617279 = the chart shows the daily summary. selected-day totals include the latest entries, so they may briefly differ from the chart.
 
 m6a6f75726e616c2e77696e646f772e73746174732e76697369626c652e746578742e7468652e6c6173742e646179732e73706c69742e74776f2e77617973 = the last 30 days, split two ways: by facet below, then by activity.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e616374697669746965732e6e6f2e6661636574 = { $i18nCategory ->
+    [one] 1 workout, night of sleep or mindfulness session isn't listed on the activities page, because that part of your journal has no facet.
+   *[other] { $count } of the workouts, nights of sleep and mindfulness sessions aren't listed on the activities page, because those parts of your journal have no facet.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e616374697669746965732e726566726573686564 = { $i18nCategory ->
+    [one] 1 workout, night of sleep or mindfulness session changed its times or type in this import, and now shows the new ones.
+   *[other] { $count } of the workouts, nights of sleep and mindfulness sessions changed their times or type in this import, and now show the new ones.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e616374697669746965732e72656675736564 = Some workouts, nights of sleep or mindfulness sessions couldn't be shown under { $facets }. The next import tries again.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e616374697669746965732e73686f776e = { $i18nCategory ->
+    [one] 1 workout, night of sleep or mindfulness session now shows on its day.
+   *[other] { $count } of the workouts, nights of sleep and mindfulness sessions now show on their days.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e636f756e74732e62617365 = { $written } written, { $unchanged } unchanged, { $unreadable } unreadable and left alone.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e636f756e74732e737461796564 = { $written } written, { $unchanged } unchanged, { $stayed_deleted } stayed deleted, { $unreadable } unreadable and left alone.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6465666572726564 = { $i18nCategory ->
+    [one] { $source } moved 1 entry to the other side of midnight; your journal keeps the time it first saved.
+   *[other] { $source } moved { $count } entries to the other side of midnight; your journal keeps the times it first saved.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6561726c6965722e77616974696e67 = { $i18nCategory ->
+    [one] 1 earlier Strava workout couldn't be updated yet, so it can show twice beside what this import added until it is.
+   *[other] { $count } earlier Strava workouts couldn't be updated yet, so they can show twice beside what this import added until they are.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e656e74726965732e7374617965642e64656c65746564 = { $i18nCategory ->
+    [one] 1 entry wasn't added, because you deleted the part of the journal it belongs to.
+   *[other] { $count } entries weren't added, because you deleted the part of the journal they belong to.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e66616365742e63686f73656e = new entries are filed under the { $facet } facet.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e66616365742e6e6f6e65 = no facet was chosen for this import. entries without a facet are readable to an agent that can read your whole journal, and not to one limited to chosen facets.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6661636574732e616e6f74686572 = another facet
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6661636574732e6561726c6965722e6f6e6c79 = an earlier filing
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6661636574732e6d616e79 = your { $rest } and { $last } facets
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6661636574732e6f6e65 = your { $facet } facet
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6661636574732e776974682e6561726c696572 = { $named } and an earlier filing
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e68656164696e67 = # { $source } import
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e68656c642e6261636b2e72656164696e67 = { $i18nCategory ->
+    [one] 1 reading wasn't added, because the part of the journal it belongs to couldn't be read.
+   *[other] { $count } readings weren't added, because the part of the journal they belong to couldn't be read.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e686f6c652e636f6e76657267696e67 = - { $endpoint }, { $place }: changed in Oura since, and the journal hasn't finished moving it to its new time; an import that asks for this day again finishes it
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e686f6c652e6465666572726564 = - { $endpoint }, { $place }: Oura moved this to the other side of midnight; your journal keeps the time it first saved
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e686f6c652e68656c642e6261636b = - { $endpoint }, { $place }: not added yet: it may already be in a part of the journal that couldn't be read; an import that asks for this day again tries again
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e686f6c652e6d6f7665642e666172 = - { $endpoint }, { $place }: Oura moved this by more than a day; your journal keeps it where it was first saved
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e686f6c652e7265636f72642e72656675736564 = - { $endpoint }, { $place }: it couldn't be shown on its day; an import that asks for this day again tries again
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e686f6c652e756e7265616461626c65 = - { $endpoint }, { $place }: the part of the journal it belongs in couldn't be read; an import that asks for this day again tries again
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6a6f696e65642e68696464656e = { $i18nCategory ->
+    [one] 1 record joined a workout you'd hidden, so it's hidden too.
+   *[other] { $count } records joined a workout you'd hidden, so they're hidden too.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6b6570742e6661636574 = { $i18nCategory ->
+    [one] 1 part of your journal already carries a facet from an earlier import, so what this import added is readable under that facet too.
+   *[other] { $count } parts of your journal already carry a facet from an earlier import, so what this import added is readable under that facet too.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6b6570742e756e66696c6564 = some earlier entries stayed without a facet. only an agent that can read your whole journal can read them.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6c69737465642e6d6f766564 = { $i18nCategory ->
+    [one] 1 record already listed on the activities page moved to this import's facet, from { $facets }.
+   *[other] { $count } records already listed on the activities page moved to this import's facet, from { $facets }.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6c69737465642e6f7665722e6e6f6e652e6e6f6e652e73686f776e = { $i18nCategory ->
+    [one] nothing already listed moved: 1 record would have, and you weren't shown any.
+   *[other] nothing already listed moved: { $count } records would have, and you weren't shown any.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6c69737465642e6f7665722e6e6f6e652e73686f776e = { $i18nCategory ->
+    [one] nothing already listed moved: 1 record would have, and you were told { $shown }.
+   *[other] nothing already listed moved: { $count } records would have, and you were told { $shown }.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6c69737465642e6f7665722e736f6d652e6e6f6e652e73686f776e = { $i18nCategory ->
+    [one] the rest of what's already listed stayed where it was: 1 record would have moved in all, and you weren't shown any.
+   *[other] the rest of what's already listed stayed where it was: { $count } records would have moved in all, and you weren't shown any.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6c69737465642e6f7665722e736f6d652e73686f776e = { $i18nCategory ->
+    [one] the rest of what's already listed stayed where it was: 1 record would have moved in all, and you were told { $shown }.
+   *[other] the rest of what's already listed stayed where it was: { $count } records would have moved in all, and you were told { $shown }.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e6461696c792e6163746976697479 = daily activity
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e6461696c792e63617264696f76617363756c61722e616765 = cardiovascular age
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e6461696c792e72656164696e657373 = readiness
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e6461696c792e726573696c69656e6365 = resilience
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e6461696c792e736c656570 = sleep scores
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e6461696c792e73706f32 = blood oxygen
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e6461696c792e737472657373 = stress
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e686561727472617465 = heart rate
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e726573742e6d6f64652e706572696f64 = rest periods
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e72696e672e636f6e66696775726174696f6e = ring details
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e73657373696f6e = sessions
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e736c6565702e74696d65 = suggested bedtimes
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e74616773 = tags
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e766f322e6d6178 = VO2 max
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d65747269632e776f726b6f7574 = workouts
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d6f766564 = { $i18nCategory ->
+    [one] { $source } has since changed the time of 1 entry; the journal now shows it at the new time.
+   *[other] { $source } has since changed the times of { $count } entries; the journal now shows them at the new times.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6d6f7665642e666172 = { $i18nCategory ->
+    [one] { $source } moved 1 entry by more than a day; your journal keeps it where it was first saved.
+   *[other] { $source } moved { $count } entries by more than a day; your journal keeps them where they were first saved.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e646179732e686561727472617465 = { $from } to { $to }
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e646179732e6f74686572 = Oura's days { $from } to { $to }
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e656d707479 = - { $endpoint }: empty: nothing for { $days }
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e6661696c6564 = - { $endpoint }: failed: { $error }
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e6661696c65642e706172742e776179 = - { $endpoint }: failed part-way: read in full through { $through }, then { $error }
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e726561642e656e7472696573 = { $i18nCategory ->
+    [one] - { $endpoint }: read: 1 entry for { $days }
+   *[other] - { $endpoint }: read: { $count } entries for { $days }
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e726561642e686561727472617465 = { $i18nCategory ->
+    [one] - { $endpoint }: read: 1 reading for { $days }
+   *[other] - { $endpoint }: read: { $count } readings for { $days }
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e7265667573616c2e646f63756d656e746564 = this needs the "{ $scope }" permission; to bring it in, connect Oura again and allow it
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e7265667573616c2e6e616d6564 = Oura says this needs the { $scopes } permission; to bring it in, connect Oura again and allow it
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e7265667573616c2e6e6f742e6e616d6564 = Oura didn't say which permission this needs
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e7265667573616c2e73616964 = Oura said: { $detail }
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e72656675736564 = - { $endpoint }: refused: { $why }
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e726566757365642e706172742e776179 = - { $endpoint }: refused part-way: read in full through { $through }, then { $why }
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7572612e7468726f7567682e646179 = Oura's day { $day }
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e6f7665726c617070696e672e6e6967687473 = { $count } of Oura's nights in this import overlap another. Each is kept as Oura gave it, so if Oura filed a changed night as a new one, both show.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e706c616365642e7a6f6e65 = Days and times placed using { $zone }.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e726566696c6564 = { $i18nCategory ->
+    [one] 1 part of your journal already held records, and those are now filed under this facet instead of the one they had.
+   *[other] { $count } parts of your journal already held records, and those are now filed under this facet instead of the one they had.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7265706c61636564 = This import was replaced by a later one before it finished.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e72657461696e65642e7265766973696f6e73 = { $i18nCategory ->
+    [one] 1 updated entry stayed under { $facets }, where it was already filed.
+   *[other] { $count } updated entries stayed under { $facets }, where they were already filed.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73656374696f6e2e636f756c646e742e62652e72656164 = ## couldn't be read
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73656374696f6e2e66726f6d2e6f757261 = ## From Oura
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73656374696f6e2e68656c642e6261636b = ## Held back
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73656374696f6e2e68656c642e6261636b2e696e74726f = Not added yet: each may already be in a part of the journal that couldn't be read. The next import tries again.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73656374696f6e2e6e6f742e72656164 = ## not read
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73656374696f6e2e6e6f742e73617665642e796574 = ## not saved yet
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73656374696f6e2e6e6f742e7772697474656e2e696e2e66756c6c = ## Not written in full
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73656374696f6e2e6e6f742e7772697474656e2e696e2e66756c6c2e696e74726f = Oura answered for these, and the journal couldn't write all of it.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73656374696f6e2e72656164 = ## read
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73706c69742e726f7773 = { $i18nCategory ->
+    [one] 1 new entry was saved separately from earlier entries in the same time span, so each keeps its own facet.
+   *[other] { $count } new entries were saved separately from earlier entries in the same time span, so each keeps its own facet.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73746167652e656e642e6265666f72652e7374617274 = ended before it started
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73746167652e726f772e746f6f2e6c61726765 = too large to keep
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73746167652e7370616e2e746f6f2e6c6f6e67 = covers too long a stretch of time
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73746167652e74696d65 = no time the journal could read
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e73746167652e74797065 = no kind the journal could read
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e61646465642e616e642e75706461746564 = { $i18nCategory ->
+    [one] { $added }, 1 workout changed since the last import and brought up to date.
+   *[other] { $added }, { $updated } workouts changed since the last import and brought up to date.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e61646465642e636f756e74 = { $i18nCategory ->
+    [one] 1 workout added
+   *[other] { $count } workouts added
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e61646465642e6e6f6e65 = no new workouts.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e61646465642e6f6e6c79 = { $i18nCategory ->
+    [one] 1 workout added.
+   *[other] { $count } workouts added.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e636f6e76657273696f6e2e6d6f7665732e6f70656e = { $i18nCategory ->
+    [one] 1 record couldn't finish moving yet. your journal tries again the next time it starts, and you can edit it after that.
+   *[other] { $count } records couldn't finish moving yet. your journal tries again the next time it starts, and you can edit them after that.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e636f6e76657273696f6e2e6e6f2e776f726b6f7574 = { $i18nCategory ->
+    [one] 1 earlier record was left unchanged because your journal couldn't confirm which workout it belonged to.
+   *[other] { $count } earlier records were left unchanged because your journal couldn't confirm which workouts they belonged to.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e636f6e76657273696f6e2e77616974696e67 = some earlier workouts couldn't be updated yet. your journal tries again the next time it starts.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e66616365742e63686f73656e = you chose the { $facet } facet for this import.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e66616365742e63686f73656e2e6e6f6e65 = you chose no facet for this import: a workout with no facet isn't listed on the activities page, no people or things come from it, and agents limited to some facets won't see it. search and the body app still show it.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e66616365742e64656661756c74 = new workouts are filed under the { $facet } facet, the one you chose for Strava imports.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e66616365742e756e736574 = new workouts have no facet, because none was chosen for this import and none is set for Strava imports, or the one set is muted or gone: a workout with no facet isn't listed on the activities page, no people or things come from it, and agents limited to some facets won't see it. search and the body app still show it.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e66696c6564 = { $i18nCategory ->
+    [one] 1 workout is now filed under { $facet }.
+   *[other] { $count } workouts are now filed under { $facet }.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e66696c65642e6f6e652e6d6f766564 = 1 workout is now filed under { $facet }. it moved from another facet.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e66696c65642e736f6d652e6d6f766564 = { $i18nCategory ->
+    [one] 1 workout is now filed under { $facet }. { $moved } of them moved from another facet.
+   *[other] { $count } workouts are now filed under { $facet }. { $moved } of them moved from another facet.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6b6570742e66696c6564 = { $i18nCategory ->
+    [one] 1 workout stayed under { $facet }, where it was already filed.
+   *[other] { $count } workouts stayed under { $facet }, where they were already filed.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6b6570742e73656e736564 = { $i18nCategory ->
+    [one] 1 workout was left where it was, because it's already listed on the activities page.
+   *[other] { $count } workouts were left where they were, because they're already listed on the activities page.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6b6570742e756e7265616461626c65 = { $i18nCategory ->
+    [one] 1 workout was left where it was, because your journal couldn't read what's listed on the activities page on its day. importing again tries once more.
+   *[other] { $count } workouts were left where they were, because your journal couldn't read what's listed on the activities page on their day. importing again tries once more.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6c69737465642e6d6f766564 = { $i18nCategory ->
+    [one] 1 workout moved to this import's facet, from { $facets }.
+   *[other] { $count } workouts moved to this import's facet, from { $facets }.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6c69737465642e6f7665722e6e6f6e652e73686f776e = { $i18nCategory ->
+    [one] nothing already filed moved: 1 workout would have, and you weren't shown any.
+   *[other] nothing already filed moved: { $count } workouts would have, and you weren't shown any.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6c69737465642e6f7665722e73686f776e = { $i18nCategory ->
+    [one] nothing already filed moved: 1 workout would have, and you were told { $shown }.
+   *[other] nothing already filed moved: { $count } workouts would have, and you were told { $shown }.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e636163686564 = { $i18nCategory ->
+    [one] 1 workout's were read on an earlier import.
+   *[other] { $count } workouts' were read on an earlier import.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e63726561746564 = { $i18nCategory ->
+    [one] 1 person or thing was added from your workouts.
+   *[other] { $count } people and things were added from your workouts.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e656c73657768657265 = { $i18nCategory ->
+    [one] 1 workout's words weren't read, because another import is reading workouts' words right now. they're read when you import again.
+   *[other] { $count } workouts' words weren't read, because another import is reading workouts' words right now. they're read when you import again.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e6661696c6564 = { $i18nCategory ->
+    [one] 1 workout couldn't be read, and importing again tries once more.
+   *[other] { $count } workouts couldn't be read, and importing again tries once more.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e6e6f6e652e63726561746564 = no people or things were added this time.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e70726f6d6f74696f6e2e756e617661696c61626c65 = no people or things could be added this time, because your journal couldn't read your facets. importing again tries once more.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e72656164 = { $i18nCategory ->
+    [one] 1 workout's own words were read for the people and gear they name.
+   *[other] { $count } workouts' own words were read for the people and gear they name.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e7365742e6173696465 = { $i18nCategory ->
+    [one] 1 workout's words weren't read, because it's filed under a facet that's muted or gone. they're read once that facet is on again, or an import files them under another.
+   *[other] { $count } workouts' words weren't read, because they're filed under a facet that's muted or gone. they're read once that facet is on again, or an import files them under another.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e73746f72652e756e617661696c61626c65 = your journal couldn't open or save what it noted from your workouts, so not every person or piece of gear in them was read or added this time. importing again tries once more.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e77616974696e672e6c616e65 = { $i18nCategory ->
+    [one] 1 workout's words weren't read this time: no thinking is set up that may read them, so they're read once it is and you import again.
+   *[other] { $count } workouts' words weren't read this time: no thinking is set up that may read them, so they're read once it is and you import again.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e77616974696e672e6e6f2e636f6e646974696f6e = { $i18nCategory ->
+    [one] 1 workout's words weren't read this time: your journal waits for a processing window, and none is set up, so they're read once one is and you import again.
+   *[other] { $count } workouts' words weren't read this time: your journal waits for a processing window, and none is set up, so they're read once one is and you import again.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e77616974696e672e73657474696e6773 = { $i18nCategory ->
+    [one] 1 workout's words weren't read this time: your journal's settings couldn't be read, so they're read when you import again.
+   *[other] { $count } workouts' words weren't read this time: your journal's settings couldn't be read, so they're read when you import again.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e77616974696e672e73746f70706564 = { $i18nCategory ->
+    [one] 1 workout's words weren't read this time: they're read when you import again.
+   *[other] { $count } workouts' words weren't read this time: they're read when you import again.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e6e616d65732e77616974696e672e77696e646f77 = { $i18nCategory ->
+    [one] 1 workout's words weren't read this time: they're read when you import during your processing window.
+   *[other] { $count } workouts' words weren't read this time: they're read when you import during your processing window.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e7265636f7264732e6e6f2e6661636574 = { $i18nCategory ->
+    [one] 1 workout has no facet, so it isn't listed on the activities page.
+   *[other] { $count } workouts have no facet, so they aren't listed on the activities page.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e7265636f7264732e72656675736564 = not every workout could be listed on the activities page this time. importing again tries once more.
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e7265636f7264732e7772697474656e = { $i18nCategory ->
+    [one] 1 workout is newly listed on the activities page for its day.
+   *[other] { $count } workouts are newly listed on the activities page for their days.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e7265706c61636564 = { $i18nCategory ->
+    [one] 1 workout was placed again at the right time, where an earlier version of your journal had put it at the wrong time.
+   *[other] { $count } workouts were placed again at the right time, where an earlier version of your journal had put them at the wrong time.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e73656374696f6e2e61637469766974696573 = ## activities
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e73656374696f6e2e6661636574 = ## facet
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e73656374696f6e2e70656f706c652e616e642e67656172 = ## people and gear
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e7374726176612e757064617465642e6f6e6c79 = { $i18nCategory ->
+    [one] no new workouts, 1 workout changed since the last import and brought up to date.
+   *[other] no new workouts, { $updated } workouts changed since the last import and brought up to date.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e746f6f6b2e6661636574 = { $i18nCategory ->
+    [one] 1 part of your journal took the facet of the entry Oura moved into it, so what's in it is readable under that facet.
+   *[other] { $count } parts of your journal each took the facet of the entry Oura moved into it, so what's in them is readable under that facet.
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e756e737572652e62756c6c6574 = { $i18nCategory ->
+    [one] - { $endpoint }: 1 not added; the journal can't tell whether it was in what you deleted from { $days }
+   *[other] - { $endpoint }: { $count } not added; the journal can't tell whether they were in what you deleted from { $days }
+}
+
+m6a6f75726e616c2e77696e646f772e73746f7265642e626f64792e73756d6d6172792e77696e646f77732e636f756e74 = { $i18nCategory ->
+    [one] 1 part of your journal
+   *[other] { $count } parts of your journal
+}
 
 m6a6f75726e616c2e77696e646f772e73746f7265642e646f63756d656e742e63616c6c732e636f756e74 = { $i18nCategory ->
     [one] 1 model call

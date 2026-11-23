@@ -114,7 +114,15 @@ fn new_import_item(root: &Path, import: &NewImport, locale: &str) -> Value {
     let dir = root.join("imports").join(&import.id);
     let state = import_state(root, import);
     let summary = (state == "finished")
-        .then(|| fs::read_to_string(dir.join("summary.md")).ok())
+        .then(|| {
+            let path = dir.join("summary.md");
+            fs::read_to_string(&path).ok().map(|raw| {
+                solstone_core_format::stored_markdown::project_talent_output(
+                    root, &path, &raw, locale,
+                )
+                .unwrap_or(raw)
+            })
+        })
         .flatten();
     let progress = (state != "finished").then(|| {
         let progress = fs::read(dir.join(PROGRESS_FILE))

@@ -1,0 +1,30 @@
+{
+  "description": "Paragraph in a body import summary reporting activities omitted from the activities page because no facet is set.",
+  "context": "Paragraph in a body import summary reporting activities omitted from the activities page because no facet is set.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "287547289f0806d2107fdc0d9f73280ef8733e42794aebc53ca81cb36b797b87",
+  "max_length": 990,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

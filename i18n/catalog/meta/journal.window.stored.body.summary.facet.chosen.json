@@ -1,0 +1,21 @@
+{
+  "description": "Paragraph in a body import summary stating which facet new entries are filed under.",
+  "context": "Paragraph in a body import summary stating which facet new entries are filed under.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0f7a2022c2f4ebff77bbb18dd0b9c67396d163c4df5a352755106cc7740ddd5f",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Sentence in a body import summary reporting readings held back because their journal segment was unreadable.",
+  "context": "Sentence in a body import summary reporting readings held back because their journal segment was unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "048ff89ade457b3402fa62f7877fc743d90f5be4244d6a35278df00a9cadb7a7",
+  "max_length": 678,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

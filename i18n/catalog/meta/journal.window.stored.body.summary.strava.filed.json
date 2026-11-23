@@ -1,0 +1,34 @@
+{
+  "description": "Strava summary paragraph reporting workouts newly filed under a facet with none moved.",
+  "context": "Strava summary paragraph reporting workouts newly filed under a facet with none moved.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5f0d365297ee36e8726a63087ab65cf08dbf4bac6fd01b0fc27ca2db990e60a7",
+  "max_length": 393,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

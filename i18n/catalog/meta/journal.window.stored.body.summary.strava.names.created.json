@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph reporting people and gear added from workouts.",
+  "context": "Strava summary paragraph reporting people and gear added from workouts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6b97bcdfcadb7b03ddb806f3bb16e573230ff80a4f2694d2e4e77ed60729361a",
+  "max_length": 438,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

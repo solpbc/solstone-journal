@@ -1,0 +1,33 @@
+{
+  "description": "Summary sentence of written, unchanged, stayed-deleted, and unreadable parts in a body import summary.",
+  "context": "Summary sentence of written, unchanged, stayed-deleted, and unreadable parts in a body import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "written",
+      "type": "string"
+    },
+    {
+      "name": "unchanged",
+      "type": "string"
+    },
+    {
+      "name": "stayed_deleted",
+      "type": "string"
+    },
+    {
+      "name": "unreadable",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fac004c5b8b313e74a4bf21a6e858d4bc8679cc114369be7571ac570a8ce29b8",
+  "max_length": 378,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

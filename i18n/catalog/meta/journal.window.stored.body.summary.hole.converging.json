@@ -1,0 +1,25 @@
+{
+  "description": "Oura hole bullet for an item still being moved to its new time.",
+  "context": "Oura hole bullet for an item still being moved to its new time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "endpoint",
+      "type": "string"
+    },
+    {
+      "name": "place",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "60fbae640cd32d5bc40916d09438029e0c80ce87b1d4412833f8b756deb7b32d",
+  "max_length": 483,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for Oura daily resilience.",
+  "context": "Body summary metric label for Oura daily resilience.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c36ff0e08b178b1ba63c4b605184aa6a630659fe06217d2d82856dd2f882a408",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

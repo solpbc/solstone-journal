@@ -1,0 +1,25 @@
+{
+  "description": "Date range label for non-heart-rate Oura fetch reports.",
+  "context": "Date range label for non-heart-rate Oura fetch reports.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "from",
+      "type": "string"
+    },
+    {
+      "name": "to",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "80085fbf60122b41d4a673b46724d8ccbbe47b7461e8fead6202d47ea4cfabb4",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

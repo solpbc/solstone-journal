@@ -1,0 +1,21 @@
+{
+  "description": "Top-level Markdown heading of a body import summary.",
+  "context": "Top-level Markdown heading of a body import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3711ba5d9b16d1bbab21e717bacc21864fb35075aab9bf0e055c72d92611e36c",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

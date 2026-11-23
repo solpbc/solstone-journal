@@ -1,0 +1,34 @@
+{
+  "description": "Strava summary opening line when workouts were both added and updated.",
+  "context": "Strava summary opening line when workouts were both added and updated.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "added",
+      "type": "string"
+    },
+    {
+      "name": "updated",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b29e98ad689dc699d0af21c24ad717b375309a0e3340587f4121ccd429a871e8",
+  "max_length": 606,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

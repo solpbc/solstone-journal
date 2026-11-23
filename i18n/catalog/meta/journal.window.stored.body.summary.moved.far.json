@@ -1,0 +1,34 @@
+{
+  "description": "Paragraph in a body import summary reporting entries moved by more than a day that stayed where first saved.",
+  "context": "Paragraph in a body import summary reporting entries moved by more than a day that stayed where first saved.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a794d69711c3b94ae839e622acd777de6f859d3d2752fc03636cef69b7638382",
+  "max_length": 726,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

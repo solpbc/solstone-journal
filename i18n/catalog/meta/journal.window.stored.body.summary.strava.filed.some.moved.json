@@ -1,0 +1,38 @@
+{
+  "description": "Strava summary paragraph when workouts are filed under a facet and some moved from another.",
+  "context": "Strava summary paragraph when workouts are filed under a facet and some moved from another.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "moved",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b5fcd2175963b9756bae40ed3c1556b4b007af9b94108d4436bad7a4ee5d5e5e",
+  "max_length": 663,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

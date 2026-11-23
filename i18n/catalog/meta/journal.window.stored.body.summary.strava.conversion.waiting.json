@@ -1,0 +1,16 @@
+{
+  "description": "Strava summary paragraph when earlier workouts are waiting to be converted.",
+  "context": "Strava summary paragraph when earlier workouts are waiting to be converted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "596f5313fcfd23c033091c7668ec9679c46b1727c1076a514688067a507eacc7",
+  "max_length": 288,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

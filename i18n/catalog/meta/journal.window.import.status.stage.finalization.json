@@ -1,0 +1,16 @@
+{
+  "description": "Localized import error stage label for finalization failures.",
+  "context": "Localized import error stage label for finalization failures.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "45015f62e4ec3842d2182965c574a2551b1c4b8801cb0af8c211e510c5fe5fe6",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

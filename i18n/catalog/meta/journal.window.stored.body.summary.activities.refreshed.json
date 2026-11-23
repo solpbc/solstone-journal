@@ -1,0 +1,30 @@
+{
+  "description": "Paragraph in a body import summary reporting activities refreshed with updated times or type.",
+  "context": "Paragraph in a body import summary reporting activities refreshed with updated times or type.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "989a9edd757366066b20f0f5c0134ea1b7d2fccbd41610f68c221d0fa42323bb",
+  "max_length": 891,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Paragraph when no listed records moved because none were shown.",
+  "context": "Paragraph when no listed records moved because none were shown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2f9075bcebd6bebfeb0517173bfa1394e4ae32193d3609ece5f1bc6a77d2258b",
+  "max_length": 612,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

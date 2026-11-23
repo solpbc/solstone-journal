@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for blood oxygen.",
+  "context": "Body summary metric label for blood oxygen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "80a17ced142d916d79f551f7a6caeb200b0e9c2852dbacd4fa6b02ff4fc8467c",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

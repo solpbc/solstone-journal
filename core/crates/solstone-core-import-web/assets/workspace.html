@@ -1902,6 +1902,15 @@ function statusElapsedDetail(eventData) {
 
 function capitalizeStage(stage) {
   if (!stage) return '';
+  const known = {
+    storage: 'journal.window.import.status.stage.storage',
+    timeout: 'journal.window.import.status.stage.timeout',
+    publication: 'journal.window.import.status.stage.publication',
+    finalization: 'journal.window.import.status.stage.finalization',
+    interrupted: 'journal.window.import.status.stage.interrupted',
+    execution: 'journal.window.import.status.stage.execution',
+  }[stage];
+  if (known) return window.JournalI18n.render(known);
   return stage.charAt(0).toUpperCase() + stage.slice(1);
 }
 
@@ -2100,8 +2109,13 @@ function renderImportRow(imp, picking = false) {
     if (imp.body_words) {
       statusDetail = `<div class="progress-detail">${escapeHtml(imp.body_words)}</div>`;
     } else if (imp.error) {
-      const errorStage = imp.error_stage ? ` (${capitalizeStage(imp.error_stage)})` : '';
-      statusDetail = `<div class="progress-detail">${escapeHtml(imp.error)}${escapeHtml(errorStage)}</div>`;
+      const errorText = imp.error_stage
+        ? window.JournalI18n.render('journal.window.import.status.error.with.stage', [
+            ['error', String(imp.error)],
+            ['stage', capitalizeStage(imp.error_stage)],
+          ])
+        : String(imp.error);
+      statusDetail = `<div class="progress-detail">${escapeHtml(errorText)}</div>`;
     }
   } else if (imp.status === 'unconfirmed') {
     statusClass = 'unconfirmed';

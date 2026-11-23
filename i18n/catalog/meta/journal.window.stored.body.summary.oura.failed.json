@@ -1,0 +1,25 @@
+{
+  "description": "Oura endpoint report line when fetching failed before any chunk succeeded.",
+  "context": "Oura endpoint report line when fetching failed before any chunk succeeded.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "endpoint",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "affe24bdb77d4f5e4ea9034d51da76bace0d45855b4ab41e67562fcaf71ec28d",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

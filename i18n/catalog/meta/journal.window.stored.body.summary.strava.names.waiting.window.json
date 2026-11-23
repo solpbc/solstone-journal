@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph when workout words are waiting for the processing window.",
+  "context": "Strava summary paragraph when workout words are waiting for the processing window.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "35f2390553129e420e8cd716400fb6a1cc5c0bd7e4643ffa117190279e57e1bd",
+  "max_length": 753,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

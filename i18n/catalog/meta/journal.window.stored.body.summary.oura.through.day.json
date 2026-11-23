@@ -1,0 +1,21 @@
+{
+  "description": "Single Oura day label in partial-read Oura fetch reports.",
+  "context": "Single Oura day label in partial-read Oura fetch reports.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a4452169737eb72b3ca7247104331494bfef9bbe54a5e6e41b41749d418bdf55",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

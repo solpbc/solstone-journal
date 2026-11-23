@@ -1,0 +1,16 @@
+{
+  "description": "Markdown heading for refused or unsure items in a body import summary.",
+  "context": "Markdown heading for refused or unsure items in a body import summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5adc018e00d09c46f360c40c15beb6a1bf4e43abc9f6d7ecf98fcd279f67c127",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

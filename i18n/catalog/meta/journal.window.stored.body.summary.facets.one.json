@@ -1,0 +1,21 @@
+{
+  "description": "Facet list phrase for a single named facet.",
+  "context": "Facet list phrase for a single named facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f67a7c1c117c2e2ce7032900b3884fb30b19f98ec31c4dcc403efdeaaa2c82e2",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

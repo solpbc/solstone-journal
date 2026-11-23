@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph when workout words are waiting because settings were unreadable.",
+  "context": "Strava summary paragraph when workout words are waiting because settings were unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "938864803e430ef5680ac672d31ce1d94a853d8c683c54d9451769c6116e862f",
+  "max_length": 879,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

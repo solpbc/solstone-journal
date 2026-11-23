@@ -1,0 +1,34 @@
+{
+  "description": "Paragraph in a body import summary reporting listed activities moved to this import's facet.",
+  "context": "Paragraph in a body import summary reporting listed activities moved to this import's facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "facets",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "cde511417e3741fb2b4d4f4abf59297efee4362edbacc48d39c37354aeb8dee0",
+  "max_length": 714,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Strava summary paragraph when people and gear promotion failed because facets could not be read.",
+  "context": "Strava summary paragraph when people and gear promotion failed because facets could not be read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bda782e06d916d6c06f441d2979be494d38e3e7a073836c44e1ebb7dbce46bce",
+  "max_length": 378,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for Oura readiness.",
+  "context": "Body summary metric label for Oura readiness.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6fb6a3d2d907205b2041b0e9961a2be52dd8114ca9c732fd883ed7597f6affcf",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

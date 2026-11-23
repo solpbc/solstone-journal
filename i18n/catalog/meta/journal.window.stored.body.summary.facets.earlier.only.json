@@ -1,0 +1,16 @@
+{
+  "description": "Facet list phrase when only an unnamed earlier filing is referenced.",
+  "context": "Facet list phrase when only an unnamed earlier filing is referenced.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3375699939ed7d650a5dc841e3ae2a0dd0cb9d6501ffc15c9f82418a6e8a0d62",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Oura endpoint report line when fetching failed part-way through.",
+  "context": "Oura endpoint report line when fetching failed part-way through.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "endpoint",
+      "type": "string"
+    },
+    {
+      "name": "through",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c5c63aa41648f2f951c6dbe55e0e716be32c93cd21c3660808d3abb4ece42a3a",
+  "max_length": 252,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

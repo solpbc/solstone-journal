@@ -2216,12 +2216,19 @@ fn run_strava_internal(
         names,
     };
     let summary_path = journal.join("imports").join(import_id).join("summary.md");
+    let summary_doc = run_summary.document();
+    let _ = solstone_core_format::stored_markdown::remove_display_receipt(&summary_path);
     match solstone_core_journal_io::atomic_replace(
         &summary_path,
-        run_summary.text().as_bytes(),
+        summary_doc.as_bytes(),
         solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
     ) {
         Ok(_) => {
+            if let Err(error) = summary_doc.save_display_receipt_private(&summary_path) {
+                log::warn!(
+                    "{name} import {import_id}: its summary display receipt wasn't written: {error}"
+                );
+            }
             if let Err(error) = solstone_core_indexer_store::todo::enqueue_path(
                 journal,
                 Path::new(&format!("imports/{import_id}/summary.md")),

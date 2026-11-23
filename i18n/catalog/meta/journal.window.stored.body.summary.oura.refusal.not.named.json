@@ -1,0 +1,16 @@
+{
+  "description": "Oura refusal explanation when no scope could be determined.",
+  "context": "Oura refusal explanation when no scope could be determined.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d4781b52163f325d729ba9e58ec941a8cc7211b7473c7d1b8221588decef0b57",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

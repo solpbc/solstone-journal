@@ -1,0 +1,21 @@
+{
+  "description": "Paragraph in an Oura import summary reporting overlapping nights kept as provided.",
+  "context": "Paragraph in an Oura import summary reporting overlapping nights kept as provided.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "72f896f4cd308d9f517fa80e9ab94fda1ffcb4ded7feaedb4ed793f85ee93d00",
+  "max_length": 441,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Date range label for Oura heart rate fetch reports.",
+  "context": "Date range label for Oura heart rate fetch reports.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "from",
+      "type": "string"
+    },
+    {
+      "name": "to",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4843b7f412302d8bdecda1868f87dde3888b9497ffaa5bd8da06de6e0a6a114b",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

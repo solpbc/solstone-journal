@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph when workout words are waiting because no processing window is configured.",
+  "context": "Strava summary paragraph when workout words are waiting because no processing window is configured.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "796ae894d6908f65966fd43831755bfa9952002ad99f524e97553365f191cc02",
+  "max_length": 1077,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Paragraph in a body import summary reporting entries skipped because their journal part was deleted.",
+  "context": "Paragraph in a body import summary reporting entries skipped because their journal part was deleted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ed1a1c1ed613351b79413532d5c14aa7ee0f70f4b44c5bfe6c7c551bfe4c35b9",
+  "max_length": 639,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Strava summary paragraph when 1 workout is now filed under a facet after moving from another.",
+  "context": "Strava summary paragraph when 1 workout is now filed under a facet after moving from another.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6dd72b61751ac87f53d2c65abf2c3e006aa93f728cb165a6929558e8e2db11fc",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

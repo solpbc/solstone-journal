@@ -975,3 +975,38 @@ async fn a_day_shows_the_title_the_owner_gave_an_experience() {
         "{day}"
     );
 }
+
+#[test]
+fn finished_import_summary_projects_verified_receipt_for_non_english_locale() {
+    use solstone_core_format::stored_markdown::{Document, body_summary::Copy};
+
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    let dir = new_import_with(root, "20260110_120000", "apple_health", Some("completed"));
+    let mut doc = Document::default();
+    doc.push_body_summary(Copy::Heading {
+        source: "Apple Health".into(),
+    });
+    doc.push_str("\n\n");
+    doc.push_body_summary(Copy::FacetChosen {
+        facet: "Health".into(),
+    });
+    doc.push_str("\n\n");
+    let summary_path = dir.join("summary.md");
+    fs::write(&summary_path, doc.as_bytes()).unwrap();
+    doc.save_display_receipt_private(&summary_path).unwrap();
+
+    let en =
+        crate::audit::imports_section(root, solstone_core_convey_http::window_catalog::ENGLISH);
+    assert_eq!(en["new"][0]["summary"].as_str().unwrap(), &*doc);
+
+    let locale = solstone_core_convey_http::window_catalog::packaged_locale(Some("en-XA"));
+    let loc = crate::audit::imports_section(root, locale);
+    let shown = loc["new"][0]["summary"].as_str().unwrap();
+    if locale == solstone_core_convey_http::window_catalog::ENGLISH {
+        assert_eq!(shown, &*doc);
+    } else {
+        assert_ne!(shown, &*doc);
+        assert!(shown.contains("Health"));
+    }
+}

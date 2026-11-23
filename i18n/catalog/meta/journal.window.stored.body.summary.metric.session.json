@@ -1,0 +1,16 @@
+{
+  "description": "Body summary metric label for Oura sessions.",
+  "context": "Body summary metric label for Oura sessions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8a59283d0127e388bbeb9c3995d283652b4180169d0c613dddca8500c83d88c2",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

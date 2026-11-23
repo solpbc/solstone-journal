@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph reporting workouts omitted from the activities page due to having no facet.",
+  "context": "Strava summary paragraph reporting workouts omitted from the activities page due to having no facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "73b3ef00fa8c472cca037972bbe2f91c07e4425dbc634c4eedb0e7d1f03000e6",
+  "max_length": 558,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

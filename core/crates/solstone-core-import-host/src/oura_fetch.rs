@@ -518,14 +518,92 @@ impl FetchState {
             .collect()
     }
 
-    /// The summary's section of results.
-    pub(crate) fn summary_section(&self, zone: &TimeZone) -> String {
-        let mut text = String::from("## From Oura\n\n");
-        for report in self.reports(zone) {
-            let _ = writeln!(text, "{}", report.line());
+    /// Append this fetch's results section onto a stored Markdown summary document.
+    pub(crate) fn push_summary_section(
+        &self,
+        doc: &mut solstone_core_format::stored_markdown::Document,
+        zone: &TimeZone,
+    ) {
+        use solstone_core_format::stored_markdown::body_summary::{
+            Copy, MetricLabel, OuraRefusalCopy,
+        };
+
+        doc.push_body_summary(Copy::SectionFromOura);
+        doc.push_str("\n\n");
+        for endpoint in ENDPOINTS {
+            let Some(plan) = self.endpoints.get(endpoint) else {
+                continue;
+            };
+            let Some(outcome) = plan.result.as_ref() else {
+                continue;
+            };
+            let label = MetricLabel::from_raw(
+                endpoint,
+                solstone_core_import_sources::apple_health::name_words(endpoint),
+            );
+            let heartrate = endpoint == HEARTRATE;
+            let through_value = |whole: usize| {
+                if heartrate {
+                    chunk_last_day(endpoint, &plan.chunks[whole - 1], zone)
+                } else {
+                    plan.chunks[whole - 1][1].clone()
+                }
+            };
+            let refusal_copy = |why: &Refusal| match why {
+                Refusal::Named { scopes } => OuraRefusalCopy::Named {
+                    scopes: scopes
+                        .iter()
+                        .map(|scope| format!("\"{scope}\""))
+                        .collect::<Vec<_>>()
+                        .join(" and "),
+                },
+                Refusal::Documented { scope } => OuraRefusalCopy::Documented {
+                    scope: scope.clone(),
+                },
+                Refusal::NotNamed => OuraRefusalCopy::NotNamed,
+                Refusal::Said { detail } => OuraRefusalCopy::Said {
+                    detail: detail.clone(),
+                },
+            };
+            let copy = match outcome {
+                Outcome::Read { count } => Copy::OuraReadLine {
+                    endpoint: label,
+                    heartrate,
+                    count: *count,
+                    from: plan.from.clone(),
+                    to: plan.to.clone(),
+                },
+                Outcome::Empty => Copy::OuraEmptyLine {
+                    endpoint: label,
+                    heartrate,
+                    from: plan.from.clone(),
+                    to: plan.to.clone(),
+                },
+                Outcome::Refused { whole: 0, why } => Copy::OuraRefusedLine {
+                    endpoint: label,
+                    why: refusal_copy(why),
+                },
+                Outcome::Refused { whole, why } => Copy::OuraRefusedPartWayLine {
+                    endpoint: label,
+                    heartrate,
+                    through: through_value(*whole),
+                    why: refusal_copy(why),
+                },
+                Outcome::Failed { whole: 0, error } => Copy::OuraFailedLine {
+                    endpoint: label,
+                    error: error.clone(),
+                },
+                Outcome::Failed { whole, error } => Copy::OuraFailedPartWayLine {
+                    endpoint: label,
+                    heartrate,
+                    through: through_value(*whole),
+                    error: error.clone(),
+                },
+            };
+            doc.push_body_summary(copy);
+            doc.push_str("\n");
         }
-        text.push('\n');
-        text
+        doc.push_str("\n");
     }
 }
 

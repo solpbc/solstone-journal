@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph when already-filed workouts did not move because none were shown.",
+  "context": "Strava summary paragraph when already-filed workouts did not move because none were shown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5af3f69989990833fb235b53ad376a5013c0af306c9eb103661c42bd416a779d",
+  "max_length": 612,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

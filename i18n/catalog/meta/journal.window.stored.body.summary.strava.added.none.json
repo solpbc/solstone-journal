@@ -1,0 +1,16 @@
+{
+  "description": "Strava summary opening line when no workouts were added or updated.",
+  "context": "Strava summary opening line when no workouts were added or updated.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c5bb9b219b61533dd3cbfbf7abbb43d74630e05d8b6773840e50b88cffed28b7",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

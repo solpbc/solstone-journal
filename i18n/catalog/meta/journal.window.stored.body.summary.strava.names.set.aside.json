@@ -1,0 +1,30 @@
+{
+  "description": "Strava summary paragraph when workout words were skipped because their facet is muted or gone.",
+  "context": "Strava summary paragraph when workout words were skipped because their facet is muted or gone.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "64932fc25fa394ea861233bae87c4a349f41ed9b1c3f2e0308a213c4b11922d1",
+  "max_length": 1158,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Oura hole bullet for an item moved by more than a day.",
+  "context": "Oura hole bullet for an item moved by more than a day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "endpoint",
+      "type": "string"
+    },
+    {
+      "name": "place",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5c88384a544883ab8d151cc0a3cedbd5fa182ce9b666a35ed19424cd74d3b9fa",
+  "max_length": 333,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
