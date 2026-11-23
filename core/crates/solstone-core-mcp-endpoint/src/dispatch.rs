@@ -542,6 +542,11 @@ fn fetch_target_missing_kind(
         {
             AdmittedCategory::Facets
         }
+        ReferenceTarget::LocationDay(_)
+            if !snapshot.categories.contains(&AdmittedCategory::Places) =>
+        {
+            AdmittedCategory::Places
+        }
         _ => return None,
     };
     Some(missing)
@@ -1946,7 +1951,7 @@ fn search(
         }
     }
     let query_hash = digest_json(&query_identity);
-    let mut start_after = request
+    let resolved_cursor = request
         .cursor
         .as_deref()
         .map(|cursor| {
@@ -1960,6 +1965,8 @@ fn search(
             )
         })
         .transpose()?;
+    let mut start_after = resolved_cursor.as_ref().map(|(sa, _)| sa.clone());
+    let mut seen_location_path: Option<String> = resolved_cursor.and_then(|(_, path)| path);
     if implicit_end {
         // Blank-query browsing is newest-first. On a later page the cursor
         // already bounds it, so the query identity does not depend on midnight.
@@ -2063,6 +2070,11 @@ fn search(
                 activity_proof: None,
                 omit_cursor: false,
             });
+            if location_file_day(&hit.metadata.path).is_some()
+                && seen_location_path.as_deref() == Some(hit.metadata.path.as_str())
+            {
+                continue;
+            }
             let topic = if topic_segment(&hit.metadata.path).is_some() {
                 let Some(document) =
                     TopicDocument::read(journal_root, &hit.metadata.path).filter(|doc| {
@@ -2238,25 +2250,27 @@ fn search(
                     },
                 )?);
             }
+            let mut location_full_text = None;
             if category == AdmittedCategory::Places
                 && let Some(day) = location_file_day(&hit.metadata.path)
             {
                 let live = location_documents
                     .entry(day.to_owned())
                     .or_insert_with(|| current_location_document(journal_root, day));
-                if !verified_markdown_document(
+                let Some(full_text) = verified_markdown_document(
                     journal_root,
                     &hit.metadata.path,
                     hit.metadata.idx,
                     &served_text,
                 )
-                .is_some_and(|text| {
+                .filter(|text| {
                     live.as_ref()
-                        .is_none_or(|current| current.as_deref() == Some(&text))
-                }) {
+                        .is_none_or(|current| current.as_deref() == Some(text))
+                }) else {
                     live_dropped = true;
                     continue;
-                }
+                };
+                location_full_text = Some(full_text);
             }
             if let Some(place) = &request.place {
                 if !may_read_locations {
@@ -2454,6 +2468,14 @@ fn search(
                     screen_text_snippet(&served_text)
                 } else if imported {
                     snippet(preview.as_deref().unwrap_or_default())
+                } else if request.query.trim().is_empty()
+                    && request.place.is_none()
+                    && let Some(full_text) = location_full_text.as_deref()
+                {
+                    snippet(&crate::places_view::search_day_places_snippet(
+                        full_text,
+                        MAX_SNIPPET_CHARS,
+                    ))
                 } else {
                     snippet(&served_text)
                 },
@@ -2580,6 +2602,9 @@ fn search(
             if is_document {
                 seen_document_path = Some(hit.metadata.path.clone());
             }
+            if location_file_day(&hit.metadata.path).is_some() {
+                seen_location_path = Some(hit.metadata.path.clone());
+            }
             results.push(value);
             if results.len() == request.limit {
                 break;
@@ -2595,6 +2620,10 @@ fn search(
         .filter(|anchor| !anchor.omit_cursor)
         .filter(|_| has_more || examined == MAX_SEARCH_EXAMINED_ROWS)
         .map(|anchor| {
+            let emitted_location_path = seen_location_path
+                .as_ref()
+                .filter(|path| *path == &anchor.path)
+                .cloned();
             codec().mint(
                 principal.connection,
                 snapshot.generation,
@@ -2615,6 +2644,7 @@ fn search(
                     row_id: anchor.row_id,
                     content_fingerprint: anchor.content_fingerprint,
                     activity_proof: anchor.activity_proof,
+                    emitted_location_path,
                 }),
             )
         })
@@ -2708,6 +2738,41 @@ fn search(
         && search_withheld_body(journal_root, snapshot, &boundary, &resolution, &request)?;
     if body_withheld {
         response_val["body_note"] = json!(crate::body_source::BODY_NOT_GRANTED);
+    }
+    let places_requested = request.category == Some(AdmittedCategory::Places)
+        || request
+            .content_kinds
+            .as_ref()
+            .is_some_and(|kinds| kinds.contains(&AdmittedCategory::Places));
+    if request.cursor.is_none()
+        && places_requested
+        && let Some(precision) = snapshot.places_precision()
+    {
+        response_val["places_precision"] = json!(precision.wire_value());
+        let today = solstone_core_time::day_key(
+            Timestamp::now()
+                .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal_root))
+                .date(),
+        );
+        let (roster_from, roster_to) = match request.day.as_deref() {
+            Some(day) => (Some(day), Some(day)),
+            None => (request.day_from.as_deref(), request.day_to.as_deref()),
+        };
+        let query_filter = (!request.query.trim().is_empty()).then_some(request.query.as_str());
+        if let Some(roster) = crate::places_view::build_places_roster(
+            journal_root,
+            roster_from,
+            roster_to,
+            &today,
+            precision,
+            query_filter,
+            request.place.as_deref(),
+        ) {
+            response_val["places"] = Value::Array(roster.items);
+            if roster.truncated {
+                response_val["places_truncated"] = Value::Bool(true);
+            }
+        }
     }
     // Each snippet is made literal where it is cut.
     let mut prepared =
@@ -2908,7 +2973,7 @@ fn resolve_search_cursor(
     boundary: &ConnectionBoundary,
     query_hash: &str,
     token: &str,
-) -> Result<ConnectionStartAfter, DispatchError> {
+) -> Result<(ConnectionStartAfter, Option<String>), DispatchError> {
     let ReferenceTarget::Cursor(cursor) = codec()
         .resolve(
             token,
@@ -2978,11 +3043,14 @@ fn resolve_search_cursor(
     if digest(&content) != cursor.content_fingerprint {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     }
-    Ok(ConnectionStartAfter {
-        day: cursor.day,
-        path: cursor.path,
-        idx: cursor.idx,
-    })
+    Ok((
+        ConnectionStartAfter {
+            day: cursor.day,
+            path: cursor.path,
+            idx: cursor.idx,
+        },
+        cursor.emitted_location_path,
+    ))
 }
 
 /// The row that holds `path` at `idx` for this boundary now, and whether it
@@ -3483,6 +3551,21 @@ fn fetch(
                 value["picture"] = info;
                 picture = image;
             }
+            if let Some(day) = location_file_day(&entry.path)
+                && let Some(precision) = snapshot.places_precision()
+            {
+                value["places_precision"] = json!(precision.wire_value());
+                if let Some((store, day_loc)) =
+                    crate::tools::week::activity_locations(journal_root, day)
+                    && let Some((items, fixes_truncated)) =
+                        crate::places_view::build_fetch_day_places(&store, &day_loc, precision)
+                {
+                    value["items"] = Value::Array(items);
+                    if fixes_truncated {
+                        value["fixes_truncated"] = Value::Bool(true);
+                    }
+                }
+            }
             let target = format!("{}#{}", entry.path, entry.idx);
             let mut prepared = Prepared::new(value, 1, vec![target]).served_as_is(served_as_is);
             prepared.images.extend(picture);
@@ -3490,6 +3573,53 @@ fn fetch(
         }
         ReferenceTarget::Activity(act_ref) => {
             fetch_activity(journal_root, principal, snapshot, &act_ref.into())
+        }
+        ReferenceTarget::LocationDay(location_day) => {
+            let Some(precision) = snapshot.places_precision() else {
+                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+            };
+            if !solstone_core_journal_io::is_day_key(&location_day.day) {
+                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+            }
+            let today = solstone_core_time::day_key(
+                Timestamp::now()
+                    .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal_root))
+                    .date(),
+            );
+            if location_day.day > today {
+                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+            }
+            let Some((store, day_loc)) =
+                crate::tools::week::activity_locations(journal_root, &location_day.day)
+            else {
+                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+            };
+            let Some((items, fixes_truncated)) =
+                crate::places_view::build_fetch_day_places(&store, &day_loc, precision)
+            else {
+                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+            };
+            let text = solstone_core_location::projection::render_day_document(&day_loc, &store);
+            let mut value = json!({
+                "title": entry_title(&location_day.day),
+                "date": location_day.day,
+                "text": text,
+                "content_kind": AdmittedCategory::Places.as_str(),
+                "places_precision": precision.wire_value(),
+                "items": items,
+            });
+            if fixes_truncated {
+                value["fixes_truncated"] = Value::Bool(true);
+            }
+            crate::journal_links::attach(
+                journal_root,
+                &mut value,
+                solstone_core_journal_link::Place::Day {
+                    day: location_day.day.clone(),
+                },
+            );
+            let target = format!("location:{}", location_day.day);
+            Ok(Prepared::new(value, 1, vec![target]))
         }
         _ => Err(DispatchError::Tool(ToolError::ReferenceNotFound)),
     }

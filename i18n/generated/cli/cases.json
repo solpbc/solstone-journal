@@ -59095,6 +59095,74 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "levels",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.host.mcp.permission.permission.set.choose.places.precision\u0004m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e63686f6f73652e706c616365732e707265636973696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e63686f6f73652e706c616365732e707265636973696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.host.mcp.permission.permission.set.choose.places.precision",
+        "resource_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e63686f6f73652e706c616365732e707265636973696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "solstone journal mcp permission set: choose a places detail level from ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "levels": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "solstone journal mcp permission set: choose a places detail level from ⁨sample⁩",
+      "message_id": "journal.cli.host.mcp.permission.permission.set.choose.places.precision",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.host.mcp.permission.permission.set.choose.places.precision\", &[(\"levels\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e63686f6f73652e706c616365732e707265636973696f6e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.host.mcp.permission.permission.set.places.precision.requires.places\u0004m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e72657175697265732e706c61636573",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e72657175697265732e706c61636573_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.host.mcp.permission.permission.set.places.precision.requires.places",
+        "resource_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e72657175697265732e706c61636573",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "solstone journal mcp permission set: --places-precision requires --category places",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "solstone journal mcp permission set: --places-precision requires --category places",
+      "message_id": "journal.cli.host.mcp.permission.permission.set.places.precision.requires.places",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.host.mcp.permission.permission.set.places.precision.requires.places\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e72657175697265732e706c61636573",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "error",
             "type": "string",
             "value": "sample"
@@ -59126,6 +59194,44 @@
       "own_reader_call": "render(\"en-US\", \"journal.cli.host.mcp.permission.permission.show\", &[(\"error\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e73686f77",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "precision",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.host.mcp.permission.places.precision\u0004m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e706c616365732e707265636973696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e706c616365732e707265636973696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.host.mcp.permission.places.precision",
+        "resource_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e706c616365732e707265636973696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Places detail: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "precision": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Places detail: ⁨sample⁩",
+      "message_id": "journal.cli.host.mcp.permission.places.precision",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.host.mcp.permission.places.precision\", &[(\"precision\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e706c616365732e707265636973696f6e",
       "target": "rust"
     },
     {
@@ -59254,6 +59360,36 @@
       "own_reader_call": "render(\"en-US\", \"journal.cli.host.mcp.permission.set.help\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7365742e68656c70",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.host.mcp.permission.set.help.places.precision\u0004m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7365742e68656c702e706c616365732e707265636973696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7365742e68656c702e706c616365732e707265636973696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.host.mcp.permission.set.help.places.precision",
+        "resource_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7365742e68656c702e706c616365732e707265636973696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "  --places-precision LEVEL  location detail when --category places is set: full, approx, names (default: full)\n",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "  --places-precision LEVEL  location detail when --category places is set: full, approx, names (default: full)\n",
+      "message_id": "journal.cli.host.mcp.permission.set.help.places.precision",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.host.mcp.permission.set.help.places.precision\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7365742e68656c702e706c616365732e707265636973696f6e",
       "target": "rust"
     },
     {
@@ -62342,6 +62478,44 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.host.parser.mcp.permission.set.expected.argument.after.places.precision\u0004m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e65787065637465642e617267756d656e742e61667465722e706c616365732e707265636973696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e65787065637465642e617267756d656e742e61667465722e706c616365732e707265636973696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.host.parser.mcp.permission.set.expected.argument.after.places.precision",
+        "resource_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e65787065637465642e617267756d656e742e61667465722e706c616365732e707265636973696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩: error: expected argument after --places-precision",
+      "folder": null,
+      "inputs": {
+        "command": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩: error: expected argument after --places-precision",
+      "message_id": "journal.cli.host.parser.mcp.permission.set.expected.argument.after.places.precision",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.host.parser.mcp.permission.set.expected.argument.after.places.precision\", &[(\"command\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e65787065637465642e617267756d656e742e61667465722e706c616365732e707265636973696f6e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "command",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.cli.host.parser.mcp.permission.set.facet.name.must.be.nonempty\u0004m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e66616365742e6e616d652e6d7573742e62652e6e6f6e656d707479",
         "gettext_plural_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e66616365742e6e616d652e6d7573742e62652e6e6f6e656d707479_plural",
         "gettext_unsigned_quantity": null,
@@ -62402,6 +62576,120 @@
       "own_reader_call": "render(\"en-US\", \"journal.cli.host.parser.mcp.permission.set.facet.name.must.be.valid.utf.n8.and.nonempty\", &[(\"command\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e66616365742e6e616d652e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "command",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.host.parser.mcp.permission.set.places.precision.must.be.nonempty\u0004m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e6d7573742e62652e6e6f6e656d707479",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e6d7573742e62652e6e6f6e656d707479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.host.parser.mcp.permission.set.places.precision.must.be.nonempty",
+        "resource_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e6d7573742e62652e6e6f6e656d707479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩: error: places precision must be nonempty",
+      "folder": null,
+      "inputs": {
+        "command": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩: error: places precision must be nonempty",
+      "message_id": "journal.cli.host.parser.mcp.permission.set.places.precision.must.be.nonempty",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.host.parser.mcp.permission.set.places.precision.must.be.nonempty\", &[(\"command\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e6d7573742e62652e6e6f6e656d707479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "command",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.host.parser.mcp.permission.set.places.precision.must.be.valid.utf.n8.and.nonempty\u0004m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.host.parser.mcp.permission.set.places.precision.must.be.valid.utf.n8.and.nonempty",
+        "resource_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩: error: places precision must be valid UTF-8 and nonempty",
+      "folder": null,
+      "inputs": {
+        "command": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩: error: places precision must be valid UTF-8 and nonempty",
+      "message_id": "journal.cli.host.parser.mcp.permission.set.places.precision.must.be.valid.utf.n8.and.nonempty",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.host.parser.mcp.permission.set.places.precision.must.be.valid.utf.n8.and.nonempty\", &[(\"command\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "command",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.host.parser.mcp.permission.set.places.precision.repeated\u0004m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e7265706561746564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e7265706561746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.host.parser.mcp.permission.set.places.precision.repeated",
+        "resource_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e7265706561746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩: error: --places-precision may only be given once",
+      "folder": null,
+      "inputs": {
+        "command": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩: error: --places-precision may only be given once",
+      "message_id": "journal.cli.host.parser.mcp.permission.set.places.precision.repeated",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.host.parser.mcp.permission.set.places.precision.repeated\", &[(\"command\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e7265706561746564",
       "target": "rust"
     },
     {

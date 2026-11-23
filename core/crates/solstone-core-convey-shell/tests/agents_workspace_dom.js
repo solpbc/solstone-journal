@@ -1583,6 +1583,36 @@ async function test(name, body) {
     lacks(paired.view, 'data-again=');
   });
 
+  await test('places precision shows honest legacy tier, defaults new places to exact locations, and hides options when places is off', async () => {
+    const legacy = {...connection('oauth', 'g-legacy', 'Legacy', 'local'), permission: {read: {categories: ['transcripts', 'places'], scope: {kind: 'whole_journal'}}}};
+    const approx = {...connection('oauth', 'g-approx', 'Approx', 'local'), permission: {read: {categories: ['transcripts', 'places', 'places_approx'], scope: {kind: 'whole_journal'}}}};
+    const full = {...connection('oauth', 'g-full', 'Full', 'local'), permission: {read: {categories: ['transcripts', 'places', 'places_full'], scope: {kind: 'whole_journal'}}}};
+    const none = {...connection('oauth', 'g-none', 'NoPlaces', 'local'), permission: {read: {categories: ['transcripts'], scope: {kind: 'whole_journal'}}}};
+    const {view, click} = await boot(baseState({...door({listening: true}), connections: [legacy, approx, full, none]}));
+    has(view, 'places (names only)');
+    has(view, 'places (~1 km areas)');
+    has(view, 'places (exact locations)');
+    lacks(view, 'places_approx');
+    lacks(view, 'places_full');
+
+    // Legacy bare places pre-selects names only and shows the precision group.
+    await click({connection: 'oauth:g-legacy'});
+    has(view, 'name="places_precision" value="names" checked');
+    lacks(view, 'id="places-precision-field" role="radiogroup" aria-label="location detail when places is on" style="padding-left:26px" class="hidden"');
+
+    // Explicit approx pre-selects approx.
+    await click({route: 'home'});
+    await click({connection: 'oauth:g-approx'});
+    has(view, 'name="places_precision" value="approx" checked');
+
+    // Connection without places hides the radio group and pre-selects full for when the owner ticks places.
+    await click({route: 'home'});
+    await click({connection: 'oauth:g-none'});
+    has(view, 'id="places-precision-field"');
+    has(view, 'class="hidden"');
+    has(view, 'name="places_precision" value="full" checked');
+  });
+
   await selectLandingCases();
   cases += await require('./agents_contract_dom.js')(root);
   console.log(`DOM CASES: ${cases} passed`);

@@ -10484,7 +10484,13 @@ journal.cli.host.mcp.permission.permission.set = { $command_solstone_journal_mcp
 
 journal.cli.host.mcp.permission.permission.set.choose.a.category.from = { $command_solstone_journal_mcp_permission_set }: choose a category from { $categories }
 
+journal.cli.host.mcp.permission.permission.set.choose.places.precision = { $command_solstone_journal_mcp_permission_set }: choose a places detail level from { $levels }
+
+journal.cli.host.mcp.permission.permission.set.places.precision.requires.places = { $command_solstone_journal_mcp_permission_set }: { $flag } requires { $category_flag }
+
 journal.cli.host.mcp.permission.permission.show = { $command_solstone_journal_mcp_permission_show }: { $error }
+
+journal.cli.host.mcp.permission.places.precision = Places detail: { $precision }
 
 journal.cli.host.mcp.permission.read.no.read.permission.configured = Read:{ $space_7 }no read permission configured
 
@@ -10493,6 +10499,8 @@ journal.cli.host.mcp.permission.scope.facets = Read scope: facets ({ $facets })
 journal.cli.host.mcp.permission.scope.whole = Read scope: { $literal_whole_journal }
 
 journal.cli.host.mcp.permission.set.help = usage: { $syntax }{ $line_break }{ $spaces_43 }{ $syntax_4 }{ $line_break }{ $spaces_43 }{ $syntax_5 }{ $line_break }{ $line_break }Set what one connection may read.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_11 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_8 }a bearer-token connection, by its label{ $line_break }{ $spaces_2 }{ $option_11 }{ $spaces_4 }an { $term } connection, by its client id{ $line_break }{ $spaces_2 }{ $option_14 }{ $spaces_2 }with { $flag }, which grant, when one client id has several{ $line_break }{ $spaces_2 }{ $option_16 }{ $spaces_2 }a kind this connection may read (repeat for each kind){ $line_break }{ $spaces_2 }{ $option_17 }{ $spaces_8 }only this facet, by name; repeat for more (default: the whole journal){ $line_break }
+
+journal.cli.host.mcp.permission.set.help.places.precision = { $spaces_2 }{ $option }{ $spaces_2 }location detail when { $flag } is set: { $values } (default: { $default }){ $line_break }
 
 journal.cli.host.mcp.permission.set.mcp.read.permission.for.connection.generation = Set { $literal_mcp } read permission for connection { $connection } (generation { $generation }).
 
@@ -10666,9 +10674,17 @@ journal.cli.host.parser.mcp.permission.set.expected.argument.after.category = { 
 
 journal.cli.host.parser.mcp.permission.set.expected.argument.after.facet = { $command }: error: expected argument after { $flag }
 
+journal.cli.host.parser.mcp.permission.set.expected.argument.after.places.precision = { $command }: error: expected argument after { $flag }
+
 journal.cli.host.parser.mcp.permission.set.facet.name.must.be.nonempty = { $command }: error: facet name must be nonempty
 
 journal.cli.host.parser.mcp.permission.set.facet.name.must.be.valid.utf.n8.and.nonempty = { $command }: error: facet name must be valid { $term } and nonempty
+
+journal.cli.host.parser.mcp.permission.set.places.precision.must.be.nonempty = { $command }: error: places precision must be nonempty
+
+journal.cli.host.parser.mcp.permission.set.places.precision.must.be.valid.utf.n8.and.nonempty = { $command }: error: places precision must be valid { $term } and nonempty
+
+journal.cli.host.parser.mcp.permission.set.places.precision.repeated = { $command }: error: { $flag } may only be given once
 
 journal.cli.host.parser.mcp.permission.the.following.arguments.are.required.show.set.clear = { $command }: error: the following arguments are required: { $literal }, { $literal_2 }, { $literal_3 }
 

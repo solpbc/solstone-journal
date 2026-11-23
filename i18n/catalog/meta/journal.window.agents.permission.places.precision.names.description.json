@@ -1,0 +1,16 @@
+{
+  "description": "Consent option description for names-only location detail under places.",
+  "context": "Journal window and OAuth consent page. Description for names-only places option.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fcb7c23d796d4789bef0e54e1c8cf5e61cd9420d8a1617ad5fc2154c86c80dfe",
+  "max_length": 160,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

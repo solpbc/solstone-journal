@@ -1,0 +1,16 @@
+{
+  "description": "Consent option label for approximate (~1 km) location detail under places.",
+  "context": "Journal window and OAuth consent page. Label for ~1 km grid-cell places option.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b3ca8700126f404db0b3e116a5e8240f83b43676e873147d6a954eae356b3635",
+  "max_length": 48,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

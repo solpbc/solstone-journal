@@ -560,6 +560,7 @@ mod tests {
             ]),
             scope: ConnectionScope::WholeJournal,
             generation: 1,
+            places_precision: None,
         };
         let possible_names = ConnectionPossibleNames::new(journal.path(), &snapshot);
 
@@ -642,6 +643,7 @@ mod tests {
             ]),
             scope: ConnectionScope::WholeJournal,
             generation: 1,
+            places_precision: None,
         };
         let possible_names = ConnectionPossibleNames::new(journal.path(), &snapshot);
         let read = || {

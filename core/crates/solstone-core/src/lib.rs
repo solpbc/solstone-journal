@@ -106,6 +106,7 @@ mod mcp_endpoint_public_surface_tests {
                 .collect(),
                 scope: ConnectionScope::WholeJournal,
                 generation: 1,
+                places_precision: None,
             })
         );
 

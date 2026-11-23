@@ -751,6 +751,11 @@ fn mcp_subcommand_help(locale: &str, words: &[&str]) -> String {
                 "journal.cli.host.mcp.permission.set.help",
                 &[],
             );
+            help.push_str(&solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.host.mcp.permission.set.help.places.precision",
+                &[],
+            ));
             use std::fmt::Write as _;
             for kind in solstone_core_format::content::kinds::permission_kinds() {
                 let copy = kind
@@ -763,6 +768,33 @@ fn mcp_subcommand_help(locale: &str, words: &[&str]) -> String {
                     solstone_core_window_catalog::text(locale, copy.label_id),
                     solstone_core_window_catalog::text(locale, copy.description_id)
                 );
+                if kind.stored_word == "places" {
+                    for (value, label_id, desc_id) in [
+                        (
+                            "full",
+                            "journal.window.agents.permission.places.precision.full.label",
+                            "journal.window.agents.permission.places.precision.full.description",
+                        ),
+                        (
+                            "approx",
+                            "journal.window.agents.permission.places.precision.approx.label",
+                            "journal.window.agents.permission.places.precision.approx.description",
+                        ),
+                        (
+                            "names",
+                            "journal.window.agents.permission.places.precision.names.label",
+                            "journal.window.agents.permission.places.precision.names.description",
+                        ),
+                    ] {
+                        let _ = writeln!(
+                            help,
+                            "    {:<10} {}: {}",
+                            value,
+                            solstone_core_window_catalog::text(locale, label_id),
+                            solstone_core_window_catalog::text(locale, desc_id)
+                        );
+                    }
+                }
             }
             help
         }
@@ -1382,6 +1414,7 @@ pub enum McpPermissionCommand {
         target: McpTarget,
         categories: Vec<String>,
         facets: Vec<String>,
+        places_precision: Option<String>,
     },
     Clear {
         target: McpTarget,
@@ -4089,6 +4122,7 @@ fn parse_mcp_permission_set(
     let mut target_args = Vec::new();
     let mut categories = Vec::new();
     let mut facets = Vec::new();
+    let mut places_precision: Option<String> = None;
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         if arg == OsStr::new("--category") {
@@ -4153,6 +4187,51 @@ fn parse_mcp_permission_set(
                 )));
             }
             facets.push(value.to_owned());
+        } else if arg == OsStr::new("--places-precision") {
+            let value = iter.next().ok_or_else(|| {
+                McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.permission.set.expected.argument.after.places.precision",
+                    [("command", &copy.command)],
+                    || "expected argument after --places-precision".to_owned(),
+                ))
+            })?;
+            let value = value
+                .to_str()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    McpUsageError(copy.diagnostic(
+                        "journal.cli.host.parser.mcp.permission.set.places.precision.must.be.valid.utf.n8.and.nonempty",
+                        [("command", &copy.command)],
+                        || "places precision must be valid UTF-8 and nonempty".to_owned(),
+                    ))
+                })?;
+            if places_precision.is_some() {
+                return Err(McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.permission.set.places.precision.repeated",
+                    [("command", &copy.command)],
+                    || "--places-precision may only be given once".to_owned(),
+                )));
+            }
+            places_precision = Some(value.to_owned());
+        } else if let Some(value) = arg
+            .to_str()
+            .and_then(|value| value.strip_prefix("--places-precision="))
+        {
+            if value.is_empty() {
+                return Err(McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.permission.set.places.precision.must.be.nonempty",
+                    [("command", &copy.command)],
+                    || "places precision must be nonempty".to_owned(),
+                )));
+            }
+            if places_precision.is_some() {
+                return Err(McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.permission.set.places.precision.repeated",
+                    [("command", &copy.command)],
+                    || "--places-precision may only be given once".to_owned(),
+                )));
+            }
+            places_precision = Some(value.to_owned());
         } else {
             target_args.push(arg.clone());
         }
@@ -4169,6 +4248,7 @@ fn parse_mcp_permission_set(
         target,
         categories,
         facets,
+        places_precision,
     })
 }
 
@@ -10152,7 +10232,71 @@ mod tests {
                     },
                     categories: vec!["transcripts".to_owned()],
                     facets: vec!["work".to_owned()],
+                    places_precision: None,
                 }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "mcp",
+                "permission",
+                "set",
+                "--token",
+                "test-agent",
+                "--category",
+                "places",
+                "--places-precision",
+                "approx"
+            ])),
+            Ok(Command::Mcp(McpCommand::Permission(
+                McpPermissionCommand::Set {
+                    target: McpTarget::Token {
+                        label: "test-agent".to_owned(),
+                    },
+                    categories: vec!["places".to_owned()],
+                    facets: Vec::new(),
+                    places_precision: Some("approx".to_owned()),
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "mcp",
+                "permission",
+                "set",
+                "--token",
+                "test-agent",
+                "--category",
+                "places",
+                "--places-precision=names"
+            ])),
+            Ok(Command::Mcp(McpCommand::Permission(
+                McpPermissionCommand::Set {
+                    target: McpTarget::Token {
+                        label: "test-agent".to_owned(),
+                    },
+                    categories: vec!["places".to_owned()],
+                    facets: Vec::new(),
+                    places_precision: Some("names".to_owned()),
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "mcp",
+                "permission",
+                "set",
+                "--token",
+                "test-agent",
+                "--category",
+                "places",
+                "--places-precision",
+                "full",
+                "--places-precision",
+                "names"
+            ])),
+            Ok(Command::McpUsage(McpUsageError(
+                "--places-precision may only be given once".to_owned()
             )))
         );
         assert_eq!(

@@ -63,6 +63,7 @@ fn screen_text_only_advertises_search_and_fetch_not_transcripts() {
         categories: [AdmittedCategory::ScreenText].into_iter().collect(),
         scope: ConnectionScope::WholeJournal,
         generation: 1,
+        places_precision: None,
     };
     let tools = crate::registry::advertised_tools_list(
         journal.path(),

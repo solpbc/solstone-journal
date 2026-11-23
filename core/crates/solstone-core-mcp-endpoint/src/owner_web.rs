@@ -934,6 +934,7 @@ pub(crate) fn state_value_with_iface(
                 })
             })
             .collect::<Vec<_>>(),
+        "places_precision_options": places_precision_options_json(),
         "pairing": pairing.map(pairing_json),
     });
     // App containers and Windows use the maintained TLS loopback ingress.
@@ -952,6 +953,43 @@ pub(crate) fn state_value_with_iface(
         response["subscribe_url"] = json!(format!("{}/services/solstone-me", portal_origin()));
     }
     Ok(response)
+}
+
+/// Places precision tiers advertised to the owner Agents workspace.
+fn places_precision_options_json() -> Vec<Value> {
+    use solstone_core_convey_http::window_catalog::{ENGLISH, text};
+    use solstone_core_format::content::kinds::PlacesPrecision;
+    [
+        (
+            PlacesPrecision::Full,
+            "journal.window.agents.permission.places.precision.full.label",
+            "journal.window.agents.permission.places.precision.full.description",
+            true,
+        ),
+        (
+            PlacesPrecision::Approx,
+            "journal.window.agents.permission.places.precision.approx.label",
+            "journal.window.agents.permission.places.precision.approx.description",
+            false,
+        ),
+        (
+            PlacesPrecision::NamesOnly,
+            "journal.window.agents.permission.places.precision.names.label",
+            "journal.window.agents.permission.places.precision.names.description",
+            false,
+        ),
+    ]
+    .into_iter()
+    .map(|(tier, label_id, desc_id, is_default)| {
+        json!({
+            "value": tier.wire_value(),
+            "stored_word": tier.stored_word(),
+            "label": text(ENGLISH, label_id),
+            "description": text(ENGLISH, desc_id),
+            "default": is_default,
+        })
+    })
+    .collect()
 }
 
 /// The door a grant was made at, by the resource it is bound to.
@@ -2864,6 +2902,8 @@ struct PermissionBody {
     scope: String,
     #[serde(default)]
     facets: Vec<String>,
+    #[serde(default)]
+    places_precision: Option<String>,
 }
 
 async fn set_permission(
@@ -2913,9 +2953,28 @@ async fn set_permission(
             );
         }
     };
+    let places_precision = match body.places_precision.as_deref() {
+        Some(raw) => {
+            match solstone_core_format::content::kinds::PlacesPrecision::from_wire_value(raw) {
+                Some(tier) => Some(tier),
+                None => {
+                    return refusal(
+                        "permission_places_precision_invalid",
+                        "choose a supported places detail level",
+                        StatusCode::BAD_REQUEST,
+                    );
+                }
+            }
+        }
+        None => None,
+    };
     let key = format!("{kind}:{id}");
     let mut categories = body.categories;
     solstone_core_format::content::kinds::record_profile_pics_choice(&mut categories);
+    solstone_core_format::content::kinds::record_places_precision_choice(
+        &mut categories,
+        places_precision,
+    );
     match PermissionStore::open(&journal).set_permission(&key, ReadPermission { categories, scope })
     {
         Ok(permission) => Json(json!({"permission": permission})).into_response(),
@@ -5609,5 +5668,96 @@ mod tests {
                 .unwrap()
                 .starts_with("sha256:")
         );
+    }
+
+    #[tokio::test]
+    async fn set_permission_records_places_precision_and_rejects_unknown_levels() {
+        let dir = TempDir::new_in(crate::test_scratch()).unwrap();
+        let root = Arc::new(dir.path().to_path_buf());
+        let state_resp = state(Extension(Arc::clone(&root))).await;
+        assert_eq!(state_resp.status(), StatusCode::OK);
+        let state_bytes = axum::body::to_bytes(state_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let state: Value = serde_json::from_slice(&state_bytes).unwrap();
+        let opts = state["places_precision_options"].as_array().unwrap();
+        assert_eq!(opts.len(), 3);
+        assert_eq!(opts[0]["value"], "full");
+        assert_eq!(opts[0]["default"], true);
+        assert_eq!(opts[1]["value"], "approx");
+        assert_eq!(opts[2]["value"], "names");
+
+        // Omitting places_precision when enabling places defaults to Full.
+        let resp = set_permission(
+            Extension(Arc::clone(&root)),
+            Path(("bearer".to_owned(), "tok1".to_owned())),
+            Json(PermissionBody {
+                categories: vec!["places".to_owned()],
+                scope: "whole_journal".to_owned(),
+                facets: Vec::new(),
+                places_precision: None,
+            }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let rec = PermissionStore::open(&root)
+            .get_permission("bearer:tok1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            solstone_core_format::content::kinds::places_precision_admitted(
+                &rec.read.unwrap().categories
+            ),
+            Some(solstone_core_format::content::kinds::PlacesPrecision::Full)
+        );
+
+        // Explicit approx and names are persisted cleanly.
+        for (wire, expected) in [
+            (
+                "approx",
+                solstone_core_format::content::kinds::PlacesPrecision::Approx,
+            ),
+            (
+                "names",
+                solstone_core_format::content::kinds::PlacesPrecision::NamesOnly,
+            ),
+        ] {
+            let resp = set_permission(
+                Extension(Arc::clone(&root)),
+                Path(("bearer".to_owned(), "tok1".to_owned())),
+                Json(PermissionBody {
+                    categories: vec!["places".to_owned()],
+                    scope: "whole_journal".to_owned(),
+                    facets: Vec::new(),
+                    places_precision: Some(wire.to_owned()),
+                }),
+            )
+            .await;
+            assert_eq!(resp.status(), StatusCode::OK);
+            let rec = PermissionStore::open(&root)
+                .get_permission("bearer:tok1")
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                solstone_core_format::content::kinds::places_precision_admitted(
+                    &rec.read.unwrap().categories
+                ),
+                Some(expected)
+            );
+        }
+
+        // Invalid precision value is refused with 400.
+        let bad = set_permission(
+            Extension(Arc::clone(&root)),
+            Path(("bearer".to_owned(), "tok1".to_owned())),
+            Json(PermissionBody {
+                categories: vec!["places".to_owned()],
+                scope: "whole_journal".to_owned(),
+                facets: Vec::new(),
+                places_precision: Some("exact".to_owned()),
+            }),
+        )
+        .await;
+        assert_eq!(bad.status(), StatusCode::BAD_REQUEST);
     }
 }

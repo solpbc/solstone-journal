@@ -1075,3 +1075,34 @@ fn downgrade_hold_evaluation_denial_split() {
         crate::permissions::PermissionDecision::Snapshot(_)
     ));
 }
+
+#[test]
+fn places_precision_modifiers_deserialize_and_evaluate_cleanly_under_older_runtime() {
+    let temp = tempfile::TempDir::new_in(crate::test_scratch()).expect("temp dir");
+    let root = temp.path();
+    let store = crate::permissions::PermissionStore::open(root);
+    for modifier in ["places_full", "places_approx", "places_names"] {
+        store
+            .set_permission(
+                "bearer:places-downgrade",
+                crate::permissions::ReadPermission {
+                    categories: vec![
+                        "transcripts".to_owned(),
+                        "places".to_owned(),
+                        modifier.to_owned(),
+                    ],
+                    scope: crate::permissions::ReadScope::WholeJournal,
+                },
+            )
+            .expect("writes places precision permission");
+        // The older copied reader with #[serde(deny_unknown_fields)] parses cleanly
+        // and simply ignores unknown category strings rather than rejecting the file.
+        match evaluate_connection_read(root, "bearer:places-downgrade") {
+            PermissionDecision::Snapshot(old_snap) => {
+                assert!(old_snap.categories.contains(&AdmittedCategory::Transcripts));
+                assert_eq!(old_snap.scope, ConnectionScope::WholeJournal);
+            }
+            other => panic!("older runtime refused {modifier}: {other:?}"),
+        }
+    }
+}

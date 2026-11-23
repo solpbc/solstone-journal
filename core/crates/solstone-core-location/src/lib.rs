@@ -24,6 +24,7 @@ mod cache;
 pub mod day;
 mod day_display;
 pub mod fingerprint;
+pub mod h3_cell;
 pub mod install;
 pub mod old_imports;
 pub mod pack;

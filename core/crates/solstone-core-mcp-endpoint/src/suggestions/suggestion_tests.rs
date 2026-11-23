@@ -308,6 +308,7 @@ fn test_schema_and_dark_default() {
         .collect::<BTreeSet<_>>(),
         scope: ConnectionScope::WholeJournal,
         generation: 1,
+        places_precision: None,
     });
     let tools = advertised_tools_list(journal.path(), &perm_snapshot);
     let has_tool = tools["tools"]

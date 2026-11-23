@@ -9,7 +9,7 @@ use std::path::Path;
 
 use jiff::civil::{Date, Time};
 
-use crate::day::{DayLocation, Entry, LocalTime};
+use crate::day::{DayLocation, Entry, LocalTime, Point};
 use crate::places::PlaceStore;
 use crate::record::Precision;
 
@@ -19,7 +19,7 @@ const DAY_SECONDS: u32 = 24 * 60 * 60;
 type Ranked = (u8, std::cmp::Reverse<i64>);
 
 /// What sits beside one activity.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Beside {
     /// "your iphone", "your watch".
     pub device: String,
@@ -27,6 +27,10 @@ pub struct Beside {
     pub words: String,
     /// The place the spot belongs to, when the journal has worked one out.
     pub place_id: Option<String>,
+    /// The representative point for this clear entry, for callers whose
+    /// permission admits coordinates or low-resolution cells. Always absent
+    /// when any part of the entry touches a hidden place.
+    pub point: Option<Point>,
 }
 
 /// One day's location and the owner's places, read once for every activity
@@ -79,7 +83,7 @@ impl DayBeside {
         // hidden place never gives way to a weaker one beside it.
         Some((
             (rank(entry), std::cmp::Reverse(length)),
-            describe(day, &self.store, entry),
+            describe(day, &self.store, entry, Some(instant), None),
         ))
     }
 }
@@ -162,7 +166,7 @@ pub fn location_beside(
                 .is_some_and(|stream| entry.sources().iter().any(|source| source.stream == stream));
             (same_stream, rank(entry), std::cmp::Reverse(*length))
         })
-        .and_then(|(entry, _)| describe(day, store, entry))
+        .and_then(|(entry, _)| describe(day, store, entry, None, Some(middle)))
 }
 
 fn rank(entry: &Entry) -> u8 {
@@ -217,12 +221,27 @@ fn clock_on(time: &LocalTime, date: Date, outside: u32) -> Option<u32> {
 
 /// An entry recorded within reach of a hidden place, even in part, has no
 /// description: no name, no venue and no area.
-fn describe(day: &DayLocation, store: &PlaceStore, entry: &Entry) -> Option<Beside> {
+fn describe(
+    day: &DayLocation,
+    store: &PlaceStore,
+    entry: &Entry,
+    instant: Option<i64>,
+    middle_sec: Option<u32>,
+) -> Option<Beside> {
     if crate::projection::hidden_reach(store, entry) != crate::projection::Reach::Clear {
         return None;
     }
-    let (device, words, place_id) = match entry {
-        Entry::Readings { device, area, .. } => (*device, area.label()?, None),
+    let (device, words, place_id, point) = match entry {
+        Entry::Readings {
+            device,
+            area,
+            points,
+            times,
+            ..
+        } => {
+            let point = nearest_reading_point(day, points, times, instant, middle_sec);
+            (*device, area.label()?, None, point)
+        }
         Entry::Visit {
             device,
             area,
@@ -251,7 +270,12 @@ fn describe(day: &DayLocation, store: &PlaceStore, entry: &Entry) -> Option<Besi
                         .or_else(|| place.near.first().map(|near| format!("near {}", near.name)))
                 })
                 .or_else(|| area.label())?;
-            (*device, words, known.map(|place| place.id.clone()))
+            (
+                *device,
+                words,
+                known.map(|place| place.id.clone()),
+                Some(*point),
+            )
         }
         Entry::Unreadable { .. } => return None,
     };
@@ -259,7 +283,44 @@ fn describe(day: &DayLocation, store: &PlaceStore, entry: &Entry) -> Option<Besi
         device: day.device_phrase(device),
         words,
         place_id,
+        point,
     })
+}
+
+fn nearest_reading_point(
+    day: &DayLocation,
+    points: &[Point],
+    times: &[LocalTime],
+    instant: Option<i64>,
+    middle_sec: Option<u32>,
+) -> Option<Point> {
+    if points.is_empty() {
+        return None;
+    }
+    if let Some(target) = instant
+        && times.len() == points.len()
+        && let Some((index, _)) = times
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, time)| (time.utc.as_second() - target).abs())
+    {
+        return Some(points[index]);
+    }
+    if let Some(target_sec) = middle_sec
+        && times.len() == points.len()
+        && let Some(date) = solstone_core_time::parse_day(&day.day)
+        && let Some((index, _)) = times
+            .iter()
+            .enumerate()
+            .filter_map(|(index, time)| {
+                let sec = clock_on(time, date, 0).or_else(|| clock_on(time, date, DAY_SECONDS))?;
+                Some((index, sec.abs_diff(target_sec)))
+            })
+            .min_by_key(|(_, diff)| *diff)
+    {
+        return Some(points[index]);
+    }
+    points.get(points.len() / 2).copied()
 }
 
 #[cfg(test)]

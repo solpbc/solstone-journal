@@ -76,14 +76,53 @@ pub(super) fn consent_page(
         kind_choices = solstone_core_format::content::kinds::permission_kinds()
             .map(|kind| {
                 let copy = kind.permission_copy.expect("registered permissions have copy");
-                format!(
-                r#"<label class="check{}"><input type="checkbox" name="category" value="{}"{}> <strong>{}</strong><br><span class="muted">{}</span></label>"#,
-                if kind.option_of().is_some() { " option" } else { "" },
-                kind.stored_word,
-                checked(selection.categories.iter().any(|word| word == kind.stored_word)),
-                html_escape(&text(ENGLISH, copy.label_id)),
-                html_escape(&text(ENGLISH, copy.description_id)),
-                )
+                let mut row = format!(
+                    r#"<label class="check{}"><input type="checkbox" name="category" value="{}"{}> <strong>{}</strong><br><span class="muted">{}</span></label>"#,
+                    if kind.option_of().is_some() { " option" } else { "" },
+                    kind.stored_word,
+                    checked(selection.categories.iter().any(|word| word == kind.stored_word)),
+                    html_escape(&text(ENGLISH, copy.label_id)),
+                    html_escape(&text(ENGLISH, copy.description_id)),
+                );
+                if kind.stored_word == "places" {
+                    use solstone_core_format::content::kinds::PlacesPrecision;
+                    let options = [
+                        (
+                            PlacesPrecision::Full,
+                            "journal.window.agents.permission.places.precision.full.label",
+                            "journal.window.agents.permission.places.precision.full.description",
+                        ),
+                        (
+                            PlacesPrecision::Approx,
+                            "journal.window.agents.permission.places.precision.approx.label",
+                            "journal.window.agents.permission.places.precision.approx.description",
+                        ),
+                        (
+                            PlacesPrecision::NamesOnly,
+                            "journal.window.agents.permission.places.precision.names.label",
+                            "journal.window.agents.permission.places.precision.names.description",
+                        ),
+                    ]
+                    .into_iter()
+                    .map(|(tier, label_id, desc_id)| {
+                        format!(
+                            r#"<label class="check"><input type="radio" name="places_precision" value="{}"{}> <strong>{}</strong><br><span class="muted">{}</span></label>"#,
+                            tier.wire_value(),
+                            checked(selection.places_precision == tier),
+                            html(locale, label_id),
+                            html(locale, desc_id),
+                        )
+                    })
+                    .collect::<String>();
+                    row.push_str(&format!(
+                        r#"<fieldset class="option"><legend class="muted">{}</legend>{options}</fieldset>"#,
+                        html(
+                            locale,
+                            "journal.window.agents.permission.places.precision.heading"
+                        )
+                    ));
+                }
+                row
             })
             .collect::<String>(),
     );

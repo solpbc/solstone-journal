@@ -35355,6 +35355,60 @@
       "selector": null
     },
     {
+      "id": "journal.cli.host.mcp.permission.permission.set.choose.places.precision",
+      "resource": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e63686f6f73652e706c616365732e707265636973696f6e",
+      "namespace": "journal.cli.host.mcp.permission.permission.set.choose.places",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "levels",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "command_solstone_journal_mcp_permission_set",
+          "kind": "command",
+          "value": "solstone journal mcp permission set"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.host.mcp.permission.permission.set.places.precision.requires.places",
+      "resource": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e72657175697265732e706c61636573",
+      "namespace": "journal.cli.host.mcp.permission.permission.set.places.precision.requires",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "command_solstone_journal_mcp_permission_set",
+          "kind": "command",
+          "value": "solstone journal mcp permission set"
+        },
+        {
+          "name": "flag",
+          "kind": "flag",
+          "value": "--places-precision"
+        },
+        {
+          "name": "category_flag",
+          "kind": "command",
+          "value": "--category places"
+        }
+      ],
+      "selector": null
+    },
+    {
       "id": "journal.cli.host.mcp.permission.permission.show",
       "resource": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e73686f77",
       "namespace": "journal.cli.host.mcp.permission.permission",
@@ -35378,6 +35432,26 @@
           "value": "solstone journal mcp permission show"
         }
       ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.host.mcp.permission.places.precision",
+      "resource": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e706c616365732e707265636973696f6e",
+      "namespace": "journal.cli.host.mcp.permission.places",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "precision",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
       "selector": null
     },
     {
@@ -35530,6 +35604,49 @@
           "name": "option_17",
           "kind": "command",
           "value": "--facet FACET"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.host.mcp.permission.set.help.places.precision",
+      "resource": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7365742e68656c702e706c616365732e707265636973696f6e",
+      "namespace": "journal.cli.host.mcp.permission.set.help.places",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "spaces_2",
+          "kind": "whitespace",
+          "value": "  "
+        },
+        {
+          "name": "option",
+          "kind": "command",
+          "value": "--places-precision LEVEL"
+        },
+        {
+          "name": "flag",
+          "kind": "command",
+          "value": "--category places"
+        },
+        {
+          "name": "values",
+          "kind": "accepted-input",
+          "value": "full, approx, names"
+        },
+        {
+          "name": "default",
+          "kind": "accepted-input",
+          "value": "full"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
         }
       ],
       "selector": null
@@ -37913,6 +38030,32 @@
       "selector": null
     },
     {
+      "id": "journal.cli.host.parser.mcp.permission.set.expected.argument.after.places.precision",
+      "resource": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e65787065637465642e617267756d656e742e61667465722e706c616365732e707265636973696f6e",
+      "namespace": "journal.cli.host.parser.mcp.permission.set.expected.argument.after.places",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "command",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "flag",
+          "kind": "flag",
+          "value": "--places-precision"
+        }
+      ],
+      "selector": null
+    },
+    {
       "id": "journal.cli.host.parser.mcp.permission.set.facet.name.must.be.nonempty",
       "resource": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e66616365742e6e616d652e6d7573742e62652e6e6f6e656d707479",
       "namespace": "journal.cli.host.parser.mcp.permission.set.facet.name.must.be",
@@ -37954,6 +38097,78 @@
           "name": "term",
           "kind": "mark-word",
           "value": "UTF-8"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.host.parser.mcp.permission.set.places.precision.must.be.nonempty",
+      "resource": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e6d7573742e62652e6e6f6e656d707479",
+      "namespace": "journal.cli.host.parser.mcp.permission.set.places.precision.must.be",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "command",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.host.parser.mcp.permission.set.places.precision.must.be.valid.utf.n8.and.nonempty",
+      "resource": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479",
+      "namespace": "journal.cli.host.parser.mcp.permission.set.places.precision.must.be.valid.utf.n8.and",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "command",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "term",
+          "kind": "mark-word",
+          "value": "UTF-8"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.host.parser.mcp.permission.set.places.precision.repeated",
+      "resource": "m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e7265706561746564",
+      "namespace": "journal.cli.host.parser.mcp.permission.set.places.precision",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "command",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "flag",
+          "kind": "flag",
+          "value": "--places-precision"
         }
       ],
       "selector": null

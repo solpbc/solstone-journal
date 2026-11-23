@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser mcp permission set places precision must be valid utf n8 and nonempty.",
+  "context": "Terminal diagnostic for parser mcp permission set places precision must be valid utf n8 and nonempty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9221e76f953fb0fe1eab7f6c31909597bc5919c15677cb215aad5556d8e49bda",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "term",
+      "kind": "mark-word",
+      "value": "UTF-8"
+    }
+  ]
+}

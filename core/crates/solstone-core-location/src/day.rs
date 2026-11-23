@@ -166,6 +166,8 @@ pub enum Entry {
         first: LocalTime,
         last: LocalTime,
         points: Vec<Point>,
+        /// Timestamp of each reading, parallel to `points`.
+        times: Vec<LocalTime>,
         sources: Vec<SourceRef>,
     },
     /// A visit the iPhone reported.
@@ -984,6 +986,7 @@ fn assemble(
                 Entry::Readings {
                     last,
                     points,
+                    times,
                     sources,
                     ..
                 },
@@ -992,6 +995,7 @@ fn assemble(
             {
                 *last = observation.time;
                 points.push(observation.point);
+                times.push(observation.time);
                 add_line(
                     sources,
                     &located_segments,
@@ -1019,6 +1023,7 @@ fn assemble(
                 first: observation.time,
                 last: observation.time,
                 points: vec![observation.point],
+                times: vec![observation.time],
                 sources,
             },
             run_key,

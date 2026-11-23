@@ -1,0 +1,48 @@
+{
+  "description": "Terminal help option line for --places-precision on mcp permission set.",
+  "context": "Terminal help and usage for mcp permission set places precision option.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d66c517fb05c2a0a19e9ce546465d3382f82e9fd822b60dce195ccbe5df5e154",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spaces_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "option",
+      "kind": "command",
+      "value": "--places-precision LEVEL"
+    },
+    {
+      "name": "flag",
+      "kind": "command",
+      "value": "--category places"
+    },
+    {
+      "name": "values",
+      "kind": "accepted-input",
+      "value": "full, approx, names"
+    },
+    {
+      "name": "default",
+      "kind": "accepted-input",
+      "value": "full"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

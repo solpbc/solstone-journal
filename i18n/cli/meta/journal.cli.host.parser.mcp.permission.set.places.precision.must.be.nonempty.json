@@ -1,0 +1,21 @@
+{
+  "description": "Terminal diagnostic for parser mcp permission set places precision must be nonempty.",
+  "context": "Terminal diagnostic for parser mcp permission set places precision must be nonempty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "049c9d615ffe8e5743c726c4f6268fe7d9229b25672ab02b3f25c185025767b2",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

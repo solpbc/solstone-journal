@@ -1,0 +1,33 @@
+{
+  "description": "Journal host output when --places-precision is given without --category places.",
+  "context": "Journal host output for mcp permission set places precision requires places.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d4e4db3fa9ed76926ee7315fdb3de26f7e2e19fd200b0a09fa77ff2d163b5445",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_permission_set",
+      "kind": "command",
+      "value": "solstone journal mcp permission set"
+    },
+    {
+      "name": "flag",
+      "kind": "flag",
+      "value": "--places-precision"
+    },
+    {
+      "name": "category_flag",
+      "kind": "command",
+      "value": "--category places"
+    }
+  ]
+}

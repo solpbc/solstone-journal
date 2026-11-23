@@ -3598,7 +3598,13 @@ m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d6973736
 
 m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e63686f6f73652e612e63617465676f72792e66726f6d = { "solstone journal mcp permission set" }: choose a category from { $categories }
 
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e63686f6f73652e706c616365732e707265636973696f6e = { "solstone journal mcp permission set" }: choose a places detail level from { $levels }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e72657175697265732e706c61636573 = { "solstone journal mcp permission set" }: { "--places-precision" } requires { "--category places" }
+
 m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e73686f77 = { "solstone journal mcp permission show" }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e706c616365732e707265636973696f6e = Places detail: { $precision }
 
 m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e726561642e6e6f2e726561642e7065726d697373696f6e2e636f6e66696775726564 = Read:{ "       " }no read permission configured
 
@@ -3607,6 +3613,8 @@ m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e73636f70652e666
 m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e73636f70652e77686f6c65 = Read scope: { "whole_journal" }
 
 m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7365742e68656c70 = usage: { "solstone journal mcp permission set [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])" }{ "\u000a" }{ "                                           " }{ "--category CATEGORY [--category CATEGORY ...]" }{ "\u000a" }{ "                                           " }{ "[--facet FACET ...]" }{ "\u000a" }{ "\u000a" }Set what one connection may read.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "           " }show this help message and exit{ "\u000a" }{ "  " }{ "--token LABEL" }{ "        " }a bearer-token connection, by its label{ "\u000a" }{ "  " }{ "--oauth CLIENT_ID" }{ "    " }an { "OAuth" } connection, by its client id{ "\u000a" }{ "  " }{ "--created TIMESTAMP" }{ "  " }with { "--oauth" }, which grant, when one client id has several{ "\u000a" }{ "  " }{ "--category CATEGORY" }{ "  " }a kind this connection may read (repeat for each kind){ "\u000a" }{ "  " }{ "--facet FACET" }{ "        " }only this facet, by name; repeat for more (default: the whole journal){ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7365742e68656c702e706c616365732e707265636973696f6e = { "  " }{ "--places-precision LEVEL" }{ "  " }location detail when { "--category places" } is set: { "full, approx, names" } (default: { "full" }){ "\u000a" }
 
 m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7365742e6d63702e726561642e7065726d697373696f6e2e666f722e636f6e6e656374696f6e2e67656e65726174696f6e = Set { "MCP" } read permission for connection { $connection } (generation { $generation }).
 
@@ -3780,9 +3788,17 @@ m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7
 
 m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e65787065637465642e617267756d656e742e61667465722e6661636574 = { $command }: error: expected argument after { "--facet" }
 
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e65787065637465642e617267756d656e742e61667465722e706c616365732e707265636973696f6e = { $command }: error: expected argument after { "--places-precision" }
+
 m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e66616365742e6e616d652e6d7573742e62652e6e6f6e656d707479 = { $command }: error: facet name must be nonempty
 
 m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e66616365742e6e616d652e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479 = { $command }: error: facet name must be valid { "UTF-8" } and nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e6d7573742e62652e6e6f6e656d707479 = { $command }: error: places precision must be nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479 = { $command }: error: places precision must be valid { "UTF-8" } and nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e706c616365732e707265636973696f6e2e7265706561746564 = { $command }: error: { "--places-precision" } may only be given once
 
 m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7468652e666f6c6c6f77696e672e617267756d656e74732e6172652e72657175697265642e73686f772e7365742e636c656172 = { $command }: error: the following arguments are required: { "show" }, { "set" }, { "clear" }
 

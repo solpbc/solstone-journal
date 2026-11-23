@@ -346,7 +346,7 @@ fn naming(
 
 /// How much of an entry lies within reach of a place the owner hid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Reach {
+pub enum Reach {
     Clear,
     /// Some of a run of readings, but not all of it.
     Part,
@@ -355,7 +355,7 @@ pub(crate) enum Reach {
 
 /// Whether an entry was recorded within reach of a hidden place: a visit or
 /// stay by its point, a run of readings by each of its readings.
-pub(crate) fn hidden_reach(store: &PlaceStore, entry: &Entry) -> Reach {
+pub fn hidden_reach(store: &PlaceStore, entry: &Entry) -> Reach {
     let hides = |point: &Point| store.hides(point.latitude, point.longitude);
     match entry {
         Entry::Readings { points, .. } => {

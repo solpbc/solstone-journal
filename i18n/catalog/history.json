@@ -7830,6 +7830,117 @@
       "selector": null
     },
     {
+      "id": "journal.window.agents.permission.places.precision.approx.description",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e706c616365732e707265636973696f6e2e617070726f782e6465736372697074696f6e",
+      "namespace": "journal.window.agents.permission.places.precision.approx",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.permission.places.precision.approx.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e706c616365732e707265636973696f6e2e617070726f782e6c6162656c",
+      "namespace": "journal.window.agents.permission.places.precision.approx",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.permission.places.precision.full.description",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e706c616365732e707265636973696f6e2e66756c6c2e6465736372697074696f6e",
+      "namespace": "journal.window.agents.permission.places.precision.full",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.permission.places.precision.full.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e706c616365732e707265636973696f6e2e66756c6c2e6c6162656c",
+      "namespace": "journal.window.agents.permission.places.precision.full",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.permission.places.precision.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e706c616365732e707265636973696f6e2e68656164696e67",
+      "namespace": "journal.window.agents.permission.places.precision",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.permission.places.precision.names.description",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e706c616365732e707265636973696f6e2e6e616d65732e6465736372697074696f6e",
+      "namespace": "journal.window.agents.permission.places.precision.names",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.permission.places.precision.names.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e706c616365732e707265636973696f6e2e6e616d65732e6c6162656c",
+      "namespace": "journal.window.agents.permission.places.precision.names",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.permission.places.summary",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e706c616365732e73756d6d617279",
+      "namespace": "journal.window.agents.permission.places",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "label",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "precision",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.agents.permission.whole.journal.categories",
       "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e77686f6c652e6a6f75726e616c2e63617465676f72696573",
       "namespace": "journal.window.agents.permission.whole.journal",

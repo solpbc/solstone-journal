@@ -1071,7 +1071,7 @@ pub(crate) fn execute_list(
     // The calendar and day location belong to no facet.
     let whole_journal = matches!(snapshot.scope, ConnectionScope::WholeJournal);
     let sees_calendar = whole_journal && snapshot.categories.contains(&AdmittedCategory::Calendar);
-    let sees_places = whole_journal && snapshot.categories.contains(&AdmittedCategory::Places);
+    let places_precision = snapshot.places_precision();
     let mut calendars = BTreeMap::new();
     let mut locations = BTreeMap::new();
 
@@ -1131,14 +1131,14 @@ pub(crate) fn execute_list(
                     activity["beside"] = Value::Array(beside);
                 }
                 // Where a device was at its middle, as that device timed it.
-                if sees_places
+                if let Some(precision) = places_precision
                     && let Some(beside) = solstone_core_location::place_at(
                         journal_root,
                         span.0 + (span.1 - span.0) / 2,
                         &mut locations,
                     )
                 {
-                    activity["place"] = json!({"device": beside.device, "words": beside.words});
+                    activity["place"] = crate::places_view::beside_place_json(&beside, precision);
                 }
             }
             activities.push(activity);
@@ -1210,13 +1210,13 @@ pub(crate) fn execute_list(
                     activity["scheduled"] = Value::Array(scheduled);
                 }
             }
-            if sees_places {
+            if let Some(precision) = places_precision {
                 let location = locations.entry(item.day.clone()).or_insert_with(|| {
                     solstone_core_location::DayBeside::read(journal_root, &item.day)
                 });
                 let stream = item.record.get("stream").and_then(Value::as_str);
                 if let Some(beside) = location.beside(span, stream) {
-                    activity["place"] = json!({"device": beside.device, "words": beside.words});
+                    activity["place"] = crate::places_view::beside_place_json(&beside, precision);
                 }
             }
         }

@@ -19,7 +19,9 @@ use solstone_core_indexer_query::AdmittedCategory;
 use super::ToolError;
 use crate::dispatch::{DispatchPrincipal, available_facets, codec};
 use crate::permissions::ConnectionReadSnapshot;
-use crate::references::{ActivityReference, ReferenceKind, ReferenceTarget, WeekRangeCursor};
+use crate::references::{
+    ActivityReference, LocationDayReference, ReferenceKind, ReferenceTarget, WeekRangeCursor,
+};
 use crate::registry::category_token;
 use crate::segment_links::{LinkSubject, LiveTranscriptPages, issue_segment_links};
 
@@ -756,10 +758,10 @@ fn project_sunday(
         let mut places = BTreeMap::new();
         let mut places_note = None;
         if include.contains(&AdmittedCategory::Places)
-            && snapshot.categories.contains(&AdmittedCategory::Places)
+            && let Some(precision) = snapshot.places_precision()
         {
-            match location_documents(journal, &day_keys) {
-                Some(documents) => places = documents,
+            match week_places_summaries(journal, principal, snapshot, &served_days, precision) {
+                Some(summaries) => places = summaries,
                 None => places_note = Some(ToolError::FileUnreadable.agent_message()),
             }
         }
@@ -847,6 +849,26 @@ fn project_sunday(
     }
     if body_withheld {
         value["body_note"] = json!(crate::body_source::BODY_NOT_GRANTED);
+    }
+    if include.contains(&AdmittedCategory::Places)
+        && let Some(precision) = snapshot.places_precision()
+    {
+        value["places_precision"] = json!(precision.wire_value());
+        let today = solstone_core_time::day_key(now.date());
+        if let Some(roster) = crate::places_view::build_places_roster(
+            journal,
+            Some(&start_day),
+            Some(&end_day),
+            &today,
+            precision,
+            None,
+            None,
+        ) {
+            value["places"] = Value::Array(roster.items);
+            if roster.truncated {
+                value["places_truncated"] = Value::Bool(true);
+            }
+        }
     }
 
     Ok(WeekRead {
@@ -1031,7 +1053,7 @@ fn build_day_summary(
     include: &BTreeSet<AdmittedCategory>,
     body_days: &mut BTreeMap<String, Value>,
     body_summary_note: Option<&'static str>,
-    places: &mut BTreeMap<String, String>,
+    places: &mut BTreeMap<String, Value>,
     places_note: Option<&'static str>,
     people: BTreeSet<String>,
     kind_summaries: &mut BTreeMap<AdmittedCategory, crate::dispatch::WeekKindSummaries>,
@@ -1057,15 +1079,9 @@ fn build_day_summary(
                 AdmittedCategory::Places => {
                     if let Some(note) = places_note {
                         json!({"note": note})
-                    } else if let Some(document) = places.remove(day) {
+                    } else if let Some(day_places) = places.remove(day) {
                         targets.push(format!("location:{day}"));
-                        let mut rows = document.lines().filter_map(|line| line.strip_prefix("- "));
-                        let entries: Vec<String> = rows
-                            .by_ref()
-                            .take(4)
-                            .map(|line| line.chars().take(240).collect())
-                            .collect();
-                        json!({"items": entries, "more": rows.next().is_some()})
+                        day_places
                     } else {
                         json!({"items": []})
                     }
@@ -1407,22 +1423,45 @@ fn project_range_with_limits(
     }
     let mut places = BTreeMap::new();
     let mut places_note = None;
+    let places_precision = if include.contains(&AdmittedCategory::Places) {
+        snapshot.places_precision()
+    } else {
+        None
+    };
     if !candidate_day_keys.is_empty()
-        && include.contains(&AdmittedCategory::Places)
-        && snapshot.categories.contains(&AdmittedCategory::Places)
+        && let Some(precision) = places_precision
     {
-        match location_documents(journal, &candidate_day_keys) {
-            Some(documents) => places = documents,
+        match week_places_summaries(journal, principal, snapshot, &candidate_day_keys, precision) {
+            Some(summaries) => places = summaries,
             None => places_note = Some(ToolError::FileUnreadable.agent_message()),
         }
     }
+    let places_roster = if cursor.is_none()
+        && let Some(precision) = places_precision
+    {
+        let today_key = solstone_core_time::day_key(today);
+        crate::places_view::build_places_roster(
+            journal,
+            Some(day_from),
+            Some(&effective_end_day),
+            &today_key,
+            precision,
+            None,
+            None,
+        )
+    } else {
+        None
+    };
     let mut kind_summaries =
         prefetch_kind_summaries(journal, principal, snapshot, &candidate_day_keys, include);
 
     let mut days = Vec::new();
     let mut served_weeks = BTreeSet::new();
     let mut extra_targets = Vec::new();
-    let mut page_bytes: usize = 0;
+    let mut page_bytes: usize = places_roster
+        .as_ref()
+        .and_then(|roster| serde_json::to_string(&roster.items).ok())
+        .map_or(0, |s| s.len());
     let mut last_served_day: Option<String> = None;
     let mut resume_date: Option<Date> = None;
 
@@ -1538,17 +1577,55 @@ fn project_range_with_limits(
         .chain(extra_targets)
         .collect();
     let count = days.len();
-    let value = json!({
+    let mut value = json!({
         "range": {"start": day_from, "end": effective_end_day},
         "days": days,
         "next_cursor": next_cursor,
     });
+    if let Some(precision) = places_precision {
+        value["places_precision"] = json!(precision.wire_value());
+    }
+    if let Some(roster) = places_roster {
+        value["places"] = Value::Array(roster.items);
+        if roster.truncated {
+            value["places_truncated"] = Value::Bool(true);
+        }
+    }
 
     Ok(WeekRead {
         value,
         count,
         targets,
     })
+}
+
+fn week_places_summaries(
+    journal: &Path,
+    principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    days: &[String],
+    precision: solstone_core_format::content::kinds::PlacesPrecision,
+) -> Option<BTreeMap<String, Value>> {
+    let (store, views) = admitted_locations(journal, days)?;
+    let mut out = BTreeMap::new();
+    for day in views {
+        let day_key = day.day.clone();
+        let reference = codec()
+            .mint(
+                principal.connection,
+                snapshot.generation,
+                ReferenceTarget::LocationDay(LocationDayReference {
+                    day: day_key.clone(),
+                }),
+            )
+            .ok();
+        if let Some(summary) =
+            crate::places_view::build_week_day_places(&store, &day, precision, reference)
+        {
+            out.insert(day_key, summary);
+        }
+    }
+    Some(out)
 }
 
 /// Apply the map's live hide rules rather than serving a stale indexed place.

@@ -1,0 +1,16 @@
+{
+  "description": "Consent option label for full location detail under places.",
+  "context": "Journal window and OAuth consent page. Label for full-precision places option.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3be016738830e0ac0f6bd12356ba3b6891d5e47f665ce6f43338981bc2dc45bb",
+  "max_length": 48,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

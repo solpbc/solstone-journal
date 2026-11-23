@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output showing the effective places detail level for a connection.",
+  "context": "Journal host output for mcp permission show places precision.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "precision",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4f00ae6588bd42c357ca821cd4d11f3708dbeeca0724824e2c8e690cc7902e95",
+  "max_length": 96,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

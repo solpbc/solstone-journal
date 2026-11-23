@@ -1,0 +1,16 @@
+{
+  "description": "Consent heading for location detail options under places in the journal's agents view and OAuth consent page.",
+  "context": "Journal window and OAuth consent page. Heading above the three places location-detail radio options.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "88ae89d4fd2f38a8a37795ace01a3f2cb97b4aedd40e052580975601ec30dfe4",
+  "max_length": 80,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

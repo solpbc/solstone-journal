@@ -429,6 +429,7 @@ mod tests {
                 .collect::<BTreeSet<_>>(),
                 scope: ConnectionScope::WholeJournal,
                 generation: 1,
+                places_precision: None,
             }),
         );
         let names = result["tools"]

@@ -314,6 +314,15 @@ solstone-core-nvattest-authority = { path = "crates/solstone-core-nvattest-autho
 # container).
 jiff = { version = "1.0.0", features = ["serde", "tzdb-bundle-always"] }
 glob = "0.3.3"
+# H3 resolution-8 spatial indexing for low-resolution (~1 km) agent location.
+# Release-rail lenses: `h3o` 0.11.1 is BSD-3-Clause; `default-features = false`
+# adds only h3o-bit (BSD-3-Clause), float_eq (MIT OR Apache-2.0), ordered-float
+# (MIT), and libm (MIT), plus already-locked either and num-traits (keeping std
+# / ahash / geo / serde / rayon off). Pure Rust with no build.rs, C/C++ or FFI
+# step, so musl x86_64/aarch64 and iOS/macOS cross targets stay eligible and
+# PORTING.md native-dependency proof does not apply. Package MSRV is below
+# workspace rust-version 1.95. Licenses are all on core/deny.toml's allow list.
+h3o = { version = "=0.11.1", default-features = false }
 hdbscan = { version = "0.12.0", default-features = false, features = ["serial"] }
 image = { version = "0.25.9", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 log = "0.4.29"

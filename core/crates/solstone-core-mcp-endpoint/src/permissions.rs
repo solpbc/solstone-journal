@@ -93,6 +93,27 @@ pub struct ConnectionReadSnapshot {
     pub categories: BTreeSet<AdmittedCategory>,
     pub scope: ConnectionScope,
     pub generation: u64,
+    pub places_precision: Option<solstone_core_format::content::kinds::PlacesPrecision>,
+}
+
+impl ConnectionReadSnapshot {
+    /// Effective location precision for this connection. Requires both whole-journal
+    /// scope and the `places` permission; defaults safely to `NamesOnly` if a
+    /// snapshot carries `Places` without an explicit precision.
+    #[must_use]
+    pub fn places_precision(
+        &self,
+    ) -> Option<solstone_core_format::content::kinds::PlacesPrecision> {
+        if !matches!(self.scope, ConnectionScope::WholeJournal)
+            || !self.categories.contains(&AdmittedCategory::Places)
+        {
+            return None;
+        }
+        Some(
+            self.places_precision
+                .unwrap_or(solstone_core_format::content::kinds::PlacesPrecision::NamesOnly),
+        )
+    }
 }
 
 /// Resolve owner-facing declared facet names to the stable identifiers stored
@@ -329,10 +350,18 @@ pub fn evaluate_connection_read(journal_root: &Path, connection_key: &str) -> Pe
             ids: ids.iter().cloned().collect(),
         },
     };
+    let places_precision = if matches!(scope, ConnectionScope::WholeJournal)
+        && categories.contains(&AdmittedCategory::Places)
+    {
+        solstone_core_format::content::kinds::places_precision_admitted(&read.categories)
+    } else {
+        None
+    };
     PermissionDecision::Snapshot(ConnectionReadSnapshot {
         categories,
         scope,
         generation: record.generation,
+        places_precision,
     })
 }
 
@@ -797,6 +826,7 @@ mod tests {
                 categories: std::collections::BTreeSet::new(),
                 scope: ConnectionScope::WholeJournal,
                 generation: 1,
+                places_precision: None,
             })
         );
     }
@@ -825,6 +855,7 @@ mod tests {
                     ids: ["facet-stable-a".to_owned()].into_iter().collect(),
                 },
                 generation: 1,
+                places_precision: None,
             })
         );
     }
@@ -934,6 +965,7 @@ mod tests {
                 .collect(),
                 scope: ConnectionScope::WholeJournal,
                 generation: 1,
+                places_precision: None,
             })
         );
 
@@ -980,5 +1012,68 @@ mod tests {
                 .generation,
             1
         );
+    }
+
+    #[test]
+    fn places_precision_evaluates_safely_across_tiers_legacy_and_scope() {
+        use solstone_core_format::content::kinds::PlacesPrecision;
+        let temp = TempDir::new_in(crate::test_scratch()).expect("temp dir");
+        let store = PermissionStore::open(temp.path());
+        for (words, scope, expected) in [
+            (
+                vec!["places"],
+                ReadScope::WholeJournal,
+                Some(PlacesPrecision::NamesOnly),
+            ),
+            (
+                vec!["places", "places_full"],
+                ReadScope::WholeJournal,
+                Some(PlacesPrecision::Full),
+            ),
+            (
+                vec!["places", "places_approx"],
+                ReadScope::WholeJournal,
+                Some(PlacesPrecision::Approx),
+            ),
+            (
+                vec!["places", "places_names"],
+                ReadScope::WholeJournal,
+                Some(PlacesPrecision::NamesOnly),
+            ),
+            (
+                vec!["places", "places_full", "places_approx"],
+                ReadScope::WholeJournal,
+                Some(PlacesPrecision::Approx),
+            ),
+            (
+                vec!["transcripts", "places_full"],
+                ReadScope::WholeJournal,
+                None,
+            ),
+            (
+                vec!["places", "places_full"],
+                ReadScope::Facets {
+                    ids: vec!["facet-a".to_owned()],
+                },
+                None,
+            ),
+        ] {
+            store
+                .set_permission(
+                    "bearer:places-tier",
+                    ReadPermission {
+                        categories: words.iter().map(|w| (*w).to_owned()).collect(),
+                        scope,
+                    },
+                )
+                .unwrap();
+            let PermissionDecision::Snapshot(snap) =
+                evaluate_connection_read(temp.path(), "bearer:places-tier")
+            else {
+                panic!("enforceable snapshot");
+            };
+            assert_eq!(snap.places_precision, expected, "words={words:?}");
+            assert_eq!(snap.places_precision(), expected, "words={words:?}");
+        }
     }
 }

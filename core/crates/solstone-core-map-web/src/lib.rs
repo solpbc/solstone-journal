@@ -497,6 +497,7 @@ pub(crate) fn entry_json(entry: &Entry, store: &PlaceStore, locale: &str) -> Val
             last,
             points,
             sources,
+            ..
         } => json!({
             "kind": "readings",
             "device": device,

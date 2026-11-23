@@ -3621,6 +3621,7 @@ fn link_checks_stay_within_budget_and_more_segments_reflects_readable_segments()
         categories,
         scope: ConnectionScope::WholeJournal,
         generation: 1,
+        places_precision: None,
     };
 
     let subject = LinkSubject {
@@ -3707,6 +3708,7 @@ fn link_checks_stay_within_budget_and_more_segments_reflects_readable_segments()
             ids: BTreeSet::from([FACET_A.to_owned()]),
         },
         generation: 1,
+        places_precision: None,
     };
     let subject_budget1 = LinkSubject {
         path: act_path2,
@@ -3757,6 +3759,7 @@ fn no_links_without_the_transcripts_grant() {
         categories: cats_with_tr,
         scope: ConnectionScope::WholeJournal,
         generation: 1,
+        places_precision: None,
     };
     let sub_tr = LinkSubject {
         path: act_path,
@@ -3788,6 +3791,7 @@ fn no_links_without_the_transcripts_grant() {
         categories: cats_no_tr,
         scope: ConnectionScope::WholeJournal,
         generation: 1,
+        places_precision: None,
     };
     let sub_no_tr = LinkSubject {
         path: act_path,
@@ -12041,6 +12045,7 @@ fn segment_scope_with_an_unreadable_facet_is_undecided() {
             ids: [FACET_A.to_owned()].into_iter().collect(),
         },
         generation: 1,
+        places_precision: None,
     };
     let scope = |segment: &str| {
         crate::may_see::segment_scope(journal.path(), &snapshot, day, "default", segment)
@@ -17675,9 +17680,27 @@ fn week_summaries_and_typed_find_share_the_live_kind_and_facet_boundary() {
     assert_eq!(range_week["days"][0]["link"], week["days"][0]["link"]);
     assert_eq!(range_week["days"][0]["summary"]["body"], summary["body"]);
     assert_eq!(
-        range_week["days"][0]["summary"]["places"],
-        summary["places"]
+        range_week["days"][0]["summary"]["places"]["items"],
+        summary["places"]["items"]
     );
+    assert_eq!(
+        range_week["days"][0]["summary"]["places"]["more"],
+        summary["places"]["more"]
+    );
+    assert!(
+        summary["places"]["reference"]
+            .as_str()
+            .is_some_and(|r| !r.is_empty()),
+        "{summary}"
+    );
+    let fetched_day_from_week = probe(
+        &journal,
+        "fetch",
+        json!({"reference": summary["places"]["reference"]}),
+    )
+    .unwrap();
+    assert_eq!(fetched_day_from_week["content_kind"], "places");
+    assert_eq!(fetched_day_from_week["places_precision"], "names");
     assert_eq!(
         range_week["days"][0]["summary"]["photos"]["count"],
         summary["photos"]["count"]
@@ -21024,5 +21047,530 @@ fn forced_unknown_and_video_index_rows_fail_closed_across_search_fetch_and_label
             matches!(err, DispatchError::Tool(ToolError::ReferenceNotFound)),
             "fetch must refuse forced row {rel}, got {err:?}"
         );
+    }
+}
+
+#[test]
+fn places_precision_tiers_roster_week_cap_dedup_hidden_suppression_and_tools_list_invariance() {
+    use solstone_core_location::places::{Alias, Place, PlaceStore};
+
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    fs::create_dir_all(root.join("config")).unwrap();
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"identity":{"timezone":"UTC"}}"#,
+    )
+    .unwrap();
+    // One activity during the Westminster visit (10:00-11:30 UTC) and one during
+    // the hidden visit (16:00-16:45 UTC) to verify activity.place precision + hiding.
+    write_activity_line(
+        root,
+        "alpha",
+        "20260308",
+        "act_westminster",
+        "Morning hearing",
+        200,
+        Some("work"),
+        Some(&["101500_300"]),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    write_activity_line(
+        root,
+        "alpha",
+        "20260308",
+        "act_hidden_stop",
+        "Afternoon errand",
+        201,
+        Some("work"),
+        Some(&["161000_300"]),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    // Seed two days with named places, >4 location entries on day1, a transit reading,
+    // an unnamed visit, a hidden place visit, and a reading run partially crossing the hidden place.
+    let day1 = "20260308";
+    let day2 = "20260309";
+    let header = r#"{"accuracy":"full","fix_count":1,"gap":false,"kind":"location","platform":"ios","schema":"solstone.location.segment/1","source":"location","tier":"balanced"}"#;
+
+    let write_loc = |day: &str, seg: &str, lines: &[&str]| {
+        let dir = root
+            .join("chronicle")
+            .join(day)
+            .join("phone_mobile-segment")
+            .join(seg);
+        fs::create_dir_all(&dir).unwrap();
+        let mut body = String::from(header);
+        body.push('\n');
+        for line in lines {
+            body.push_str(line);
+            body.push('\n');
+        }
+        fs::write(dir.join("location.jsonl"), body).unwrap();
+    };
+
+    // Visible place A (home: London 51.515, -0.0815), visible place B (The Bell: 51.5131, -0.1000),
+    // hidden place H (Stratford secret: 52.1939, -1.7080), unnamed visit (Westminster: 51.4999, -0.1254),
+    // transit fix (Slough A40: 51.592475, -0.61325).
+    write_loc(
+        day1,
+        "070000_300",
+        &[
+            r#"{"arrival":"2026-03-08T07:00:00Z","departure":"2026-03-08T08:30:00Z","h_acc":12,"lat":51.515,"lon":-0.0815,"schema":"solstone.location.visit/1"}"#,
+        ],
+    );
+    write_loc(
+        day1,
+        "090000_300",
+        &[
+            r#"{"alt":null,"course":null,"h_acc":12.0,"lat":51.592475,"lon":-0.61325,"schema":"solstone.location.fix/1","speed":1.3,"stationary":false,"t":"2026-03-08T09:05:00Z","v_acc":null}"#,
+        ],
+    );
+    write_loc(
+        day1,
+        "100000_300",
+        &[
+            r#"{"arrival":"2026-03-08T10:00:00Z","departure":"2026-03-08T11:30:00Z","h_acc":12,"lat":51.4999,"lon":-0.1254,"schema":"solstone.location.visit/1"}"#,
+        ],
+    );
+    write_loc(
+        day1,
+        "120000_300",
+        &[
+            r#"{"arrival":"2026-03-08T12:00:00Z","departure":"2026-03-08T13:00:00Z","h_acc":12,"lat":51.5131,"lon":-0.1000,"schema":"solstone.location.visit/1"}"#,
+        ],
+    );
+    write_loc(
+        day1,
+        "140000_300",
+        &[
+            r#"{"alt":null,"course":null,"h_acc":10.0,"lat":51.545,"lon":-0.4817,"schema":"solstone.location.fix/1","speed":1.0,"stationary":false,"t":"2026-03-08T14:05:00Z","v_acc":null}"#,
+        ],
+    );
+    write_loc(
+        day1,
+        "160000_300",
+        &[
+            // Hidden place visit: must disappear completely in every tier.
+            r#"{"arrival":"2026-03-08T16:00:00Z","departure":"2026-03-08T16:45:00Z","h_acc":12,"lat":52.1939,"lon":-1.7080,"schema":"solstone.location.visit/1"}"#,
+        ],
+    );
+    write_loc(
+        day1,
+        "170000_300",
+        &[
+            // Reading run partly inside the hidden place: must strip area, coords, H3 and fixes.
+            r#"{"alt":null,"course":null,"h_acc":10.0,"lat":52.1939,"lon":-1.7080,"schema":"solstone.location.fix/1","speed":1.0,"stationary":false,"t":"2026-03-08T17:00:00Z","v_acc":null}"#,
+            r#"{"alt":null,"course":null,"h_acc":10.0,"lat":52.1980,"lon":-1.7000,"schema":"solstone.location.fix/1","speed":1.0,"stationary":false,"t":"2026-03-08T17:05:00Z","v_acc":null}"#,
+        ],
+    );
+    write_loc(
+        day1,
+        "190000_300",
+        &[
+            r#"{"arrival":"2026-03-08T19:00:00Z","departure":"2026-03-08T21:00:00Z","h_acc":12,"lat":51.515,"lon":-0.0815,"schema":"solstone.location.visit/1"}"#,
+        ],
+    );
+
+    // Second day repeats place A and place B so both form durable places.
+    write_loc(
+        day2,
+        "080000_300",
+        &[
+            r#"{"arrival":"2026-03-09T08:00:00Z","departure":"2026-03-09T09:00:00Z","h_acc":12,"lat":51.515,"lon":-0.0815,"schema":"solstone.location.visit/1"}"#,
+        ],
+    );
+    write_loc(
+        day2,
+        "120000_300",
+        &[
+            r#"{"arrival":"2026-03-09T12:00:00Z","departure":"2026-03-09T13:00:00Z","h_acc":12,"lat":51.5131,"lon":-0.1000,"schema":"solstone.location.visit/1"}"#,
+        ],
+    );
+    write_loc(
+        day2,
+        "160000_300",
+        &[
+            r#"{"arrival":"2026-03-09T16:00:00Z","departure":"2026-03-09T17:00:00Z","h_acc":12,"lat":52.1939,"lon":-1.7080,"schema":"solstone.location.visit/1"}"#,
+        ],
+    );
+
+    let store = PlaceStore {
+        version: 1,
+        places: vec![
+            Place {
+                id: "place-home".to_owned(),
+                latitude: 51.515,
+                longitude: -0.0815,
+                name: Some("Mistress Ansell's house".to_owned()),
+                alias: Some(Alias::Home),
+                hidden: false,
+                days: vec![day1.to_owned(), day2.to_owned()],
+                dormant: false,
+            },
+            Place {
+                id: "place-bell".to_owned(),
+                latitude: 51.5131,
+                longitude: -0.1000,
+                name: Some("The Bell, Carter Lane".to_owned()),
+                alias: None,
+                hidden: false,
+                days: vec![day1.to_owned(), day2.to_owned()],
+                dormant: false,
+            },
+            Place {
+                id: "place-hidden".to_owned(),
+                latitude: 52.1939,
+                longitude: -1.7080,
+                name: Some("Secret Cottage".to_owned()),
+                alias: None,
+                hidden: true,
+                days: vec![day1.to_owned(), day2.to_owned()],
+                dormant: false,
+            },
+        ],
+    };
+    store.write(root).unwrap();
+    solstone_core_location::reconcile_journal(
+        root,
+        &mut solstone_core_location::Reconciler::default(),
+    )
+    .unwrap();
+    // Re-apply named places after reconcile (reconcile preserves touched places by proximity).
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+
+    fn has_any_key(value: &Value, forbidden: &[&str]) -> bool {
+        match value {
+            Value::Object(map) => {
+                map.keys().any(|k| forbidden.contains(&k.as_str()))
+                    || map.values().any(|v| has_any_key(v, forbidden))
+            }
+            Value::Array(arr) => arr.iter().any(|v| has_any_key(v, forbidden)),
+            _ => false,
+        }
+    }
+
+    let grant = |words: &[&str], scope| {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: words.iter().map(|w| (*w).to_owned()).collect(),
+                    scope,
+                },
+            )
+            .unwrap();
+    };
+
+    // 1. Full precision: exact coordinates, >4 items on day1, named roster, deduped search, fixes on fetch.
+    grant(
+        &["facets", "transcripts", "places", "places_full"],
+        ReadScope::WholeJournal,
+    );
+    let week_full = probe(
+        &journal,
+        "get_week",
+        json!({"day_from": day1, "day_to": day2, "include": ["places"]}),
+    )
+    .unwrap();
+    assert_eq!(week_full["places_precision"], "full");
+    let roster_full = week_full["places"].as_array().unwrap();
+    assert_eq!(
+        roster_full.len(),
+        2,
+        "hidden place must be excluded: {roster_full:?}"
+    );
+    assert!(!week_full.to_string().contains("Secret Cottage"));
+    assert!(!week_full.to_string().contains("52.1939"));
+    assert!(!week_full.to_string().contains("-1.708"));
+    let ansell = roster_full
+        .iter()
+        .find(|p| p["name"] == "Mistress Ansell's house")
+        .unwrap();
+    assert_eq!(ansell["alias"], "home");
+    assert_eq!(ansell["days_count"], 2);
+    assert_eq!(ansell["lat"], 51.515);
+    assert_eq!(ansell["lon"], -0.0815);
+
+    let day1_places = &week_full["days"][0]["summary"]["places"];
+    let day1_items = day1_places["items"].as_array().unwrap();
+    // 7 visible entries (hidden visit dropped; partial-hidden reading kept without area/coords).
+    assert_eq!(day1_items.len(), 7, "{day1_items:?}");
+    assert_eq!(day1_places["more"], false);
+    assert!(
+        day1_items
+            .iter()
+            .any(|i| i["lat"] == 51.592475 && i["lon"] == -0.61325),
+        "Slough A40 fix missing: {day1_items:?}"
+    );
+    assert!(
+        day1_items
+            .iter()
+            .any(|i| i["lat"] == 51.4999 && i["lon"] == -0.1254),
+        "Westminster visit missing: {day1_items:?}"
+    );
+    // Partial-hidden reading run must keep start/count with NO area/lat/lon/h3.
+    let partial_run = day1_items
+        .iter()
+        .find(|i| i["kind"] == "readings" && i.get("area").is_none())
+        .expect("partial hidden run preserved without area");
+    assert!(!has_any_key(
+        partial_run,
+        &[
+            "area", "lat", "lon", "h3", "cell_lat", "cell_lon", "fixes", "cells"
+        ]
+    ));
+
+    // Fetch from get_week reference (LocationDay) returns fixes under Full.
+    let fetch_full = probe(
+        &journal,
+        "fetch",
+        json!({"reference": day1_places["reference"]}),
+    )
+    .unwrap();
+    assert_eq!(fetch_full["places_precision"], "full");
+    assert!(!fetch_full.to_string().contains("Secret Cottage"));
+    assert!(!fetch_full.to_string().contains("52.1939"));
+    assert!(
+        fetch_full["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["fixes"]
+                .as_array()
+                .is_some_and(|f| f.iter().any(|pt| pt["lat"] == 51.592475))),
+        "{fetch_full}"
+    );
+
+    // Search(kind=["places"]) deduplicates multiple bullets per day to 1 hit per day,
+    // even across limit=1 pagination boundaries, and attaches the roster on page 1 only.
+    let page1 = probe(&journal, "search", json!({"kind": "places", "limit": 1})).unwrap();
+    assert_eq!(page1["results"].as_array().unwrap().len(), 1);
+    assert_eq!(page1["results"][0]["date"], day2);
+    assert_eq!(page1["places_precision"], "full");
+    assert_eq!(page1["places"].as_array().unwrap().len(), 2);
+    let cursor = page1["next_cursor"].as_str().unwrap().to_owned();
+    let page2 = probe(
+        &journal,
+        "search",
+        json!({"kind": "places", "limit": 1, "cursor": cursor}),
+    )
+    .unwrap();
+    assert_eq!(page2["results"].as_array().unwrap().len(), 1);
+    assert_eq!(page2["results"][0]["date"], day1);
+    assert!(page2.get("places").is_none());
+
+    // Fetch via search Entry reference also attaches precision-gated structured items.
+    let fetch_search_full = probe(
+        &journal,
+        "fetch",
+        json!({"reference": page2["results"][0]["reference"]}),
+    )
+    .unwrap();
+    assert_eq!(fetch_search_full["places_precision"], "full");
+    assert_eq!(fetch_search_full["items"].as_array().unwrap().len(), 7);
+
+    // list_activities attaches precision-gated place on clear visits and omits it on hidden visits.
+    let acts_full = probe(&journal, "list_activities", json!({"day": day1})).unwrap();
+    let act_west = acts_full["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["title"] == "Morning hearing")
+        .unwrap();
+    assert_eq!(act_west["place"]["lat"], 51.4999);
+    assert_eq!(act_west["place"]["lon"], -0.1254);
+    let act_hid = acts_full["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["title"] == "Afternoon errand")
+        .unwrap();
+    assert!(
+        act_hid.get("place").is_none(),
+        "hidden activity leaked place: {act_hid}"
+    );
+
+    // 2. Approx (~1 km H3 res-8): zero raw lat/lon/fixes anywhere, valid H3 cells + cell centres.
+    grant(
+        &["facets", "transcripts", "places", "places_approx"],
+        ReadScope::WholeJournal,
+    );
+    let acts_approx = probe(&journal, "list_activities", json!({"day": day1})).unwrap();
+    let act_west_approx = acts_approx["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["title"] == "Morning hearing")
+        .unwrap();
+    assert_eq!(act_west_approx["place"]["h3"], "88194ad14dfffff");
+    assert!(!has_any_key(&act_west_approx["place"], &["lat", "lon"]));
+    let week_approx = probe(
+        &journal,
+        "get_week",
+        json!({"day_from": day1, "day_to": day2, "include": ["places"]}),
+    )
+    .unwrap();
+    assert_eq!(week_approx["places_precision"], "approx");
+    assert!(
+        !has_any_key(&week_approx, &["lat", "lon", "end_lat", "end_lon", "fixes"]),
+        "raw coordinates leaked in approx get_week: {week_approx}"
+    );
+    assert!(!week_approx.to_string().contains("51.592475"));
+    assert!(!week_approx.to_string().contains("51.4999"));
+    assert!(!week_approx.to_string().contains("Secret Cottage"));
+    let ansell_approx = week_approx["places"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["name"] == "Mistress Ansell's house")
+        .unwrap();
+    assert_eq!(ansell_approx["h3"], "88194ad301fffff");
+    let fetch_approx = probe(
+        &journal,
+        "fetch",
+        json!({"reference": week_approx["days"][0]["summary"]["places"]["reference"]}),
+    )
+    .unwrap();
+    assert_eq!(fetch_approx["places_precision"], "approx");
+    assert!(
+        !has_any_key(
+            &fetch_approx,
+            &["lat", "lon", "end_lat", "end_lon", "fixes"]
+        ),
+        "raw coordinates leaked in approx fetch: {fetch_approx}"
+    );
+    assert!(fetch_approx.to_string().contains("88195d322bfffff"));
+    assert!(fetch_approx.to_string().contains("88194ad14dfffff"));
+
+    // 3. NamesOnly (explicit places_names AND legacy bare "places"): M1+M2+M3 work, zero coords/H3.
+    for words in [
+        vec!["facets", "transcripts", "places", "places_names"],
+        vec!["facets", "transcripts", "places"],
+    ] {
+        grant(&words, ReadScope::WholeJournal);
+        let week_names = probe(
+            &journal,
+            "get_week",
+            json!({"day_from": day1, "day_to": day2, "include": ["places"]}),
+        )
+        .unwrap();
+        assert_eq!(week_names["places_precision"], "names", "words={words:?}");
+        assert_eq!(week_names["places"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            week_names["days"][0]["summary"]["places"]["items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            7
+        );
+        assert!(
+            !has_any_key(
+                &week_names,
+                &[
+                    "lat", "lon", "end_lat", "end_lon", "h3", "cell_lat", "cell_lon", "cells",
+                    "fixes"
+                ]
+            ),
+            "spatial data leaked in names-only ({words:?}): {week_names}"
+        );
+        let fetch_names = probe(
+            &journal,
+            "fetch",
+            json!({"reference": week_names["days"][0]["summary"]["places"]["reference"]}),
+        )
+        .unwrap();
+        assert_eq!(fetch_names["places_precision"], "names");
+        assert!(!has_any_key(
+            &fetch_names,
+            &[
+                "lat", "lon", "end_lat", "end_lon", "h3", "cell_lat", "cell_lon", "cells", "fixes"
+            ]
+        ));
+        let acts_names = probe(&journal, "list_activities", json!({"day": day1})).unwrap();
+        let act_west_names = acts_names["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["title"] == "Morning hearing")
+            .unwrap();
+        assert!(act_west_names["place"]["words"].is_string());
+        assert!(!has_any_key(
+            &act_west_names["place"],
+            &["lat", "lon", "h3", "cell_lat", "cell_lon"]
+        ));
+    }
+
+    // 4. ChosenFacets scope fails closed: no places roster, no location hits, and no activity.place.
+    grant(
+        &["facets", "transcripts", "places", "places_full"],
+        ReadScope::Facets {
+            ids: vec!["facet-a".to_owned()],
+        },
+    );
+    let scoped_search = probe(&journal, "search", json!({"kind": "places"})).unwrap();
+    assert_eq!(scoped_search["results"], json!([]));
+    assert!(scoped_search.get("places").is_none());
+    assert!(scoped_search.get("places_precision").is_none());
+    let scoped_acts = probe(&journal, "list_activities", json!({"day": day1})).unwrap();
+    for act in scoped_acts["activities"].as_array().unwrap() {
+        assert!(
+            act.get("place").is_none(),
+            "scoped activity leaked place: {act}"
+        );
+    }
+
+    // 5. tools/list invariance: 13 tools in TOOLS, identical advertised list across all 3 tiers,
+    // unchanged annotations, 0 root combinators.
+    assert_eq!(crate::registry::TOOLS.len(), 13);
+    let mut prior_tools: Option<Value> = None;
+    for precision_word in ["places_full", "places_approx", "places_names"] {
+        grant(
+            &[
+                "transcripts",
+                "entities",
+                "profile_pics",
+                "facets",
+                "screen_text",
+                "screenshots",
+                "body",
+                "notes",
+                "documents",
+                "calendar",
+                "places",
+                precision_word,
+                "photos",
+            ],
+            ReadScope::WholeJournal,
+        );
+        let decision = evaluate_connection_read(root, CONNECTION);
+        let tools = crate::registry::advertised_tools_list(root, &decision);
+        let tools_arr = tools["tools"].as_array().unwrap();
+        assert!(tools_arr.len() == 12 || tools_arr.len() == 13);
+        for tool in tools_arr {
+            let schema = tool["inputSchema"].as_object().unwrap();
+            for combinator in ["oneOf", "anyOf", "allOf"] {
+                assert!(
+                    !schema.contains_key(combinator),
+                    "tool {} has top-level {combinator}",
+                    tool["name"]
+                );
+            }
+        }
+        if let Some(ref prev) = prior_tools {
+            assert_eq!(
+                &tools, prev,
+                "tools/list drifted across places precision tiers"
+            );
+        }
+        prior_tools = Some(tools);
     }
 }

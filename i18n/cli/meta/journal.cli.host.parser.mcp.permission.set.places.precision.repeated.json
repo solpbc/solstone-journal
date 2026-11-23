@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser mcp permission set places precision repeated.",
+  "context": "Terminal diagnostic for parser mcp permission set places precision repeated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8c01019d069b31c72b30bb01d32e08cdafefac53605008981d51e2817338f22c",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "kind": "flag",
+      "value": "--places-precision"
+    }
+  ]
+}

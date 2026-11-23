@@ -1,0 +1,25 @@
+{
+  "description": "Summary fragment showing the places permission together with its chosen detail level.",
+  "context": "Journal window, agents view. Inline label like 'places (exact locations)' in an agent's permission summary line.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    },
+    {
+      "name": "precision",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "90577e5ce43b49f73a8d5094884ea13e7becd07c9d023aa23aa46ba9c78f0c99",
+  "max_length": 96,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

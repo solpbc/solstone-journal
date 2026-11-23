@@ -6589,9 +6589,25 @@ journal.window.agents.permission.kind.photos.description = photos you import, bo
 
 journal.window.agents.permission.kind.photos.label = photos
 
-journal.window.agents.permission.kind.places.description = place names and times from your journal's location history.
+journal.window.agents.permission.kind.places.description = places and times from your journal's location history, at the detail level you choose. places you hid stay out.
 
 journal.window.agents.permission.kind.places.label = places
+
+journal.window.agents.permission.places.precision.approx.description = place names, times and roughly 1 km grid cells instead of exact coordinates.
+
+journal.window.agents.permission.places.precision.approx.label = ~1 km areas
+
+journal.window.agents.permission.places.precision.full.description = place names, times and exact coordinates from your places, visits and location readings.
+
+journal.window.agents.permission.places.precision.full.label = exact locations
+
+journal.window.agents.permission.places.precision.heading = location detail when places is on
+
+journal.window.agents.permission.places.precision.names.description = place names, area names and times, with no coordinates or grid cells.
+
+journal.window.agents.permission.places.precision.names.label = names only
+
+journal.window.agents.permission.places.summary = { $label } ({ $precision })
 
 journal.window.agents.permission.kind.profile.pics.description = the picture your journal shows for a person. needs entities.
 

@@ -11342,10 +11342,31 @@
       "locales": []
     },
     {
+      "id": "journal.cli.host.mcp.permission.permission.set.choose.places.precision",
+      "source": "2e0eb3a62c874786b11641d3c28ab29fae11c2cdd2612989754a0d256392991b",
+      "contract": "3e424683a1922d544aad975fbbb43d762245f0ff3128c1d1964e18a7d4fc5aeb",
+      "protected": "53a709d248bf64dd2fbee49d9c4fe21bbdacb373769e4699f53ca7ee5331008a",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.host.mcp.permission.permission.set.places.precision.requires.places",
+      "source": "d4e4db3fa9ed76926ee7315fdb3de26f7e2e19fd200b0a09fa77ff2d163b5445",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "153d259854e95665e5cfbcd9a9365d2a96d26cd1d70cfab8857cc9ed4f146270",
+      "locales": []
+    },
+    {
       "id": "journal.cli.host.mcp.permission.permission.show",
       "source": "db4d79ee2c6c4549b1249f946d3def8bb8afa43d4e64df7be9903184b39d13bc",
       "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
       "protected": "9fe7caa1c6ed9b2bd19dfc9415f174f25b031ff9f90f138ff2168779763e715f",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.host.mcp.permission.places.precision",
+      "source": "4f00ae6588bd42c357ca821cd4d11f3708dbeeca0724824e2c8e690cc7902e95",
+      "contract": "bebf751b8cac85eb3bf10b106c1d5158d0edafdade3a63254a335def2218f372",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
     {
@@ -11374,6 +11395,13 @@
       "source": "6ebb979662e5f6df22a6601f713e0dc6cf5c5ff00096f3941c3b1220df21e569",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "f8e4a7c2159a249c0b32a3d09aba747d45b9e6843be03530a5b5026f1a060b3b",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.host.mcp.permission.set.help.places.precision",
+      "source": "d66c517fb05c2a0a19e9ce546465d3382f82e9fd822b60dce195ccbe5df5e154",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "f04bc0047fab4446515daab8985564936a32a495d5e15eb1ebf59338434e266d",
       "locales": []
     },
     {
@@ -11979,6 +12007,13 @@
       "locales": []
     },
     {
+      "id": "journal.cli.host.parser.mcp.permission.set.expected.argument.after.places.precision",
+      "source": "1fcbfe23749005c3fb37927e3b3535cdc9430a91434f5e455ccd77b9fdde4e3b",
+      "contract": "3410a03735de41954d36dad3918ed1a82f57e24efcb7e8568553666d51eec176",
+      "protected": "8107c2bbf384eba8556f488236f78b1c2f615e839620efdd416a6a739828ac05",
+      "locales": []
+    },
+    {
       "id": "journal.cli.host.parser.mcp.permission.set.facet.name.must.be.nonempty",
       "source": "6f65a7ff6b86d63750c1d85fe271b2bd35614fcabfa9c087222a771772124168",
       "contract": "3410a03735de41954d36dad3918ed1a82f57e24efcb7e8568553666d51eec176",
@@ -11990,6 +12025,27 @@
       "source": "77acd9ea634aa69338fde92941ebc6db7b112cd45309f658441e0ea598d3fc7d",
       "contract": "3410a03735de41954d36dad3918ed1a82f57e24efcb7e8568553666d51eec176",
       "protected": "169737459d9e08460bb5660d646bdecc5ec7f3f0eeaf7a60d0887c6033f5efa2",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.host.parser.mcp.permission.set.places.precision.must.be.nonempty",
+      "source": "049c9d615ffe8e5743c726c4f6268fe7d9229b25672ab02b3f25c185025767b2",
+      "contract": "3410a03735de41954d36dad3918ed1a82f57e24efcb7e8568553666d51eec176",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.host.parser.mcp.permission.set.places.precision.must.be.valid.utf.n8.and.nonempty",
+      "source": "9221e76f953fb0fe1eab7f6c31909597bc5919c15677cb215aad5556d8e49bda",
+      "contract": "3410a03735de41954d36dad3918ed1a82f57e24efcb7e8568553666d51eec176",
+      "protected": "169737459d9e08460bb5660d646bdecc5ec7f3f0eeaf7a60d0887c6033f5efa2",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.host.parser.mcp.permission.set.places.precision.repeated",
+      "source": "8c01019d069b31c72b30bb01d32e08cdafefac53605008981d51e2817338f22c",
+      "contract": "3410a03735de41954d36dad3918ed1a82f57e24efcb7e8568553666d51eec176",
+      "protected": "8107c2bbf384eba8556f488236f78b1c2f615e839620efdd416a6a739828ac05",
       "locales": []
     },
     {

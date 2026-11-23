@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- when you allow an agent to read places, you can choose how much location detail to share: exact locations (the default when you turn places on), ~1 km areas, or names only. you can pick or change this level when connecting an agent, on the agents page, or with `solstone journal mcp permission set --places-precision`. agents that already have places permission stay at names only until you change them, and places you hid stay out at every level.
 - you can now import these chat and transcript exports directly: Telegram Desktop single-chat JSON and HTML exports, Slack channel JSON exports, Fireflies CSV transcripts, MacWhisper JSON transcripts, Whisper JSON and TSV transcripts, and Podcasting 2.0 JSON transcripts. other unrecognized JSON, CSV, TSV and HTML files are still refused.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
@@ -16,6 +17,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- connected agents with places permission now see up to 50 visits, stays and runs of location readings per day in weekly and date-range summaries, a list of your places with day counts, full details when reading a day's locations, and location details on listed activities, each carrying exact coordinates, ~1 km grid cells or names only according to the detail level you chose. searching places now returns one result per day.
 - an agent connected to your journal now gets updated instructions for showing your photos or imported screenshots in a page it builds for you. for grids or large sets, the instructions tell the page to load thumbnails in batches of up to 12, fetch the standard smaller copies one at a time, and run at most one or two requests at once.
 - Plaud sync now uses Plaud's official sign-in in settings or with `solstone journal importer --connect plaud`. if you used a web token before, sign in to keep syncing. disconnecting keeps the recordings already in your journal. the API keys tab is gone. the import page on android and iphone development journals no longer has a Plaud row. after signing in, use **check now** in settings → sync to look for new recordings, or turn on hourly sync.
 - shared tools and everyday names are less likely to pull activity toward the wrong facet or crowd the list of names your journal reads for each facet when telling facets apart. an entity attached to more than one active facet now appears in that list only under a facet that holds more than half of its saved notes across active facets. when thinking runs for one facet, it still reads up to 20 of that facet's attached entities, shared ones included. thanks @dvanduzer for the report (#429).

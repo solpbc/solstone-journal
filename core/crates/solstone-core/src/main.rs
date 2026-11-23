@@ -6207,10 +6207,26 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                                     ),
                                 };
                                 println!("{scope}");
-                                let kinds = read.categories.iter().map(|word| {
-                                    solstone_core_format::content::AdmittedCategory::from_stored_word(word)
-                                        .map_or_else(|| word.clone(), |category| solstone_core_cli::permission_kind_label(category.kind_spec()))
-                                }).collect::<Vec<_>>();
+                                let kinds = read
+                                    .categories
+                                    .iter()
+                                    .filter(|word| {
+                                        !solstone_core_format::content::kinds::is_places_precision_word(
+                                            word,
+                                        )
+                                    })
+                                    .map(|word| {
+                                        solstone_core_format::content::AdmittedCategory::from_stored_word(word)
+                                            .map_or_else(
+                                                || word.clone(),
+                                                |category| {
+                                                    solstone_core_cli::permission_kind_label(
+                                                        category.kind_spec(),
+                                                    )
+                                                },
+                                            )
+                                    })
+                                    .collect::<Vec<_>>();
                                 println!(
                                     "{}",
                                     host_display(
@@ -6218,6 +6234,19 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                                         [("categories", &(kinds.join(", ")))]
                                     )
                                 );
+                                if let Some(precision) =
+                                    solstone_core_format::content::kinds::places_precision_admitted(
+                                        &read.categories,
+                                    )
+                                {
+                                    println!(
+                                        "{}",
+                                        host_display(
+                                            "!journal.cli.host.mcp.permission.places.precision",
+                                            [("precision", &precision.wire_value())]
+                                        )
+                                    );
+                                }
                             }
                             None => {
                                 println!(
@@ -6263,6 +6292,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
             target,
             categories,
             facets,
+            places_precision,
         } => {
             let key = match resolve_connection_key(&journal.path, &target) {
                 Ok(k) => k,
@@ -6286,6 +6316,33 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                 );
                 return ExitCode::from(EXIT_DATAERR);
             }
+            let parsed_places_precision = match places_precision.as_deref() {
+                Some(raw) => {
+                    let Some(level) =
+                        solstone_core_format::content::kinds::PlacesPrecision::from_wire_value(raw)
+                    else {
+                        eprintln!(
+                            "{}",
+                            host_display(
+                                "journal.cli.host.mcp.permission.permission.set.choose.places.precision",
+                                [("levels", &"full, approx, names")]
+                            )
+                        );
+                        return ExitCode::from(EXIT_DATAERR);
+                    };
+                    if !categories.iter().any(|category| category == "places") {
+                        eprintln!(
+                            "{}",
+                            host_text(
+                                "journal.cli.host.mcp.permission.permission.set.places.precision.requires.places"
+                            )
+                        );
+                        return ExitCode::from(EXIT_DATAERR);
+                    }
+                    Some(level)
+                }
+                None => None,
+            };
             let ids = match solstone_core::resolve_permission_facet_names_for(
                 host_locale(),
                 &journal.path,
@@ -6305,6 +6362,10 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
             };
             let mut categories = categories;
             solstone_core_format::content::kinds::record_profile_pics_choice(&mut categories);
+            solstone_core_format::content::kinds::record_places_precision_choice(
+                &mut categories,
+                parsed_places_precision,
+            );
             let perm = solstone_core::ReadPermission {
                 categories,
                 scope: if ids.is_empty() {

@@ -32,6 +32,7 @@ pub(crate) enum ReferenceKind {
     SourceSpan,
     SegmentSpan,
     WeekRange,
+    LocationDay,
 }
 
 impl ReferenceKind {
@@ -50,6 +51,7 @@ impl ReferenceKind {
             Self::SourceSpan => 11,
             Self::SegmentSpan => 12,
             Self::WeekRange => 13,
+            Self::LocationDay => 14,
         }
     }
 
@@ -68,6 +70,7 @@ impl ReferenceKind {
             11 => Some(Self::SourceSpan),
             12 => Some(Self::SegmentSpan),
             13 => Some(Self::WeekRange),
+            14 => Some(Self::LocationDay),
             _ => None,
         }
     }
@@ -131,6 +134,10 @@ pub(crate) struct CursorReference {
     /// File digest bound into an activity cursor. Absent for every other cursor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub activity_proof: Option<String>,
+    /// Location day path already emitted on the previous page so remaining chunks
+    /// of the same day's `location.md` are skipped without duplicates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emitted_location_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -339,6 +346,11 @@ pub(crate) struct WeekRangeCursor {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct LocationDayReference {
+    pub day: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "target", rename_all = "snake_case")]
 pub(crate) enum ReferenceTarget {
     Entry(EntryReference),
@@ -354,6 +366,7 @@ pub(crate) enum ReferenceTarget {
     SourceSpan(SourceSpanReference),
     SegmentSpan(SegmentSpanReference),
     WeekRange(WeekRangeCursor),
+    LocationDay(LocationDayReference),
 }
 
 impl ReferenceTarget {
@@ -372,6 +385,7 @@ impl ReferenceTarget {
             Self::SourceSpan(_) => ReferenceKind::SourceSpan,
             Self::SegmentSpan(_) => ReferenceKind::SegmentSpan,
             Self::WeekRange(_) => ReferenceKind::WeekRange,
+            Self::LocationDay(_) => ReferenceKind::LocationDay,
         }
     }
 }
@@ -549,7 +563,10 @@ impl ReferenceCodec {
         let Some(kind) = ReferenceKind::from_tag(token[1]) else {
             return Err(ReferenceError::NotFound);
         };
-        if kind != ReferenceKind::Entry && kind != ReferenceKind::Activity {
+        if kind != ReferenceKind::Entry
+            && kind != ReferenceKind::Activity
+            && kind != ReferenceKind::LocationDay
+        {
             return Err(ReferenceError::NotFound);
         }
         self.resolve(value, kind, connection, generation)
@@ -609,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    fn reference_kind_tags_roundtrip_1_through_13() {
+    fn reference_kind_tags_roundtrip_1_through_14() {
         for (kind, expected_tag) in [
             (ReferenceKind::Entry, 1),
             (ReferenceKind::Segment, 2),
@@ -624,11 +641,12 @@ mod tests {
             (ReferenceKind::SourceSpan, 11),
             (ReferenceKind::SegmentSpan, 12),
             (ReferenceKind::WeekRange, 13),
+            (ReferenceKind::LocationDay, 14),
         ] {
             assert_eq!(kind.tag(), expected_tag);
             assert_eq!(ReferenceKind::from_tag(expected_tag), Some(kind));
         }
-        for unknown in [0, 14, 255] {
+        for unknown in [0, 15, 255] {
             assert_eq!(ReferenceKind::from_tag(unknown), None);
         }
     }

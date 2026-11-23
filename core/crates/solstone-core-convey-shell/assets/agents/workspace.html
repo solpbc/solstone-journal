@@ -290,17 +290,43 @@
       const label = connection.door === 'byo' ? window.JournalI18n.render('journal.window.agents.connection.domain') : connection.door === 'lan' ? window.JournalI18n.render('journal.window.agents.connection.network') : connection.door === 'local' ? window.JournalI18n.render('journal.window.agents.connection.this.device') : connection.door === 'relay' || !hasDoor() ? 'solstone.me' : '';
       return label ? `<span class="chip">${esc(label)}</span>` : '';
     }
+    const PLACES_PRECISION_WORDS = new Set(['places_full', 'places_approx', 'places_names']);
     // A grant that holds entities and predates the profile pics choice keeps them; only no_profile_pics takes them away.
     function grantedWords(read) {
-      const words = read.categories.filter(word => word !== 'no_profile_pics');
+      const words = read.categories.filter(word => word !== 'no_profile_pics' && !PLACES_PRECISION_WORDS.has(word));
       if (words.includes('entities') && !words.includes('profile_pics') && !read.categories.includes('no_profile_pics')) words.push('profile_pics');
       return words;
+    }
+    // Existing grants with bare "places" stay at names only until the owner changes them; newly enabling places defaults to full.
+    function placesPrecision(read) {
+      const cats = read?.categories || [];
+      if (!cats.includes('places')) return 'full';
+      if (cats.includes('places_names')) return 'names';
+      if (cats.includes('places_approx')) return 'approx';
+      if (cats.includes('places_full')) return 'full';
+      return 'names';
+    }
+    function placesPrecisionOptions() {
+      if (Array.isArray(state.places_precision_options) && state.places_precision_options.length) return state.places_precision_options;
+      return [
+        {value: 'full', label: window.JournalI18n.render('journal.window.agents.permission.places.precision.full.label'), description: window.JournalI18n.render('journal.window.agents.permission.places.precision.full.description')},
+        {value: 'approx', label: window.JournalI18n.render('journal.window.agents.permission.places.precision.approx.label'), description: window.JournalI18n.render('journal.window.agents.permission.places.precision.approx.description')},
+        {value: 'names', label: window.JournalI18n.render('journal.window.agents.permission.places.precision.names.label'), description: window.JournalI18n.render('journal.window.agents.permission.places.precision.names.description')},
+      ];
     }
     function permissionLine(permission) {
       const read = permission?.read;
       if (!read) return window.JournalI18n.render('journal.window.agents.window.explanation.nothing.until.you.choose');
       const labels = Object.fromEntries(state.permission_kinds.map(kind => [kind.word, kind.label]));
-      const categories = grantedWords(read).map(word => labels[word] || word).join(', ');
+      const precisionLabels = Object.fromEntries(placesPrecisionOptions().map(opt => [opt.value, opt.label]));
+      const categories = grantedWords(read).map(word => {
+        const label = labels[word] || word;
+        if (word === 'places') {
+          const precision = precisionLabels[placesPrecision(read)] || placesPrecision(read);
+          return window.JournalI18n.render('journal.window.agents.permission.places.summary', [['label', label], ['precision', precision]]);
+        }
+        return label;
+      }).join(', ');
       if (read.scope.kind === 'whole_journal') {
         return window.JournalI18n.render('journal.window.agents.permission.whole.journal.categories', [['categories', categories]]);
       }
@@ -940,9 +966,15 @@
       const kinds = state.permission_kinds;
       const cats = read ? grantedWords(read) : kinds.filter(kind => kind.checked_by_default).map(kind => kind.word);
       // An option of a kind shares its parent's cell, so the grid never sets it apart from what it depends on.
+      const precision = placesPrecision(read);
+      const precisionRadios = placesPrecisionOptions().map(opt =>
+        `<label class="check"><input type="radio" name="places_precision" value="${esc(opt.value)}"${precision === opt.value ? ' checked' : ''}><span><strong>${esc(opt.label)}</strong><small class="meta">${esc(opt.description)}</small></span></label>`
+      ).join('');
+      const precisionGroup = `<div id="places-precision-field" role="radiogroup" aria-label="${window.JournalI18n.renderHtml('journal.window.agents.permission.places.precision.heading')}" style="padding-left:26px" class="${cats.includes('places') ? '' : 'hidden'}"><small class="meta">${window.JournalI18n.renderHtml('journal.window.agents.permission.places.precision.heading')}</small>${precisionRadios}</div>`;
       const cells = [];
       for (const {word, label, description, option_of} of kinds) {
-        const html = `<label class="check"${option_of ? ' style="padding-left:26px"' : ''}><input type="checkbox" name="category" value="${esc(word)}"${cats.includes(word) ? ' checked' : ''}><span><strong>${esc(label)}</strong><small class="meta">${esc(description)}</small></span></label>`;
+        let html = `<label class="check"${option_of ? ' style="padding-left:26px"' : ''}><input type="checkbox" name="category" value="${esc(word)}"${cats.includes(word) ? ' checked' : ''}><span><strong>${esc(label)}</strong><small class="meta">${esc(description)}</small></span></label>`;
+        if (word === 'places') html += precisionGroup;
         if (option_of && cells.length && cells[cells.length - 1].word === option_of) cells[cells.length - 1].html += html;
         else cells.push({word, html});
       }
@@ -1434,6 +1466,17 @@
       const scope = document.getElementById('scope');
       const facetField = document.getElementById('facet-field');
       if (scope && facetField) { const sync = () => facetField.classList.toggle('hidden', scope.value !== 'facets'); scope.addEventListener('change', sync); sync(); }
+      const placesBox = view.querySelector?.('input[name=category][value=places]');
+      const placesPrecisionField = document.getElementById('places-precision-field');
+      if (placesBox && placesPrecisionField) {
+        const syncPlaces = () => {
+          const on = Boolean(placesBox.checked);
+          placesPrecisionField.classList.toggle('hidden', !on);
+          for (const radio of placesPrecisionField.querySelectorAll?.('input[name=places_precision]') || []) radio.disabled = !on;
+        };
+        placesBox.addEventListener('change', syncPlaces);
+        syncPlaces();
+      }
       // A phone's late blur as a select's menu closes goes back to the select.
       if (scope) scope.addEventListener('change', () => window.SolFocus.keepAfterPick(scope, ctx));
       if (route.name === 'activity') {
@@ -1636,7 +1679,7 @@
         }
         else if (action === 'new-code') { if (connectWay && connectWays().some(([id]) => id === connectWay)) { const known = await pairedBefore(); const res = await api('/app/agents/api/pairing', jsonOptions('POST', againTarget ? {door: connectWay, agent: againTarget.agent} : {door: connectWay})); pairingCode = res; state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door}; stopWatch(); render(); startWatch(res, known); } }
         else if (action === 'filter-activity') { const filters = Object.fromEntries(Object.keys(activityFilters).map(key => [key, document.getElementById(`a-${key}`).value])); await applyActivityFilters(filters); }
-        else if (target.dataset.savePermission) { const [kind,id] = target.dataset.savePermission.split(':'); const categories = [...document.querySelectorAll('input[name=category]:checked')].map(node => node.value); const scope = document.getElementById('scope').value; const facets = [...document.querySelectorAll('input[name=facet]:checked')].map(node => node.value); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`, jsonOptions('PUT', {categories, scope, facets})); route = {name:'home'}; await reload(true); }
+        else if (target.dataset.savePermission) { const [kind,id] = target.dataset.savePermission.split(':'); const categories = [...document.querySelectorAll('input[name=category]:checked')].map(node => node.value); const scope = document.getElementById('scope').value; const facets = [...document.querySelectorAll('input[name=facet]:checked')].map(node => node.value); const places_precision = categories.includes('places') ? (document.querySelectorAll('input[name=places_precision]:checked')[0]?.value || 'full') : undefined; const payload = places_precision ? {categories, scope, facets, places_precision} : {categories, scope, facets}; await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`, jsonOptions('PUT', payload)); route = {name:'home'}; await reload(true); }
         else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (await window.SolQuestion.ask({ message: window.JournalI18n.render(kind === 'bearer' ? 'journal.window.agents.connection.revoke.key.confirmation' : 'journal.window.agents.connection.disconnect.agent.confirmation'), action: kind === 'bearer' ? window.JournalI18n.render('journal.window.agents.window.state.text.revoke.key') : window.JournalI18n.render('journal.window.agents.window.state.text.disconnect.agent'), signal: ctx.signal, opener: () => findKey(view, busy) }) && !ctx.disposed) { const order = state.connections.map(item => rowKey(item.kind, item.id)); const at = order.indexOf(rowKey(kind, id)); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); landing = [order[at + 1], order[at - 1], '[data-agents-heading]']; route = {name:'home'}; await reload(true); } }
         else if (target.dataset.rename) { const id = target.dataset.rename; const name = await window.SolQuestion.ask({ message: window.JournalI18n.render('journal.window.agents.message.name.this.key'), action: window.JournalI18n.render('journal.window.agents.window.state.text.save.name'), value: route.connection.name, signal: ctx.signal, opener: () => findKey(view, busy) }); if (name && !ctx.disposed) { await api(`/app/agents/api/connections/bearer/${encodeURIComponent(id)}`, jsonOptions('PATCH', {name})); route = {name:'home'}; await reload(true); } }
       } catch (error) { notify(error.message || window.JournalI18n.render('journal.window.agents.status.text.that.change.did.not.finish')); }

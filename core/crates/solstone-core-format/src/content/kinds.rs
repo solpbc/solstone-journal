@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::{
     AdmittedCategory, ContentUnit, Family, FileFormat, FilePattern, IndexDisposition,
@@ -229,6 +229,102 @@ pub fn record_profile_pics_choice(words: &mut Vec<String>) {
 pub fn profile_pics_admitted(words: &[String]) -> bool {
     let has = |wanted: &str| words.iter().any(|word| word == wanted);
     has("profile_pics") || (has("entities") && !has(NO_PROFILE_PICS))
+}
+
+/// Stored precision modifiers for the `places` permission.
+/// ⛔ Not kinds and not standalone permissions: they sit inside
+/// `ReadPermission.categories` alongside `"places"` so older runtimes
+/// deserialize `permissions.json` cleanly and ignore unknown words.
+pub const PLACES_PRECISION_FULL: &str = "places_full";
+pub const PLACES_PRECISION_APPROX: &str = "places_approx";
+pub const PLACES_PRECISION_NAMES: &str = "places_names";
+
+/// How much spatial detail a connection with `places` may read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlacesPrecision {
+    /// Place names, area names and times only — zero coordinates, zero cells.
+    NamesOnly,
+    /// H3 resolution-8 (~1 km) cells and cell centres — zero exact coordinates.
+    Approx,
+    /// Exact coordinates for named places, visits/stays and GPS fixes.
+    Full,
+}
+
+impl PlacesPrecision {
+    #[must_use]
+    pub const fn stored_word(self) -> &'static str {
+        match self {
+            Self::NamesOnly => PLACES_PRECISION_NAMES,
+            Self::Approx => PLACES_PRECISION_APPROX,
+            Self::Full => PLACES_PRECISION_FULL,
+        }
+    }
+
+    #[must_use]
+    pub const fn wire_value(self) -> &'static str {
+        match self {
+            Self::NamesOnly => "names",
+            Self::Approx => "approx",
+            Self::Full => "full",
+        }
+    }
+
+    #[must_use]
+    pub fn from_wire_value(value: &str) -> Option<Self> {
+        match value {
+            "full" => Some(Self::Full),
+            "approx" => Some(Self::Approx),
+            "names" => Some(Self::NamesOnly),
+            _ => None,
+        }
+    }
+}
+
+#[must_use]
+pub fn is_places_precision_word(word: &str) -> bool {
+    matches!(
+        word,
+        PLACES_PRECISION_FULL | PLACES_PRECISION_APPROX | PLACES_PRECISION_NAMES
+    )
+}
+
+/// Record the owner's places precision choice in the words they chose. Call it
+/// only where the owner chooses (the consent page, the agents app, the CLI),
+/// never on a passive rewrite of a stored grant, so a grant that predates the
+/// choice keeps its safe historical words-only meaning.
+pub fn record_places_precision_choice(words: &mut Vec<String>, chosen: Option<PlacesPrecision>) {
+    words.retain(|word| !is_places_precision_word(word));
+    if words.iter().any(|word| word == "places") {
+        words.push(
+            chosen
+                .unwrap_or(PlacesPrecision::Full)
+                .stored_word()
+                .to_owned(),
+        );
+    }
+}
+
+/// Effective location precision admitted by stored grant words.
+///
+/// - Without `"places"`, returns `None` even if stray precision words appear.
+/// - Conflicting modifiers fail safer (`NamesOnly` > `Approx` > `Full`).
+/// - A legacy bare `"places"` grant (no modifier) stays at `NamesOnly`.
+#[must_use]
+pub fn places_precision_admitted(words: &[String]) -> Option<PlacesPrecision> {
+    let has = |wanted: &str| words.iter().any(|word| word == wanted);
+    if !has("places") {
+        return None;
+    }
+    if has(PLACES_PRECISION_NAMES) {
+        Some(PlacesPrecision::NamesOnly)
+    } else if has(PLACES_PRECISION_APPROX) {
+        Some(PlacesPrecision::Approx)
+    } else if has(PLACES_PRECISION_FULL) {
+        Some(PlacesPrecision::Full)
+    } else {
+        Some(PlacesPrecision::NamesOnly)
+    }
 }
 
 pub fn permission_kinds() -> impl Iterator<Item = &'static KindSpec> {
@@ -810,5 +906,71 @@ mod tests {
                 "{path}"
             );
         }
+    }
+
+    #[test]
+    fn places_precision_modifiers_fail_safer_and_preserve_legacy_bare_places() {
+        let words = |list: &[&str]| list.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>();
+        // Without "places", stray modifiers grant nothing.
+        assert_eq!(places_precision_admitted(&words(&["transcripts"])), None);
+        assert_eq!(
+            places_precision_admitted(&words(&["transcripts", PLACES_PRECISION_FULL])),
+            None
+        );
+        // Legacy bare "places" stays at NamesOnly.
+        assert_eq!(
+            places_precision_admitted(&words(&["places"])),
+            Some(PlacesPrecision::NamesOnly)
+        );
+        assert_eq!(
+            places_precision_admitted(&words(&["places", PLACES_PRECISION_NAMES])),
+            Some(PlacesPrecision::NamesOnly)
+        );
+        assert_eq!(
+            places_precision_admitted(&words(&["places", PLACES_PRECISION_APPROX])),
+            Some(PlacesPrecision::Approx)
+        );
+        assert_eq!(
+            places_precision_admitted(&words(&["places", PLACES_PRECISION_FULL])),
+            Some(PlacesPrecision::Full)
+        );
+        // Conflicting modifiers resolve to the safer/coarser tier.
+        assert_eq!(
+            places_precision_admitted(&words(&[
+                "places",
+                PLACES_PRECISION_FULL,
+                PLACES_PRECISION_APPROX
+            ])),
+            Some(PlacesPrecision::Approx)
+        );
+        assert_eq!(
+            places_precision_admitted(&words(&[
+                "places",
+                PLACES_PRECISION_FULL,
+                PLACES_PRECISION_NAMES
+            ])),
+            Some(PlacesPrecision::NamesOnly)
+        );
+        // Recording an owner choice defaults to Full when places is ticked and strips when unticked.
+        let mut chosen = words(&["places"]);
+        record_places_precision_choice(&mut chosen, None);
+        assert_eq!(chosen, words(&["places", PLACES_PRECISION_FULL]));
+        record_places_precision_choice(&mut chosen, Some(PlacesPrecision::Approx));
+        assert_eq!(chosen, words(&["places", PLACES_PRECISION_APPROX]));
+        let mut unticked = words(&["transcripts", PLACES_PRECISION_FULL]);
+        record_places_precision_choice(&mut unticked, Some(PlacesPrecision::Full));
+        assert_eq!(unticked, words(&["transcripts"]));
+        // Precision modifiers are never standalone kinds or permissions.
+        for word in [
+            PLACES_PRECISION_FULL,
+            PLACES_PRECISION_APPROX,
+            PLACES_PRECISION_NAMES,
+        ] {
+            assert!(is_places_precision_word(word));
+            assert_eq!(AdmittedCategory::from_stored_word(word), None);
+            assert_eq!(AdmittedCategory::from_query_token(word), None);
+        }
+        // Places stays unchecked by default.
+        assert!(!default_permission_words().any(|word| word == "places"));
     }
 }

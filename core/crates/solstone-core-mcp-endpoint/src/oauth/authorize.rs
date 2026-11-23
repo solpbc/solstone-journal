@@ -38,13 +38,14 @@ const AUTHORIZE_CSP: &str = "default-src 'none'; style-src 'self' 'unsafe-inline
 const AUTHORIZE_CSS: &str = r#"@font-face{font-family:Comfortaa;src:url('/authorize/assets/Comfortaa-Variable.woff2') format('woff2');font-display:swap;font-weight:300 700}
 :root{color-scheme:light dark;--paper:#FCF3E4;--surface:#FEFCF8;--ink:#1A1A1A;--on-ink:#FEFCF8;--muted:#6E6453;--line:#E2D7BF;--field:#6E6453;--danger:#9F2D2D;--danger-wash:#F8E9E6;--accent:#B06A1A}
 @media(prefers-color-scheme:dark){:root{--paper:#221C19;--surface:#2B231C;--ink:#FCF3E4;--on-ink:#1A1A1A;--muted:#B0A699;--line:#514840;--field:#B0A699;--danger:#D7998C;--danger-wash:#3F271F;--accent:#F2A451}}
-body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,sans-serif}main{max-width:650px;margin:40px auto;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px}h1{font:700 28px/1.15 Comfortaa,system-ui,sans-serif}h2{font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:24px}.muted{color:var(--muted)}fieldset{border:0;padding:0;margin:8px 0}input[type=checkbox]{accent-color:var(--accent)}.check{display:block;padding:5px 0}.check.option{padding-left:26px}input[type=text]{display:block;width:100%;box-sizing:border-box;font:inherit;padding:11px;border:1px solid var(--field);border-radius:8px;background:var(--surface);color:var(--ink)}button{background:var(--ink);color:var(--on-ink);border:0;border-radius:8px;padding:11px 16px;font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:18px}.error{background:var(--danger-wash);border-left:4px solid var(--danger);padding:10px}@media(max-width:700px){main{margin:0;border:0;border-radius:0;padding:22px;min-height:100vh;box-sizing:border-box}}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,sans-serif}main{max-width:650px;margin:40px auto;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px}h1{font:700 28px/1.15 Comfortaa,system-ui,sans-serif}h2{font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:24px}.muted{color:var(--muted)}fieldset{border:0;padding:0;margin:8px 0}fieldset.option{padding-left:26px;margin:2px 0 6px}fieldset.option legend{font-size:14px;padding:2px 0}input[type=checkbox],input[type=radio]{accent-color:var(--accent)}.check{display:block;padding:5px 0}.check.option{padding-left:26px}input[type=text]{display:block;width:100%;box-sizing:border-box;font:inherit;padding:11px;border:1px solid var(--field);border-radius:8px;background:var(--surface);color:var(--ink)}button{background:var(--ink);color:var(--on-ink);border:0;border-radius:8px;padding:11px 16px;font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:18px}.error{background:var(--danger-wash);border-left:4px solid var(--danger);padding:10px}@media(max-width:700px){main{margin:0;border:0;border-radius:0;padding:22px;min-height:100vh;box-sizing:border-box}}
 "#;
 
 struct ConsentSelection {
     scope: Option<&'static str>,
     facets: Vec<String>,
     categories: Vec<String>,
+    places_precision: solstone_core_format::content::kinds::PlacesPrecision,
 }
 
 impl ConsentSelection {
@@ -55,6 +56,7 @@ impl ConsentSelection {
             categories: solstone_core_format::content::kinds::default_permission_words()
                 .map(str::to_owned)
                 .collect(),
+            places_precision: solstone_core_format::content::kinds::PlacesPrecision::Full,
         }
     }
 }
@@ -315,7 +317,8 @@ pub(crate) fn post_authorize(
     if oauth.pairing_limiter.is_limited(source, generation) {
         return too_many_wrong_codes(locale);
     }
-    let categories = chosen_categories(&pairs);
+    let places_precision = chosen_places_precision(&pairs);
+    let categories = chosen_categories(&pairs, places_precision);
     // Facet names are never read or resolved here: until the code verifies,
     // nothing may reveal which facets this journal has.
     let scope = match field(&pairs, "scope") {
@@ -327,6 +330,7 @@ pub(crate) fn post_authorize(
         scope,
         facets: Vec::new(),
         categories: categories.clone(),
+        places_precision,
     };
 
     let classification = match oauth
@@ -579,7 +583,8 @@ fn post_verified_choice(
         .pending_reconnect_to(transaction_id, &oauth.binding())
         .unwrap_or(None);
 
-    let categories = chosen_categories(pairs);
+    let places_precision = chosen_places_precision(pairs);
+    let categories = chosen_categories(pairs, places_precision);
     let names: Vec<String> = pairs
         .iter()
         .filter(|(key, _)| key == "facet")
@@ -594,6 +599,7 @@ fn post_verified_choice(
         },
         facets: names.clone(),
         categories: categories.clone(),
+        places_precision,
     };
 
     if let Some(target) = reconnect_to {
@@ -770,22 +776,30 @@ fn resolve_confirm_target(
                             (Some("facets"), names)
                         }
                     };
+                    let places_precision =
+                        solstone_core_format::content::kinds::places_precision_admitted(
+                            &read_perm.categories,
+                        )
+                        .unwrap_or(solstone_core_format::content::kinds::PlacesPrecision::Full);
                     ConsentSelection {
                         scope,
                         facets,
                         categories: read_perm.categories,
+                        places_precision,
                     }
                 }
                 None => ConsentSelection {
                     scope: None,
                     facets: Vec::new(),
                     categories: Vec::new(),
+                    places_precision: solstone_core_format::content::kinds::PlacesPrecision::Full,
                 },
             },
             _ => ConsentSelection {
                 scope: None,
                 facets: Vec::new(),
                 categories: Vec::new(),
+                places_precision: solstone_core_format::content::kinds::PlacesPrecision::Full,
             },
         }
     } else {
@@ -793,6 +807,7 @@ fn resolve_confirm_target(
             scope: None,
             facets: Vec::new(),
             categories: Vec::new(),
+            places_precision: solstone_core_format::content::kinds::PlacesPrecision::Full,
         }
     };
 
@@ -834,7 +849,22 @@ fn render_confirm_page(
     )
 }
 
-fn chosen_categories(pairs: &[(String, String)]) -> Vec<String> {
+fn chosen_places_precision(
+    pairs: &[(String, String)],
+) -> solstone_core_format::content::kinds::PlacesPrecision {
+    use solstone_core_format::content::kinds::PlacesPrecision;
+    match field(pairs, "places_precision") {
+        Some(value) => {
+            PlacesPrecision::from_wire_value(value).unwrap_or(PlacesPrecision::NamesOnly)
+        }
+        None => PlacesPrecision::Full,
+    }
+}
+
+fn chosen_categories(
+    pairs: &[(String, String)],
+    places_precision: solstone_core_format::content::kinds::PlacesPrecision,
+) -> Vec<String> {
     let mut categories = pairs
         .iter()
         .filter(|(key, value)| {
@@ -845,6 +875,10 @@ fn chosen_categories(pairs: &[(String, String)]) -> Vec<String> {
         .map(|(_, value)| value.clone())
         .collect();
     solstone_core_format::content::kinds::record_profile_pics_choice(&mut categories);
+    solstone_core_format::content::kinds::record_places_precision_choice(
+        &mut categories,
+        Some(places_precision),
+    );
     categories
 }
 
@@ -1455,8 +1489,18 @@ mod tests {
         ]
         .map(|word| ("category".to_owned(), word.to_owned()));
         assert_eq!(
-            super::chosen_categories(&selected),
-            ["notes", "documents", "calendar", "places", "photos"]
+            super::chosen_categories(
+                &selected,
+                solstone_core_format::content::kinds::PlacesPrecision::Full
+            ),
+            [
+                "notes",
+                "documents",
+                "calendar",
+                "places",
+                "photos",
+                "places_full"
+            ]
         );
     }
 
@@ -2966,5 +3010,93 @@ mod tests {
         let sixth = post_authorize(&post_request(&body_wrong), SOURCE, &oauth);
         assert!(body_text(&sixth).contains("no longer valid"));
         assert!(oauth.store.pairing_window_open(&oauth.binding()).unwrap());
+    }
+
+    #[tokio::test]
+    async fn consent_page_handles_three_tier_places_precision_and_legacy_reconnect() {
+        use crate::permissions::{PermissionStore, ReadPermission, ReadScope};
+
+        let dir = tempfile::TempDir::new_in(crate::test_scratch()).unwrap();
+        let oauth = runtime(&dir);
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let get = get_with(&oauth, FakeIo::ok("PlacesAgent"), &authorize_query(&[])).await;
+        assert_eq!(get.status, 200);
+        let page = body_text(&get);
+        // places stays unchecked by default; full precision is pre-selected for when places is ticked.
+        assert!(page.contains(r#"value="places">"#));
+        assert!(page.contains(r#"name="places_precision" value="full" checked>"#));
+        assert!(page.contains(r#"name="places_precision" value="approx">"#));
+        assert!(page.contains(r#"name="places_precision" value="names">"#));
+
+        // Submitting places + approx stores ["places", "places_approx"].
+        let tx = hidden_transaction_id(&page);
+        let post = post_authorize(
+            &post_request(&format!(
+                "transaction_id={}&pairing_code={}&scope=whole_journal&category=places&places_precision=approx",
+                query_value_encode(&tx),
+                query_value_encode(&pairing.code),
+            )),
+            SOURCE,
+            &oauth,
+        );
+        assert_eq!(post.status, 302);
+        let location = header(&post, "Location").unwrap();
+        let pairs = super::parse_urlencoded_pairs(super::query_from_target(location)).unwrap();
+        let code = super::field(&pairs, "code").unwrap().to_owned();
+        let client_id = oauth.store.list_clients().unwrap()[0].client_id.clone();
+        let tokens = oauth
+            .store
+            .redeem_authorization_code(
+                &code,
+                &client_id,
+                REDIRECT,
+                oauth.binding().canonical(),
+                "pkce-verifier",
+                &oauth.binding(),
+            )
+            .unwrap();
+        let key = format!("oauth:{}", tokens.token_id);
+        let stored = PermissionStore::open(&oauth.journal_root)
+            .get_permission(&key)
+            .unwrap()
+            .unwrap();
+        let read = stored.read.unwrap();
+        assert!(read.categories.contains(&"places".to_owned()));
+        assert!(read.categories.contains(&"places_approx".to_owned()));
+
+        // Reconnecting a legacy bare-places grant pre-selects names (not full).
+        PermissionStore::open(&oauth.journal_root)
+            .set_permission(
+                &key,
+                ReadPermission {
+                    categories: vec!["places".to_owned()],
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        let targeted = oauth
+            .store
+            .generate_pairing_code_with_door_and_reconnect("relay", Some(key.clone()))
+            .unwrap();
+        let get2 = get_with(&oauth, FakeIo::ok("PlacesAgent"), &authorize_query(&[])).await;
+        let tx2 = hidden_transaction_id(&body_text(&get2));
+        let confirm = post_authorize(
+            &post_request(&format!(
+                "transaction_id={}&pairing_code={}&reconnect=1",
+                query_value_encode(&tx2),
+                query_value_encode(&targeted.code),
+            )),
+            SOURCE,
+            &oauth,
+        );
+        assert_eq!(confirm.status, 200);
+        let confirm_html = body_text(&confirm);
+        assert!(
+            confirm_html.contains(r#"name="places_precision" value="names" checked>"#),
+            "legacy bare places must pre-select names on reconnect: {confirm_html}"
+        );
     }
 }

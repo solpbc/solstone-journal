@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output when an unsupported places detail level is passed to mcp permission set.",
+  "context": "Journal host output for mcp permission set choose places precision.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "levels",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2e0eb3a62c874786b11641d3c28ab29fae11c2cdd2612989754a0d256392991b",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_permission_set",
+      "kind": "command",
+      "value": "solstone journal mcp permission set"
+    }
+  ]
+}
