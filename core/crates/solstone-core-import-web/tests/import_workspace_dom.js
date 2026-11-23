@@ -4584,6 +4584,9 @@ async function runImportDeleteDialog() {
   assert.strictEqual(h.api.importSourceName('chatgpt', ''), 'CARD:chatgpt');
   assert.ok(h.api.importSourceName('plaud', '').length > 0);
   assert.strictEqual(h.api.importSourceName('', 'x.pdf'), '');
+  // Audio takes the journal's word: it alone knows a folder's file from a chosen one.
+  assert.strictEqual(h.api.importSourceName('audio', 'audio'), 'audio');
+  assert.strictEqual(h.api.importSourceName('audio', 'FOLDER'), 'FOLDER');
   cases += 1;
 }
 

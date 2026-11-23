@@ -1148,14 +1148,20 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(p.notices.length === 0 && p.errors.length === 0, 'no notice or error');
   });
 
-  await test('a past audio folder import retains its source label on the desktop delete dialog', async () => {
-    const p = await boot(env, `/app/import/${DONE}`, { answers: journal({
-      [`GET /app/import/api/${DONE}`]: detailAnswer(DONE, { source_type: 'audio', source_display: 'audio' }),
-    }) });
-    p.press(p.q('[data-import-delete]'));
-    await settle();
-    assert.match(p.byId('importDeleteModal').textContent, /audio folder/);
-  });
+  // The journal names a file the retired audio-folder sync brought in for the
+  // folder, and an audio file the owner chose as plain audio; the dialog says which.
+  for (const [what, display] of [['a past audio folder import', 'folder'], ['an audio file the owner chose', 'audio']]) {
+    await test(`${what} keeps its source label on the desktop delete dialog`, async () => {
+      const folder = journalContext({}).JournalI18n.render('journal.window.import.import.source.names.audio.audio.folder');
+      const p = await boot(env, `/app/import/${DONE}`, { answers: journal({
+        [`GET /app/import/api/${DONE}`]: detailAnswer(DONE, { source_type: 'audio', source_display: display === 'folder' ? folder : display }),
+      }) });
+      p.press(p.q('[data-import-delete]'));
+      await settle();
+      const meta = p.byId('importDeleteModal').querySelector('.trash-dlg-meta strong').textContent;
+      assert.strictEqual(meta, display === 'folder' ? folder : display);
+    });
+  }
 
   await test("a delete out when an import's page goes finishes, and its answer neither stashes a receipt nor moves the page", async () => {
     const p = await boot(env, `/app/import/${DONE}`);

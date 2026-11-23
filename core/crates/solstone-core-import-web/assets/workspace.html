@@ -2279,10 +2279,11 @@ function importEraseDate(eraseAt) {
 }
 
 // The Import page's name for a source, or nothing for one it doesn't know.
+// `audio` takes the journal's word, which tells a folder's file from one the
+// owner chose.
 function importSourceName(sourceType, display) {
   if (!sourceType) return '';
-  return sourceMetadataByName[sourceType]?.display_name
-    || IMPORT_SOURCE_NAMES[sourceType]
+  return pageSourceName(sourceType)
     || sourceLabel({ source_type: sourceType, source_display: display || '' })
     || '';
 }

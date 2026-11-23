@@ -25,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - text and image imports now read "text" and "image" on the import page, like every other source, in the list, on an import's own page and while one is running. they could read "Text" or "Image" before.
+- an audio file you imported now reads "audio" when you delete it from the import page. it read "audio folder" before, which only fits files the old audio folder sync brought in.
 - an agent working in a tmux session you've listed in `output_sessions` is now usually named by the session, as in "the agent in qa", rather than by its window's title. thanks @dvanduzer for the retest (#424).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.

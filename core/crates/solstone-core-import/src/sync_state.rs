@@ -282,30 +282,35 @@ impl SyncMadeImports {
         if self.plaud_imports.contains(id) {
             return true;
         }
-        let dir = root.join("imports").join(id);
-        let read = |name: &str| -> Option<Map<String, Value>> {
-            serde_json::from_slice::<Value>(&fs::read(dir.join(name)).ok()?)
-                .ok()?
-                .as_object()
-                .cloned()
-        };
-        let import = read("import.json");
-        if import
+        if import_record(root, id, "import.json")
             .as_ref()
             .and_then(|record| record.get("plaud_file_id"))
             .is_some_and(Value::is_string)
         {
             return true;
         }
+        self.made_by_audio_folder(root, id)
+    }
+
+    /// Whether the import `id` is a file the retired audio-folder sync brought in.
+    #[must_use]
+    pub fn made_by_audio_folder(&self, root: &Path, id: &str) -> bool {
         if self.audio_hashes.is_empty() {
             return false;
         }
-        [import, read("manifest.json")]
+        ["import.json", "manifest.json"]
             .into_iter()
-            .flatten()
+            .filter_map(|name| import_record(root, id, name))
             .filter_map(|record| record.get("source_hash")?.as_str().map(str::to_owned))
             .any(|hash| self.audio_hashes.contains(&hash))
     }
+}
+
+fn import_record(root: &Path, id: &str, name: &str) -> Option<Map<String, Value>> {
+    serde_json::from_slice::<Value>(&fs::read(root.join("imports").join(id).join(name)).ok()?)
+        .ok()?
+        .as_object()
+        .cloned()
 }
 
 fn read_retired_audio_catalog(root: &Path) -> Option<Map<String, Value>> {

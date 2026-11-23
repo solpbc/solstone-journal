@@ -868,7 +868,20 @@ fn detail_sync(state: AppState, timestamp: String, locale: &str) -> Response {
         // Same lowercase display name the list row carries for this source, when the
         // source has an upload tile. A source_type with no tile (e.g. `audio`) falls
         // back to the projection's own computed display rather than the raw source_type.
-        if let Some(display) = source_display_localized(locale, &projection.source_type) {
+        // A file the retired audio-folder sync brought in is named for the folder;
+        // an audio file the owner chose is plain audio.
+        if projection.source_type == "audio"
+            && solstone_core_import::sync_state::SyncMadeImports::read(&state.root)
+                .made_by_audio_folder(&state.root, &timestamp)
+        {
+            body.insert(
+                "source_display".into(),
+                json!(text(
+                    locale,
+                    "journal.window.import.import.source.names.audio.audio.folder"
+                )),
+            );
+        } else if let Some(display) = source_display_localized(locale, &projection.source_type) {
             body.insert("source_display".into(), json!(display));
         } else {
             body.insert("source_display".into(), json!(projection.source_display));
@@ -1099,8 +1112,24 @@ mod tests {
         // A sync's run keeps its own page, where the owner deletes it whole.
         let detail = detail_sync(state.clone(), plaud.to_owned(), "en");
         assert_eq!(detail.status(), StatusCode::OK);
-        let folder_detail = detail_sync(state, folder.to_owned(), "en");
+        let locale = response_locale(None);
+        let folder_detail = detail_sync(state.clone(), folder.to_owned(), locale);
         assert_eq!(folder_detail.status(), StatusCode::OK);
+        // The folder's file is named for the folder; the owner's own pick is not.
+        let display = |response: Response| async move {
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            serde_json::from_slice::<Value>(&bytes).unwrap()["source_display"].clone()
+        };
+        let folder_word = text(
+            locale,
+            "journal.window.import.import.source.names.audio.audio.folder",
+        );
+        assert_eq!(display(folder_detail).await, folder_word);
+        let chosen_display = display(detail_sync(state, chosen.to_owned(), locale)).await;
+        assert_ne!(chosen_display, folder_word);
+        assert_eq!(chosen_display, "audio");
     }
 
     #[test]
