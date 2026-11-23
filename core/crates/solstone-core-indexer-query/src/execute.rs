@@ -744,15 +744,15 @@ fn register_indexed_permissions(
                 .as_str()
                 .ok()
                 .and_then(crate::types::category_from_sql_name);
-            let Some(stored) = stored else {
+            let Some(_stored) = stored else {
                 return Ok(None);
             };
             let mut paths = paths
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let category = paths
-                .entry((path.to_owned(), stored))
-                .or_insert_with(|| agent_indexed_permission(journal.as_deref(), path, stored));
+                .entry(path.to_owned())
+                .or_insert_with(|| agent_indexed_permission(journal.as_deref(), path));
             Ok(category.map(AdmittedCategory::as_str))
         },
     )?;

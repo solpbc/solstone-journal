@@ -20848,3 +20848,181 @@ fn multi_chunk_pdf_collapses_to_one_search_hit_across_browse_query_and_paginatio
     assert_eq!(bpage2["results"][0]["title"], "Greenwich warrant");
     assert!(bpage2["next_cursor"].is_null(), "{bpage2}");
 }
+
+#[test]
+fn forced_unknown_and_video_index_rows_fail_closed_across_search_fetch_and_labels() {
+    use crate::dispatch::{DispatchError, DispatchPrincipal, dispatch_authenticated_tool_call};
+    use crate::jsonrpc::ToolName;
+    use crate::references::{EntryReference, ReferenceTarget};
+    use crate::tools::ToolError;
+    use solstone_core_indexer_query::{ConnectionBoundary, ConnectionScope};
+    use solstone_core_indexer_store::db::ChunkClassification;
+
+    let journal = fixture();
+    let root = journal.path();
+    let day = "20260407";
+
+    // Legitimate admitted control file carrying the same search token.
+    let control_rel = format!("{day}/import.text/130000_0/note_transcript.md");
+    let control_abs = root.join("chronicle").join(&control_rel);
+    fs::create_dir_all(control_abs.parent().unwrap()).unwrap();
+    fs::write(&control_abs, "# Control note\n\nforcedunknownneedle\n").unwrap();
+
+    // Real files on disk for the four forced rows so file presence alone cannot mask a leak.
+    let forced_paths = [
+        (
+            format!("{day}/default/120000_60/unregistered_material.md"),
+            "default",
+        ),
+        (format!("{day}/default/120000_60/clip.mp4"), "default"),
+        (
+            format!("{day}/import.strava/120000_60/clip.mp4"),
+            "import.strava",
+        ),
+        (
+            format!("{day}/import.image/120000_60/import_kind.json"),
+            "import.image",
+        ),
+    ];
+    for (rel, _) in &forced_paths {
+        let abs = root.join("chronicle").join(rel);
+        fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        fs::write(&abs, "forcedunknownneedle forced body").unwrap();
+    }
+
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+
+    // Force indexed rows with eligible=1, unclassified=0, category='transcripts' directly
+    // into SQLite to simulate rows for unknown, video, or non-content paths.
+    let index = solstone_core_indexer_store::db::open_index(root).unwrap();
+    let mut forced_row_ids = Vec::new();
+    for (rel, stream) in &forced_paths {
+        index
+            .execute(
+                "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
+                 VALUES ('forcedunknownneedle forced body', ?1, ?2, '', 'forced', ?3, 0, '')",
+                params![rel, day, stream],
+            )
+            .unwrap();
+        let row_id = index.last_insert_rowid();
+        index
+            .execute(
+                "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) \
+                 VALUES (?1, 'transcripts', 'journal_wide', 1, 0)",
+                params![rel],
+            )
+            .unwrap();
+        forced_row_ids.push((rel.clone(), (*stream).to_owned(), row_id));
+    }
+    drop(index);
+
+    // Grant every single admitted category on whole_journal.
+    let all_categories: Vec<String> = solstone_core_format::content::kinds::KINDS
+        .iter()
+        .filter_map(|spec| spec.permission.map(|p| p.as_str().to_owned()))
+        .collect();
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: all_categories.clone(),
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+
+    // 1. Search by keyword finds only the legitimate control note, never any forced row.
+    let searched = probe(
+        &journal,
+        "search",
+        json!({"query": "forcedunknownneedle", "limit": 20}),
+    )
+    .unwrap();
+    let results = searched["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1, "{searched}");
+    assert_eq!(results[0]["title"], "Control note");
+    assert_eq!(results[0]["content_kind"], "notes");
+
+    // 2. Day browse under transcripts and body finds nothing from the forced rows.
+    for kind in ["transcripts", "body"] {
+        let browse = probe(
+            &journal,
+            "search",
+            json!({"day": day, "kind": [kind], "limit": 20}),
+        )
+        .unwrap();
+        assert!(
+            browse["results"].as_array().unwrap().is_empty(),
+            "forced row leaked under kind={kind}: {browse}"
+        );
+    }
+
+    // 3. ConnectionBoundary::allows_classification, indexed_entry_kind, and fetch with
+    //    minted EntryReferences all fail closed and never label any forced path `transcripts`.
+    let full_boundary = ConnectionBoundary::from_category_tokens(
+        all_categories.iter().map(String::as_str),
+        ConnectionScope::WholeJournal,
+    )
+    .unwrap();
+    let PermissionDecision::Snapshot(snapshot) = evaluate_connection_read(root, CONNECTION) else {
+        panic!("expected snapshot");
+    };
+    for (rel, stream, row_id) in &forced_row_ids {
+        assert_eq!(
+            solstone_core_format::content::kinds::agent_indexed_permission(Some(root), rel),
+            None,
+            "{rel}"
+        );
+        assert_eq!(
+            crate::dispatch::indexed_entry_kind(root, rel, None),
+            None,
+            "{rel}"
+        );
+        let forced_class = ChunkClassification {
+            path: rel.clone(),
+            category: Some("transcripts"),
+            basis: Some("journal_wide"),
+            eligible: true,
+            unclassified: false,
+            facet_ids: Vec::new(),
+        };
+        assert!(
+            !full_boundary.allows_classification(root, &forced_class),
+            "boundary must reject forced row {rel}"
+        );
+        let reference = crate::dispatch::codec()
+            .mint(
+                CONNECTION,
+                snapshot.generation,
+                ReferenceTarget::Entry(EntryReference {
+                    day: day.to_owned(),
+                    stream: stream.clone(),
+                    path: rel.clone(),
+                    idx: 0,
+                    row_id: *row_id,
+                    activity_proof: None,
+                    record_identity: None,
+                    markdown_fingerprint: None,
+                    source_digest: None,
+                    byte_offset: None,
+                }),
+            )
+            .unwrap();
+        let err = dispatch_authenticated_tool_call(
+            root,
+            DispatchPrincipal {
+                connection: CONNECTION,
+                agent_identity: CONNECTION,
+            },
+            ToolName::Fetch,
+            Some(&json!({"reference": reference})),
+            jiff::Timestamp::now(),
+        )
+        .err()
+        .expect("expected error");
+        assert!(
+            matches!(err, DispatchError::Tool(ToolError::ReferenceNotFound)),
+            "fetch must refuse forced row {rel}, got {err:?}"
+        );
+    }
+}

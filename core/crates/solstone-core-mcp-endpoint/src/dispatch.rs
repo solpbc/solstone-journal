@@ -523,8 +523,7 @@ fn fetch_target_missing_kind(
         ReferenceTarget::Entry(entry) => {
             let path = entry.path.strip_prefix("chronicle/").unwrap_or(&entry.path);
             let spec = solstone_core_format::content::resolve_spec(path)?;
-            let solstone_core_format::content::IndexDisposition::Admitted { category, .. } =
-                spec.disposition
+            let solstone_core_format::content::IndexDisposition::Admitted { .. } = spec.disposition
             else {
                 return None;
             };
@@ -532,7 +531,7 @@ fn fetch_target_missing_kind(
                 additional_indexed_permission, agent_indexed_permission,
             };
             // The topic boundary does not disclose which inputs a saved reference may contain.
-            let category = agent_indexed_permission(Some(journal_root), path, category)?;
+            let category = agent_indexed_permission(Some(journal_root), path)?;
             [Some(category), additional_indexed_permission(path)]
                 .into_iter()
                 .flatten()
@@ -2078,27 +2077,23 @@ fn search(
             } else {
                 None
             };
-            let Some(classification) = facet_declarations
-                .as_ref()
-                .map(|declarations| {
-                    classify_source(
-                        journal_root,
-                        &hit.metadata.path,
-                        Some(&hit.metadata.stream),
-                        declarations,
-                    )
-                })
-                .filter(|classification| {
-                    if topic.is_some() {
-                        boundary.allows_scope(classification)
-                    } else {
-                        boundary.allows_classification(journal_root, classification)
-                    }
-                })
-            else {
+            let allowed_classification = facet_declarations.as_ref().is_some_and(|declarations| {
+                let classification = classify_source(
+                    journal_root,
+                    &hit.metadata.path,
+                    Some(&hit.metadata.stream),
+                    declarations,
+                );
+                if topic.is_some() {
+                    boundary.allows_scope(&classification)
+                } else {
+                    boundary.allows_classification(journal_root, &classification)
+                }
+            });
+            if !allowed_classification {
                 live_dropped = true;
                 continue;
-            };
+            }
             let (served_text, activity_proof, hidden, record, record_identity) =
                 match admit_activity(
                     journal_root,
@@ -2177,22 +2172,18 @@ fn search(
                 served_text
             };
             let photo = crate::photo_picture::is_photo_description(&hit.metadata.path);
-            let category = topic
-                .as_ref()
-                .and_then(|doc| {
-                    doc.selected_kinds()
-                        .find(|kind| boundary.selects_kind(*kind))
-                })
-                .unwrap_or_else(|| {
-                    solstone_core_format::content::kinds::indexed_permission(
-                        Some(journal_root),
-                        &hit.metadata.path,
-                        classification
-                            .category
-                            .and_then(AdmittedCategory::from_stored_word)
-                            .unwrap_or(AdmittedCategory::Transcripts),
-                    )
-                });
+            let Some(category) = (if let Some(doc) = &topic {
+                doc.selected_kinds()
+                    .find(|kind| boundary.selects_kind(*kind))
+            } else {
+                solstone_core_format::content::kinds::agent_indexed_permission(
+                    Some(journal_root),
+                    &hit.metadata.path,
+                )
+            }) else {
+                live_dropped = true;
+                continue;
+            };
             let is_document = category == AdmittedCategory::Documents
                 && hit.metadata.path.ends_with("/document_transcript.md");
             if request.query.trim().is_empty()
@@ -3437,11 +3428,9 @@ fn fetch(
             if let Some(doc) = &topic {
                 insert_topic_kinds(&mut value, doc);
             } else {
-                insert_indexed_kind(
-                    &mut value,
-                    &entry.path,
-                    indexed_entry_kind(journal_root, &entry.path, record.as_ref()),
-                );
+                let kind = indexed_entry_kind(journal_root, &entry.path, record.as_ref())
+                    .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+                insert_indexed_kind(&mut value, &entry.path, kind);
             }
             if let Some(stream) = indexed_hit_stream(&entry.stream, &entry.path, record.as_ref()) {
                 value["source"] = json!(source_label(&source_labels(journal_root), stream));
@@ -5016,27 +5005,19 @@ fn insert_topic_kinds(value: &mut Value, doc: &TopicDocument) {
 }
 
 /// Content kind of an indexed entry as the registry and permission check settle it.
-fn indexed_entry_kind(
+pub(crate) fn indexed_entry_kind(
     journal_root: &Path,
     path: &str,
     activity_record: Option<&Map<String, Value>>,
-) -> AdmittedCategory {
+) -> Option<AdmittedCategory> {
     if activity_record.is_some_and(|record| {
         solstone_core_facets::is_body_record(record)
             || solstone_core_format::content::is_strava_reading(record)
     }) {
-        return AdmittedCategory::Body;
+        return Some(AdmittedCategory::Body);
     }
     let rel = path.strip_prefix("chronicle/").unwrap_or(path);
-    let stored = solstone_core_format::content::resolve_spec(rel)
-        .and_then(|spec| match spec.disposition {
-            solstone_core_format::content::IndexDisposition::Admitted { category, .. } => {
-                Some(category)
-            }
-            solstone_core_format::content::IndexDisposition::Excluded => None,
-        })
-        .unwrap_or(AdmittedCategory::Transcripts);
-    solstone_core_format::content::kinds::indexed_permission(Some(journal_root), rel, stored)
+    solstone_core_format::content::kinds::agent_indexed_permission(Some(journal_root), rel)
 }
 
 /// Title for a listed segment row: speech keeps `"Transcript segment — {day}"`;

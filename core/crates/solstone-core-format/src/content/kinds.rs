@@ -364,61 +364,60 @@ impl DashboardImportItem {
     }
 }
 
+fn permission_for_spec(
+    journal: Option<&Path>,
+    path: &str,
+    spec: &FilePattern,
+) -> Option<AdmittedCategory> {
+    let IndexDisposition::Admitted { .. } = spec.disposition else {
+        return None;
+    };
+    if super::conversation::unresolved_markdown(path) {
+        return Some(AdmittedCategory::Transcripts);
+    }
+    if body_material::is_body_path(path) {
+        return Some(AdmittedCategory::Body);
+    }
+    if super::screen_text::is_screen_text_path(path) {
+        return Some(AdmittedCategory::ScreenText);
+    }
+    if additional_indexed_permission(path).is_some() {
+        return Some(AdmittedCategory::Facets);
+    }
+    match spec.kind {
+        KindAssignment::Settled(kind) | KindAssignment::Legacy(kind) => kind.permission(),
+        KindAssignment::ImportSummary => import_summary_permission(journal, path),
+        KindAssignment::NotContent => None,
+    }
+}
+
 /// Effective permission for material that already has an index admission.
+///
+/// Legacy non-agent fallback when an already-eligible path does not settle a
+/// permission on its own. Every agent connection path must call
+/// [`agent_indexed_permission`], which fails closed (`None`).
 pub fn indexed_permission(
     journal: Option<&Path>,
     path: &str,
     stored: AdmittedCategory,
 ) -> AdmittedCategory {
-    if super::conversation::unresolved_markdown(path) {
-        return AdmittedCategory::Transcripts;
-    }
-    if body_material::is_body_path(path) {
-        return AdmittedCategory::Body;
-    }
-    if super::screen_text::is_screen_text_path(path) {
-        return AdmittedCategory::ScreenText;
-    }
-    if additional_indexed_permission(path).is_some() {
-        return AdmittedCategory::Facets;
-    }
-    let Some(spec) = file_spec(path) else {
-        return stored;
-    };
-    if !matches!(
-        spec.disposition,
-        IndexDisposition::Admitted {
-            category: AdmittedCategory::Transcripts,
-            ..
-        }
-    ) {
-        return stored;
-    }
-    match spec.kind {
-        KindAssignment::Settled(kind) | KindAssignment::Legacy(kind) => {
-            kind.permission().unwrap_or(stored)
-        }
-        KindAssignment::ImportSummary => import_summary_permission(journal, path).unwrap_or(stored),
-        KindAssignment::NotContent => stored,
-    }
+    file_spec(path)
+        .and_then(|spec| permission_for_spec(journal, path, spec))
+        .unwrap_or(stored)
 }
 
-/// A historical index may store every import summary under Transcripts.
-/// Agent queries need the import's actual kind before admitting even a count.
-/// A search hit on a conversation summary uses the Summaries grant. A hit
-/// on the original conversation goes through its own source reader.
-pub fn agent_indexed_permission(
-    journal: Option<&Path>,
-    path: &str,
-    stored: AdmittedCategory,
-) -> Option<AdmittedCategory> {
+/// Effective permission for an indexed path on every agent connection path.
+///
+/// Fails closed (`None`) for segment topics (which have a separate multi-kind
+/// boundary), paths that match no registry row, non-admitted rows, kinds with
+/// no permission switch (such as video), non-content rows, and import
+/// summaries whose manifest is missing, unreadable or unrecognised.
+pub fn agent_indexed_permission(journal: Option<&Path>, path: &str) -> Option<AdmittedCategory> {
     if super::topics::segment_path(path).is_some() {
         return None; // Segment topics have a separate multi-kind boundary.
     }
-    if !(path.starts_with("imports/") && path.ends_with("/summary.md")) {
-        return Some(indexed_permission(journal, path, stored));
-    }
-    import_summary_permission(journal, path)
+    let spec = file_spec(path)?;
+    permission_for_spec(journal, path, spec)
 }
 
 fn import_summary_permission(journal: Option<&Path>, path: &str) -> Option<AdmittedCategory> {
@@ -719,5 +718,97 @@ mod tests {
         let spec = AdmittedCategory::ProfilePics.kind_spec();
         assert_eq!(spec.option_of(), Some("entities"));
         assert_eq!(AdmittedCategory::from_stored_word(NO_PROFILE_PICS), None);
+    }
+
+    #[test]
+    fn agent_indexed_permission_fails_closed_for_unknown_excluded_and_switchless_kinds() {
+        use super::super::{ContentResolution, FileCondition, OfferedTo, PatternRoot, ScopeBasis};
+
+        // Paths with no registry row, excluded rows (including video and non-content),
+        // and excluded rows under a body stream all fail closed.
+        for closed in [
+            "20260407/default/120000_60/unknown_mystery.md",
+            "20260407/default/120000_60/clip.mp4",
+            "20260407/import.strava/120000_60/clip.mp4",
+            "20260407/import.image/120000_60/import_kind.json",
+            "20260407/phone/120000_60/imported.md",
+            "20260407/default/120000_60/talents/topics.md",
+            "imports/20260407_090000/summary.md",
+        ] {
+            assert_eq!(agent_indexed_permission(None, closed), None, "{closed}");
+        }
+
+        // Even if a registry row were admitted, a kind with no permission switch
+        // (such as Kind::Video) or KindAssignment::NotContent fails closed.
+        let admitted_video = FilePattern {
+            pattern: "*/*/*/*.mp4",
+            root: PatternRoot::DayRooted,
+            format: FileFormat::Content(Family::Markdown),
+            classification: ContentResolution::Indexed(Family::Markdown),
+            disposition: IndexDisposition::Admitted {
+                category: AdmittedCategory::Transcripts,
+                basis: ScopeBasis::SegmentAssigned,
+            },
+            kind: KindAssignment::Settled(Kind::Video),
+            unit: ContentUnit::Segment,
+            offered_to: OfferedTo::NONE,
+            condition: FileCondition::Path,
+            segment: None,
+        };
+        assert_eq!(
+            permission_for_spec(None, "20260407/default/120000_60/clip.mp4", &admitted_video),
+            None
+        );
+
+        let admitted_not_content = FilePattern {
+            kind: KindAssignment::NotContent,
+            ..admitted_video
+        };
+        assert_eq!(
+            permission_for_spec(
+                None,
+                "20260407/import.image/120000_60/import_kind.json",
+                &admitted_not_content
+            ),
+            None
+        );
+
+        // Existing admitted paths keep their exact permissions.
+        for (path, expected) in [
+            (
+                "20260407/import.obsidian/120000_60/note_transcript.md",
+                AdmittedCategory::Notes,
+            ),
+            (
+                "20260407/agent-memory-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/120000_60/note.txt",
+                AdmittedCategory::Notes,
+            ),
+            ("20260407/body.md", AdmittedCategory::Body),
+            (
+                "20260407/import.strava/070000_300/talents/activity.md",
+                AdmittedCategory::Body,
+            ),
+            ("20260407/location.md", AdmittedCategory::Places),
+            (
+                "20260407/default/120000_60/talents/screen_text.md",
+                AdmittedCategory::ScreenText,
+            ),
+            ("20260407/talents/daily.md", AdmittedCategory::Facets),
+            (
+                "facets/work/activities/20260407.jsonl",
+                AdmittedCategory::Facets,
+            ),
+            (
+                "facets/work/entities/20260407.jsonl",
+                AdmittedCategory::Entities,
+            ),
+            ("reflections/weekly/2026-W15.md", AdmittedCategory::Facets),
+        ] {
+            assert_eq!(
+                agent_indexed_permission(None, path),
+                Some(expected),
+                "{path}"
+            );
+        }
     }
 }

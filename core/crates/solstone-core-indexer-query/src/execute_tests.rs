@@ -580,8 +580,10 @@ fn browse_uses_recency_and_rowid_instead_of_bm25_ties() {
 
 #[test]
 fn connection_recency_uses_day_path_idx_and_start_after_not_rowid() {
+    const Z_PATH: &str = "20260107/import.audio/120000_60/z_transcript.md";
+    const M_PATH: &str = "20260107/import.audio/120000_60/m_transcript.md";
     let (root, connection) = seeded_root("connection-recency-start-after");
-    for (path, idx) in [("z-path", 1), ("z-path", 0), ("m-path", 9)] {
+    for (path, idx) in [(Z_PATH, 1), (Z_PATH, 0), (M_PATH, 9)] {
         insert(
             &connection,
             "connection-recency",
@@ -593,8 +595,8 @@ fn connection_recency_uses_day_path_idx_and_start_after_not_rowid() {
             idx,
         );
     }
-    seed_classification(&connection, "z-path", "transcripts", "journal_wide", &[]);
-    seed_classification(&connection, "m-path", "transcripts", "journal_wide", &[]);
+    seed_classification(&connection, Z_PATH, "transcripts", "journal_wide", &[]);
+    seed_classification(&connection, M_PATH, "transcripts", "journal_wide", &[]);
     finish_classification(&connection);
     drop(connection);
 
@@ -610,7 +612,7 @@ fn connection_recency_uses_day_path_idx_and_start_after_not_rowid() {
         .iter()
         .map(|hit| (hit.metadata.path.as_str(), hit.metadata.idx))
         .collect::<Vec<_>>();
-    assert_eq!(first_coordinates, [("z-path", 1), ("z-path", 0)]);
+    assert_eq!(first_coordinates, [(Z_PATH, 1), (Z_PATH, 0)]);
 
     let anchor = first.results.last().unwrap();
     let second = crate::search_connection(
@@ -633,7 +635,7 @@ fn connection_recency_uses_day_path_idx_and_start_after_not_rowid() {
             .iter()
             .map(|hit| (hit.metadata.path.as_str(), hit.metadata.idx))
             .collect::<Vec<_>>(),
-        [("m-path", 9)]
+        [(M_PATH, 9)]
     );
     fs::remove_dir_all(root).expect("cleanup connection recency index");
 }
@@ -683,15 +685,24 @@ fn connection_pages(root: &Path, query: &str) -> Vec<Vec<(String, String, i64)>>
 
 #[test]
 fn connection_recency_from_the_path_lookup_keys_answers_as_the_rows_do() {
+    const UNDATED: &str = "20260101/import.audio/090000_60/d_transcript.md";
     let (root, connection) = seeded_root("connection-keys");
     let rows = [
-        ("20260101/talents/a.md", "20260101", 0),
-        ("20260101/talents/a.md", "20260101", 1),
-        ("20260103/talents/b.md", "20260103", 0),
-        ("entities/c/entity.md", "20260102", 0),
-        ("entities/c/entity.md", "20260104", 1),
-        ("undated/d.md", "", 0),
-        ("20260105/talents/e.md", "20260105", 2),
+        ("20260101/default/100000_60/talents/audio.md", "20260101", 0),
+        ("20260101/default/100000_60/talents/audio.md", "20260101", 1),
+        ("20260103/default/100000_60/talents/audio.md", "20260103", 0),
+        (
+            "20260102/import.audio/100000_60/c_transcript.md",
+            "20260102",
+            0,
+        ),
+        (
+            "20260102/import.audio/100000_60/c_transcript.md",
+            "20260104",
+            1,
+        ),
+        (UNDATED, "", 0),
+        ("20260105/default/100000_60/talents/audio.md", "20260105", 2),
     ];
     for (path, day, idx) in rows {
         insert(&connection, "copper kettle", path, day, "", "flow", "", idx);
@@ -780,7 +791,7 @@ fn connection_recency_from_the_path_lookup_keys_answers_as_the_rows_do() {
     set_keys_ready(1);
     Connection::open(db_path(&root))
         .expect("open writer")
-        .execute("DELETE FROM chunk_sources WHERE path = 'undated/d.md'", [])
+        .execute("DELETE FROM chunk_sources WHERE path = ?1", [UNDATED])
         .expect("drop a lookup row");
     assert_eq!(connection_pages(&root, "copper"), from_rows);
     fs::remove_dir_all(root).expect("cleanup connection keys index");
@@ -1487,11 +1498,26 @@ fn connection_search_uses_classification_and_never_serializes_scores() {
 fn connection_scope_contracts_cover_categories_and_facet_bases() {
     const A: &str = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
     const B: &str = "b1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    const SEGMENT_ONE: &str = "20260101/default/100000_60/talents/audio.md";
+    const ENTITY_ONE: &str = "facets/work/entities/20260102.jsonl";
+    const FACET_ONE: &str = "facets/work/events/20260103.jsonl";
+    const DAY_WIDE: &str = "20260104/talents/daily.md";
+    const REFLECTION_WIDE: &str = "reflections/weekly/2026-W01.md";
+    const IMPORT_WIDE: &str = "imports/20260106_090000/summary.md";
+    const SEGMENT_TWO: &str = "20260107/default/100000_60/talents/audio.md";
+    const SEGMENT_ZERO: &str = "20260108/default/100000_60/talents/audio.md";
+    const FACET_TWO: &str = "facets/outside/events/20260109.jsonl";
     let (root, connection) = seeded_root("connection-scope-contracts");
+    write_rel(
+        &root,
+        "imports/20260106_090000/manifest.json",
+        r#"{"import_id":"20260106_090000","source_type":"chatgpt"}"#,
+    );
+    write_rel(&root, IMPORT_WIDE, "scopefixture import-wide");
     let rows = [
         (
             "scopefixture transcript-one",
-            "segment-one",
+            SEGMENT_ONE,
             "20260101",
             "work",
             "transcripts",
@@ -1500,7 +1526,7 @@ fn connection_scope_contracts_cover_categories_and_facet_bases() {
         ),
         (
             "scopefixture entity-one",
-            "entity-one",
+            ENTITY_ONE,
             "20260102",
             "work",
             "entities",
@@ -1509,7 +1535,7 @@ fn connection_scope_contracts_cover_categories_and_facet_bases() {
         ),
         (
             "scopefixture facet-one",
-            "facet-one",
+            FACET_ONE,
             "20260103",
             "work",
             "facets",
@@ -1518,7 +1544,7 @@ fn connection_scope_contracts_cover_categories_and_facet_bases() {
         ),
         (
             "scopefixture day-wide",
-            "day-wide",
+            DAY_WIDE,
             "20260104",
             "",
             "facets",
@@ -1527,7 +1553,7 @@ fn connection_scope_contracts_cover_categories_and_facet_bases() {
         ),
         (
             "scopefixture reflection-wide",
-            "reflection-wide",
+            REFLECTION_WIDE,
             "20260105",
             "",
             "facets",
@@ -1536,7 +1562,7 @@ fn connection_scope_contracts_cover_categories_and_facet_bases() {
         ),
         (
             "scopefixture import-wide",
-            "import-wide",
+            IMPORT_WIDE,
             "20260106",
             "",
             "transcripts",
@@ -1545,7 +1571,7 @@ fn connection_scope_contracts_cover_categories_and_facet_bases() {
         ),
         (
             "scopefixture segment-two",
-            "segment-two",
+            SEGMENT_TWO,
             "20260107",
             "work",
             "transcripts",
@@ -1554,7 +1580,7 @@ fn connection_scope_contracts_cover_categories_and_facet_bases() {
         ),
         (
             "scopefixture segment-zero",
-            "segment-zero",
+            SEGMENT_ZERO,
             "20260108",
             "",
             "transcripts",
@@ -1563,7 +1589,7 @@ fn connection_scope_contracts_cover_categories_and_facet_bases() {
         ),
         (
             "scopefixture facet-two",
-            "facet-two",
+            FACET_TWO,
             "20260109",
             "outside",
             "facets",
@@ -1571,17 +1597,8 @@ fn connection_scope_contracts_cover_categories_and_facet_bases() {
             vec![B],
         ),
     ];
-    for (index, (content, path, day, facet, category, basis, ids)) in rows.iter().enumerate() {
-        insert(
-            &connection,
-            content,
-            path,
-            day,
-            facet,
-            "fixture",
-            "",
-            index as i64,
-        );
+    for (content, path, day, facet, category, basis, ids) in &rows {
+        insert(&connection, content, path, day, facet, "fixture", "", 0);
         seed_classification(&connection, path, category, basis, ids);
     }
     finish_classification(&connection);
@@ -1602,7 +1619,7 @@ fn connection_scope_contracts_cover_categories_and_facet_bases() {
     // AC8: all three categories can reach their corresponding material.
     assert_eq!(
         chosen_a_paths,
-        ["entity-one", "facet-one", "segment-one"]
+        [ENTITY_ONE, FACET_ONE, SEGMENT_ONE]
             .into_iter()
             .map(str::to_owned)
             .collect()
@@ -1615,16 +1632,16 @@ fn connection_scope_contracts_cover_categories_and_facet_bases() {
         .into_iter()
         .map(|hit| hit.metadata.path)
         .collect::<std::collections::BTreeSet<_>>();
-    for path in ["day-wide", "reflection-wide", "import-wide"] {
+    for path in [DAY_WIDE, REFLECTION_WIDE, IMPORT_WIDE] {
         assert!(whole_paths.contains(path));
         assert!(!chosen_a_paths.contains(path));
     }
 
     // AC10: a partial category grant hides the other two categories.
     for (category, expected) in [
-        ("Transcripts", "segment-one"),
-        ("Entities", "entity-one"),
-        ("Facets", "facet-one"),
+        ("Transcripts", SEGMENT_ONE),
+        ("Entities", ENTITY_ONE),
+        ("Facets", FACET_ONE),
     ] {
         let boundary = connection_boundary(
             &[category],
@@ -2135,7 +2152,7 @@ fn indexed_entry_is_bounded_and_does_not_prune_or_open_source_files() {
         crate::read_indexed_entry(journal, QueryBoundary::Owner, path, idx, row_id, max_bytes)
     };
     let (root, connection) = seeded_root("entry-read");
-    let path = "chronicle/20260107/talents/review.jsonl";
+    let path = "chronicle/20260107/talents/review.md";
     let content = "é".repeat(8192);
     insert(&connection, &content, path, "20260107", "", "review", "", 7);
     let id = connection.last_insert_rowid();
@@ -4351,7 +4368,7 @@ fn body_entry_root(name: &str) -> (PathBuf, &'static str) {
     );
     connection
         .execute(
-            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?, 'transcripts', 'segment_assigned', 1, 0)",
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?, 'facets', 'facet_owned', 1, 0)",
             [FILE],
         )
         .unwrap();
@@ -4595,7 +4612,7 @@ fn a_session_answers_each_request_by_that_requests_own_setting() {
 #[test]
 fn a_connection_gets_a_body_entry_only_as_its_admission_says_and_a_refused_one_leaves_no_trace() {
     let (root, file) = body_entry_root("body-entry-connection");
-    let boundary = connection_boundary(&["transcripts"], ConnectionScope::WholeJournal);
+    let boundary = connection_boundary(&["facets"], ConnectionScope::WholeJournal);
     // A connection search with no admission returns none.
     let plain = connection_search(&root, &boundary, "Kestrel");
     assert_eq!(

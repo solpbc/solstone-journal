@@ -134,9 +134,13 @@ impl ConnectionBoundary {
         if !classification.eligible || classification.unclassified {
             return false;
         }
-        let Some(stored) = classification.category.and_then(category_from_sql_name) else {
+        if classification
+            .category
+            .and_then(category_from_sql_name)
+            .is_none()
+        {
             return false;
-        };
+        }
         let path = &classification.path;
         use solstone_core_format::content::topics::{TopicDocument, segment_path};
         if segment_path(path).is_some() {
@@ -144,11 +148,9 @@ impl ConnectionBoundary {
                 && TopicDocument::read(journal, path)
                     .is_some_and(|document| self.allows_topic(&document));
         }
-        let Some(category) = solstone_core_format::content::kinds::agent_indexed_permission(
-            Some(journal),
-            path,
-            stored,
-        ) else {
+        let Some(category) =
+            solstone_core_format::content::kinds::agent_indexed_permission(Some(journal), path)
+        else {
             return false;
         };
         if (self.kind_filter.is_some()
