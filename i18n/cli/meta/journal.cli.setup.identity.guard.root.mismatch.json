@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: artifact guard does not match admitted root.",
+  "context": "Identity refusal: artifact guard does not match admitted root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "91bb5de2bb80b76cf4dc658a81b55e57de88b74199222ff14d2feea385abfbca",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Identity unsafe state: tombstoned record lacks adoption marker.",
+  "context": "Identity unsafe state: tombstoned record lacks adoption marker.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f52d7602564a027a28b3352814f9bdd72426be7693256dd735361e46ef1138d4",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

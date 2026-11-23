@@ -1,0 +1,16 @@
+{
+  "description": "Identity error: generation is out of range.",
+  "context": "Identity error: generation is out of range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8a7328514b28b1b7cfe8426f8af78294ebf1790121f91ff4d3a91d10d21801a1",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

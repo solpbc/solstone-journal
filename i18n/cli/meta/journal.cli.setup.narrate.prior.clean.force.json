@@ -1,0 +1,21 @@
+{
+  "description": "Setup narration of prior clean run with --force.",
+  "context": "Setup narration of prior clean run with --force.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "completed_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b5d86d0c2e0f67de7bb187f2bda59abd64ea740f6aa53fd9f68753086cf5bf71",
+  "max_length": 279,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -12704,3 +12704,325 @@ journal.cli.install.fit.disk.ok.unknown = { $available } GB free; { $requirement
 journal.cli.install.fit.disk.overflow = available disk space overflow
 
 journal.cli.install.fit.disk.unsupported = disk-space inspection is unsupported on this platform
+
+journal.cli.setup.identity.io.create.home = create setup home directory: { $error }
+
+journal.cli.setup.identity.guard.missing = identity guard fields are incomplete
+
+journal.cli.setup.identity.guard.duplicate = duplicate identity guard { $field }
+
+journal.cli.setup.identity.guard.invalid = invalid identity guard { $field }
+
+journal.cli.setup.identity.foreign.artifacts = existing wrapper or service artifacts are bound to a different installation
+
+journal.cli.setup.identity.uncertain.artifacts = artifact binding is malformed or ambiguous
+
+journal.cli.setup.identity.home.unset = HOME is not set
+
+journal.cli.setup.identity.path.outside = PATH resolves outside the V2 installation
+
+journal.cli.setup.identity.windows.path.odd = Windows path has an odd byte count
+
+journal.cli.setup.identity.adopted.no.marker = adopted record has no adoption marker
+
+journal.cli.setup.identity.guard.mismatch = artifact guard does not match identity
+
+journal.cli.setup.identity.guard.root.mismatch = artifact guard does not match the admitted root
+
+journal.cli.setup.identity.guard.incomplete = artifact guard is not a complete matching identity
+
+journal.cli.setup.identity.executable.unavailable = current executable is unavailable
+
+journal.cli.setup.identity.wrapper.journal.unsafe = effective journal path cannot be represented safely in managed wrappers
+
+journal.cli.setup.identity.no.bootstrap.evidence = existing artifacts have no valid bootstrap evidence
+
+journal.cli.setup.identity.guarded.no.record = existing wrapper or service artifacts are guarded, but no matching installation record exists in identity storage
+
+journal.cli.setup.identity.finish.setup.first = finish journal setup before changing its folder
+
+journal.cli.setup.identity.finish.recovery.first = finish setup or recovery before changing the journal folder
+
+journal.cli.setup.identity.generation.decimal = generation is not canonical decimal
+
+journal.cli.setup.identity.generation.range = generation is out of range
+
+journal.cli.setup.identity.generation.nonzero = generation must be nonzero
+
+journal.cli.setup.identity.generation.overflow = generation overflow
+
+journal.cli.setup.identity.not.found = installation identity does not exist
+
+journal.cli.setup.identity.provider.app.dir = installation provider base has no application directory
+
+journal.cli.setup.identity.provider.parent = installation provider base has no parent
+
+journal.cli.setup.identity.root.unavailable = installation root is unavailable
+
+journal.cli.setup.identity.legacy.needs.manifest = legacy artifacts need a valid provider-less schema-v1 manifest
+
+journal.cli.setup.identity.legacy.manifest.invalid = legacy manifest evidence is malformed or unreadable
+
+journal.cli.setup.identity.record.stage.malformed = malformed record stage
+
+journal.cli.setup.identity.namespace.mismatch = namespace record does not match its root namespace
+
+journal.cli.setup.identity.owner.root.changed = owner admission root changed during lock
+
+journal.cli.setup.identity.windows.platform.mismatch = owner platform does not match this Windows build
+
+journal.cli.setup.identity.prepared.uninstall = prepared identity cannot be uninstalled
+
+journal.cli.setup.identity.record.stage.stale = stale record stage does not match its name
+
+journal.cli.setup.identity.changed.retry = the installation changed while changing its journal folder; try again
+
+journal.cli.setup.identity.tombstoned.no.marker = tombstoned record has no adoption marker
+
+journal.cli.setup.prompt.existing.journal = { $path } already contains journal data; proceed? [y/N]: 
+
+journal.cli.setup.prompt.proceed = proceed? [y/N]: 
+
+journal.cli.setup.error.sign.in.windows.only = solstone journal setup: --initial-start-at-sign-in is only available on Windows
+
+journal.cli.setup.error.refused.before.mutation = solstone journal setup: refused before mutation: { $error }
+
+journal.cli.setup.error.home.dir = setup could not determine your home directory
+
+journal.cli.setup.warning.package.receipt = solstone journal setup: warning: package receipt was not written: { $error }
+
+journal.cli.setup.warning.manifest = warning: could not write setup manifest: { $error }
+
+journal.cli.setup.warning.launcher.ownership = warning: could not inspect solstone launcher ownership: { $error }
+
+journal.cli.setup.service.restart.exited = service restart exited { $code }
+
+journal.cli.setup.plan.heading.dry.run = setup dry-run:
+
+journal.cli.setup.plan.heading.explain = setup plan:
+
+journal.cli.setup.plan.mode = { $indent }mode: { $mode }
+
+journal.cli.setup.plan.journal = { $indent }journal: { $path } ({ $source })
+
+journal.cli.setup.plan.port = { $indent }port: { $value } ({ $source })
+
+journal.cli.setup.plan.variant = { $indent }variant: { $value } ({ $source })
+
+journal.cli.setup.plan.step.timeout = { $indent }step_timeout_seconds: { $value } ({ $source })
+
+journal.cli.setup.plan.model.download.default = { $indent }model download: no setup time limit (default)
+
+journal.cli.setup.plan.source.checkout.true = { $indent }source checkout: True
+
+journal.cli.setup.plan.source.checkout.false = { $indent }source checkout: False
+
+journal.cli.setup.plan.step.header = [step { $index }/{ $total }] { $name }
+
+journal.cli.setup.plan.identity.admission = identity admission: would run before mutating setup steps
+
+journal.cli.setup.plan.doctor = would run: { $binary } journal doctor --readiness
+
+journal.cli.setup.plan.write.config = would write: { $path }
+
+journal.cli.setup.plan.install.models = would run: { $binary } journal install-models --variant { $variant }
+
+journal.cli.setup.plan.skills.user = would run: { $binary } skills install --agent all
+
+journal.cli.setup.plan.skills.journal = would run: { $binary } skills install --project { $journal } --agent all
+
+journal.cli.setup.plan.wrapper.windows = would skip POSIX wrapper provisioning; the Windows package exposes the commands directly
+
+journal.cli.setup.plan.wrapper.unix = would provision managed solstone and journal wrappers in-process
+
+journal.cli.setup.plan.service = would install and start the journal service
+
+journal.cli.setup.plan.brain = would set the local provider lane if this computer can run the local model, and bootstrap it if nothing blocks it
+
+journal.cli.setup.narrate.sol.keeps.journal = solstone on this Mac already keeps this journal, so setup did not install a background launcher.{ $line_break }Run solstone journal doctor if something looks wrong.
+
+journal.cli.setup.narrate.step.running.command = [step { $index }/{ $total }] running { $name }: { $command }
+
+journal.cli.setup.narrate.step.running = [step { $index }/{ $total }] running { $name }...
+
+journal.cli.setup.narrate.model.recovery.installer = model installation did not finish. run { $journal } install-models --variant { $variant }.
+
+journal.cli.setup.narrate.model.recovery.direct = model installation did not finish. run { $journal } install-models --variant { $variant }, then { $journal } setup.
+
+journal.cli.setup.narrate.prior.clean.force = solstone journal setup last ran cleanly on { $completed_at }; re-running all steps (--force).
+
+journal.cli.setup.narrate.prior.clean.verify = solstone journal setup last ran cleanly on { $completed_at }; verifying current state.
+
+journal.cli.setup.narrate.prior.force.hint = Use --force to re-run all steps unconditionally.
+
+journal.cli.setup.narrate.prior.incomplete.header = solstone journal setup last run on { $started_at } left these steps incomplete:
+
+journal.cli.setup.narrate.prior.incomplete.item = { $indent }- { $name } (failed)
+
+journal.cli.setup.narrate.prior.incomplete.hint = Re-running will verify state and re-run incomplete steps.
+
+journal.cli.setup.narrate.step.skipped = [step { $index }/{ $total }] skipped { $name }: { $reason }
+
+journal.cli.setup.narrate.step.failed = solstone journal setup: { $name } failed: { $message }
+
+journal.cli.setup.narrate.complete.set.up = solstone is set up.
+
+journal.cli.setup.narrate.complete.installed = solstone is installed.
+
+journal.cli.setup.narrate.complete.counts = { $skipped } of { $total } steps already done; ran { $ran }
+
+journal.cli.setup.narrate.artifacts.header = artifacts:
+
+journal.cli.setup.narrate.artifacts.none = { $indent }none
+
+journal.cli.setup.narrate.close.skip.service.unix = once your journal is running, open it with: solstone journal open
+
+journal.cli.setup.narrate.close.skip.service.url = once your journal is running, open it at { $url }
+
+journal.cli.setup.narrate.close.open.unix = open your journal: solstone journal open
+
+journal.cli.setup.narrate.close.open.url = open your journal: { $url }
+
+journal.cli.setup.narrate.close.finish.unix = finish setup: solstone journal open /init
+
+journal.cli.setup.narrate.close.finish.url = finish setup: { $url }/init
+
+journal.cli.setup.wrapper.retired.note = removed the older version's command-line tools; their backups are in ~/.local/share/solstone/setup-backups
+
+journal.cli.setup.wrapper.skip.path = left shell login files unchanged because --skip-path was selected
+
+journal.cli.setup.path.manual = path: could not auto-add ~/.local/bin to PATH — add this line to your shell rc manually: export PATH="$HOME/.local/bin:$PATH"
+
+journal.cli.setup.path.already = path: ~/.local/bin already on PATH
+
+journal.cli.setup.path.added.restart = path: added ~/.local/bin to shell PATH — restart your shell or run 'exec $SHELL -l' to pick it up
+
+journal.cli.setup.path.added = path: added ~/.local/bin to shell PATH
+
+journal.cli.setup.path.windows = Windows packages expose solstone directly; no POSIX PATH wrapper was installed.
+
+journal.cli.setup.clean.config.io = could not read config: { $error }
+
+journal.cli.setup.clean.config.invalid.toml = config is not valid TOML
+
+journal.cli.setup.clean.config.missing.journal = config has no journal key
+
+journal.cli.setup.clean.config.not.string = config journal value is not a string
+
+journal.cli.setup.clean.config.not.absolute = config journal path is not absolute
+
+journal.cli.setup.clean.preflight.failed = clean uninstall preflight failed: { $error }
+
+journal.cli.setup.clean.refused = clean uninstall refused: { $reason }
+
+journal.cli.setup.clean.no.binding = clean uninstall refused: no adopted installation identity
+
+journal.cli.setup.clean.journal.line = journal: { $path }
+
+journal.cli.setup.clean.no.owned.path = no owned path
+
+journal.cli.setup.clean.readmit.failed = could not admit the installation again after removing its service: { $error }
+
+journal.cli.setup.clean.changed.during.service = the installation changed while its service was being removed
+
+journal.cli.setup.clean.step.running = [step { $step }/{ $total }] running { $name } uninstall...
+
+journal.cli.setup.clean.preflight.overlap = identity storage overlaps a protected journal
+
+journal.cli.setup.clean.preflight.census.error = installation identity census is unreadable: { $error }
+
+journal.cli.setup.clean.preflight.census.unreadable = installation identity census is unreadable
+
+journal.cli.setup.clean.preflight.config.mismatch = config journal does not match the installation identity
+
+journal.cli.setup.clean.preflight.prepared = installation identity is prepared
+
+journal.cli.setup.clean.refusal.jsonl = JSONL output is not supported for --clean-uninstall in this version.
+
+journal.cli.setup.clean.refusal.incompatible = --clean-uninstall cannot be combined with { $flags }
+
+journal.cli.setup.clean.confirm.header = solstone journal setup --clean-uninstall will remove these runtime artifacts:
+
+journal.cli.setup.clean.confirm.service.unavailable = { $indent }service location unavailable: { $error }
+
+journal.cli.setup.clean.confirm.marker.present = present
+
+journal.cli.setup.clean.confirm.marker.absent = absent
+
+journal.cli.setup.clean.confirm.marker.retain = retain
+
+journal.cli.setup.clean.confirm.service = { $indent }[{ $marker }] service: { $path }
+
+journal.cli.setup.clean.confirm.wrapper = { $indent }[{ $marker }] wrapper: { $path }
+
+journal.cli.setup.clean.confirm.config = { $indent }[{ $marker }] config: { $path }
+
+journal.cli.setup.clean.confirm.manifest = { $indent }[{ $marker }] journal manifest: { $path }
+
+journal.cli.setup.clean.confirm.keep.header = will not remove:
+
+journal.cli.setup.clean.confirm.keep.journal = { $indent }- journal directory: { $path }
+
+journal.cli.setup.clean.confirm.keep.macos.app = { $indent }- /Applications/solstone.app
+
+journal.cli.setup.clean.confirm.keep.macos.support = { $indent }- ~/Library/Application Support/solstone/
+
+journal.cli.setup.clean.confirm.keep.macos.permissions = { $indent }- macOS microphone or screen recording permissions
+
+journal.cli.setup.clean.confirm.keep.python = { $indent }- a leftover pip, uv or pipx journal install
+
+journal.cli.setup.clean.child.exited = service uninstall exited { $code }
+
+journal.cli.setup.clean.child.exited.detail = service uninstall exited { $code }: { $detail }
+
+journal.cli.setup.clean.child.timed.out = service uninstall exited { $code } (timed out)
+
+journal.cli.setup.clean.child.timed.out.detail = service uninstall exited { $code } (timed out): { $detail }
+
+journal.cli.setup.clean.reason.preserved.mark = preserved: { $mark }
+
+journal.cli.setup.clean.reason.service.guard.mismatch = service or wrapper guard does not match this installation, not removing
+
+journal.cli.setup.clean.reason.wrapper.guard.mismatch = wrapper guard does not match this installation, not removing
+
+journal.cli.setup.clean.reason.wrapper.worktree = refusing to act from a git worktree
+
+journal.cli.setup.clean.reason.wrapper.cross.repo = alias points at { $target }, not removing
+
+journal.cli.setup.clean.reason.wrapper.dangling = alias is dangling (target { $target } missing), not removing
+
+journal.cli.setup.clean.reason.wrapper.unknown = unknown
+
+journal.cli.setup.clean.reason.wrapper.foreign = alias is not a managed symlink, not removing
+
+journal.cli.setup.clean.reason.wrapper.unexpected = unexpected alias state: { $state }
+
+journal.cli.setup.clean.reason.preserved.symlink = preserved symlink
+
+journal.cli.setup.clean.reason.preserved.non.dir = preserved non-directory target
+
+journal.cli.setup.clean.reason.manifest.preserved = journal manifest is preserved
+
+journal.cli.setup.clean.reason.skill.preserved = your own skill content is preserved
+
+journal.cli.setup.clean.reason.skill.foreign = symlink target is foreign
+
+journal.cli.setup.clean.reason.skipped.after.failure = step was not run after an earlier failure
+
+journal.cli.setup.clean.reason.no.owned.path.known = no owned path is known
+
+journal.cli.setup.clean.reason.no.owned.path.platform = no owned path on this platform
+
+journal.cli.setup.clean.outcome.already.complete = clean uninstall is already complete
+
+journal.cli.setup.clean.outcome.stopped.failed = clean uninstall stopped after a failed step
+
+journal.cli.setup.clean.outcome.service.unavailable = service location unavailable: { $error }
+
+journal.cli.setup.clean.outcome.no.eligible = no eligible setup files to remove
+
+journal.cli.setup.clean.outcome.not.tty = not a tty; rerun with --yes to proceed non-interactively (cancelled)
+
+journal.cli.setup.clean.outcome.cancelled = cancelled
+
+journal.cli.setup.clean.outcome.complete = clean uninstall complete: { $removed } removed, { $already_absent } already-absent, { $preserved } preserved, { $skipped } skipped, { $failed } failed

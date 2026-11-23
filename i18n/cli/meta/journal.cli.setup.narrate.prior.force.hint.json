@@ -1,0 +1,16 @@
+{
+  "description": "Setup narration hinting --force.",
+  "context": "Setup narration hinting --force.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e268881e1ca6375d7b656587d92a4ce27576c7f773505d7e17fca2096c167f3f",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

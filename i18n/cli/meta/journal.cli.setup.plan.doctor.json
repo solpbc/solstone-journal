@@ -1,0 +1,21 @@
+{
+  "description": "Setup plan doctor step description.",
+  "context": "Setup plan doctor step description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "binary",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1bce61a12b6e89d8d6c2e6f41ba2fe976cef269bf72708d863cfca7fc12c8a41",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

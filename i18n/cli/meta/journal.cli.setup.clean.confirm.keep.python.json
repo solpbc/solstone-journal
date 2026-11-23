@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall confirmation preserved Python install line.",
+  "context": "Clean-uninstall confirmation preserved Python install line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7f8917716ab0c55c259327efaa599de60d5099d04a964723e356767ed694ada8",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall service skipped due to guard mismatch.",
+  "context": "Clean-uninstall service skipped due to guard mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd2e9d8f4d00825a6d3d1a09929d44d3463f9e6b5a402fe295f55fcfc002664a",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

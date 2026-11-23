@@ -1,0 +1,21 @@
+{
+  "description": "Setup warning when macOS launcher ownership probe fails.",
+  "context": "Setup warning when macOS launcher ownership probe fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c9f339ea6f9bc7c2c766fee753cc74ad8c493a3bada2ef385a49342121aa3ded",
+  "max_length": 198,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

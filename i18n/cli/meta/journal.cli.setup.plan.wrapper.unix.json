@@ -1,0 +1,16 @@
+{
+  "description": "Setup plan Unix wrapper step description.",
+  "context": "Setup plan Unix wrapper step description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "16f744424dc6bb2dad35f18b8af2e82841218d5c141bfdd7cb60c83fba33b6ef",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Setup PATH status after creating shell profile.",
+  "context": "Setup PATH status after creating shell profile.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "575efcb31c7e90c9a233575832c77b671bd7e54edc6c5fe651218c8c91fd73a5",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

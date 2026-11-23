@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall Windows service re-admission failure.",
+  "context": "Clean-uninstall Windows service re-admission failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "39f6b8ad170d02c4121a50012c4a6cc1d891712d266cad495179471c6ba9e00a",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

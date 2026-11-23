@@ -1,0 +1,16 @@
+{
+  "description": "Identity unsafe state: adopted record lacks adoption marker.",
+  "context": "Identity unsafe state: adopted record lacks adoption marker.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "976203a12feba45e30988dd203b5637cc87b031347676db58ac1ce1e5912ef12",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

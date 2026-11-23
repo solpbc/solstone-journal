@@ -1,0 +1,21 @@
+{
+  "description": "Setup journal step failure when cleaning up legacy log aliases.",
+  "context": "Setup journal step failure when cleaning up legacy log aliases.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0111c4d91647a9cf9bddae8b1223f42a9bb4b4f13dfa22964b3f9b2b23cc6131",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

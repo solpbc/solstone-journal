@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall journal path output line.",
+  "context": "Clean-uninstall journal path output line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0e0f0286db546f24f7bb29737592e0552bb8dac9ba1b0f8c55a0514a4c29d71b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

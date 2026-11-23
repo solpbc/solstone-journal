@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: artifact guard does not match identity.",
+  "context": "Identity refusal: artifact guard does not match identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "daa0a9ef1fbc251699abca9b79faced6e661d0e01e4fc1ef412a36696a2718ab",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

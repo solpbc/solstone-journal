@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall user skill foreign symlink preservation note.",
+  "context": "Clean-uninstall user skill foreign symlink preservation note.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "37c9e11bb76b62122ebd72337c689ae235e6afd24f68fab22eaaefb3ab2a0043",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

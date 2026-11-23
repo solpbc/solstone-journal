@@ -1,0 +1,25 @@
+{
+  "description": "Setup plan journal skills step description.",
+  "context": "Setup plan journal skills step description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "binary",
+      "type": "string"
+    },
+    {
+      "name": "journal",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d14392d82f2b1dff15e7bf1e0d05e9f548701dd99cf7f3c1ad1c96ecdafcdc30",
+  "max_length": 216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

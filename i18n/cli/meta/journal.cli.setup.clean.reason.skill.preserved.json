@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall user skill preservation note.",
+  "context": "Clean-uninstall user skill preservation note.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ca1dec22687d0280517607806346d20e517c762313541a79a8e88293d5d1daa",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

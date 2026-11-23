@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall confirmation preserved macOS app line.",
+  "context": "Clean-uninstall confirmation preserved macOS app line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "918af96f576101c5b1d19b43ed116bfdfbea74030149106ad4943cdfd0eb3400",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

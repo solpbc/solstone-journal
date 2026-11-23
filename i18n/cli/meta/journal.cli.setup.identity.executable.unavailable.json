@@ -1,0 +1,16 @@
+{
+  "description": "Identity error: current executable path is unavailable.",
+  "context": "Identity error: current executable path is unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "220c04af47c724d4513c17579a78b11f64696db1c75b57b6d5522d91fc757154",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

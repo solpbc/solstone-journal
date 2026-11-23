@@ -1,0 +1,16 @@
+{
+  "description": "Guard parse error: missing fields.",
+  "context": "Guard parse error: missing fields.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a70bf4ccd1873edc1dfeb09e16100a8831fc28910031077d853d813245177277",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

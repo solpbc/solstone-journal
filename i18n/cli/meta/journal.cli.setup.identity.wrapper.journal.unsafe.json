@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: effective journal path unsafe for managed wrappers.",
+  "context": "Identity refusal: effective journal path unsafe for managed wrappers.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b4f36e8065ca123c8a28176dc1a5badc72d51d84cd8bac6522567497df3c4401",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

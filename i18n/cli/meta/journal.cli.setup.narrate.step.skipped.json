@@ -1,0 +1,33 @@
+{
+  "description": "Setup step skipped narration.",
+  "context": "Setup step skipped narration.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "da8f16c2242c34f1d4f18814890a85ab1feac2d3be3c12a95ba9af014007a0e0",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

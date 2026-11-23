@@ -132,7 +132,13 @@ pub fn can_skip(step: Option<&Map<String, Value>>) -> bool {
 /// Publish the manifest atomically. Errors are warnings, never setup failures.
 pub fn write_manifest(path: &Path, manifest: &SetupManifest) {
     if let Err(error) = write_manifest_inner(path, manifest) {
-        eprintln!("warning: could not write setup manifest: {error}");
+        eprintln!(
+            "{}",
+            solstone_core_cli_copy::display(
+                "journal.cli.setup.warning.manifest",
+                [("error", &error)]
+            )
+        );
     }
 }
 

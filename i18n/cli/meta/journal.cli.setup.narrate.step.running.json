@@ -1,0 +1,29 @@
+{
+  "description": "Setup step running narration without command.",
+  "context": "Setup step running narration without command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bd7bac50e73ea69069244fda2866611d5ab683e6cb1fdc3e8a1629142f148393",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

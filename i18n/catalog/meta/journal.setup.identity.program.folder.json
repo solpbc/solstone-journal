@@ -1,0 +1,16 @@
+{
+  "description": "Setup refusal when the chosen journal path overlaps the Velopack program folder.",
+  "context": "Setup refusal when the chosen journal path overlaps the Velopack program folder.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d3dc7e8123474237854a5c04075821a04396bd7063f0f35986a3f1c76dea676",
+  "max_length": 1575,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

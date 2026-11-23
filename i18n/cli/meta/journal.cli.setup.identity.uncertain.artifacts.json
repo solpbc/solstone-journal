@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: artifact binding is malformed or ambiguous.",
+  "context": "Identity refusal: artifact binding is malformed or ambiguous.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "14bfea072d8abf65430555e55f52db5a020e592d6a09df469041c0f6ff17b4c9",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Setup PATH update fallback instructions.",
+  "context": "Setup PATH update fallback instructions.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c6f01c0a409684a7e947c7802d0561da647db05b729901b11939f713b3ceab54",
+  "max_length": 375,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

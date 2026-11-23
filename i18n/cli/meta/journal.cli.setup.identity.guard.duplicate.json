@@ -1,0 +1,21 @@
+{
+  "description": "Guard parse error: duplicate field.",
+  "context": "Guard parse error: duplicate field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eb10763655d204979d9aa8d7d6c2750e25c8e7540869e141e23ded15b9b2dba0",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

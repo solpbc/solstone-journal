@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall user config relative journal path error.",
+  "context": "Clean-uninstall user config relative journal path error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fb7f452e633e84b1acafac839dcc74f2181a9ecdf78de708213929cd011dcaca",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

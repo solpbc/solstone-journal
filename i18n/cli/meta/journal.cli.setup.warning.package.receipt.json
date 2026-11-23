@@ -1,0 +1,21 @@
+{
+  "description": "Setup warning when package install receipt cannot be written.",
+  "context": "Setup warning when package install receipt cannot be written.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5a9df164ac2068ea023af8a03ac1c46ff19fc600b1bae97f7e9031a9f83043fe",
+  "max_length": 228,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

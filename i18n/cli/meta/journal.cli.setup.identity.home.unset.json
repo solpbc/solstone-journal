@@ -1,0 +1,16 @@
+{
+  "description": "Identity error: HOME environment variable is not set.",
+  "context": "Identity error: HOME environment variable is not set.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ac03a7392cb793d6d4a080de6dd7c190b31d9d57dbe426fdd89c2de53af7d9be",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

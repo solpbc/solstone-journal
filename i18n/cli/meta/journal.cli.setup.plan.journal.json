@@ -1,0 +1,29 @@
+{
+  "description": "Setup plan journal path line.",
+  "context": "Setup plan journal path line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4e54011d419da3291415c6ad80ac88a4f0eebe78cac99e68041c5a65fb5cc03d",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

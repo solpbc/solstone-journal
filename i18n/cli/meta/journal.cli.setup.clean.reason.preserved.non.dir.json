@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall preserved shared non-directory target.",
+  "context": "Clean-uninstall preserved shared non-directory target.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3bfe069da2fdd2ba85079ed79139864529ec5c9ea372301d10bad8bd99bc7dc1",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

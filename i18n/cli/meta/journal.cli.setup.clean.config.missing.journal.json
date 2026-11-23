@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall user config missing journal key error.",
+  "context": "Clean-uninstall user config missing journal key error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "28f44afcd7b651c4db7e92fe5e170209e9a1ab926a2e02c4d755c016be8ece1a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

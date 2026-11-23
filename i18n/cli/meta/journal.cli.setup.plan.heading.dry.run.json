@@ -1,0 +1,16 @@
+{
+  "description": "Setup dry-run plan heading.",
+  "context": "Setup dry-run plan heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "43ac347cb6a1ff8858bf20b7cf06192ea49b772d51364e54ec57e5582beb3ca9",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

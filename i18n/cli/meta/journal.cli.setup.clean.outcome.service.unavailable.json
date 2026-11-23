@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall outcome when service location is unavailable.",
+  "context": "Clean-uninstall outcome when service location is unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2688c1323ad4ddbcb8dac53f315fccab05c85f35fa45d7646b3b8a04edc72458",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Setup step failed narration.",
+  "context": "Setup step failed narration.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "message",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7562a0a425eb13a7e891b8ed2ba4622f6fd4ca6ca2cbce9a13a08c58062902e0",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

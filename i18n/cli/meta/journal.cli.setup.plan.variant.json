@@ -1,0 +1,29 @@
+{
+  "description": "Setup plan variant provenance line.",
+  "context": "Setup plan variant provenance line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "314e5281625b4978aae5c155a8d98058f5e95fdadfea8cdb397009cd1a593798",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

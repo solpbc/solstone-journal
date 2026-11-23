@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall macOS preserved path note.",
+  "context": "Clean-uninstall macOS preserved path note.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c6fb7a8f0ad3d182eb9d7ba9dbc35607509ff4d9954509ad36aee9f26d752a66",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Setup completion next-step guidance on Unix when service was skipped.",
+  "context": "Setup completion next-step guidance on Unix when service was skipped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "52918f3a98cc49217f55dd298eef6470f7070434eb9c7e0312eb14c2c5466c43",
+  "max_length": 195,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

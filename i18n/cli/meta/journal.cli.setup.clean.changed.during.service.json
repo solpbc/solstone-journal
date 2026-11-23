@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall failure when installation plan changed during service removal.",
+  "context": "Clean-uninstall failure when installation plan changed during service removal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "073b6ad93b1af228d1828255814331f5e41121150326a75d31568c406d07a3dc",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

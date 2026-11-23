@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall preserved target reason naming policy mark.",
+  "context": "Clean-uninstall preserved target reason naming policy mark.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "mark",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "79248c566cfce346fa1313cf88980d912b68467859cb70b177c285b346e3df92",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

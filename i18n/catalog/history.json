@@ -86,6 +86,46 @@
       "selector": null
     },
     {
+      "id": "journal.setup.cleanup.legacy.log",
+      "resource": "m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67",
+      "namespace": "journal.setup.cleanup.legacy",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.cleanup.retired.support",
+      "resource": "m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274",
+      "namespace": "journal.setup.cleanup.retired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.setup.doctor.blocked",
       "resource": "m6a6f75726e616c2e73657475702e646f63746f722e626c6f636b6564",
       "namespace": "journal.setup.doctor",
@@ -705,6 +745,18 @@
       "id": "journal.setup.identity.no.candidate",
       "resource": "m6a6f75726e616c2e73657475702e6964656e746974792e6e6f2e63616e646964617465",
       "namespace": "journal.setup.identity.no",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.identity.program.folder",
+      "resource": "m6a6f75726e616c2e73657475702e6964656e746974792e70726f6772616d2e666f6c646572",
+      "namespace": "journal.setup.identity.program",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
@@ -2518,6 +2570,18 @@
           "value": "solstone"
         }
       ],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.wrapper.provision.remedy",
+      "resource": "m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e2e72656d656479",
+      "namespace": "journal.setup.wrapper.provision",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
       "selector": null
     },
     {

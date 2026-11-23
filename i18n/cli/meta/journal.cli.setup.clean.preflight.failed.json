@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall preflight failure line.",
+  "context": "Clean-uninstall preflight failure line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b804c28b2e4a800cde65223363dff4892d32c6ee6685e7508c8b443dbe1fde1c",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

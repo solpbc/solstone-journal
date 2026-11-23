@@ -351,5 +351,5 @@ pub fn is_live_app_owned_child_launcher(_path: &Path) -> bool {
 }
 
 pub fn ensure_user_bin_on_path(_home_dir: &Path) -> String {
-    "Windows packages expose solstone directly; no POSIX PATH wrapper was installed.".into()
+    solstone_core_cli_copy::text("journal.cli.setup.path.windows")
 }

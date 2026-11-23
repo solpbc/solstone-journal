@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: guarded artifacts without matching identity record.",
+  "context": "Identity refusal: guarded artifacts without matching identity record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f399aad81699a9bf509ef7eef3b1b38f78e3e9274df2e794f03140ba88f003e4",
+  "max_length": 339,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

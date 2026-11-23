@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall wrapper skipped for dangling alias.",
+  "context": "Clean-uninstall wrapper skipped for dangling alias.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "target",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "77e7f94c5ddb5d0d81590710523b259b42677eb58f6c7f17d94a048a2f644919",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

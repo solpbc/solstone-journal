@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall outcome when nothing eligible exists.",
+  "context": "Clean-uninstall outcome when nothing eligible exists.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d8f2e5f73f1ccdf2e0f5a1d2ad1106a72f8f5c9b53c4f5de00990b1c2299f6c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

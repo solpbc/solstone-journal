@@ -1,0 +1,29 @@
+{
+  "description": "Setup plan port provenance line.",
+  "context": "Setup plan port provenance line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eb233fb9c6ba81b5dd4aee421640f6958ad19985320e411dd57183b1c03c552f",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

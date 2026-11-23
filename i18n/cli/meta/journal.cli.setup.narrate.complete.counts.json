@@ -1,0 +1,29 @@
+{
+  "description": "Setup completion step summary counts.",
+  "context": "Setup completion step summary counts.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "skipped",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "ran",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3e8c89b477def05573cdfa7b6c1fbecbbf5f205d2b87a56418d3a02c49cd3d6e",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

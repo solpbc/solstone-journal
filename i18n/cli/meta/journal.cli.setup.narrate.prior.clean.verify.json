@@ -1,0 +1,21 @@
+{
+  "description": "Setup narration of prior clean run without --force.",
+  "context": "Setup narration of prior clean run without --force.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "completed_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "58595a36bda8d5721133e0ea57e3b7886c8230e644a38673657f27ee22b0a56f",
+  "max_length": 258,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: artifacts belong to a different installation.",
+  "context": "Identity refusal: artifacts belong to a different installation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e681b91c8a43e477176c3ad3a0713a53a1998be5d41900188230acf5fb289b63",
+  "max_length": 225,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

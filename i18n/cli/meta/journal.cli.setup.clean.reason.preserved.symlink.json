@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall preserved shared directory symlink.",
+  "context": "Clean-uninstall preserved shared directory symlink.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "babc8646fca3a44bf9c414422a757f54fc0b57031b14e7dde69888155f0cde0c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

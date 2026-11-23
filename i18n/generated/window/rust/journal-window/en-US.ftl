@@ -12,6 +12,10 @@ m6a6f75726e616c2e73657475702e63616e63656c2e6964656e74697479 = installer identity
 
 m6a6f75726e616c2e73657475702e63616e63656c2e6f776e6572 = installer owner unavailable
 
+m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67 = legacy log alias cleanup failed: { $error }
+
+m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274 = retired support portal state cleanup failed: { $error }
+
 m6a6f75726e616c2e73657475702e646f63746f722e626c6f636b6564 = doctor blocker failed
 
 m6a6f75726e616c2e73657475702e646f63746f722e6661696c65642e737461747573 = doctor completed with status { "failed" }
@@ -93,6 +97,8 @@ m6a6f75726e616c2e73657475702e6964656e746974792e6d61726b2e61737365742e696e76616c6
 m6a6f75726e616c2e73657475702e6964656e746974792e6d61726b2e6a69642e696e76616c6964 = invalid journal ID: { $detail }
 
 m6a6f75726e616c2e73657475702e6964656e746974792e6e6f2e63616e646964617465 = no staged link identity candidate exists
+
+m6a6f75726e616c2e73657475702e6964656e746974792e70726f6772616d2e666f6c646572 = Reinstalling or uninstalling removes this program folder. Choose a journal location outside it. If your journal is already there, quit the journal app. If setup completed, run `solstone journal service stop`, then `solstone journal service uninstall` and wait for it to succeed. Move the whole journal folder outside the program folder before reinstalling or uninstalling, then select its new location with `solstone journal setup --accept-existing-journal --journal "D:\journal"`, replacing D:\journal with its new location.
 
 m6a6f75726e616c2e73657475702e6964656e746974792e7265636f766572 = this installation couldn't be verified.{ "\u000a\u000a" }details: { $error }{ "\u000a\u000a" }to recover, stop the service, remove this installation's setup artifacts, and run `{ "solstone journal setup" }` again:{ $stop_service }{ $steps }{ "\u000a\u000a" }your journal itself is untouched. none of these holds your memories.
 
@@ -311,6 +317,8 @@ m6a6f75726e616c2e73657475702e777261707065722e6c6567616379 = the service still st
 m6a6f75726e616c2e73657475702e777261707065722e6c65676163792e7265747279 = setup removes that wrapper after the service starts through { "~/.local/bin/solstone" }.
 
 m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e = could not provision the { "solstone" } wrapper at { $path } ({ $kind }: { $error })
+
+m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e2e72656d656479 = fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone directly from the runtime
 
 m6a6f75726e616c2e73657475702e777261707065722e7265746972652e6661696c6564 = could not remove the older version's command-line tools: { $error }
 

@@ -1,0 +1,16 @@
+{
+  "description": "Setup PATH status after updating existing shell rc.",
+  "context": "Setup PATH status after updating existing shell rc.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "336866a5a2d43c9f1a7777860e2cf42cd665aac048e1a1304b91e6109af32c66",
+  "max_length": 291,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

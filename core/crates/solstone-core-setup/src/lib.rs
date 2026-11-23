@@ -77,8 +77,11 @@ struct TerminalPrompt;
 impl ExistingJournalPrompt for TerminalPrompt {
     fn accept_existing_journal(&mut self, path: &std::path::Path) -> Result<bool, String> {
         eprint!(
-            "{} already contains journal data; proceed? [y/N]: ",
-            path.display()
+            "{}",
+            solstone_core_cli_copy::display(
+                "journal.cli.setup.prompt.existing.journal",
+                [("path", &path.display())]
+            )
         );
         let mut answer = String::new();
         io::stdin()
@@ -98,7 +101,10 @@ struct SetupIdentityAdmission {
 }
 
 fn terminal_confirm() -> bool {
-    print!("proceed? [y/N]: ");
+    print!(
+        "{}",
+        solstone_core_cli_copy::text("journal.cli.setup.prompt.proceed")
+    );
     let _ = io::stdout().flush();
     let mut answer = String::new();
     io::stdin().read_line(&mut answer).is_ok()
@@ -479,29 +485,31 @@ fn report_identity_failure<W: Write>(
     } else {
         "\n    systemctl --user disable --now solstone.service"
     };
+    let locale = cli_locale();
+    let rendered_error = error.render(locale);
     let mut message = strings(
-        cli_locale(),
+        locale,
         "journal.setup.identity.recover",
         [
-            ("error", &error.to_string()),
+            ("error", rendered_error.as_str()),
             ("stop_service", stop_service),
             ("steps", &steps),
         ],
     );
     if foreign {
         message = strings(
-            cli_locale(),
+            locale,
             "journal.setup.identity.foreign",
-            [("error", &error.to_string())],
+            [("error", rendered_error.as_str())],
         );
     } else if uncertain {
         message = strings(
-            cli_locale(),
+            locale,
             "journal.setup.identity.uncertain",
-            [("error", &error.to_string())],
+            [("error", rendered_error.as_str())],
         );
     } else if program_folder {
-        message = error.to_string();
+        message = rendered_error.clone();
     } else if cfg!(windows) {
         let commands = recovery
             .iter()
@@ -512,18 +520,19 @@ fn report_identity_failure<W: Write>(
             })
             .collect::<String>();
         message = strings(
-            cli_locale(),
+            locale,
             "journal.setup.identity.windows",
-            [("error", &error.to_string()), ("commands", &commands)],
+            [("error", rendered_error.as_str()), ("commands", &commands)],
         );
     }
     if let Some(location_error) = recovery_error {
+        let rendered_location = location_error.render(locale);
         message = strings(
-            cli_locale(),
+            locale,
             "journal.setup.identity.locations",
             [
-                ("error", &error.to_string()),
-                ("location_error", &location_error.to_string()),
+                ("error", rendered_error.as_str()),
+                ("location_error", rendered_location.as_str()),
             ],
         );
     }
@@ -790,14 +799,28 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         let root_token = match root_token_from_path(&identity_root) {
             Ok(token) => token,
             Err(error) => {
-                let _ = writeln!(stderr, "clean uninstall preflight failed: {error}");
+                let _ = writeln!(
+                    stderr,
+                    "{}",
+                    solstone_core_cli_copy::display(
+                        "journal.cli.setup.clean.preflight.failed",
+                        [("error", &error.render(solstone_core_cli_copy::cli_locale()))]
+                    )
+                );
                 return ExitCode::from(1);
             }
         };
         let owner = match OwnerBase::at_home(home_dir.clone(), PlatformTag::current()) {
             Ok(owner) => owner,
             Err(error) => {
-                let _ = writeln!(stderr, "clean uninstall preflight failed: {error}");
+                let _ = writeln!(
+                    stderr,
+                    "{}",
+                    solstone_core_cli_copy::display(
+                        "journal.cli.setup.clean.preflight.failed",
+                        [("error", &error.render(solstone_core_cli_copy::cli_locale()))]
+                    )
+                );
                 return ExitCode::from(1);
             }
         };
@@ -805,7 +828,14 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             match clean_uninstall_preflight(&owner, &root_token, &config_path(&home_dir)) {
                 Ok(preflight) => preflight,
                 Err(reason) => {
-                    let _ = writeln!(stderr, "clean uninstall refused: {reason}");
+                    let _ = writeln!(
+                        stderr,
+                        "{}",
+                        solstone_core_cli_copy::display(
+                            "journal.cli.setup.clean.refused",
+                            [("reason", &reason)]
+                        )
+                    );
                     return ExitCode::from(1);
                 }
             };
@@ -813,11 +843,23 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             let outcome =
                 CleanUninstallOutcome::already_complete(preflight.journal_path, owner.platform());
             if let Some(journal) = &outcome.journal_path {
-                let _ = writeln!(stdout, "journal: {}", journal.display());
+                let _ = writeln!(
+                    stdout,
+                    "{}",
+                    solstone_core_cli_copy::display(
+                        "journal.cli.setup.clean.journal.line",
+                        [("path", &journal.display())]
+                    )
+                );
             }
             for result in &outcome.results {
                 let path = result.path.as_deref().map_or_else(
-                    || "<no owned path>".to_owned(),
+                    || {
+                        format!(
+                            "<{}>",
+                            solstone_core_cli_copy::text("journal.cli.setup.clean.no.owned.path")
+                        )
+                    },
                     |path| path.display().to_string(),
                 );
                 let _ = writeln!(
@@ -835,7 +877,8 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         if preflight.state == CleanUninstallPreflightState::NoBinding {
             let _ = writeln!(
                 stderr,
-                "clean uninstall refused: no adopted installation identity"
+                "{}",
+                solstone_core_cli_copy::text("journal.cli.setup.clean.no.binding")
             );
             return ExitCode::from(1);
         }
@@ -879,14 +922,18 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
                     let session =
                         admit_clean_identity(&home_dir, &identity_executable_dir, &project_root)
                             .map_err(|error| {
-                                format!(
-                                    "could not admit the installation again after removing its service: {error}"
+                                solstone_core_cli_copy::display(
+                                    "journal.cli.setup.clean.readmit.failed",
+                                    [(
+                                        "error",
+                                        &error.render(solstone_core_cli_copy::cli_locale()),
+                                    )],
                                 )
                             })?;
                     if session.plan() != &admitted_plan {
-                        return Err(
-                            "the installation changed while its service was being removed".into(),
-                        );
+                        return Err(solstone_core_cli_copy::text(
+                            "journal.cli.setup.clean.changed.during.service",
+                        ));
                     }
                     clean_session = Some(session);
                     Ok(())
@@ -922,15 +969,25 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         let outcome = run_clean_uninstall(&mut clean);
         // Report each structured cleanup result, including preserved targets.
         if let Some(journal) = &outcome.journal_path {
-            let _ = writeln!(stdout, "journal: {}", journal.display());
+            let _ = writeln!(
+                stdout,
+                "{}",
+                solstone_core_cli_copy::display(
+                    "journal.cli.setup.clean.journal.line",
+                    [("path", &journal.display())]
+                )
+            );
         }
         let total = outcome.results.len();
         for (index, result) in outcome.results.iter().enumerate() {
             let step = index + 1;
             let _ = writeln!(
                 stdout,
-                "[step {step}/{total}] running {} uninstall...",
-                result.name
+                "{}",
+                solstone_core_cli_copy::display(
+                    "journal.cli.setup.clean.step.running",
+                    [("step", &step), ("total", &total), ("name", &result.name),]
+                )
             );
             let detail = match (&result.path, &result.reason) {
                 (_, Some(reason)) => reason.clone(),
@@ -982,7 +1039,8 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
     if cfg!(unix) && args.initial_start_at_sign_in.is_some() {
         let _ = writeln!(
             stderr,
-            "solstone journal setup: --initial-start-at-sign-in is only available on Windows"
+            "{}",
+            solstone_core_cli_copy::text("journal.cli.setup.error.sign.in.windows.only")
         );
         return ExitCode::from(2);
     }
@@ -1000,7 +1058,11 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
     {
         let _ = writeln!(
             stderr,
-            "solstone journal setup: refused before mutation: {error}"
+            "{}",
+            solstone_core_cli_copy::display(
+                "journal.cli.setup.error.refused.before.mutation",
+                [("error", &error)]
+            )
         );
         return ExitCode::from(1);
     }
@@ -1048,7 +1110,11 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         {
             let _ = writeln!(
                 stderr,
-                "solstone journal setup: refused before mutation: {error}"
+                "{}",
+                solstone_core_cli_copy::display(
+                    "journal.cli.setup.error.refused.before.mutation",
+                    [("error", &error)]
+                )
             );
             return ExitCode::from(1);
         }
@@ -1104,7 +1170,8 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         }
         let _ = writeln!(
             stdout,
-            "identity admission: would run before mutating setup steps"
+            "{}",
+            solstone_core_cli_copy::text("journal.cli.setup.plan.identity.admission")
         );
     }
     let outcome = {
@@ -1144,7 +1211,11 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
     {
         let _ = writeln!(
             stderr,
-            "solstone journal setup: warning: package receipt was not written: {error}"
+            "{}",
+            solstone_core_cli_copy::display(
+                "journal.cli.setup.warning.package.receipt",
+                [("error", &error)]
+            )
         );
     }
     if let Some(dead_end) = outcome.dead_end {
@@ -1212,14 +1283,26 @@ pub fn run_owner_args(
     executable_dir: PathBuf,
     seams: Seams,
 ) -> ExitCode {
-    match args::parse_args_at(
+    let locale = solstone_core_cli_copy::cli_locale();
+    match args::parse_args_at_for(
+        locale,
         argv,
         &env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
     ) {
         Ok(args) => run_owner_setup(args, home_dir, executable_dir, seams),
         Err(error) => {
-            eprint!("{}", args::USAGE);
-            eprintln!("solstone journal setup: error: {}", error.0);
+            eprint!(
+                "{}",
+                solstone_core_cli_copy::render_for(locale, "journal.cli.host.setup.usage", &[])
+            );
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.host.setup.error",
+                    [("detail", &error.0)]
+                )
+            );
             ExitCode::from(2)
         }
     }
@@ -1245,7 +1328,10 @@ pub fn run_owner_setup_native(args: SetupArgs) -> ExitCode {
         match solstone_core_journal::discover_current_home() {
             Ok(home) => home,
             Err(_) => {
-                eprintln!("setup could not determine your home directory");
+                eprintln!(
+                    "{}",
+                    solstone_core_cli_copy::text("journal.cli.setup.error.home.dir")
+                );
                 return ExitCode::from(1);
             }
         }

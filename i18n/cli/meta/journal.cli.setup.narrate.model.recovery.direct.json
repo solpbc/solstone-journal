@@ -1,0 +1,25 @@
+{
+  "description": "Setup model-only failure recovery guidance for direct CLI run.",
+  "context": "Setup model-only failure recovery guidance for direct CLI run.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "journal",
+      "type": "string"
+    },
+    {
+      "name": "variant",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5957adf5c9b7ae2b4ae500fd090a2bcddb37ae195f1ee4a21edf451e49d247e2",
+  "max_length": 345,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

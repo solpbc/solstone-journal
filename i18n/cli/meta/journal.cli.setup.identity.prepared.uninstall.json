@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: prepared identity cannot be uninstalled.",
+  "context": "Identity refusal: prepared identity cannot be uninstalled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dfa8cb64a059f1962ec02563f4c156379fa6b18d636f5c6a87ccdd36b01e9907",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

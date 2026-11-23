@@ -1,0 +1,16 @@
+{
+  "description": "Interactive confirmation prompt for setup clean uninstall.",
+  "context": "Interactive confirmation prompt for setup clean uninstall.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bed00b98b44d5acc6aaea71ebbbaa4e3372f8ed789f6a4bcbe8adcad33475921",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

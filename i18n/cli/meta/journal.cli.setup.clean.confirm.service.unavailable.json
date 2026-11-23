@@ -1,0 +1,25 @@
+{
+  "description": "Clean-uninstall confirmation service location unavailable line.",
+  "context": "Clean-uninstall confirmation service location unavailable line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "17741cb7a3ccf0e90a2b0045744487251751f7c6bf829446957619d6f8bb060a",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

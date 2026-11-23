@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use super::{IdentityError, RecordError};
+use super::{GuardError, IdentityError, PROGRAM_FOLDER_JOURNAL_REFUSAL, RecordError};
 use solstone_core_cli_copy::MessageDetail;
 
 impl IdentityError {
     pub fn message_detail(self) -> MessageDetail {
+        self.message_detail_ref()
+    }
+
+    pub fn render(&self, locale: &str) -> String {
+        self.message_detail_ref().render(locale)
+    }
+
+    pub fn message_detail_ref(&self) -> MessageDetail {
         match self {
-            IdentityError::Io { operation, source } => match operation {
+            IdentityError::Io { operation, source } => match *operation {
                 "canonicalize root" => MessageDetail::message(
                     "journal.cli.depict.admission.identity.io.root",
                     [("error", &source)],
@@ -96,12 +104,19 @@ impl IdentityError {
                     "journal.cli.sol.skills.identity.io.open.namespace.directory",
                     [("error", &source)],
                 ),
+                "create setup home directory" => MessageDetail::message(
+                    "journal.cli.setup.identity.io.create.home",
+                    [("error", &source)],
+                ),
                 _ => format!("{operation}: {source}").into(),
             },
             IdentityError::InvalidInput(reason)
             | IdentityError::UnsafeState(reason)
             | IdentityError::AdmissionRefused(reason)
-            | IdentityError::NotAdopted(reason) => match reason {
+            | IdentityError::NotAdopted(reason) => match *reason {
+                PROGRAM_FOLDER_JOURNAL_REFUSAL => {
+                    MessageDetail::window("journal.setup.identity.program.folder", [])
+                }
                 "namespace record is missing" => MessageDetail::message(
                     "journal.cli.depict.admission.identity.record.missing",
                     [],
@@ -227,7 +242,107 @@ impl IdentityError {
                     "journal.cli.sol.skills.identity.path.escapes.its.absolute.root",
                     [],
                 ),
-                _ => reason.into(),
+                "existing wrapper or service artifacts are bound to a different installation" => {
+                    MessageDetail::message("journal.cli.setup.identity.foreign.artifacts", [])
+                }
+                "artifact binding is malformed or ambiguous" => {
+                    MessageDetail::message("journal.cli.setup.identity.uncertain.artifacts", [])
+                }
+                "HOME is not set" => {
+                    MessageDetail::message("journal.cli.setup.identity.home.unset", [])
+                }
+                "PATH resolves outside the V2 installation" => {
+                    MessageDetail::message("journal.cli.setup.identity.path.outside", [])
+                }
+                "Windows path has an odd byte count" => {
+                    MessageDetail::message("journal.cli.setup.identity.windows.path.odd", [])
+                }
+                "adopted record has no adoption marker" => {
+                    MessageDetail::message("journal.cli.setup.identity.adopted.no.marker", [])
+                }
+                "artifact guard does not match identity" => {
+                    MessageDetail::message("journal.cli.setup.identity.guard.mismatch", [])
+                }
+                "artifact guard does not match the admitted root" => {
+                    MessageDetail::message("journal.cli.setup.identity.guard.root.mismatch", [])
+                }
+                "artifact guard is not a complete matching identity" => {
+                    MessageDetail::message("journal.cli.setup.identity.guard.incomplete", [])
+                }
+                "current executable is unavailable" => {
+                    MessageDetail::message("journal.cli.setup.identity.executable.unavailable", [])
+                }
+                "effective journal path cannot be represented safely in managed wrappers" => {
+                    MessageDetail::message("journal.cli.setup.identity.wrapper.journal.unsafe", [])
+                }
+                "existing artifacts have no valid bootstrap evidence" => {
+                    MessageDetail::message("journal.cli.setup.identity.no.bootstrap.evidence", [])
+                }
+                "existing wrapper or service artifacts are guarded, but no matching installation record exists in identity storage" => {
+                    MessageDetail::message("journal.cli.setup.identity.guarded.no.record", [])
+                }
+                "finish journal setup before changing its folder" => {
+                    MessageDetail::message("journal.cli.setup.identity.finish.setup.first", [])
+                }
+                "finish setup or recovery before changing the journal folder" => {
+                    MessageDetail::message("journal.cli.setup.identity.finish.recovery.first", [])
+                }
+                "generation is not canonical decimal" => {
+                    MessageDetail::message("journal.cli.setup.identity.generation.decimal", [])
+                }
+                "generation is out of range" => {
+                    MessageDetail::message("journal.cli.setup.identity.generation.range", [])
+                }
+                "generation must be nonzero" => {
+                    MessageDetail::message("journal.cli.setup.identity.generation.nonzero", [])
+                }
+                "generation overflow" => {
+                    MessageDetail::message("journal.cli.setup.identity.generation.overflow", [])
+                }
+                "installation identity does not exist" => {
+                    MessageDetail::message("journal.cli.setup.identity.not.found", [])
+                }
+                "installation provider base has no application directory" => {
+                    MessageDetail::message("journal.cli.setup.identity.provider.app.dir", [])
+                }
+                "installation provider base has no parent" => {
+                    MessageDetail::message("journal.cli.setup.identity.provider.parent", [])
+                }
+                "installation root is unavailable" => {
+                    MessageDetail::message("journal.cli.setup.identity.root.unavailable", [])
+                }
+                "legacy artifacts need a valid provider-less schema-v1 manifest" => {
+                    MessageDetail::message("journal.cli.setup.identity.legacy.needs.manifest", [])
+                }
+                "legacy manifest evidence is malformed or unreadable" => {
+                    MessageDetail::message("journal.cli.setup.identity.legacy.manifest.invalid", [])
+                }
+                "malformed record stage" => {
+                    MessageDetail::message("journal.cli.setup.identity.record.stage.malformed", [])
+                }
+                "namespace record does not match its root namespace" => {
+                    MessageDetail::message("journal.cli.setup.identity.namespace.mismatch", [])
+                }
+                "owner admission root changed during lock" => {
+                    MessageDetail::message("journal.cli.setup.identity.owner.root.changed", [])
+                }
+                "owner platform does not match this Windows build" => MessageDetail::message(
+                    "journal.cli.setup.identity.windows.platform.mismatch",
+                    [],
+                ),
+                "prepared identity cannot be uninstalled" => {
+                    MessageDetail::message("journal.cli.setup.identity.prepared.uninstall", [])
+                }
+                "stale record stage does not match its name" => {
+                    MessageDetail::message("journal.cli.setup.identity.record.stage.stale", [])
+                }
+                "the installation changed while changing its journal folder; try again" => {
+                    MessageDetail::message("journal.cli.setup.identity.changed.retry", [])
+                }
+                "tombstoned record has no adoption marker" => {
+                    MessageDetail::message("journal.cli.setup.identity.tombstoned.no.marker", [])
+                }
+                _ => (*reason).into(),
             },
             IdentityError::Record(error) => match error {
                 RecordError::NotAscii => {
@@ -241,13 +356,51 @@ impl IdentityError {
                 }
                 RecordError::InvalidField(field) => MessageDetail::message(
                     "journal.cli.depict.admission.record.field",
-                    [("field", &field)],
+                    [("field", field)],
                 ),
                 RecordError::ChecksumMismatch => {
                     MessageDetail::message("journal.cli.depict.admission.record.checksum", [])
                 }
             },
-            IdentityError::Guard(error) => error.to_string().into(),
+            IdentityError::Guard(error) => match error {
+                GuardError::Missing => {
+                    MessageDetail::message("journal.cli.setup.identity.guard.missing", [])
+                }
+                GuardError::Duplicate(field) => MessageDetail::message(
+                    "journal.cli.setup.identity.guard.duplicate",
+                    [("field", field)],
+                ),
+                GuardError::Invalid(field) => MessageDetail::message(
+                    "journal.cli.setup.identity.guard.invalid",
+                    [("field", field)],
+                ),
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use solstone_core_cli_copy::ENGLISH;
+
+    #[test]
+    fn program_folder_and_guard_errors_match_english_display() {
+        let program_folder = IdentityError::AdmissionRefused(PROGRAM_FOLDER_JOURNAL_REFUSAL);
+        assert_eq!(program_folder.render(ENGLISH), program_folder.to_string());
+        for error in [
+            IdentityError::Guard(GuardError::Missing),
+            IdentityError::Guard(GuardError::Duplicate("namespace")),
+            IdentityError::Guard(GuardError::Invalid("generation")),
+            IdentityError::Io {
+                operation: "create setup home directory",
+                source: std::io::Error::other("denied"),
+            },
+            IdentityError::AdmissionRefused("PATH resolves outside the V2 installation"),
+            IdentityError::NotAdopted("installation identity does not exist"),
+            IdentityError::UnsafeState("tombstoned record has no adoption marker"),
+        ] {
+            assert_eq!(error.render(ENGLISH), error.to_string());
         }
     }
 }

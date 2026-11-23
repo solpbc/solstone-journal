@@ -1,0 +1,21 @@
+{
+  "description": "Identity IO error creating setup home directory.",
+  "context": "Identity IO error creating setup home directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9ec27b9bdf832eaa506b1cbe4baecea3ce6cad75e38047b5e0e89be2e4959c09",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

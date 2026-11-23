@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall confirmation artifact status: present.",
+  "context": "Clean-uninstall confirmation artifact status: present.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "da42276d566031fcdede83d8afd5a8f54618b9bac68b75afe071a5238a05d49a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

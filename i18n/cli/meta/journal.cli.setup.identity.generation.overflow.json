@@ -1,0 +1,16 @@
+{
+  "description": "Identity error: generation overflow.",
+  "context": "Identity error: generation overflow.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "72de68dd3d40492c074384f1c451e54de3526a4859fa28ada0bbfea048c2888b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

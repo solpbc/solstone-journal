@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall step skipped after prior failure.",
+  "context": "Clean-uninstall step skipped after prior failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "58efa7614b2e65d1cab809ca6c7b6357514bb777c6716296df6a09565d2bba36",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

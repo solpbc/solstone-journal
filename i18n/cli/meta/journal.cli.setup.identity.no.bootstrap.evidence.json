@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: existing artifacts have no valid bootstrap evidence.",
+  "context": "Identity refusal: existing artifacts have no valid bootstrap evidence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a4fc95c19aff2ab43826617febca4fa0caa6be8c85f6aa659c43432612a6d69",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

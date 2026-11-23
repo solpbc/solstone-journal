@@ -1,0 +1,16 @@
+{
+  "description": "Setup note when legacy V1 launchers are retired.",
+  "context": "Setup note when legacy V1 launchers are retired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b6db917e4b36cee399577013123540533ea7308e80d54f38e6723190899de4f6",
+  "max_length": 318,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

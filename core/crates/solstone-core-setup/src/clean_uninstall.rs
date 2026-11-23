@@ -131,7 +131,9 @@ impl CleanUninstallOutcome {
     pub fn already_complete(journal_path: Option<PathBuf>, platform: PlatformTag) -> Self {
         Self {
             exit_code: 0,
-            message: "clean uninstall is already complete".into(),
+            message: solstone_core_cli_copy::text(
+                "journal.cli.setup.clean.outcome.already.complete",
+            ),
             results: macos_preserved_results(platform),
             journal_path,
             already_complete: true,
@@ -161,17 +163,27 @@ pub fn clean_uninstall_preflight(
     root: &RootToken,
     config_file: &Path,
 ) -> Result<CleanUninstallPreflight, String> {
-    let config_journal =
-        crate::user_config::read_cleanup_journal(config_file).map_err(|error| error.to_string())?;
+    let locale = solstone_core_cli_copy::cli_locale();
+    let config_journal = crate::user_config::read_cleanup_journal(config_file)
+        .map_err(|error| error.render(locale))?;
     let mut protected_journals = ProtectedJournals::new(owner.platform());
     if let Some(path) = &config_journal {
         protected_journals.insert(path.clone());
     }
     if identity_writes_overlap(&owner.path(), &protected_journals, owner.platform()) {
-        return Err("identity storage overlaps a protected journal".into());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.setup.clean.preflight.overlap",
+            &[],
+        ));
     }
-    let census = read_installation_journal_census(owner, root, true)
-        .map_err(|error| format!("installation identity census is unreadable: {error}"))?;
+    let census = read_installation_journal_census(owner, root, true).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.setup.clean.preflight.census.error",
+            [("error", &error.render(locale))],
+        )
+    })?;
     let registry_known = census.registry_known;
     let records = census.records;
     let root_record = census.root_record;
@@ -187,25 +199,43 @@ pub fn clean_uninstall_preflight(
                 owner.platform() == PlatformTag::Windows,
             )
         {
-            return Err("config journal does not match the installation identity".into());
+            return Err(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.setup.clean.preflight.config.mismatch",
+                &[],
+            ));
         }
         protected_journals.insert(record_journal);
     }
     if identity_writes_overlap(&owner.path(), &protected_journals, owner.platform()) {
-        return Err("identity storage overlaps a protected journal".into());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.setup.clean.preflight.overlap",
+            &[],
+        ));
     }
     if root_record
         .as_ref()
         .is_some_and(|record| record.lifecycle == LifecycleState::Prepared)
     {
-        return Err("installation identity is prepared".into());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.setup.clean.preflight.prepared",
+            &[],
+        ));
     }
     let state = match root_record.as_ref().map(|record| record.lifecycle) {
         Some(LifecycleState::Tombstoned) => CleanUninstallPreflightState::AlreadyComplete,
         Some(LifecycleState::Adopted) => CleanUninstallPreflightState::Proceed,
         Some(LifecycleState::Prepared) => unreachable!("prepared record returned above"),
         None if registry_known => CleanUninstallPreflightState::NoBinding,
-        None => return Err("installation identity census is unreadable".into()),
+        None => {
+            return Err(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.setup.clean.preflight.census.unreadable",
+                &[],
+            ));
+        }
     };
     let journal_path = root_record
         .as_ref()
@@ -223,7 +253,9 @@ pub fn clean_uninstall_preflight(
 #[must_use]
 pub fn clean_uninstall_refusal(args: &SetupArgs) -> Option<String> {
     if args.jsonl {
-        return Some("JSONL output is not supported for --clean-uninstall in this version.".into());
+        return Some(solstone_core_cli_copy::text(
+            "journal.cli.setup.clean.refusal.jsonl",
+        ));
     }
     let mut incompatible = Vec::new();
     if args.journal.is_some() {
@@ -272,9 +304,10 @@ pub fn clean_uninstall_refusal(args: &SetupArgs) -> Option<String> {
         incompatible.push("--force");
     }
     (!incompatible.is_empty()).then(|| {
-        format!(
-            "--clean-uninstall cannot be combined with {}",
-            incompatible.join(", ")
+        let flags = incompatible.join(", ");
+        solstone_core_cli_copy::display(
+            "journal.cli.setup.clean.refusal.incompatible",
+            [("flags", &flags)],
         )
     })
 }
@@ -293,21 +326,55 @@ fn recognized_legacy_journal(context: &CleanUninstallContext<'_>) -> bool {
 /// Owner-facing inventory shown before destructive confirmation.
 #[must_use]
 pub fn clean_uninstall_confirmation_lines(context: &CleanUninstallContext<'_>) -> Vec<String> {
+    let locale = solstone_core_cli_copy::cli_locale();
     let service = service_artifact_path(&context.home_dir);
     let wrappers = wrapper_paths(&context.home_dir);
-    let marker = |path: &Path| if present(path) { "present" } else { "absent" };
+    let present_label = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.setup.clean.confirm.marker.present",
+        &[],
+    );
+    let absent_label = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.setup.clean.confirm.marker.absent",
+        &[],
+    );
+    let retain_label = solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.setup.clean.confirm.marker.retain",
+        &[],
+    );
+    let marker = |path: &Path| {
+        format!(
+            "{:<7}",
+            if present(path) {
+                present_label.as_str()
+            } else {
+                absent_label.as_str()
+            }
+        )
+    };
+    let retain_marker = format!("{:<7}", retain_label.as_str());
     let mut lines = vec![
-        "solstone journal setup --clean-uninstall will remove these runtime artifacts:".into(),
+        solstone_core_cli_copy::render_for(locale, "journal.cli.setup.clean.confirm.header", &[]),
         String::new(),
     ];
     if let Err(error) = &service {
-        lines.push(format!("  service location unavailable: {error}"));
+        lines.push(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.setup.clean.confirm.service.unavailable",
+            [("indent", &"  "), ("error", &error.render(locale))],
+        ));
     }
     if let Ok(Some(path)) = service {
-        lines.push(format!(
-            "  [{:<7}] service: {}",
-            marker(&path),
-            path.display()
+        lines.push(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.setup.clean.confirm.service",
+            [
+                ("indent", &"  "),
+                ("marker", &marker(&path)),
+                ("path", &path.display()),
+            ],
         ));
     }
     let mut wrapper_paths = vec![wrappers.solstone];
@@ -315,33 +382,71 @@ pub fn clean_uninstall_confirmation_lines(context: &CleanUninstallContext<'_>) -
         wrapper_paths.push(wrappers.legacy_journal);
     }
     for path in &wrapper_paths {
-        lines.push(format!(
-            "  [{:<7}] wrapper: {}",
-            marker(path),
-            path.display()
+        lines.push(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.setup.clean.confirm.wrapper",
+            [
+                ("indent", &"  "),
+                ("marker", &marker(path)),
+                ("path", &path.display()),
+            ],
         ));
     }
+    let config_marker = if context.plan.remove_owner_config {
+        marker(&context.config_path)
+    } else {
+        retain_marker.clone()
+    };
     lines.extend([
-        format!(
-            "  [{:<7}] config: {}",
-            if context.plan.remove_owner_config {
-                marker(&context.config_path)
-            } else {
-                "retain"
-            },
-            context.config_path.display()
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.setup.clean.confirm.config",
+            [
+                ("indent", &"  "),
+                ("marker", &config_marker),
+                ("path", &context.config_path.display()),
+            ],
         ),
-        format!(
-            "  [retain ] journal manifest: {}",
-            context.manifest_path.display()
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.setup.clean.confirm.manifest",
+            [
+                ("indent", &"  "),
+                ("marker", &retain_marker),
+                ("path", &context.manifest_path.display()),
+            ],
         ),
         String::new(),
-        "will not remove:".into(),
-        format!("  - journal directory: {}", context.journal_path.display()),
-        "  - /Applications/solstone.app".into(),
-        "  - ~/Library/Application Support/solstone/".into(),
-        "  - macOS microphone or screen recording permissions".into(),
-        "  - a leftover pip, uv or pipx journal install".into(),
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.setup.clean.confirm.keep.header",
+            &[],
+        ),
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.setup.clean.confirm.keep.journal",
+            [("indent", &"  "), ("path", &context.journal_path.display())],
+        ),
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.setup.clean.confirm.keep.macos.app",
+            [("indent", &"  ")],
+        ),
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.setup.clean.confirm.keep.macos.support",
+            [("indent", &"  ")],
+        ),
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.setup.clean.confirm.keep.macos.permissions",
+            [("indent", &"  ")],
+        ),
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.setup.clean.confirm.keep.python",
+            [("indent", &"  ")],
+        ),
         String::new(),
     ]);
     lines
@@ -459,20 +564,30 @@ fn has_removable_windows_app_state(
     })
 }
 fn child_failure_reason(output: &crate::steps::CommandOutput) -> String {
-    let mut reason = format!("service uninstall exited {}", output.exit_code);
-    if output.timed_out {
-        reason.push_str(" (timed out)");
-    }
     let details = if output.stderr.trim().is_empty() {
         output.stdout.as_str()
     } else {
         output.stderr.as_str()
     };
-    if let Some(line) = details.lines().map(str::trim).find(|line| !line.is_empty()) {
-        reason.push_str(": ");
-        reason.push_str(line);
+    let detail = details.lines().map(str::trim).find(|line| !line.is_empty());
+    match (output.timed_out, detail) {
+        (true, Some(detail)) => solstone_core_cli_copy::display(
+            "journal.cli.setup.clean.child.timed.out.detail",
+            [("code", &output.exit_code), ("detail", &detail)],
+        ),
+        (true, None) => solstone_core_cli_copy::display(
+            "journal.cli.setup.clean.child.timed.out",
+            [("code", &output.exit_code)],
+        ),
+        (false, Some(detail)) => solstone_core_cli_copy::display(
+            "journal.cli.setup.clean.child.exited.detail",
+            [("code", &output.exit_code), ("detail", &detail)],
+        ),
+        (false, None) => solstone_core_cli_copy::display(
+            "journal.cli.setup.clean.child.exited",
+            [("code", &output.exit_code)],
+        ),
     }
-    reason
 }
 
 fn result(
@@ -531,7 +646,10 @@ fn preserve_for_decision(
         name,
         CleanUninstallState::Preserved,
         Some(path),
-        Some(format!("preserved: {mark:?}")),
+        Some(solstone_core_cli_copy::display(
+            "journal.cli.setup.clean.reason.preserved.mark",
+            [("mark", &format!("{mark:?}"))],
+        )),
         mark,
     )
 }
@@ -560,7 +678,9 @@ fn remove_service(
             "service",
             CleanUninstallState::Skipped,
             path,
-            Some("service or wrapper guard does not match this installation, not removing".into()),
+            Some(solstone_core_cli_copy::text(
+                "journal.cli.setup.clean.reason.service.guard.mismatch",
+            )),
         );
     }
     let existed = path.as_ref().is_some_and(|path| present(path));
@@ -657,7 +777,9 @@ fn remove_wrappers(
             "wrapper",
             CleanUninstallState::Skipped,
             Some(paths.0.clone()),
-            Some("wrapper guard does not match this installation, not removing".into()),
+            Some(solstone_core_cli_copy::text(
+                "journal.cli.setup.clean.reason.wrapper.guard.mismatch",
+            )),
         );
     }
     if matches!(
@@ -785,37 +907,64 @@ fn remove_wrappers(
             "wrapper",
             CleanUninstallState::Skipped,
             Some(paths.0.clone()),
-            Some("refusing to act from a git worktree".into()),
+            Some(solstone_core_cli_copy::text(
+                "journal.cli.setup.clean.reason.wrapper.worktree",
+            )),
         ),
         Err((AliasState::CrossRepo, target)) => result(
             "wrapper",
             CleanUninstallState::Skipped,
             Some(paths.0.clone()),
-            Some(format!(
-                "alias points at {}, not removing",
-                target.map_or_else(|| "unknown".into(), |path| path.display().to_string())
+            Some(solstone_core_cli_copy::display(
+                "journal.cli.setup.clean.reason.wrapper.cross.repo",
+                [(
+                    "target",
+                    &target.map_or_else(
+                        || {
+                            solstone_core_cli_copy::text(
+                                "journal.cli.setup.clean.reason.wrapper.unknown",
+                            )
+                        },
+                        |path| path.display().to_string(),
+                    ),
+                )],
             )),
         ),
         Err((AliasState::Dangling, target)) => result(
             "wrapper",
             CleanUninstallState::Skipped,
             Some(paths.0.clone()),
-            Some(format!(
-                "alias is dangling (target {} missing), not removing",
-                target.map_or_else(|| "unknown".into(), |path| path.display().to_string())
+            Some(solstone_core_cli_copy::display(
+                "journal.cli.setup.clean.reason.wrapper.dangling",
+                [(
+                    "target",
+                    &target.map_or_else(
+                        || {
+                            solstone_core_cli_copy::text(
+                                "journal.cli.setup.clean.reason.wrapper.unknown",
+                            )
+                        },
+                        |path| path.display().to_string(),
+                    ),
+                )],
             )),
         ),
         Err((AliasState::Foreign, _)) => result(
             "wrapper",
             CleanUninstallState::Skipped,
             Some(paths.0.clone()),
-            Some("alias is not a managed symlink, not removing".into()),
+            Some(solstone_core_cli_copy::text(
+                "journal.cli.setup.clean.reason.wrapper.foreign",
+            )),
         ),
         Err((state, _)) => result(
             "wrapper",
             CleanUninstallState::Failed,
             Some(paths.0.clone()),
-            Some(format!("unexpected alias state: {state:?}")),
+            Some(solstone_core_cli_copy::display(
+                "journal.cli.setup.clean.reason.wrapper.unexpected",
+                [("state", &format!("{state:?}"))],
+            )),
         ),
     }
 }
@@ -881,7 +1030,9 @@ fn remove_shared_directory(
             name,
             CleanUninstallState::Preserved,
             Some(path),
-            Some("preserved symlink".into()),
+            Some(solstone_core_cli_copy::text(
+                "journal.cli.setup.clean.reason.preserved.symlink",
+            )),
             CleanUninstallMark::Foreign,
         ),
         Ok(metadata) if metadata.is_dir() => match fs::remove_dir_all(&path) {
@@ -897,7 +1048,9 @@ fn remove_shared_directory(
             name,
             CleanUninstallState::Preserved,
             Some(path),
-            Some("preserved non-directory target".into()),
+            Some(solstone_core_cli_copy::text(
+                "journal.cli.setup.clean.reason.preserved.non.dir",
+            )),
             CleanUninstallMark::Foreign,
         ),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -917,7 +1070,9 @@ fn remove_manifest(context: &CleanUninstallContext<'_>) -> CleanUninstallStepRes
         "manifest",
         CleanUninstallState::Preserved,
         Some(context.manifest_path.clone()),
-        Some("journal manifest is preserved".into()),
+        Some(solstone_core_cli_copy::text(
+            "journal.cli.setup.clean.reason.manifest.preserved",
+        )),
         CleanUninstallMark::ProtectedJournal,
     )
 }
@@ -984,7 +1139,9 @@ fn remove_user_skill(
                 "user-skill",
                 CleanUninstallState::Preserved,
                 Some(path),
-                Some("your own skill content is preserved".into()),
+                Some(solstone_core_cli_copy::text(
+                    "journal.cli.setup.clean.reason.skill.preserved",
+                )),
                 CleanUninstallMark::Foreign,
             );
         }
@@ -1003,7 +1160,9 @@ fn remove_user_skill(
             "user-skill",
             CleanUninstallState::Preserved,
             Some(path),
-            Some("your own skill content is preserved".into()),
+            Some(solstone_core_cli_copy::text(
+                "journal.cli.setup.clean.reason.skill.preserved",
+            )),
             CleanUninstallMark::Foreign,
         );
     }
@@ -1028,7 +1187,9 @@ fn remove_user_skill(
             "user-skill",
             CleanUninstallState::Preserved,
             Some(path),
-            Some("symlink target is foreign".into()),
+            Some(solstone_core_cli_copy::text(
+                "journal.cli.setup.clean.reason.skill.foreign",
+            )),
             CleanUninstallMark::Foreign,
         );
     }
@@ -1059,7 +1220,9 @@ fn skipped_result(name: &'static str, path: Option<PathBuf>) -> CleanUninstallSt
         name,
         CleanUninstallState::Skipped,
         path,
-        Some("step was not run after an earlier failure".into()),
+        Some(solstone_core_cli_copy::text(
+            "journal.cli.setup.clean.reason.skipped.after.failure",
+        )),
         CleanUninstallMark::NotRun,
     )
 }
@@ -1096,7 +1259,9 @@ pub fn macos_preserved_results(platform: PlatformTag) -> Vec<CleanUninstallStepR
             name,
             CleanUninstallState::Preserved,
             None,
-            Some("no owned path is known".into()),
+            Some(solstone_core_cli_copy::text(
+                "journal.cli.setup.clean.reason.no.owned.path.known",
+            )),
             CleanUninstallMark::NoOwnedPath,
         )
     })
@@ -1161,24 +1326,30 @@ fn stop_after_failed_step(
     outcome(
         context,
         1,
-        "clean uninstall stopped after a failed step".into(),
+        solstone_core_cli_copy::text("journal.cli.setup.clean.outcome.stopped.failed"),
         results,
         false,
     )
 }
 
 pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUninstallOutcome {
+    let locale = solstone_core_cli_copy::cli_locale();
     let service = match service_artifact_path(&context.home_dir) {
         Ok(service) => service,
         Err(error) => {
+            let error_text = error.render(locale);
             let results = vec![result(
                 "service",
                 CleanUninstallState::Failed,
                 None,
-                Some(error.to_string()),
+                Some(error_text.clone()),
             )];
             let mut failed = stop_after_failed_step(context, results, 0, None);
-            failed.message = format!("service location unavailable: {error}");
+            failed.message = solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.setup.clean.outcome.service.unavailable",
+                [("error", &error_text)],
+            );
             return failed;
         }
     };
@@ -1188,7 +1359,11 @@ pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUnin
         return outcome(
             context,
             0,
-            "no eligible setup files to remove".into(),
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.setup.clean.outcome.no.eligible",
+                &[],
+            ),
             std::mem::take(&mut results),
             false,
         );
@@ -1197,13 +1372,27 @@ pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUnin
         return outcome(
             context,
             2,
-            "not a tty; rerun with --yes to proceed non-interactively (cancelled)".into(),
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.setup.clean.outcome.not.tty",
+                &[],
+            ),
             Vec::new(),
             false,
         );
     }
     if !context.yes && !(context.confirm)() {
-        return outcome(context, 1, "cancelled".into(), Vec::new(), false);
+        return outcome(
+            context,
+            1,
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.setup.clean.outcome.cancelled",
+                &[],
+            ),
+            Vec::new(),
+            false,
+        );
     }
     let service_result = remove_service(context, service.clone());
     let service_failed = service_result.state == CleanUninstallState::Failed;
@@ -1254,7 +1443,11 @@ pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUnin
             "rclone",
             CleanUninstallState::Preserved,
             None,
-            Some("no owned path on this platform".into()),
+            Some(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.setup.clean.reason.no.owned.path.platform",
+                &[],
+            )),
             CleanUninstallMark::NoOwnedPath,
         ));
     }
@@ -1304,13 +1497,21 @@ pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUnin
             .filter(|result| result.state == state)
             .count()
     };
-    let message = format!(
-        "clean uninstall complete: {} removed, {} already-absent, {} preserved, {} skipped, {} failed",
-        counts(CleanUninstallState::Removed),
-        counts(CleanUninstallState::AlreadyAbsent),
-        counts(CleanUninstallState::Preserved),
-        counts(CleanUninstallState::Skipped),
-        counts(CleanUninstallState::Failed)
+    let removed = counts(CleanUninstallState::Removed);
+    let already_absent = counts(CleanUninstallState::AlreadyAbsent);
+    let preserved = counts(CleanUninstallState::Preserved);
+    let skipped = counts(CleanUninstallState::Skipped);
+    let failed_count = counts(CleanUninstallState::Failed);
+    let message = solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.setup.clean.outcome.complete",
+        [
+            ("removed", &removed),
+            ("already_absent", &already_absent),
+            ("preserved", &preserved),
+            ("skipped", &skipped),
+            ("failed", &failed_count),
+        ],
     );
     outcome(context, i32::from(failed), message, results, false)
 }

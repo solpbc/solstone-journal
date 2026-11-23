@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall already complete message.",
+  "context": "Clean-uninstall already complete message.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2bc31b33c647119eac21b3a2dedb4b871fddbf56d388f6c03a6f37111da841be",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

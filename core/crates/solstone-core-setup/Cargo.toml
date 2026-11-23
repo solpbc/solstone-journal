@@ -23,7 +23,7 @@ solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-journal.workspace = true
-solstone-core-installation-identity.workspace = true
+solstone-core-installation-identity = { workspace = true, features = ["cli-copy"] }
 solstone-core-system.workspace = true
 solstone-core-check.workspace = true
 solstone-core-skill-state.workspace = true

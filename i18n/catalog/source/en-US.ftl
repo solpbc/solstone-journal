@@ -21519,3 +21519,11 @@ journal.window.speakers.cli.suggest.import.linkable = { $meetings_quantity ->
         Import linkable: { $name } ({ $entity_id }) — mentioned in { $meetings } meetings
           Days: { $days }
 }
+
+journal.setup.wrapper.provision.remedy = fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone directly from the runtime
+
+journal.setup.cleanup.legacy.log = legacy log alias cleanup failed: { $error }
+
+journal.setup.cleanup.retired.support = retired support portal state cleanup failed: { $error }
+
+journal.setup.identity.program.folder = Reinstalling or uninstalling removes this program folder. Choose a journal location outside it. If your journal is already there, quit the journal app. If setup completed, run `solstone journal service stop`, then `solstone journal service uninstall` and wait for it to succeed. Move the whole journal folder outside the program folder before reinstalling or uninstalling, then select its new location with `solstone journal setup --accept-existing-journal --journal "D:\journal"`, replacing D:\journal with its new location.

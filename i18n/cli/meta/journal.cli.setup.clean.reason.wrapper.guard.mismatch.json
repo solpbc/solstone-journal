@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall wrapper skipped due to guard mismatch.",
+  "context": "Clean-uninstall wrapper skipped due to guard mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "577f5b4616a1e37651127fc3acf0693971c8f91e38fffeb642f202deefe58ce8",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

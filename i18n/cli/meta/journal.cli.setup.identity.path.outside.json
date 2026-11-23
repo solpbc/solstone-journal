@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: PATH resolves outside the V2 installation.",
+  "context": "Identity refusal: PATH resolves outside the V2 installation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "29c9e40ab5821a4cfbaf389d8ee5c48196c46c4ecf53300a9ac421fb7adfd42c",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

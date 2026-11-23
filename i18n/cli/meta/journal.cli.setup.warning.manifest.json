@@ -1,0 +1,21 @@
+{
+  "description": "Setup warning when setup-state.json manifest cannot be written.",
+  "context": "Setup warning when setup-state.json manifest cannot be written.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b3d68e4f9226e518170bbd7ef4f498143fb007b388e9b0c2c6c242760a87dcec",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

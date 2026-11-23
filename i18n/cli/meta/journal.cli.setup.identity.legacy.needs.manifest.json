@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: legacy artifacts require schema-v1 manifest.",
+  "context": "Identity refusal: legacy artifacts require schema-v1 manifest.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be840c0dc1989d48a2720bdf78a1f3b9892d446bea2d3945b68f8bfbf4769ff4",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

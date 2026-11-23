@@ -1,0 +1,16 @@
+{
+  "description": "Identity error: generation is not canonical decimal.",
+  "context": "Identity error: generation is not canonical decimal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "74f4351e4aab293f810f128a00f0c5dd005676b62fbb1bdc224e950efd98d6ee",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Windows setup error when home directory cannot be resolved.",
+  "context": "Windows setup error when home directory cannot be resolved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1001b0e5c9668000def632fd2837a6b5d9ed0726144f179604678ad99b34f684",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

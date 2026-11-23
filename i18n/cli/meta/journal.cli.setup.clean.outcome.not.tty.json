@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall non-TTY refusal message.",
+  "context": "Clean-uninstall non-TTY refusal message.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "74d8600bdc7e0fc1f4110c8e883167e9c8274468751e8477ccd2d6aa15b49132",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

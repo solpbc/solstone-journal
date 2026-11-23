@@ -1,0 +1,16 @@
+{
+  "description": "Setup plan Windows wrapper step description.",
+  "context": "Setup plan Windows wrapper step description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0369a7d14ed114215dc953ac8c38322d38f35353725b81be6fcea2036d9e0785",
+  "max_length": 264,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

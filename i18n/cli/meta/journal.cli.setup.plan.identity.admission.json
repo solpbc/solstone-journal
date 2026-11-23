@@ -1,0 +1,16 @@
+{
+  "description": "Setup dry-run/explain identity admission note.",
+  "context": "Setup dry-run/explain identity admission note.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a3170e8ffe90fc7f29362c95dab98309596c341b7690c459ee0ed19618b88737",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

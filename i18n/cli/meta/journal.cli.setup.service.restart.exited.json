@@ -1,0 +1,21 @@
+{
+  "description": "Setup service restart non-zero exit error.",
+  "context": "Setup service restart non-zero exit error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cd6a07bb766194727184f2360960e55eff6f274ad617437fda96e7fdabe90684",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

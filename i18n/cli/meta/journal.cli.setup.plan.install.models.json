@@ -1,0 +1,25 @@
+{
+  "description": "Setup plan install-models step description.",
+  "context": "Setup plan install-models step description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "binary",
+      "type": "string"
+    },
+    {
+      "name": "variant",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a5039ba5801665401853062f257661440a86144471c69376c13a84b087399201",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

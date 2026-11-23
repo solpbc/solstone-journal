@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall preflight refusal when identity overlaps a protected journal.",
+  "context": "Clean-uninstall preflight refusal when identity overlaps a protected journal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "85d79d7a56d66109cbb36276165c5f0e1fc3fd8aac0b25bc0328ae1cfa6bcd41",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

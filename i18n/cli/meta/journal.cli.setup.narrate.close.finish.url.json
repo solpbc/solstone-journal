@@ -1,0 +1,21 @@
+{
+  "description": "Setup completion next-step guidance with URL to finish setup.",
+  "context": "Setup completion next-step guidance with URL to finish setup.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "url",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3ee140a35344e9be38b7c171bc608ae2df2fdbbf5e62269d1ac44238b70e3ed1",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

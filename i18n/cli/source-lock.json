@@ -24838,6 +24838,468 @@
       "locales": []
     },
     {
+      "id": "journal.cli.setup.clean.changed.during.service",
+      "source": "073b6ad93b1af228d1828255814331f5e41121150326a75d31568c406d07a3dc",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.child.exited",
+      "source": "30de806f0a9edc6c2762417773f9143684090af14f2e94a7781bd0231a21da9a",
+      "contract": "072c2b94c866a3004a73a692d92265d702f07209b78b77ab27a66412aaca7e9c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.child.exited.detail",
+      "source": "4a6e55c72956acd4529f79d2f4bdd755d9fd625ba449e9d79cc9fe654b8baec1",
+      "contract": "a7c86d7c2850be69808bc7c80c04e758c6b87bba3fe95e6a6d0b7a0a0fbea18d",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.child.timed.out",
+      "source": "e983762660366e62e8fd5fa41681b56d58da78542b1e0843ba6f7f5ea4ab7f33",
+      "contract": "072c2b94c866a3004a73a692d92265d702f07209b78b77ab27a66412aaca7e9c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.child.timed.out.detail",
+      "source": "532ef0b7587b24782209d5978dcdbea70291f2ba3d44b9b319137f8dac035140",
+      "contract": "a7c86d7c2850be69808bc7c80c04e758c6b87bba3fe95e6a6d0b7a0a0fbea18d",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.config.invalid.toml",
+      "source": "d25bfc1ec90221069642a3e227fa12bd3542dd2a402824d1f6ebfd09e415f3c4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.config.io",
+      "source": "3bf3725ba6761772451cc71ef9ddffaf420fdc241d504b2bcf23ae51b7e9d9a4",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.config.missing.journal",
+      "source": "28f44afcd7b651c4db7e92fe5e170209e9a1ab926a2e02c4d755c016be8ece1a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.config.not.absolute",
+      "source": "fb7f452e633e84b1acafac839dcc74f2181a9ecdf78de708213929cd011dcaca",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.config.not.string",
+      "source": "de0d022566e5d2820e7e16d38d9a1eaafe21f984902254855f0025ed44724e80",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.config",
+      "source": "1800c7ebc200a64c76ca8183ad865ae31d709557cec1f528ff7733b75fe83604",
+      "contract": "15c943a5cc1ee38e38887135567a5e2f488da81ca1d467e8462c5dbf78fb6db5",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.header",
+      "source": "cf9339dd46902f1053e6e21e0756111dd3828212f3a6692aa37cddec789fa990",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.keep.header",
+      "source": "1ce4d1743199e538fa486f5601cbbf9c1ed11b2957b5a300793edf992694e1bf",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.keep.journal",
+      "source": "c7d8efd0104dba06463262fe02f791a2083df31fcf2673d132c18a8bbda56945",
+      "contract": "8cae52efd04a16412833c6f21242bc603a16b524721336e3058a938b5c42dba6",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.keep.macos.app",
+      "source": "918af96f576101c5b1d19b43ed116bfdfbea74030149106ad4943cdfd0eb3400",
+      "contract": "8d5eadabdc8534f531c3fe16792eaa710affd57cda356d536a0e1f4ca60e4152",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.keep.macos.permissions",
+      "source": "7794c7656caa22ccac4c0ed825c8d024ec464d37ed4c3d843227d73d7eb2af68",
+      "contract": "8d5eadabdc8534f531c3fe16792eaa710affd57cda356d536a0e1f4ca60e4152",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.keep.macos.support",
+      "source": "80e088219bccf8b93df4ae884f459fe81b27f140f452e10e9fab2d6af1553279",
+      "contract": "8d5eadabdc8534f531c3fe16792eaa710affd57cda356d536a0e1f4ca60e4152",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.keep.python",
+      "source": "7f8917716ab0c55c259327efaa599de60d5099d04a964723e356767ed694ada8",
+      "contract": "8d5eadabdc8534f531c3fe16792eaa710affd57cda356d536a0e1f4ca60e4152",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.manifest",
+      "source": "3cd5cba6d010fd06cf0801799ab997ab7d013cf1dbc3ab8bbe5866a7e6d459c6",
+      "contract": "15c943a5cc1ee38e38887135567a5e2f488da81ca1d467e8462c5dbf78fb6db5",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.marker.absent",
+      "source": "d6a9bd1c3afbcbdaa15af76e3450437dab5f36d840b6b63753856deaa778d717",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.marker.present",
+      "source": "da42276d566031fcdede83d8afd5a8f54618b9bac68b75afe071a5238a05d49a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.marker.retain",
+      "source": "98ea32f2e9b7839e1b21dc5ef6bc21cdd7675bf67e28900b30627706bcc388ad",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.service",
+      "source": "4f51e0225f5871a32b65beddc1900794be02f36e646a7c13955d30cae47a7df4",
+      "contract": "15c943a5cc1ee38e38887135567a5e2f488da81ca1d467e8462c5dbf78fb6db5",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.service.unavailable",
+      "source": "17741cb7a3ccf0e90a2b0045744487251751f7c6bf829446957619d6f8bb060a",
+      "contract": "66e29e2e7ecbaf2df379479aae66175365061b1e55838d688f3ba2dfe69003e8",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.confirm.wrapper",
+      "source": "da15be38ec3dfcb3c1d87245f5bba325e2be2ee8c2d681ca85d7aaeba8fe6fcc",
+      "contract": "15c943a5cc1ee38e38887135567a5e2f488da81ca1d467e8462c5dbf78fb6db5",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.journal.line",
+      "source": "0e0f0286db546f24f7bb29737592e0552bb8dac9ba1b0f8c55a0514a4c29d71b",
+      "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.no.binding",
+      "source": "c21d048c089af26a158d1830502d95a9554c7a2b2e61455573ba3b59d58d9724",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.no.owned.path",
+      "source": "837e86206274e5bc164f2bc2dcb5edee06001ee6ba305b1e72c67100fff7dad4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.outcome.already.complete",
+      "source": "2bc31b33c647119eac21b3a2dedb4b871fddbf56d388f6c03a6f37111da841be",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.outcome.cancelled",
+      "source": "6ebbcfda9ddf2fd288b585c626fc93e31ab756e00c3ca8101423b365b814cd92",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.outcome.complete",
+      "source": "ae191cd80ccb4e07347cc4a9e099c34e6a5538f586df19754d31f71dc9ad82b0",
+      "contract": "bb29bdfc97333a39b692b988c854ab6b58ebde8f877eae6ec39c929fbdea0a02",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.outcome.no.eligible",
+      "source": "2d8f2e5f73f1ccdf2e0f5a1d2ad1106a72f8f5c9b53c4f5de00990b1c2299f6c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.outcome.not.tty",
+      "source": "74d8600bdc7e0fc1f4110c8e883167e9c8274468751e8477ccd2d6aa15b49132",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.outcome.service.unavailable",
+      "source": "2688c1323ad4ddbcb8dac53f315fccab05c85f35fa45d7646b3b8a04edc72458",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.outcome.stopped.failed",
+      "source": "dd4464d35d51fd793b9656246e35640994854a2eb40db3e25e56e64ed0f47560",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.preflight.census.error",
+      "source": "a003a00147354c4265f2a6a10f8ccc94c91fafb5e28252ff128cd1c4054cb0ed",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.preflight.census.unreadable",
+      "source": "2c9866a0e84015c73d8cb42b0cfdf8d1c1f796dceed91efb8582e13ad02c1f26",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.preflight.config.mismatch",
+      "source": "c9f6d98e7214e7822c4c25006731bfa29fa93af0d5befca3a6d6154a6d41c0a8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.preflight.failed",
+      "source": "b804c28b2e4a800cde65223363dff4892d32c6ee6685e7508c8b443dbe1fde1c",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.preflight.overlap",
+      "source": "85d79d7a56d66109cbb36276165c5f0e1fc3fd8aac0b25bc0328ae1cfa6bcd41",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.preflight.prepared",
+      "source": "0fa58c69dff6563e2dcabb804f870630c9ca5d5d70916cfed60f2141a5653315",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.readmit.failed",
+      "source": "39f6b8ad170d02c4121a50012c4a6cc1d891712d266cad495179471c6ba9e00a",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.manifest.preserved",
+      "source": "904ea62c153ddaa2763c0e1fe5d7249344f6bcfec8a59a2b4d86daf39c462422",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.no.owned.path.known",
+      "source": "c6fb7a8f0ad3d182eb9d7ba9dbc35607509ff4d9954509ad36aee9f26d752a66",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.no.owned.path.platform",
+      "source": "4415ec2f744a532312a99bbe3a2ab8609cddcdfcf1889ea892ea444c0fb811f6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.preserved.mark",
+      "source": "79248c566cfce346fa1313cf88980d912b68467859cb70b177c285b346e3df92",
+      "contract": "753a163dc76575c9f79b85054f9d50ad523e9b2eedcf390836cb9e33fc863315",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.preserved.non.dir",
+      "source": "3bfe069da2fdd2ba85079ed79139864529ec5c9ea372301d10bad8bd99bc7dc1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.preserved.symlink",
+      "source": "babc8646fca3a44bf9c414422a757f54fc0b57031b14e7dde69888155f0cde0c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.service.guard.mismatch",
+      "source": "bd2e9d8f4d00825a6d3d1a09929d44d3463f9e6b5a402fe295f55fcfc002664a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.skill.foreign",
+      "source": "37c9e11bb76b62122ebd72337c689ae235e6afd24f68fab22eaaefb3ab2a0043",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.skill.preserved",
+      "source": "2ca1dec22687d0280517607806346d20e517c762313541a79a8e88293d5d1daa",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.skipped.after.failure",
+      "source": "58efa7614b2e65d1cab809ca6c7b6357514bb777c6716296df6a09565d2bba36",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.wrapper.cross.repo",
+      "source": "f0e3b053c55647b551e50fb3fb6df6744ff0e6386487870c13942c57da246c79",
+      "contract": "a72ba38c062d4538d2c76639b1412cfc756937ca848f90ac9f7337002d486123",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.wrapper.dangling",
+      "source": "77e7f94c5ddb5d0d81590710523b259b42677eb58f6c7f17d94a048a2f644919",
+      "contract": "a72ba38c062d4538d2c76639b1412cfc756937ca848f90ac9f7337002d486123",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.wrapper.foreign",
+      "source": "ea0d09298b82a23a7700e3bf1b3516477904b90c147f6ccf80e28fc9bca44557",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.wrapper.guard.mismatch",
+      "source": "577f5b4616a1e37651127fc3acf0693971c8f91e38fffeb642f202deefe58ce8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.wrapper.unexpected",
+      "source": "8d5b7f623dd6a457925ebfdd7318e68d62d1962e27565dd8c84577ef1c957dce",
+      "contract": "97435f38fb526ab350c22e69ad8c5bc5a0e0fe781fd7cc60f014e0cee38f2cef",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.wrapper.unknown",
+      "source": "2642526c3fad2ee76ba9d4b61184c7918fd26f1c4e0c8484492f2e4b15ca7ce4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.reason.wrapper.worktree",
+      "source": "67871a4d27a73d9b3e94cb8339cb34da4e5b04a7f61993b99e6ff8ee1a393603",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.refusal.incompatible",
+      "source": "cc74dd8ba94abc1de209fdf2618d3a9549a03853675f748ba2d2ec504fab9919",
+      "contract": "1ad53cdf3bfba02df866279196ae9372a69dd3567b795be31470c43a22b0c08b",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.refusal.jsonl",
+      "source": "d12842fb2f0de2bc06fbd56d1ecfb3cd8ba77c1a673161f4e97880b8388108a9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.refused",
+      "source": "a2a4b166c3a25aed2f60589d7c9eca5ab3af36ab13a757a4f9e953150fe22521",
+      "contract": "59d2e3ecd32f990e4f3aabeb502e32f02d792e3c833c17a9fb91ea02b32115b6",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.clean.step.running",
+      "source": "4223843e11c6c6bedaf236fa8f4bb7d920fcaab6cd686a2553685b0a5de8dbe6",
+      "contract": "58bfa6355542c2fed96e4ff0686541f4dcff1ae3053aaed42494e9b3adba184e",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.error.home.dir",
+      "source": "1001b0e5c9668000def632fd2837a6b5d9ed0726144f179604678ad99b34f684",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.error.refused.before.mutation",
+      "source": "e2aeb08d1a31f61d1dcc45de8a2c1c4836fefe1b4c3331a4ed1c3d00871f1e52",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.error.sign.in.windows.only",
+      "source": "56e499ce765daa73a8cd94800d6de98d451323f3cb1591f7e8ccf26fb9edc880",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.cli.setup.host.journal.binding.changed",
       "source": "a5d8b13a2f9a70924743835fb68a00c4e9adac435bfa7997f759235bbab223a0",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -24848,6 +25310,433 @@
       "id": "journal.cli.setup.host.packaged.speech.unavailable",
       "source": "08ba91ba3384a0a7331c564c61ececbf52c781c75de3822938d333f1288285b4",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.adopted.no.marker",
+      "source": "976203a12feba45e30988dd203b5637cc87b031347676db58ac1ce1e5912ef12",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.changed.retry",
+      "source": "2362d6dc3df113a126f344bc2078af327e97aa3f3aeb0fd0563c0815b4074a34",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.executable.unavailable",
+      "source": "220c04af47c724d4513c17579a78b11f64696db1c75b57b6d5522d91fc757154",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.finish.recovery.first",
+      "source": "be2c34d9ad49c7e1af95e2ea921819558a81e92f728325dc4dc72825cb63ccd2",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.finish.setup.first",
+      "source": "652ea993d4477c0c70284fde174e106920e602cdb3da2203ddc54a7e54f2171d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.foreign.artifacts",
+      "source": "e681b91c8a43e477176c3ad3a0713a53a1998be5d41900188230acf5fb289b63",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.generation.decimal",
+      "source": "74f4351e4aab293f810f128a00f0c5dd005676b62fbb1bdc224e950efd98d6ee",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.generation.nonzero",
+      "source": "602a646d2417e3a082e0e8f8fd1eb62fcfa698fdc2ab201d9325c2010f3ad71e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.generation.overflow",
+      "source": "72de68dd3d40492c074384f1c451e54de3526a4859fa28ada0bbfea048c2888b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.generation.range",
+      "source": "8a7328514b28b1b7cfe8426f8af78294ebf1790121f91ff4d3a91d10d21801a1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.guard.duplicate",
+      "source": "eb10763655d204979d9aa8d7d6c2750e25c8e7540869e141e23ded15b9b2dba0",
+      "contract": "1388fc07d4cca829cdde01a938f8fdafd50b05722d10a7d9dc1a171db0216b5b",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.guard.incomplete",
+      "source": "42b3f3daff5d33854d9f3efa0d527de1506f04c22f7ed4c13a197bc2b56bc1d5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.guard.invalid",
+      "source": "283295c31db18f05bdf8ec7f4fbc2fac1ae3185b4f7acb7c91a2af9559d96d05",
+      "contract": "1388fc07d4cca829cdde01a938f8fdafd50b05722d10a7d9dc1a171db0216b5b",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.guard.mismatch",
+      "source": "daa0a9ef1fbc251699abca9b79faced6e661d0e01e4fc1ef412a36696a2718ab",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.guard.missing",
+      "source": "a70bf4ccd1873edc1dfeb09e16100a8831fc28910031077d853d813245177277",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.guard.root.mismatch",
+      "source": "91bb5de2bb80b76cf4dc658a81b55e57de88b74199222ff14d2feea385abfbca",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.guarded.no.record",
+      "source": "f399aad81699a9bf509ef7eef3b1b38f78e3e9274df2e794f03140ba88f003e4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.home.unset",
+      "source": "ac03a7392cb793d6d4a080de6dd7c190b31d9d57dbe426fdd89c2de53af7d9be",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.io.create.home",
+      "source": "9ec27b9bdf832eaa506b1cbe4baecea3ce6cad75e38047b5e0e89be2e4959c09",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.legacy.manifest.invalid",
+      "source": "908c958698c3be7a840700abb1c1125653fa913917081c29765fa85acff342a0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.legacy.needs.manifest",
+      "source": "be840c0dc1989d48a2720bdf78a1f3b9892d446bea2d3945b68f8bfbf4769ff4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.namespace.mismatch",
+      "source": "d310f66ef4411da12df8039fe00b08d66b14121930a3a75a47aebc364dd98e4b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.no.bootstrap.evidence",
+      "source": "9a4fc95c19aff2ab43826617febca4fa0caa6be8c85f6aa659c43432612a6d69",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.not.found",
+      "source": "ae16155089490739ba9359d3cc9c1f92ece6d320cdf92dfb3ba097fca49900e1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.owner.root.changed",
+      "source": "379121a9841f83c7105a3193ec322d9db6631b963f83af91f6ea183c22c2a916",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.path.outside",
+      "source": "29c9e40ab5821a4cfbaf389d8ee5c48196c46c4ecf53300a9ac421fb7adfd42c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.prepared.uninstall",
+      "source": "dfa8cb64a059f1962ec02563f4c156379fa6b18d636f5c6a87ccdd36b01e9907",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.provider.app.dir",
+      "source": "7dc203a3d6557259a1f10ab92a420aeaddae275091485be8b8c9427954af04ab",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.provider.parent",
+      "source": "0ee205f10e44f10b81988db2e2af880ea918d77be9299f850f235778aae5a42f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.record.stage.malformed",
+      "source": "ebb0a242b3cc59ac1d3daf2ad9893563d4b2122ed1cb5a9eae5f92beb1c1375a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.record.stage.stale",
+      "source": "3ad4cc8bfa6c4e0596bf9c1718129b5519163477dec8b60ac775b5593352be4b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.root.unavailable",
+      "source": "241ec7bc6e1744d14784830d6dec1f83708c080a59acd2a2a8f336a160664764",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.tombstoned.no.marker",
+      "source": "f52d7602564a027a28b3352814f9bdd72426be7693256dd735361e46ef1138d4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.uncertain.artifacts",
+      "source": "14bfea072d8abf65430555e55f52db5a020e592d6a09df469041c0f6ff17b4c9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.windows.path.odd",
+      "source": "e30a21ccf2f1b6359753751534d6d956799c31e57ba97f2e1af5f2e76a9d8b4d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.windows.platform.mismatch",
+      "source": "96111152ba8c5b215f4138daab51b325e48451da78e8681b568424db5254a280",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.identity.wrapper.journal.unsafe",
+      "source": "b4f36e8065ca123c8a28176dc1a5badc72d51d84cd8bac6522567497df3c4401",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.artifacts.header",
+      "source": "9efaea39394e18b2ac12a09b75e5cbe2bdf306d7f999d62a334e9477e5a4835b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.artifacts.none",
+      "source": "752602c13f5aafe2681348f50684977b7fb002c5f694830c0e809c2bf9e14a38",
+      "contract": "8d5eadabdc8534f531c3fe16792eaa710affd57cda356d536a0e1f4ca60e4152",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.close.finish.unix",
+      "source": "9f1923df01316836b9fe2341fe515b486e2d5b63912819f7c94265387aaa955a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.close.finish.url",
+      "source": "3ee140a35344e9be38b7c171bc608ae2df2fdbbf5e62269d1ac44238b70e3ed1",
+      "contract": "4e2c815c1fcf0a7a4fa521b557a28352e32871008ea75b248db28e5cc229c1f2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.close.open.unix",
+      "source": "1991629b9d469490dd20b299cb184525c2c2e597d984ed3860bd7b6780391a57",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.close.open.url",
+      "source": "d367817d2cfbb3c8ea84f4f4e0ac1d2dedd55e740c4c2e59fe1fb1cb95dbbabc",
+      "contract": "4e2c815c1fcf0a7a4fa521b557a28352e32871008ea75b248db28e5cc229c1f2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.close.skip.service.unix",
+      "source": "52918f3a98cc49217f55dd298eef6470f7070434eb9c7e0312eb14c2c5466c43",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.close.skip.service.url",
+      "source": "9a0aac5a3d594e99f6b0f1bf76b6875edf561f55773aecfb6720d6df5c87caaa",
+      "contract": "4e2c815c1fcf0a7a4fa521b557a28352e32871008ea75b248db28e5cc229c1f2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.complete.counts",
+      "source": "3e8c89b477def05573cdfa7b6c1fbecbbf5f205d2b87a56418d3a02c49cd3d6e",
+      "contract": "4399590ae6967017601a22a8db865ea5b1065ed31254a878403d17933ccc2cab",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.complete.installed",
+      "source": "c08614de7b9d6b81a49a43d1ccd6ef6746669131faff25750afea3105c7d1f53",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.complete.set.up",
+      "source": "c86d2806c3d8b8d77090a931774a57887c5427726e626845d630151a09d3733b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.model.recovery.direct",
+      "source": "5957adf5c9b7ae2b4ae500fd090a2bcddb37ae195f1ee4a21edf451e49d247e2",
+      "contract": "666b5b369191fdcbb937cdca8f735c638e850d53c30b3a0c21fc8e3189a3600f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.model.recovery.installer",
+      "source": "8ff03acf21c0608a6d780a8d09074f866d8fceb1ea5dd4a9b23e6a1d7d7fdfa3",
+      "contract": "666b5b369191fdcbb937cdca8f735c638e850d53c30b3a0c21fc8e3189a3600f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.prior.clean.force",
+      "source": "b5d86d0c2e0f67de7bb187f2bda59abd64ea740f6aa53fd9f68753086cf5bf71",
+      "contract": "4d643cb0fb2387752b24ea9e590c5038e8a3a532995a1318c9f103c6a831c3aa",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.prior.clean.verify",
+      "source": "58595a36bda8d5721133e0ea57e3b7886c8230e644a38673657f27ee22b0a56f",
+      "contract": "4d643cb0fb2387752b24ea9e590c5038e8a3a532995a1318c9f103c6a831c3aa",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.prior.force.hint",
+      "source": "e268881e1ca6375d7b656587d92a4ce27576c7f773505d7e17fca2096c167f3f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.prior.incomplete.header",
+      "source": "3935f04c59448232b1d7a2d5d4406b22749302901c30f9d40a05bc9a8abcee6d",
+      "contract": "03549687850f3d0d8c9ddeec39be7bd1a4f3bd4e9033fc9c77e23f3206aab5db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.prior.incomplete.hint",
+      "source": "d1a29135c38dc452bbfce95b7094437e8778a860b24e5c37b70e7a27ce7d1541",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.prior.incomplete.item",
+      "source": "88e5fab96ccfc551d618081ef2aa2635e856a9ee9b1e693dac889299c9c1dabb",
+      "contract": "e9fb7c807b4b936f484907a78fb939cd586ae31ed62a8fac8f23773dde697e4b",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.sol.keeps.journal",
+      "source": "367f7737e114ff93b01b8d69a0854a66a1e887f8e7364e6426ff2e8f43b6c8e3",
+      "contract": "a0f7438de9416338b57e9944d44c766293b56df73ee0e14c4148c1abf19fd64c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.step.failed",
+      "source": "7562a0a425eb13a7e891b8ed2ba4622f6fd4ca6ca2cbce9a13a08c58062902e0",
+      "contract": "475d9a737de8194a0730eef4423f4cf01e6bac27c2310be67e3b9c0a89b41a61",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.step.running",
+      "source": "bd7bac50e73ea69069244fda2866611d5ab683e6cb1fdc3e8a1629142f148393",
+      "contract": "338c807a1ac1afb54c77013f7bbe9a7b3eec98144b1a0ad37ee7b4a58eb6215e",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.step.running.command",
+      "source": "ae1008afe9c1234a68d30c490703f4137d306c7623c36b88cbbaad2183b736cb",
+      "contract": "a53bbc592c4f1b8bdcef5cec703b27bf01e42526b9af9de325f447b48cfb7f45",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.narrate.step.skipped",
+      "source": "da8f16c2242c34f1d4f18814890a85ab1feac2d3be3c12a95ba9af014007a0e0",
+      "contract": "52d36d0ee822c544eb3e79224aec44fb8550b45a87cb7995578a3d1fce931471",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
@@ -24926,6 +25815,244 @@
       "source": "054bf70d78336efd682d0e723ff197e727def435cee9e43619e4bb6d7c91c134",
       "contract": "9cf396ba34ede9eab732feebd7a1d0477ae59ea3abe03341b4db03d24af554fd",
       "protected": "733c661cb19469a32c210f9f011de381831961e16d27cf210bab319cd9b4f9e5",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.path.added",
+      "source": "575efcb31c7e90c9a233575832c77b671bd7e54edc6c5fe651218c8c91fd73a5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.path.added.restart",
+      "source": "336866a5a2d43c9f1a7777860e2cf42cd665aac048e1a1304b91e6109af32c66",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.path.already",
+      "source": "b234359ddf7f66267084191a2fcd70f22906dbe52ae9df307b4731c3f4eb9a4d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.path.manual",
+      "source": "c6f01c0a409684a7e947c7802d0561da647db05b729901b11939f713b3ceab54",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.path.windows",
+      "source": "0cda9ed2d5d4404d3321e4fb8a7467222093e5255e099f22a97ca12194727a87",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.brain",
+      "source": "20c1529afec02752f0e7fdd67d1f9731681260118c2b6471f0bdd22c46d00065",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.doctor",
+      "source": "1bce61a12b6e89d8d6c2e6f41ba2fe976cef269bf72708d863cfca7fc12c8a41",
+      "contract": "76fb247d1ba5c95197c5331c03f53844b96486a220ebceecc66d8c090e69537c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.heading.dry.run",
+      "source": "43ac347cb6a1ff8858bf20b7cf06192ea49b772d51364e54ec57e5582beb3ca9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.heading.explain",
+      "source": "e596bccd07ea1c826e672da55f57b0a0e6892adac9cbd9aafd6075e6ef928f55",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.identity.admission",
+      "source": "a3170e8ffe90fc7f29362c95dab98309596c341b7690c459ee0ed19618b88737",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.install.models",
+      "source": "a5039ba5801665401853062f257661440a86144471c69376c13a84b087399201",
+      "contract": "70e426aaa1ff46fe58f9c72f62224cbc0e4d07a34f263478aea3c4b9cfeb60c1",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.journal",
+      "source": "4e54011d419da3291415c6ad80ac88a4f0eebe78cac99e68041c5a65fb5cc03d",
+      "contract": "143f9935ee5ca4cf1e0e8ecae7ae43e28975485aa46a6ebe02fbcbad506561d7",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.mode",
+      "source": "a8f654560eeb45f169650775acaef32d9b40e64bfd13188228318e8633ff1b82",
+      "contract": "f861cd934b07653d7b43ec3f54595286ad8808e1bbae167ed75f732504d1b725",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.model.download.default",
+      "source": "ae3c749f109a4a380b36ae19cf6ff571ad0caf1117fd668ecb704e19f2202d47",
+      "contract": "8d5eadabdc8534f531c3fe16792eaa710affd57cda356d536a0e1f4ca60e4152",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.port",
+      "source": "eb233fb9c6ba81b5dd4aee421640f6958ad19985320e411dd57183b1c03c552f",
+      "contract": "e7af150c660cd4dd4f7ad1866fac5f03fdf460ae05135786ab64471a93a9bb43",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.service",
+      "source": "f3d7e2ff7c5b21bf7ef825f831b2c3ea7f99c83850e003b9494f9c32481eea5c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.skills.journal",
+      "source": "d14392d82f2b1dff15e7bf1e0d05e9f548701dd99cf7f3c1ad1c96ecdafcdc30",
+      "contract": "7261b3bed91d71011e19072539f69169151e389e16189897140f250806082a5e",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.skills.user",
+      "source": "36e6a8303cf1692e0332ec7b5d5276a71b9b91eafadbe528250f03289aa438dd",
+      "contract": "76fb247d1ba5c95197c5331c03f53844b96486a220ebceecc66d8c090e69537c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.source.checkout.false",
+      "source": "d3b6087da5b0ad01ac5e89adaa1809cc12ac45bdf8bac1e2fcc1a18907773b64",
+      "contract": "8d5eadabdc8534f531c3fe16792eaa710affd57cda356d536a0e1f4ca60e4152",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.source.checkout.true",
+      "source": "daacafa4dd7d2a25f6698bba8517f180f1f762215503ec11173760786aafd0dd",
+      "contract": "8d5eadabdc8534f531c3fe16792eaa710affd57cda356d536a0e1f4ca60e4152",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.step.header",
+      "source": "937543fdd7456eb6690f23dc8558734100deff4bc664763d64c4f3e9e98beccf",
+      "contract": "338c807a1ac1afb54c77013f7bbe9a7b3eec98144b1a0ad37ee7b4a58eb6215e",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.step.timeout",
+      "source": "8fc253a84ef5a947185ace5ccf9d6549252604d389c47c4e722646515b79b19e",
+      "contract": "e7af150c660cd4dd4f7ad1866fac5f03fdf460ae05135786ab64471a93a9bb43",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.variant",
+      "source": "314e5281625b4978aae5c155a8d98058f5e95fdadfea8cdb397009cd1a593798",
+      "contract": "e7af150c660cd4dd4f7ad1866fac5f03fdf460ae05135786ab64471a93a9bb43",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.wrapper.unix",
+      "source": "16f744424dc6bb2dad35f18b8af2e82841218d5c141bfdd7cb60c83fba33b6ef",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.wrapper.windows",
+      "source": "0369a7d14ed114215dc953ac8c38322d38f35353725b81be6fcea2036d9e0785",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.plan.write.config",
+      "source": "4e9db46572cbfb896b9de4d5b928be2a167228525640eea14caf5b1b36c96d3a",
+      "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.prompt.existing.journal",
+      "source": "4e5f7824fa972f411a7529659f0b3ec0ca59eb4dced907fc6e36d5b24b35139c",
+      "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.prompt.proceed",
+      "source": "bed00b98b44d5acc6aaea71ebbbaa4e3372f8ed789f6a4bcbe8adcad33475921",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.service.restart.exited",
+      "source": "cd6a07bb766194727184f2360960e55eff6f274ad617437fda96e7fdabe90684",
+      "contract": "072c2b94c866a3004a73a692d92265d702f07209b78b77ab27a66412aaca7e9c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.warning.launcher.ownership",
+      "source": "c9f339ea6f9bc7c2c766fee753cc74ad8c493a3bada2ef385a49342121aa3ded",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.warning.manifest",
+      "source": "b3d68e4f9226e518170bbd7ef4f498143fb007b388e9b0c2c6c242760a87dcec",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.warning.package.receipt",
+      "source": "5a9df164ac2068ea023af8a03ac1c46ff19fc600b1bae97f7e9031a9f83043fe",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.wrapper.retired.note",
+      "source": "b6db917e4b36cee399577013123540533ea7308e80d54f38e6723190899de4f6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.wrapper.skip.path",
+      "source": "22b5235eb8caeaa9b2d34de7313cec183b6873d4ea2fe29560ca7a1e27637586",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
     {

@@ -1,0 +1,29 @@
+{
+  "description": "Clean-uninstall confirmation service row.",
+  "context": "Clean-uninstall confirmation service row.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    },
+    {
+      "name": "marker",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4f51e0225f5871a32b65beddc1900794be02f36e646a7c13955d30cae47a7df4",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Setup plan user skills step description.",
+  "context": "Setup plan user skills step description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "binary",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "36e6a8303cf1692e0332ec7b5d5276a71b9b91eafadbe528250f03289aa438dd",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

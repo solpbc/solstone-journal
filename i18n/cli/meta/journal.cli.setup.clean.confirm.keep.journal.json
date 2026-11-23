@@ -1,0 +1,25 @@
+{
+  "description": "Clean-uninstall confirmation preserved journal directory line.",
+  "context": "Clean-uninstall confirmation preserved journal directory line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c7d8efd0104dba06463262fe02f791a2083df31fcf2673d132c18a8bbda56945",
+  "max_length": 123,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

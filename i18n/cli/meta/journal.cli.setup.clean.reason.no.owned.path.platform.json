@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall non-Linux rclone preserved note.",
+  "context": "Clean-uninstall non-Linux rclone preserved note.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4415ec2f744a532312a99bbe3a2ab8609cddcdfcf1889ea892ea444c0fb811f6",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

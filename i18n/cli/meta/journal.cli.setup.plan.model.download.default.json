@@ -1,0 +1,21 @@
+{
+  "description": "Setup plan default model download timeout line.",
+  "context": "Setup plan default model download timeout line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ae3c749f109a4a380b36ae19cf6ff571ad0caf1117fd668ecb704e19f2202d47",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

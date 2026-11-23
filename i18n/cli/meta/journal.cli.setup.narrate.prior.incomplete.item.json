@@ -1,0 +1,25 @@
+{
+  "description": "Setup narration item for prior failed step.",
+  "context": "Setup narration item for prior failed step.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "88e5fab96ccfc551d618081ef2aa2635e856a9ee9b1e693dac889299c9c1dabb",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

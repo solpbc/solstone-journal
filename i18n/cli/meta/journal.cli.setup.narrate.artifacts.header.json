@@ -1,0 +1,16 @@
+{
+  "description": "Setup completion artifacts section header.",
+  "context": "Setup completion artifacts section header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9efaea39394e18b2ac12a09b75e5cbe2bdf306d7f999d62a334e9477e5a4835b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

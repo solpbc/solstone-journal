@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall user config non-string journal value error.",
+  "context": "Clean-uninstall user config non-string journal value error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "de0d022566e5d2820e7e16d38d9a1eaafe21f984902254855f0025ed44724e80",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

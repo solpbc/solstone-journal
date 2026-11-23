@@ -1,0 +1,16 @@
+{
+  "description": "Identity unsafe state: stale record stage mismatch.",
+  "context": "Identity unsafe state: stale record stage mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ad4cc8bfa6c4e0596bf9c1718129b5519163477dec8b60ac775b5593352be4b",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

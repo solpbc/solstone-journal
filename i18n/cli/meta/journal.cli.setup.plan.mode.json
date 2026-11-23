@@ -1,0 +1,25 @@
+{
+  "description": "Setup plan mode line.",
+  "context": "Setup plan mode line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    },
+    {
+      "name": "mode",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a8f654560eeb45f169650775acaef32d9b40e64bfd13188228318e8633ff1b82",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

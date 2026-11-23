@@ -1,0 +1,29 @@
+{
+  "description": "Clean-uninstall confirmation manifest row.",
+  "context": "Clean-uninstall confirmation manifest row.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    },
+    {
+      "name": "marker",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3cd5cba6d010fd06cf0801799ab997ab7d013cf1dbc3ab8bbe5866a7e6d459c6",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

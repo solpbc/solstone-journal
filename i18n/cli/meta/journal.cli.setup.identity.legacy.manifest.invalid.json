@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: legacy manifest evidence malformed or unreadable.",
+  "context": "Identity refusal: legacy manifest evidence malformed or unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "908c958698c3be7a840700abb1c1125653fa913917081c29765fa85acff342a0",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

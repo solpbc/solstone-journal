@@ -1,0 +1,21 @@
+{
+  "description": "Setup plan source checkout true line.",
+  "context": "Setup plan source checkout true line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "daacafa4dd7d2a25f6698bba8517f180f1f762215503ec11173760786aafd0dd",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Identity unsafe state: namespace record mismatch.",
+  "context": "Identity unsafe state: namespace record mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d310f66ef4411da12df8039fe00b08d66b14121930a3a75a47aebc364dd98e4b",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -35,6 +35,8 @@ pub enum MessageId {
     m6a6f75726e616c2e73657475702e63616e63656c2e6661696c6564,
     m6a6f75726e616c2e73657475702e63616e63656c2e6964656e74697479,
     m6a6f75726e616c2e73657475702e63616e63656c2e6f776e6572,
+    m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67,
+    m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274,
     m6a6f75726e616c2e73657475702e646f63746f722e626c6f636b6564,
     m6a6f75726e616c2e73657475702e646f63746f722e6661696c65642e737461747573,
     m6a6f75726e616c2e73657475702e646f63746f722e696e636f6d706c657465,
@@ -76,6 +78,7 @@ pub enum MessageId {
     m6a6f75726e616c2e73657475702e6964656e746974792e6d61726b2e61737365742e696e76616c6964,
     m6a6f75726e616c2e73657475702e6964656e746974792e6d61726b2e6a69642e696e76616c6964,
     m6a6f75726e616c2e73657475702e6964656e746974792e6e6f2e63616e646964617465,
+    m6a6f75726e616c2e73657475702e6964656e746974792e70726f6772616d2e666f6c646572,
     m6a6f75726e616c2e73657475702e6964656e746974792e7265636f766572,
     m6a6f75726e616c2e73657475702e6964656e746974792e73706b692e696e76616c6964,
     m6a6f75726e616c2e73657475702e6964656e746974792e73746174652e63612e62756e646c652e69732e6e6f742e612e6469726563746f7279,
@@ -185,6 +188,7 @@ pub enum MessageId {
     m6a6f75726e616c2e73657475702e777261707065722e6c6567616379,
     m6a6f75726e616c2e73657475702e777261707065722e6c65676163792e7265747279,
     m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e,
+    m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e2e72656d656479,
     m6a6f75726e616c2e73657475702e777261707065722e7265746972652e6661696c6564,
     m6a6f75726e616c2e73657475702e777261707065722e7265747279,
     m6a6f75726e616c2e77696e646f772e6167656e74732e6163636573732e646973636f6e6e656374,
@@ -8839,6 +8843,8 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.setup.cancel.failed", MessageId::m6a6f75726e616c2e73657475702e63616e63656c2e6661696c6564),
         ("journal.setup.cancel.identity", MessageId::m6a6f75726e616c2e73657475702e63616e63656c2e6964656e74697479),
         ("journal.setup.cancel.owner", MessageId::m6a6f75726e616c2e73657475702e63616e63656c2e6f776e6572),
+        ("journal.setup.cleanup.legacy.log", MessageId::m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67),
+        ("journal.setup.cleanup.retired.support", MessageId::m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274),
         ("journal.setup.doctor.blocked", MessageId::m6a6f75726e616c2e73657475702e646f63746f722e626c6f636b6564),
         ("journal.setup.doctor.failed.status", MessageId::m6a6f75726e616c2e73657475702e646f63746f722e6661696c65642e737461747573),
         ("journal.setup.doctor.incomplete", MessageId::m6a6f75726e616c2e73657475702e646f63746f722e696e636f6d706c657465),
@@ -8880,6 +8886,7 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.setup.identity.mark.asset.invalid", MessageId::m6a6f75726e616c2e73657475702e6964656e746974792e6d61726b2e61737365742e696e76616c6964),
         ("journal.setup.identity.mark.jid.invalid", MessageId::m6a6f75726e616c2e73657475702e6964656e746974792e6d61726b2e6a69642e696e76616c6964),
         ("journal.setup.identity.no.candidate", MessageId::m6a6f75726e616c2e73657475702e6964656e746974792e6e6f2e63616e646964617465),
+        ("journal.setup.identity.program.folder", MessageId::m6a6f75726e616c2e73657475702e6964656e746974792e70726f6772616d2e666f6c646572),
         ("journal.setup.identity.recover", MessageId::m6a6f75726e616c2e73657475702e6964656e746974792e7265636f766572),
         ("journal.setup.identity.spki.invalid", MessageId::m6a6f75726e616c2e73657475702e6964656e746974792e73706b692e696e76616c6964),
         ("journal.setup.identity.state.ca.bundle.is.not.a.directory", MessageId::m6a6f75726e616c2e73657475702e6964656e746974792e73746174652e63612e62756e646c652e69732e6e6f742e612e6469726563746f7279),
@@ -8989,6 +8996,7 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.setup.wrapper.legacy", MessageId::m6a6f75726e616c2e73657475702e777261707065722e6c6567616379),
         ("journal.setup.wrapper.legacy.retry", MessageId::m6a6f75726e616c2e73657475702e777261707065722e6c65676163792e7265747279),
         ("journal.setup.wrapper.provision", MessageId::m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e),
+        ("journal.setup.wrapper.provision.remedy", MessageId::m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e2e72656d656479),
         ("journal.setup.wrapper.retire.failed", MessageId::m6a6f75726e616c2e73657475702e777261707065722e7265746972652e6661696c6564),
         ("journal.setup.wrapper.retry", MessageId::m6a6f75726e616c2e73657475702e777261707065722e7265747279),
         ("journal.window.agents.access.disconnect", MessageId::m6a6f75726e616c2e77696e646f772e6167656e74732e6163636573732e646973636f6e6e656374),
@@ -17671,6 +17679,8 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e73657475702e63616e63656c2e6661696c6564", no_arguments),
     ("m6a6f75726e616c2e73657475702e63616e63656c2e6964656e74697479", no_arguments),
     ("m6a6f75726e616c2e73657475702e63616e63656c2e6f776e6572", no_arguments),
+    ("m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67", prepare_m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67),
+    ("m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274", prepare_m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274),
     ("m6a6f75726e616c2e73657475702e646f63746f722e626c6f636b6564", no_arguments),
     ("m6a6f75726e616c2e73657475702e646f63746f722e6661696c65642e737461747573", no_arguments),
     ("m6a6f75726e616c2e73657475702e646f63746f722e696e636f6d706c657465", no_arguments),
@@ -17712,6 +17722,7 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e73657475702e6964656e746974792e6d61726b2e61737365742e696e76616c6964", prepare_m6a6f75726e616c2e73657475702e6964656e746974792e6d61726b2e61737365742e696e76616c6964),
     ("m6a6f75726e616c2e73657475702e6964656e746974792e6d61726b2e6a69642e696e76616c6964", prepare_m6a6f75726e616c2e73657475702e6964656e746974792e6d61726b2e6a69642e696e76616c6964),
     ("m6a6f75726e616c2e73657475702e6964656e746974792e6e6f2e63616e646964617465", no_arguments),
+    ("m6a6f75726e616c2e73657475702e6964656e746974792e70726f6772616d2e666f6c646572", no_arguments),
     ("m6a6f75726e616c2e73657475702e6964656e746974792e7265636f766572", prepare_m6a6f75726e616c2e73657475702e6964656e746974792e7265636f766572),
     ("m6a6f75726e616c2e73657475702e6964656e746974792e73706b692e696e76616c6964", prepare_m6a6f75726e616c2e73657475702e6964656e746974792e73706b692e696e76616c6964),
     ("m6a6f75726e616c2e73657475702e6964656e746974792e73746174652e63612e62756e646c652e69732e6e6f742e612e6469726563746f7279", no_arguments),
@@ -17821,6 +17832,7 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e73657475702e777261707065722e6c6567616379", no_arguments),
     ("m6a6f75726e616c2e73657475702e777261707065722e6c65676163792e7265747279", no_arguments),
     ("m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e", prepare_m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e),
+    ("m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e2e72656d656479", no_arguments),
     ("m6a6f75726e616c2e73657475702e777261707065722e7265746972652e6661696c6564", prepare_m6a6f75726e616c2e73657475702e777261707065722e7265746972652e6661696c6564),
     ("m6a6f75726e616c2e73657475702e777261707065722e7265747279", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e6167656e74732e6163636573732e646973636f6e6e656374", no_arguments),
@@ -26457,6 +26469,42 @@ static MESSAGES: &[(&str, Prepare)] = &[
 fn no_arguments(key: &'static str, args: &[(&str, Value)], _: Option<&str>) -> Prepared {
     if let Some((name, _)) = args.first() { return Err(RenderError::UnknownArgument((*name).to_owned())); }
     Ok((key, FluentArgs::new()))
+}
+
+fn prepare_m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["error"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "error").ok_or_else(|| RenderError::MissingArgument("error".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("error".to_string())),
+    };
+    f_args.set("error", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["error"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "error").ok_or_else(|| RenderError::MissingArgument("error".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("error".to_string())),
+    };
+    f_args.set("error", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
 }
 
 fn prepare_m6a6f75726e616c2e73657475702e646f63746f722e73696c656e74(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {

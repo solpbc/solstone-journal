@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall preflight refusal when census cannot be read.",
+  "context": "Clean-uninstall preflight refusal when census cannot be read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a003a00147354c4265f2a6a10f8ccc94c91fafb5e28252ff128cd1c4054cb0ed",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

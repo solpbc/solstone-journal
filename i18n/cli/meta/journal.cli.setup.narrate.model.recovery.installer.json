@@ -1,0 +1,25 @@
+{
+  "description": "Setup model-only failure recovery guidance under installer transaction.",
+  "context": "Setup model-only failure recovery guidance under installer transaction.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "journal",
+      "type": "string"
+    },
+    {
+      "name": "variant",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8ff03acf21c0608a6d780a8d09074f866d8fceb1ea5dd4a9b23e6a1d7d7fdfa3",
+  "max_length": 270,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

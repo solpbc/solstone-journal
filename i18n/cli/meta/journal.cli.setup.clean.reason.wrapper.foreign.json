@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall wrapper skipped for foreign alias.",
+  "context": "Clean-uninstall wrapper skipped for foreign alias.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea0d09298b82a23a7700e3bf1b3516477904b90c147f6ccf80e28fc9bca44557",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

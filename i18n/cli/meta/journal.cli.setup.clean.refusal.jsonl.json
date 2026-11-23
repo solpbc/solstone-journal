@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall refusal when combined with --jsonl.",
+  "context": "Clean-uninstall refusal when combined with --jsonl.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d12842fb2f0de2bc06fbd56d1ecfb3cd8ba77c1a673161f4e97880b8388108a9",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

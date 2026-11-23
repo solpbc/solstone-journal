@@ -1,0 +1,16 @@
+{
+  "description": "Identity error: generation must be nonzero.",
+  "context": "Identity error: generation must be nonzero.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "602a646d2417e3a082e0e8f8fd1eb62fcfa698fdc2ab201d9325c2010f3ad71e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

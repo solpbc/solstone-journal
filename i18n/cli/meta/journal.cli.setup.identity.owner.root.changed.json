@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: owner admission root changed during lock.",
+  "context": "Identity refusal: owner admission root changed during lock.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "379121a9841f83c7105a3193ec322d9db6631b963f83af91f6ea183c22c2a916",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

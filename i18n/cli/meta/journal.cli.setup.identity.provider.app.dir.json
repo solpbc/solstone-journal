@@ -1,0 +1,16 @@
+{
+  "description": "Identity error: provider base has no application directory.",
+  "context": "Identity error: provider base has no application directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7dc203a3d6557259a1f10ab92a420aeaddae275091485be8b8c9427954af04ab",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

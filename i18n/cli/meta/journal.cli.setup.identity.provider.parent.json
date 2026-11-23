@@ -1,0 +1,16 @@
+{
+  "description": "Identity error: provider base has no parent.",
+  "context": "Identity error: provider base has no parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ee205f10e44f10b81988db2e2af880ea918d77be9299f850f235778aae5a42f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

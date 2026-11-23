@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall service child timed out without output.",
+  "context": "Clean-uninstall service child timed out without output.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e983762660366e62e8fd5fa41681b56d58da78542b1e0843ba6f7f5ea4ab7f33",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

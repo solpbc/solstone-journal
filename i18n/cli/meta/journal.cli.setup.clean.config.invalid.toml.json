@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall user config invalid TOML error.",
+  "context": "Clean-uninstall user config invalid TOML error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d25bfc1ec90221069642a3e227fa12bd3542dd2a402824d1f6ebfd09e415f3c4",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

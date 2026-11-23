@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall refusal when no adopted identity exists.",
+  "context": "Clean-uninstall refusal when no adopted identity exists.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c21d048c089af26a158d1830502d95a9554c7a2b2e61455573ba3b59d58d9724",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

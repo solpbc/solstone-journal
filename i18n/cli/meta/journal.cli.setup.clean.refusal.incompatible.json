@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall refusal when combined with incompatible flags.",
+  "context": "Clean-uninstall refusal when combined with incompatible flags.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "flags",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cc74dd8ba94abc1de209fdf2618d3a9549a03853675f748ba2d2ec504fab9919",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

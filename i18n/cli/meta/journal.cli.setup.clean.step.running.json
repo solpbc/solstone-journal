@@ -1,0 +1,29 @@
+{
+  "description": "Clean-uninstall step progress line.",
+  "context": "Clean-uninstall step progress line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "step",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4223843e11c6c6bedaf236fa8f4bb7d920fcaab6cd686a2553685b0a5de8dbe6",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

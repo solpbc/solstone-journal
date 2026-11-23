@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall wrapper skipped in git worktree.",
+  "context": "Clean-uninstall wrapper skipped in git worktree.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "67871a4d27a73d9b3e94cb8339cb34da4e5b04a7f61993b99e6ff8ee1a393603",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

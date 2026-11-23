@@ -1,0 +1,16 @@
+{
+  "description": "Setup PATH status on Windows.",
+  "context": "Setup PATH status on Windows.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0cda9ed2d5d4404d3321e4fb8a7467222093e5255e099f22a97ca12194727a87",
+  "max_length": 237,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

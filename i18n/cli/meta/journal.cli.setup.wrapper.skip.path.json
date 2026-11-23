@@ -1,0 +1,16 @@
+{
+  "description": "Setup narration when --skip-path skips shell rc edits.",
+  "context": "Setup narration when --skip-path skips shell rc edits.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "22b5235eb8caeaa9b2d34de7313cec183b6873d4ea2fe29560ca7a1e27637586",
+  "max_length": 195,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

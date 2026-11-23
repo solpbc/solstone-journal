@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: artifact guard is incomplete.",
+  "context": "Identity refusal: artifact guard is incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42b3f3daff5d33854d9f3efa0d527de1506f04c22f7ed4c13a197bc2b56bc1d5",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

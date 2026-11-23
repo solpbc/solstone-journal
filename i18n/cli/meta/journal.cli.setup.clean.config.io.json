@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall user config read error.",
+  "context": "Clean-uninstall user config read error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3bf3725ba6761772451cc71ef9ddffaf420fdc241d504b2bcf23ae51b7e9d9a4",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

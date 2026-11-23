@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall preflight refusal when identity is only prepared.",
+  "context": "Clean-uninstall preflight refusal when identity is only prepared.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0fa58c69dff6563e2dcabb804f870630c9ca5d5d70916cfed60f2141a5653315",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

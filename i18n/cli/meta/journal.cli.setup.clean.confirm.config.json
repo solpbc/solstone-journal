@@ -1,0 +1,29 @@
+{
+  "description": "Clean-uninstall confirmation config row.",
+  "context": "Clean-uninstall confirmation config row.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    },
+    {
+      "name": "marker",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1800c7ebc200a64c76ca8183ad865ae31d709557cec1f528ff7733b75fe83604",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

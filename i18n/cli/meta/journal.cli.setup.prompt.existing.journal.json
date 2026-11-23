@@ -1,0 +1,21 @@
+{
+  "description": "Interactive setup prompt asking whether to use an existing journal directory.",
+  "context": "Interactive setup prompt asking whether to use an existing journal directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4e5f7824fa972f411a7529659f0b3ec0ca59eb4dced907fc6e36d5b24b35139c",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

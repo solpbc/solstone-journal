@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall confirmation preserved macOS permissions line.",
+  "context": "Clean-uninstall confirmation preserved macOS permissions line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7794c7656caa22ccac4c0ed825c8d024ec464d37ed4c3d843227d73d7eb2af68",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

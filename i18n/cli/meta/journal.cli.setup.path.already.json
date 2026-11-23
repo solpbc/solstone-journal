@@ -1,0 +1,16 @@
+{
+  "description": "Setup PATH status when ~/.local/bin is already configured.",
+  "context": "Setup PATH status when ~/.local/bin is already configured.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b234359ddf7f66267084191a2fcd70f22906dbe52ae9df307b4731c3f4eb9a4d",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

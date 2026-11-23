@@ -1,0 +1,21 @@
+{
+  "description": "Setup narration when macOS app already manages the journal.",
+  "context": "Setup narration when macOS app already manages the journal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "line_break",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "367f7737e114ff93b01b8d69a0854a66a1e887f8e7364e6426ff2e8f43b6c8e3",
+  "max_length": 492,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

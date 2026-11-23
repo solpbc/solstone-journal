@@ -1,0 +1,16 @@
+{
+  "description": "Setup error when --initial-start-at-sign-in is passed on Unix.",
+  "context": "Setup error when --initial-start-at-sign-in is passed on Unix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "56e499ce765daa73a8cd94800d6de98d451323f3cb1591f7e8ccf26fb9edc880",
+  "max_length": 237,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall preflight refusal when config journal mismatches identity.",
+  "context": "Clean-uninstall preflight refusal when config journal mismatches identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9f6d98e7214e7822c4c25006731bfa29fa93af0d5befca3a6d6154a6d41c0a8",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

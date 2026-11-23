@@ -1140,15 +1140,15 @@ pub fn ensure_user_bin_on_path(home_dir: &Path) -> String {
         Ok(())
     })();
     if result.is_err() {
-        return "path: could not auto-add ~/.local/bin to PATH — add this line to your shell rc manually: export PATH=\"$HOME/.local/bin:$PATH\"".into();
+        return solstone_core_cli_copy::text("journal.cli.setup.path.manual");
     }
     if !changed {
-        return "path: ~/.local/bin already on PATH".into();
+        return solstone_core_cli_copy::text("journal.cli.setup.path.already");
     }
     if changed_existing {
-        "path: added ~/.local/bin to shell PATH — restart your shell or run 'exec $SHELL -l' to pick it up".into()
+        solstone_core_cli_copy::text("journal.cli.setup.path.added.restart")
     } else {
-        "path: added ~/.local/bin to shell PATH".into()
+        solstone_core_cli_copy::text("journal.cli.setup.path.added")
     }
 }
 

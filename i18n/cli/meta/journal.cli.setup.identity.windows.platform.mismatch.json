@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: owner platform mismatch on Windows.",
+  "context": "Identity refusal: owner platform mismatch on Windows.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "96111152ba8c5b215f4138daab51b325e48451da78e8681b568424db5254a280",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

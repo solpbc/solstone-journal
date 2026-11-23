@@ -1,0 +1,16 @@
+{
+  "description": "Identity error: Windows path bytes have an odd length.",
+  "context": "Identity error: Windows path bytes have an odd length.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e30a21ccf2f1b6359753751534d6d956799c31e57ba97f2e1af5f2e76a9d8b4d",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

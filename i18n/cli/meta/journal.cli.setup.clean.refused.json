@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall refusal line.",
+  "context": "Clean-uninstall refusal line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a2a4b166c3a25aed2f60589d7c9eca5ab3af36ab13a757a4f9e953150fe22521",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Clean-uninstall service child failure with output detail.",
+  "context": "Clean-uninstall service child failure with output detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4a6e55c72956acd4529f79d2f4bdd755d9fd625ba449e9d79cc9fe654b8baec1",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

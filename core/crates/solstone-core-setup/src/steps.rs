@@ -36,7 +36,13 @@ use crate::wrapper::{is_live_app_owned_child_launcher, wrapper_paths};
 #[cfg(test)]
 const LOCAL_MODEL: &str = "local/qwen3.5-4b";
 const LOCAL_INSTALL_HINT: &str = "solstone journal install-provider local";
-const SOL_ALREADY_KEEPS_JOURNAL_NARRATION: &str = "solstone on this Mac already keeps this journal, so setup did not install a background launcher.\nRun solstone journal doctor if something looks wrong.";
+
+fn sol_already_keeps_journal_narration() -> String {
+    solstone_core_cli_copy::strings(
+        "journal.cli.setup.narrate.sol.keeps.journal",
+        [("line_break", "\n")],
+    )
+}
 
 pub const ALL_STEP_NAMES: [StepName; 8] = [
     StepName::Doctor,
@@ -190,7 +196,10 @@ impl ServiceOps for NativeServiceOps {
         if output.exit_code == 0 {
             Ok(())
         } else {
-            Err(format!("service restart exited {}", output.exit_code))
+            Err(solstone_core_cli_copy::display(
+                "journal.cli.setup.service.restart.exited",
+                [("code", &output.exit_code)],
+            ))
         }
     }
     fn up(
@@ -442,7 +451,13 @@ impl<'a> SetupContext<'a> {
         match (self.already_keeps_journal_probe)(self) {
             Ok(value) => value,
             Err(error) => {
-                eprintln!("warning: could not inspect solstone launcher ownership: {error}");
+                eprintln!(
+                    "{}",
+                    solstone_core_cli_copy::display(
+                        "journal.cli.setup.warning.launcher.ownership",
+                        [("error", &error)]
+                    )
+                );
                 false
             }
         }
@@ -463,7 +478,7 @@ pub fn native_already_keeps_journal_probe(context: &SetupContext<'_>) -> Result<
 
 /// A setup diagnostic stays in source English in the manifest. The same
 /// result can render its display fields in the invoking app's language.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetupText {
     Diagnostic(String),
     ChildDisplay {
@@ -537,7 +552,7 @@ pub enum StepStatus {
 pub struct StepError {
     pub code: ErrorCode,
     pub message: SetupText,
-    pub details: String,
+    pub details: SetupText,
     pub exit_code: i32,
 }
 
@@ -552,7 +567,7 @@ pub struct WrapperWarning {
 pub struct BrainWarning {
     pub code: ErrorCode,
     pub message: SetupText,
-    pub details: String,
+    pub details: SetupText,
     pub exit_code: i32,
     pub fix_hint: SetupText,
 }
@@ -632,7 +647,7 @@ pub enum StepExecutionError {
         error_code: Option<ErrorCode>,
     },
     Unhandled {
-        message: String,
+        message: SetupText,
     },
 }
 
@@ -709,7 +724,11 @@ fn plan_value<'a>(resolved: &'a Map<String, Value>, key: &str) -> Option<&'a Val
 }
 
 /// `  <key>: <value> (<source>)`, matching the reference's provenance line.
-fn resolved_plan_line(resolved: &Map<String, Value>, key: &str) -> Option<String> {
+fn resolved_plan_line(
+    resolved: &Map<String, Value>,
+    key: &str,
+    message_id: &str,
+) -> Option<String> {
     let entry = resolved.get(key)?.as_object()?;
     let value = entry.get("value")?;
     let source = entry.get("source")?.as_str()?;
@@ -717,22 +736,31 @@ fn resolved_plan_line(resolved: &Map<String, Value>, key: &str) -> Option<String
         Value::String(text) => text.clone(),
         other => other.to_string(),
     };
-    Some(format!("  {key}: {rendered} ({source})"))
+    Some(solstone_core_cli_copy::display(
+        message_id,
+        [("indent", &"  "), ("value", &rendered), ("source", &source)],
+    ))
 }
 
 pub fn render_plan(context: &SetupContext<'_>, dry_run: bool) -> Vec<String> {
-    let heading = if dry_run {
-        "setup dry-run:"
+    let heading = solstone_core_cli_copy::text(if dry_run {
+        "journal.cli.setup.plan.heading.dry.run"
     } else {
-        "setup plan:"
-    };
+        "journal.cli.setup.plan.heading.explain"
+    });
     let mut lines = vec![
-        heading.to_owned(),
-        format!("  mode: {}", mode_name(context.mode)),
-        format!(
-            "  journal: {} ({})",
-            context.journal_path.display(),
-            context.resolved.journal_source
+        heading,
+        solstone_core_cli_copy::display(
+            "journal.cli.setup.plan.mode",
+            [("indent", &"  "), ("mode", &mode_name(context.mode))],
+        ),
+        solstone_core_cli_copy::display(
+            "journal.cli.setup.plan.journal",
+            [
+                ("indent", &"  "),
+                ("path", &context.journal_path.display()),
+                ("source", &context.resolved.journal_source),
+            ],
         ),
     ];
     // The plan exists to tell an owner what a run would do with the arguments
@@ -741,28 +769,44 @@ pub fn render_plan(context: &SetupContext<'_>, dry_run: bool) -> Vec<String> {
     // effect. The runtime already honours all of these; only the rendering was
     // short, which is the narrowing that is easiest to miss because nothing
     // fails.
-    for key in ["port", "variant", "step_timeout_seconds"] {
-        if let Some(line) = resolved_plan_line(&context.resolved.args_resolved, key) {
+    for (key, message_id) in [
+        ("port", "journal.cli.setup.plan.port"),
+        ("variant", "journal.cli.setup.plan.variant"),
+        (
+            "step_timeout_seconds",
+            "journal.cli.setup.plan.step.timeout",
+        ),
+    ] {
+        if let Some(line) = resolved_plan_line(&context.resolved.args_resolved, key, message_id) {
             lines.push(line);
         }
     }
     if !context.args.step_timeout_seconds_supplied() {
-        lines.push("  model download: no setup time limit (default)".to_owned());
+        lines.push(solstone_core_cli_copy::display(
+            "journal.cli.setup.plan.model.download.default",
+            [("indent", &"  ")],
+        ));
     }
     if let Some(value) =
         plan_value(&context.resolved.args_resolved, "is_source_checkout").and_then(Value::as_bool)
     {
-        lines.push(format!(
-            "  source checkout: {}",
-            if value { "True" } else { "False" }
+        lines.push(solstone_core_cli_copy::display(
+            if value {
+                "journal.cli.setup.plan.source.checkout.true"
+            } else {
+                "journal.cli.setup.plan.source.checkout.false"
+            },
+            [("indent", &"  ")],
         ));
     }
     for (index, spec) in step_specs().iter().enumerate() {
-        lines.push(format!(
-            "[step {}/{}] {}",
-            index + 1,
-            ALL_STEP_NAMES.len(),
-            spec.name.as_str()
+        lines.push(solstone_core_cli_copy::display(
+            "journal.cli.setup.plan.step.header",
+            [
+                ("index", &(index + 1)),
+                ("total", &ALL_STEP_NAMES.len()),
+                ("name", &spec.name.as_str()),
+            ],
         ));
         lines.push((spec.plan)(context));
     }
@@ -846,22 +890,29 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
         let step_started = Instant::now();
         let command = command_for_step(context, spec.name);
         if let Some(command) = &command {
+            let joined = command.join(" ");
             narrate(
                 context,
-                &format!(
-                    "[step {index}/{}] running {}: {}",
-                    ALL_STEP_NAMES.len(),
-                    spec.name.as_str(),
-                    command.join(" ")
+                &solstone_core_cli_copy::display(
+                    "journal.cli.setup.narrate.step.running.command",
+                    [
+                        ("index", &index),
+                        ("total", &ALL_STEP_NAMES.len()),
+                        ("name", &spec.name.as_str()),
+                        ("command", &joined),
+                    ],
                 ),
             );
         } else {
             narrate(
                 context,
-                &format!(
-                    "[step {index}/{}] running {}...",
-                    ALL_STEP_NAMES.len(),
-                    spec.name.as_str()
+                &solstone_core_cli_copy::display(
+                    "journal.cli.setup.narrate.step.running",
+                    [
+                        ("index", &index),
+                        ("total", &ALL_STEP_NAMES.len()),
+                        ("name", &spec.name.as_str()),
+                    ],
                 ),
             );
         }
@@ -918,8 +969,8 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                                 (context.now)(),
                                 StepError {
                                     code: ErrorCode::SetupUnhandledException,
-                                    message: message.into(),
-                                    details: String::new(),
+                                    message,
+                                    details: SetupText::Diagnostic(String::new()),
                                     exit_code: 1,
                                 },
                             ),
@@ -930,8 +981,8 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                             (context.now)(),
                             StepError {
                                 code: ErrorCode::SetupUnhandledException,
-                                message: message.into(),
-                                details: String::new(),
+                                message,
+                                details: SetupText::Diagnostic(String::new()),
                                 exit_code: 1,
                             },
                         ),
@@ -981,8 +1032,8 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                         (context.now)(),
                         StepError {
                             code: ErrorCode::SetupUnhandledException,
-                            message: message.into(),
-                            details: String::new(),
+                            message,
+                            details: SetupText::Diagnostic(String::new()),
                             exit_code: 1,
                         },
                     ),
@@ -1012,8 +1063,8 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                     (context.now)(),
                     StepError {
                         code: ErrorCode::SetupUnhandledException,
-                        message: message.into(),
-                        details: String::new(),
+                        message,
+                        details: SetupText::Diagnostic(String::new()),
                         exit_code: 1,
                     },
                 ),
@@ -1168,14 +1219,14 @@ fn model_recovery_message(context: &SetupContext<'_>) -> String {
     // A bootstrap owns its pending receipt and tells the owner which
     // installer command finishes the transaction. Direct setup can finish
     // with setup itself.
-    let continuation = if context.args.installer_transaction {
-        String::new()
+    let id = if context.args.installer_transaction {
+        "journal.cli.setup.narrate.model.recovery.installer"
     } else {
-        format!(", then {journal} setup")
+        "journal.cli.setup.narrate.model.recovery.direct"
     };
-    format!(
-        "model installation did not finish. run {journal} install-models --variant {}{continuation}.",
-        context.args.variant,
+    solstone_core_cli_copy::display(
+        id,
+        [("journal", &journal), ("variant", &context.args.variant)],
     )
 }
 
@@ -1184,20 +1235,21 @@ fn narrate_prior_run(context: &SetupContext<'_>, previous: Option<&SetupManifest
         return;
     };
     if previous.completed_at.is_some() {
-        let suffix = if context.args.force {
-            "re-running all steps (--force)."
+        let completed_at = previous.completed_at.as_deref().unwrap_or_default();
+        let id = if context.args.force {
+            "journal.cli.setup.narrate.prior.clean.force"
         } else {
-            "verifying current state."
+            "journal.cli.setup.narrate.prior.clean.verify"
         };
         narrate(
             context,
-            &format!(
-                "solstone journal setup last ran cleanly on {}; {suffix}",
-                previous.completed_at.as_deref().unwrap_or_default()
-            ),
+            &solstone_core_cli_copy::display(id, [("completed_at", &completed_at)]),
         );
         if !context.args.force {
-            narrate(context, "Use --force to re-run all steps unconditionally.");
+            narrate(
+                context,
+                &solstone_core_cli_copy::text("journal.cli.setup.narrate.prior.force.hint"),
+            );
         }
         return;
     }
@@ -1213,29 +1265,39 @@ fn narrate_prior_run(context: &SetupContext<'_>, previous: Option<&SetupManifest
     }
     narrate(
         context,
-        &format!(
-            "solstone journal setup last run on {} left these steps incomplete:",
-            previous.started_at
+        &solstone_core_cli_copy::display(
+            "journal.cli.setup.narrate.prior.incomplete.header",
+            [("started_at", &previous.started_at)],
         ),
     );
     for name in failed {
-        narrate(context, &format!("  - {name} (failed)"));
+        narrate(
+            context,
+            &solstone_core_cli_copy::display(
+                "journal.cli.setup.narrate.prior.incomplete.item",
+                [("indent", &"  "), ("name", &name)],
+            ),
+        );
     }
     narrate(
         context,
-        "Re-running will verify state and re-run incomplete steps.",
+        &solstone_core_cli_copy::text("journal.cli.setup.narrate.prior.incomplete.hint"),
     );
 }
 
 fn narrate_step_result(context: &SetupContext<'_>, index: usize, result: &StepResult) {
     if result.status == StepStatus::Skipped {
+        let reason = result.reason.as_deref().unwrap_or("skipped");
         narrate(
             context,
-            &format!(
-                "[step {index}/{}] skipped {}: {}",
-                ALL_STEP_NAMES.len(),
-                result.name.as_str(),
-                result.reason.as_deref().unwrap_or("skipped")
+            &solstone_core_cli_copy::display(
+                "journal.cli.setup.narrate.step.skipped",
+                [
+                    ("index", &index),
+                    ("total", &ALL_STEP_NAMES.len()),
+                    ("name", &result.name.as_str()),
+                    ("reason", &reason),
+                ],
             ),
         );
     } else if result.status == StepStatus::Failed {
@@ -1245,9 +1307,9 @@ fn narrate_step_result(context: &SetupContext<'_>, index: usize, result: &StepRe
         };
         narrate_error(
             context,
-            &format!(
-                "solstone journal setup: {} failed: {message}",
-                result.name.as_str()
+            &solstone_core_cli_copy::display(
+                "journal.cli.setup.narrate.step.failed",
+                [("name", &result.name.as_str()), ("message", &message)],
             ),
         );
     } else {
@@ -1302,9 +1364,15 @@ fn narrate_success(context: &SetupContext<'_>, manifest: &SetupManifest) {
     };
     println!();
     if complete {
-        println!("solstone is set up.");
+        println!(
+            "{}",
+            solstone_core_cli_copy::text("journal.cli.setup.narrate.complete.set.up")
+        );
     } else {
-        println!("solstone is installed.");
+        println!(
+            "{}",
+            solstone_core_cli_copy::text("journal.cli.setup.narrate.complete.installed")
+        );
     }
     println!();
     let skipped_prior = manifest
@@ -1322,15 +1390,25 @@ fn narrate_success(context: &SetupContext<'_>, manifest: &SetupManifest) {
                 && step.get("reason").and_then(Value::as_str) != Some("prior_run_ok")
         })
         .count();
+    let ran = ALL_STEP_NAMES
+        .len()
+        .saturating_sub(skipped_prior + skipped_other);
     println!(
-        "{skipped_prior} of {} steps already done; ran {}",
-        ALL_STEP_NAMES.len(),
-        ALL_STEP_NAMES
-            .len()
-            .saturating_sub(skipped_prior + skipped_other)
+        "{}",
+        solstone_core_cli_copy::display(
+            "journal.cli.setup.narrate.complete.counts",
+            [
+                ("skipped", &skipped_prior),
+                ("total", &ALL_STEP_NAMES.len()),
+                ("ran", &ran),
+            ]
+        )
     );
     println!();
-    println!("artifacts:");
+    println!(
+        "{}",
+        solstone_core_cli_copy::text("journal.cli.setup.narrate.artifacts.header")
+    );
     let mut paths = Vec::new();
     for step in &manifest.steps {
         if let Some(items) = step.get("paths").and_then(Value::as_array) {
@@ -1347,7 +1425,13 @@ fn narrate_success(context: &SetupContext<'_>, manifest: &SetupManifest) {
     }
     let existing_paths = filter_existing_artifacts(&paths);
     if existing_paths.is_empty() {
-        println!("  none");
+        println!(
+            "{}",
+            solstone_core_cli_copy::display(
+                "journal.cli.setup.narrate.artifacts.none",
+                [("indent", &"  ")]
+            )
+        );
     } else {
         for path in existing_paths {
             println!("  {path}");
@@ -1366,26 +1450,55 @@ fn narrate_success(context: &SetupContext<'_>, manifest: &SetupManifest) {
         SetupClose::SkipService => {
             println!();
             if unix {
-                println!("once your journal is running, open it with: solstone journal open");
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::text(
+                        "journal.cli.setup.narrate.close.skip.service.unix"
+                    )
+                );
             } else {
-                println!("once your journal is running, open it at {url}");
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::display(
+                        "journal.cli.setup.narrate.close.skip.service.url",
+                        [("url", &url)]
+                    )
+                );
             }
         }
         SetupClose::HeldByInstaller => {}
         SetupClose::OpenJournal => {
             println!();
             if unix {
-                println!("open your journal: solstone journal open");
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::text("journal.cli.setup.narrate.close.open.unix")
+                );
             } else {
-                println!("open your journal: {url}");
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::display(
+                        "journal.cli.setup.narrate.close.open.url",
+                        [("url", &url)]
+                    )
+                );
             }
         }
         SetupClose::FinishSetup => {
             println!();
             if unix {
-                println!("finish setup: solstone journal open /init");
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::text("journal.cli.setup.narrate.close.finish.unix")
+                );
             } else {
-                println!("finish setup: {url}/init");
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::display(
+                        "journal.cli.setup.narrate.close.finish.url",
+                        [("url", &url)]
+                    )
+                );
             }
         }
     }
@@ -1540,6 +1653,7 @@ fn emit_step_result(context: &mut SetupContext<'_>, result: &StepResult, duratio
             let mut fields = serde_json::to_value(error).expect("error serializable");
             if let StepErrorPayload::Failure(failure) = error {
                 fields["message"] = json!(failure.message.render(cli_locale()));
+                fields["details"] = json!(failure.details.render(cli_locale()));
             }
             context.emit(
                 EventType::StepFailed,
@@ -1617,10 +1731,13 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
         )],
     };
     let started = Instant::now();
-    let mut output = context
-        .runner
-        .run(&request)
-        .map_err(|error| StepExecutionError::Unhandled { message: error })?;
+    let mut output =
+        context
+            .runner
+            .run(&request)
+            .map_err(|error| StepExecutionError::Unhandled {
+                message: error.into(),
+            })?;
     let now = (context.now)();
     if output.timed_out {
         let message = if started.elapsed() >= Duration::from_secs(DOCTOR_CEILING_SECONDS) {
@@ -1642,7 +1759,7 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
             StepError {
                 code: ErrorCode::DoctorTimeout,
                 message,
-                details: tail(&output.stderr),
+                details: tail(&output.stderr).into(),
                 exit_code: 1,
             },
         ));
@@ -1712,7 +1829,7 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
                 StepError {
                     code: ErrorCode::DoctorJsonlIncomplete,
                     message: SetupText::message("journal.setup.doctor.incomplete", []),
-                    details: output.stderr,
+                    details: output.stderr.into(),
                     exit_code: output.exit_code.max(1),
                 },
             ));
@@ -1725,7 +1842,7 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
                 StepError {
                     code: ErrorCode::DoctorFailed,
                     message: SetupText::message("journal.setup.doctor.failed.status", []),
-                    details: output.stderr,
+                    details: output.stderr.into(),
                     exit_code: output.exit_code.max(1),
                 },
             ));
@@ -1748,7 +1865,7 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
             StepError {
                 code: ErrorCode::DoctorFailed,
                 message: SetupText::message("journal.setup.doctor.blocked", []),
-                details: tail(&non_empty_output(&output)),
+                details: tail(&non_empty_output(&output)).into(),
                 exit_code: output.exit_code,
             },
         ));
@@ -1761,7 +1878,7 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
             StepError {
                 code: ErrorCode::DoctorJsonlIncomplete,
                 message: SetupText::message("journal.setup.doctor.unreadable", []),
-                details: tail(&output.stdout),
+                details: tail(&output.stdout).into(),
                 exit_code: 1,
             },
         ));
@@ -1844,7 +1961,9 @@ fn step_journal(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
         let accepted = context
             .prompt
             .accept_existing_journal(&context.journal_path)
-            .map_err(|message| StepExecutionError::Unhandled { message })?;
+            .map_err(|message| StepExecutionError::Unhandled {
+                message: message.into(),
+            })?;
         if !accepted {
             return Err(StepExecutionError::DeadEnd {
                 message: text(cli_locale(), "journal.setup.journal.aborted"),
@@ -1855,7 +1974,7 @@ fn step_journal(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
         }
     }
     fs::create_dir_all(&context.journal_path).map_err(|error| StepExecutionError::Unhandled {
-        message: error.to_string(),
+        message: error.to_string().into(),
     })?;
     if !persisted_matches {
         write_user_config(
@@ -1863,20 +1982,29 @@ fn step_journal(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
             &context.journal_path.to_string_lossy(),
         )
         .map_err(|error| StepExecutionError::Unhandled {
-            message: error.to_string(),
+            message: error.to_string().into(),
         })?;
     }
-    ensure_journal_config(&context.journal_path, !existing_journal)
-        .map_err(|error| StepExecutionError::Unhandled { message: error })?;
+    ensure_journal_config(&context.journal_path, !existing_journal).map_err(|error| {
+        StepExecutionError::Unhandled {
+            message: error.into(),
+        }
+    })?;
     if existing_journal {
         cleanup_legacy_log_aliases(&context.journal_path).map_err(|error| {
             StepExecutionError::Unhandled {
-                message: format!("legacy log alias cleanup failed: {error}"),
+                message: SetupText::message(
+                    "journal.setup.cleanup.legacy.log",
+                    [("error", error.to_string())],
+                ),
             }
         })?;
         remove_retired_support_state(&context.journal_path).map_err(|error| {
             StepExecutionError::Unhandled {
-                message: format!("retired support portal state cleanup failed: {error}"),
+                message: SetupText::message(
+                    "journal.setup.cleanup.retired.support",
+                    [("error", error.to_string())],
+                ),
             }
         })?;
     }
@@ -1924,7 +2052,9 @@ fn step_install_models(context: &mut SetupContext<'_>) -> Result<StepResult, Ste
             idle_timeout_seconds: None,
             env: Vec::new(),
         })
-        .map_err(|message| StepExecutionError::Unhandled { message })?;
+        .map_err(|message| StepExecutionError::Unhandled {
+            message: message.into(),
+        })?;
     let now = (context.now)();
     if output.timed_out || output.exit_code != 0 {
         return Ok(subprocess_failure(
@@ -2054,8 +2184,7 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
             if context.legacy_replacement {
                 match retire_legacy_launchers(&environment) {
                     Ok(removed) if !removed.is_empty() => result.notes.push(
-                        "removed the older version's command-line tools; their backups are in ~/.local/share/solstone/setup-backups"
-                            .into(),
+                        solstone_core_cli_copy::text("journal.cli.setup.wrapper.retired.note"),
                     ),
                     Ok(_) => {}
                     // Optional cleanup: warn and let setup finish. Whatever
@@ -2064,7 +2193,10 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                     Err(error) => {
                         result.status = StepStatus::Warning;
                         result.error = Some(StepErrorPayload::WrapperWarning(WrapperWarning {
-                            message: SetupText::message("journal.setup.wrapper.retire.failed", [("error", error.to_string())]),
+                            message: SetupText::message(
+                                "journal.setup.wrapper.retire.failed",
+                                [("error", error.to_string())],
+                            ),
                             fix_hint: SetupText::message("journal.setup.wrapper.retry", []),
                         }));
                     }
@@ -2086,7 +2218,7 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                 if context.args.skip_path {
                     narrate(
                         context,
-                        "left shell login files unchanged because --skip-path was selected",
+                        &solstone_core_cli_copy::text("journal.cli.setup.wrapper.skip.path"),
                     );
                 } else {
                     narrate(context, &ensure_user_bin_on_path(&context.home_dir));
@@ -2115,8 +2247,25 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                 (context.now)(),
                 StepError {
                     code: ErrorCode::WrapperProvisionFailed,
-                    message: SetupText::message("journal.setup.wrapper.provision", [("path", context.home_dir.join(".local/bin").display().to_string()), ("kind", std::any::type_name::<WrapperError>().rsplit("::").next().unwrap_or("WrapperError").to_owned()), ("error", error.to_string())]),
-                    details: "fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone directly from the runtime".into(),
+                    message: SetupText::message(
+                        "journal.setup.wrapper.provision",
+                        [
+                            (
+                                "path",
+                                context.home_dir.join(".local/bin").display().to_string(),
+                            ),
+                            (
+                                "kind",
+                                std::any::type_name::<WrapperError>()
+                                    .rsplit("::")
+                                    .next()
+                                    .unwrap_or("WrapperError")
+                                    .to_owned(),
+                            ),
+                            ("error", error.to_string()),
+                        ],
+                    ),
+                    details: SetupText::message("journal.setup.wrapper.provision.remedy", []),
                     exit_code: 1,
                 },
             )),
@@ -2215,7 +2364,7 @@ fn step_service_with_guard(
                 StepError {
                     code: ErrorCode::LegacySupervisorLockRefused,
                     message: message.into(),
-                    details: String::new(),
+                    details: SetupText::Diagnostic(String::new()),
                     exit_code: 1,
                 },
             ));
@@ -2228,7 +2377,7 @@ fn step_service_with_guard(
         ));
     }
     if context.sol_already_keeps_journal() {
-        narrate(context, SOL_ALREADY_KEEPS_JOURNAL_NARRATION);
+        narrate(context, &sol_already_keeps_journal_narration());
         return Ok(skipped_result(
             StepName::Service,
             Vec::new(),
@@ -2237,8 +2386,15 @@ fn step_service_with_guard(
         ));
     }
     let paths = service_artifact_path(&context.home_dir)
-        .map_err(|error| StepExecutionError::Unhandled {
-            message: error.to_string(),
+        .map_err(|error| {
+            let locale = cli_locale();
+            StepExecutionError::Unhandled {
+                message: SetupText::ChildDisplay {
+                    source: error.to_string(),
+                    locale: locale.to_owned(),
+                    display: error.render(locale),
+                },
+            }
         })?
         .into_iter()
         .collect::<Vec<_>>();
@@ -2281,7 +2437,9 @@ fn step_service_with_guard(
             idle_timeout_seconds: None,
             env: Vec::new(),
         })
-        .map_err(|message| StepExecutionError::Unhandled { message })?;
+        .map_err(|message| StepExecutionError::Unhandled {
+            message: message.into(),
+        })?;
     if output.exit_code != 0 {
         return Ok(subprocess_failure(
             StepName::Service,
@@ -2298,7 +2456,9 @@ fn step_service_with_guard(
     let up = context
         .service_ops
         .up(context.runner, &context.journal_path)
-        .map_err(|message| StepExecutionError::Unhandled { message })?;
+        .map_err(|message| StepExecutionError::Unhandled {
+            message: message.into(),
+        })?;
     if up.exit_code != 0 {
         return Ok(StepResult::failed(
             StepName::Service,
@@ -2310,7 +2470,7 @@ fn step_service_with_guard(
                     "journal.setup.service.failed",
                     [("status", up.exit_code.to_string())],
                 ),
-                details: tail(&up.stderr),
+                details: tail(&up.stderr).into(),
                 exit_code: 1,
             },
         ));
@@ -2344,7 +2504,7 @@ fn resume_service(
         )));
     }
     if context.sol_already_keeps_journal() {
-        narrate(context, SOL_ALREADY_KEEPS_JOURNAL_NARRATION);
+        narrate(context, &sol_already_keeps_journal_narration());
         return Ok(Some(skipped_result(
             StepName::Service,
             Vec::new(),
@@ -2367,7 +2527,9 @@ fn resume_service(
     let installed = context
         .service_ops
         .is_installed(context.runner, &context.journal_path)
-        .map_err(|message| StepExecutionError::Unhandled { message })?;
+        .map_err(|message| StepExecutionError::Unhandled {
+            message: message.into(),
+        })?;
     if !installed {
         #[cfg(windows)]
         return step_service_with_guard(context, Some(saved_guard)).map(Some);
@@ -2423,7 +2585,9 @@ fn resume_service(
     let healthy = context
         .service_ops
         .health_check(context.runner, &context.journal_path)
-        .map_err(|message| StepExecutionError::Unhandled { message })?;
+        .map_err(|message| StepExecutionError::Unhandled {
+            message: message.into(),
+        })?;
     if healthy {
         return Ok(Some(skipped_result(
             StepName::Service,
@@ -2506,7 +2670,7 @@ fn step_brain(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutio
         }
     })
     .map_err(|error| StepExecutionError::Unhandled {
-        message: error.to_string(),
+        message: error.to_string().into(),
     })?;
     if let Some(reason) = mutation.value {
         return Ok(skipped_result(
@@ -2572,7 +2736,9 @@ fn step_brain(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutio
             idle_timeout_seconds: None,
             env: brain_endpoint_environment(context),
         })
-        .map_err(|message| StepExecutionError::Unhandled { message })?;
+        .map_err(|message| StepExecutionError::Unhandled {
+            message: message.into(),
+        })?;
     if output.exit_code == 0 && !output.timed_out {
         return Ok(StepResult::new(
             StepName::Brain,
@@ -2669,7 +2835,9 @@ fn run_skill_step(
                 ),
             ],
         })
-        .map_err(|message| StepExecutionError::Unhandled { message })?;
+        .map_err(|message| StepExecutionError::Unhandled {
+            message: message.into(),
+        })?;
     let now = (context.now)();
     if output.timed_out || output.exit_code != 0 {
         let display = (!output.timed_out && locale != solstone_core_window_catalog::ENGLISH)
@@ -2732,7 +2900,7 @@ fn subprocess_failure(
                     ("seconds", timeout.to_string()),
                 ],
             ),
-            details: tail(&details),
+            details: tail(&details).into(),
             exit_code: 1,
         }
     } else {
@@ -2749,7 +2917,7 @@ fn subprocess_failure(
                         ],
                     )
                 }),
-            details: tail(&details),
+            details: tail(&details).into(),
             exit_code: output.exit_code,
         }
     };
@@ -2871,48 +3039,65 @@ fn non_empty_journal(path: &Path) -> bool {
             }))
 }
 fn plan_doctor(context: &SetupContext<'_>) -> String {
-    format!(
-        "would run: {} journal doctor --readiness",
-        solstone_executable(&context.install_bin_dir).display()
+    solstone_core_cli_copy::display(
+        "journal.cli.setup.plan.doctor",
+        [(
+            "binary",
+            &solstone_executable(&context.install_bin_dir).display(),
+        )],
     )
 }
 fn plan_journal(context: &SetupContext<'_>) -> String {
-    format!("would write: {}", context.config_path.display())
+    solstone_core_cli_copy::display(
+        "journal.cli.setup.plan.write.config",
+        [("path", &context.config_path.display())],
+    )
 }
 fn plan_install_models(context: &SetupContext<'_>) -> String {
-    format!(
-        "would run: {} journal install-models --variant {}",
-        solstone_executable(&context.install_bin_dir).display(),
-        context.args.variant
+    solstone_core_cli_copy::display(
+        "journal.cli.setup.plan.install.models",
+        [
+            (
+                "binary",
+                &solstone_executable(&context.install_bin_dir).display(),
+            ),
+            ("variant", &context.args.variant),
+        ],
     )
 }
 fn plan_skills_user(context: &SetupContext<'_>) -> String {
-    format!(
-        "would run: {} skills install --agent all",
-        context.install_bin_dir.join("solstone").display()
+    solstone_core_cli_copy::display(
+        "journal.cli.setup.plan.skills.user",
+        [(
+            "binary",
+            &context.install_bin_dir.join("solstone").display(),
+        )],
     )
 }
 fn plan_skills_journal(context: &SetupContext<'_>) -> String {
-    format!(
-        "would run: {} skills install --project {} --agent all",
-        context.install_bin_dir.join("solstone").display(),
-        context.journal_path.display()
+    solstone_core_cli_copy::display(
+        "journal.cli.setup.plan.skills.journal",
+        [
+            (
+                "binary",
+                &context.install_bin_dir.join("solstone").display(),
+            ),
+            ("journal", &context.journal_path.display()),
+        ],
     )
 }
 fn plan_wrapper(_context: &SetupContext<'_>) -> String {
-    if cfg!(windows) {
-        "would skip POSIX wrapper provisioning; the Windows package exposes the commands directly"
-            .into()
+    solstone_core_cli_copy::text(if cfg!(windows) {
+        "journal.cli.setup.plan.wrapper.windows"
     } else {
-        "would provision managed solstone and journal wrappers in-process".into()
-    }
+        "journal.cli.setup.plan.wrapper.unix"
+    })
 }
 fn plan_service(_context: &SetupContext<'_>) -> String {
-    "would install and start the journal service".into()
+    solstone_core_cli_copy::text("journal.cli.setup.plan.service")
 }
 fn plan_brain(_context: &SetupContext<'_>) -> String {
-    "would set the local provider lane if this computer can run the local model, and bootstrap it if nothing blocks it"
-        .into()
+    solstone_core_cli_copy::text("journal.cli.setup.plan.brain")
 }
 
 #[cfg(test)]
@@ -5249,7 +5434,7 @@ mod tests {
             StepError {
                 code: ErrorCode::StepSubprocessFailed,
                 message: "fixture skill failure".into(),
-                details: String::new(),
+                details: SetupText::Diagnostic(String::new()),
                 exit_code: 7,
             },
         ))
@@ -5546,7 +5731,10 @@ mod tests {
             panic!("doctor did not fail: {result:?}");
         };
         assert_eq!(error.code, ErrorCode::DoctorTimeout);
-        assert_eq!(error.details, stderr);
+        assert_eq!(
+            error.details.render(solstone_core_window_catalog::ENGLISH),
+            stderr
+        );
     }
 
     #[test]
@@ -5574,7 +5762,10 @@ mod tests {
             panic!("doctor did not fail: {result:?}");
         };
         assert_eq!(error.code, ErrorCode::DoctorFailed);
-        assert_eq!(error.details, report);
+        assert_eq!(
+            error.details.render(solstone_core_window_catalog::ENGLISH),
+            report
+        );
     }
 
     #[test]

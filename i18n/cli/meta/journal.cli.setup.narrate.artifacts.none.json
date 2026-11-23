@@ -1,0 +1,21 @@
+{
+  "description": "Setup completion artifacts empty indicator.",
+  "context": "Setup completion artifacts empty indicator.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "752602c13f5aafe2681348f50684977b7fb002c5f694830c0e809c2bf9e14a38",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

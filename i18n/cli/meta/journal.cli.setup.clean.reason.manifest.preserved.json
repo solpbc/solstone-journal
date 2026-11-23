@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall manifest preservation note.",
+  "context": "Clean-uninstall manifest preservation note.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "904ea62c153ddaa2763c0e1fe5d7249344f6bcfec8a59a2b4d86daf39c462422",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

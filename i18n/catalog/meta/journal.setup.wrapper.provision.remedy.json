@@ -1,0 +1,16 @@
+{
+  "description": "Setup wrapper provisioning failure remedy shown in step error details.",
+  "context": "Setup wrapper provisioning failure remedy shown in step error details.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5d081d6117bb3ad87db864590e08364a7390546b3f7662bbcbea6e8bb11241e",
+  "max_length": 339,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

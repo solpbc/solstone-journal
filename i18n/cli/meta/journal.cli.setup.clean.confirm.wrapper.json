@@ -1,0 +1,29 @@
+{
+  "description": "Clean-uninstall confirmation wrapper row.",
+  "context": "Clean-uninstall confirmation wrapper row.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "indent",
+      "type": "string"
+    },
+    {
+      "name": "marker",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "da15be38ec3dfcb3c1d87245f5bba325e2be2ee8c2d681ca85d7aaeba8fe6fcc",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall placeholder inside angle brackets when no owned path exists.",
+  "context": "Clean-uninstall placeholder inside angle brackets when no owned path exists.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "837e86206274e5bc164f2bc2dcb5edee06001ee6ba305b1e72c67100fff7dad4",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

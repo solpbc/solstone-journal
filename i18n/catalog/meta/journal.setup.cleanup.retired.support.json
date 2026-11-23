@@ -1,0 +1,21 @@
+{
+  "description": "Setup journal step failure when cleaning up retired support portal state.",
+  "context": "Setup journal step failure when cleaning up retired support portal state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cc8b1e2e1a8c0d08f0c8c274add57b7dcb4788f38c39b7a54b4da80222b0ab80",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

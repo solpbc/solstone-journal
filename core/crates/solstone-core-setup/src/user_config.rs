@@ -20,6 +20,39 @@ pub enum CleanupConfigError {
     JournalNotAbsolute,
 }
 
+impl CleanupConfigError {
+    #[must_use]
+    pub fn render(&self, locale: &str) -> String {
+        match self {
+            Self::Io(error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.setup.clean.config.io",
+                [("error", error)],
+            ),
+            Self::InvalidToml => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.setup.clean.config.invalid.toml",
+                &[],
+            ),
+            Self::MissingJournal => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.setup.clean.config.missing.journal",
+                &[],
+            ),
+            Self::JournalNotString => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.setup.clean.config.not.string",
+                &[],
+            ),
+            Self::JournalNotAbsolute => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.setup.clean.config.not.absolute",
+                &[],
+            ),
+        }
+    }
+}
+
 impl std::fmt::Display for CleanupConfigError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

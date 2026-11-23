@@ -1,0 +1,21 @@
+{
+  "description": "Guard parse error: invalid field.",
+  "context": "Guard parse error: invalid field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "283295c31db18f05bdf8ec7f4fbc2fac1ae3185b4f7acb7c91a2af9559d96d05",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

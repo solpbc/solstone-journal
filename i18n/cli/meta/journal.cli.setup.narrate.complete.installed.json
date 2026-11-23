@@ -1,0 +1,16 @@
+{
+  "description": "Setup completion heading when journal onboarding is not yet finished.",
+  "context": "Setup completion heading when journal onboarding is not yet finished.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c08614de7b9d6b81a49a43d1ccd6ef6746669131faff25750afea3105c7d1f53",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

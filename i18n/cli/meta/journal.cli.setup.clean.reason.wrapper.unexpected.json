@@ -1,0 +1,21 @@
+{
+  "description": "Clean-uninstall wrapper failed with unexpected alias state.",
+  "context": "Clean-uninstall wrapper failed with unexpected alias state.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "state",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8d5b7f623dd6a457925ebfdd7318e68d62d1962e27565dd8c84577ef1c957dce",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

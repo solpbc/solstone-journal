@@ -1,0 +1,16 @@
+{
+  "description": "Setup completion next-step guidance on Unix when already set up.",
+  "context": "Setup completion next-step guidance on Unix when already set up.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1991629b9d469490dd20b299cb184525c2c2e597d984ed3860bd7b6780391a57",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

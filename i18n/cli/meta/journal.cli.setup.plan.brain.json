@@ -1,0 +1,16 @@
+{
+  "description": "Setup plan brain step description.",
+  "context": "Setup plan brain step description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "20c1529afec02752f0e7fdd67d1f9731681260118c2b6471f0bdd22c46d00065",
+  "max_length": 339,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

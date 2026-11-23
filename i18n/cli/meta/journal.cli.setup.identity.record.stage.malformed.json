@@ -1,0 +1,16 @@
+{
+  "description": "Identity unsafe state: malformed record stage.",
+  "context": "Identity unsafe state: malformed record stage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ebb0a242b3cc59ac1d3daf2ad9893563d4b2122ed1cb5a9eae5f92beb1c1375a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "description": "Clean-uninstall completion summary line.",
+  "context": "Clean-uninstall completion summary line.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "removed",
+      "type": "string"
+    },
+    {
+      "name": "already_absent",
+      "type": "string"
+    },
+    {
+      "name": "preserved",
+      "type": "string"
+    },
+    {
+      "name": "skipped",
+      "type": "string"
+    },
+    {
+      "name": "failed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ae191cd80ccb4e07347cc4a9e099c34e6a5538f586df19754d31f71dc9ad82b0",
+  "max_length": 450,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

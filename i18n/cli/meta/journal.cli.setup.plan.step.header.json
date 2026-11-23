@@ -1,0 +1,29 @@
+{
+  "description": "Setup plan step header.",
+  "context": "Setup plan step header.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "937543fdd7456eb6690f23dc8558734100deff4bc664763d64c4f3e9e98beccf",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

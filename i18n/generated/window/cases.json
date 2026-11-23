@@ -213,6 +213,82 @@
     {
       "bundle": "journal-window",
       "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.setup.cleanup.legacy.log\u0004m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67",
+        "gettext_plural_key": "m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.setup.cleanup.legacy.log",
+        "resource_key": "m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "legacy log alias cleanup failed: ⁨sample⁩",
+      "message_id": "journal.setup.cleanup.legacy.log",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.setup.cleanup.legacy.log\", [[\"error\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.setup.cleanup.retired.support\u0004m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274",
+        "gettext_plural_key": "m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.setup.cleanup.retired.support",
+        "resource_key": "m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "retired support portal state cleanup failed: ⁨sample⁩",
+      "message_id": "journal.setup.cleanup.retired.support",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.setup.cleanup.retired.support\", [[\"error\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
         "arguments": [],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
@@ -1536,6 +1612,36 @@
       "own_reader_call": "render(\"en-US\", \"journal.setup.identity.no.candidate\", [])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e73657475702e6964656e746974792e6e6f2e63616e646964617465",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.setup.identity.program.folder\u0004m6a6f75726e616c2e73657475702e6964656e746974792e70726f6772616d2e666f6c646572",
+        "gettext_plural_key": "m6a6f75726e616c2e73657475702e6964656e746974792e70726f6772616d2e666f6c646572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.setup.identity.program.folder",
+        "resource_key": "m6a6f75726e616c2e73657475702e6964656e746974792e70726f6772616d2e666f6c646572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Reinstalling or uninstalling removes this program folder. Choose a journal location outside it. If your journal is already there, quit the journal app. If setup completed, run `solstone journal service stop`, then `solstone journal service uninstall` and wait for it to succeed. Move the whole journal folder outside the program folder before reinstalling or uninstalling, then select its new location with `solstone journal setup --accept-existing-journal --journal \"D:\\journal\"`, replacing D:\\journal with its new location.",
+      "message_id": "journal.setup.identity.program.folder",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.setup.identity.program.folder\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e73657475702e6964656e746974792e70726f6772616d2e666f6c646572",
       "target": "classic"
     },
     {
@@ -5086,6 +5192,36 @@
       "own_reader_call": "render(\"en-US\", \"journal.setup.wrapper.provision\", [[\"error\", \"sample\"], [\"kind\", \"sample\"], [\"path\", \"sample\"]])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.setup.wrapper.provision.remedy\u0004m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e2e72656d656479",
+        "gettext_plural_key": "m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e2e72656d656479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.setup.wrapper.provision.remedy",
+        "resource_key": "m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e2e72656d656479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone directly from the runtime",
+      "message_id": "journal.setup.wrapper.provision.remedy",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.setup.wrapper.provision.remedy\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e2e72656d656479",
       "target": "classic"
     },
     {
@@ -301039,6 +301175,82 @@
     {
       "bundle": "journal-window",
       "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.setup.cleanup.legacy.log\u0004m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67",
+        "gettext_plural_key": "m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.setup.cleanup.legacy.log",
+        "resource_key": "m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "legacy log alias cleanup failed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "legacy log alias cleanup failed: ⁨sample⁩",
+      "message_id": "journal.setup.cleanup.legacy.log",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.setup.cleanup.legacy.log\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e73657475702e636c65616e75702e6c65676163792e6c6f67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.setup.cleanup.retired.support\u0004m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274",
+        "gettext_plural_key": "m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.setup.cleanup.retired.support",
+        "resource_key": "m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "retired support portal state cleanup failed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "retired support portal state cleanup failed: ⁨sample⁩",
+      "message_id": "journal.setup.cleanup.retired.support",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.setup.cleanup.retired.support\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e73657475702e636c65616e75702e726574697265642e737570706f7274",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
         "arguments": [],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
@@ -302362,6 +302574,36 @@
       "own_reader_call": "render(\"en-US\", \"journal.setup.identity.no.candidate\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e73657475702e6964656e746974792e6e6f2e63616e646964617465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.setup.identity.program.folder\u0004m6a6f75726e616c2e73657475702e6964656e746974792e70726f6772616d2e666f6c646572",
+        "gettext_plural_key": "m6a6f75726e616c2e73657475702e6964656e746974792e70726f6772616d2e666f6c646572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.setup.identity.program.folder",
+        "resource_key": "m6a6f75726e616c2e73657475702e6964656e746974792e70726f6772616d2e666f6c646572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Reinstalling or uninstalling removes this program folder. Choose a journal location outside it. If your journal is already there, quit the journal app. If setup completed, run `solstone journal service stop`, then `solstone journal service uninstall` and wait for it to succeed. Move the whole journal folder outside the program folder before reinstalling or uninstalling, then select its new location with `solstone journal setup --accept-existing-journal --journal \"D:\\journal\"`, replacing D:\\journal with its new location.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Reinstalling or uninstalling removes this program folder. Choose a journal location outside it. If your journal is already there, quit the journal app. If setup completed, run `solstone journal service stop`, then `solstone journal service uninstall` and wait for it to succeed. Move the whole journal folder outside the program folder before reinstalling or uninstalling, then select its new location with `solstone journal setup --accept-existing-journal --journal \"D:\\journal\"`, replacing D:\\journal with its new location.",
+      "message_id": "journal.setup.identity.program.folder",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.setup.identity.program.folder\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e73657475702e6964656e746974792e70726f6772616d2e666f6c646572",
       "target": "rust"
     },
     {
@@ -305912,6 +306154,36 @@
       "own_reader_call": "render(\"en-US\", \"journal.setup.wrapper.provision\", &[(\"error\", Value::String(\"sample\")), (\"kind\", Value::String(\"sample\")), (\"path\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.setup.wrapper.provision.remedy\u0004m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e2e72656d656479",
+        "gettext_plural_key": "m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e2e72656d656479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.setup.wrapper.provision.remedy",
+        "resource_key": "m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e2e72656d656479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone directly from the runtime",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone directly from the runtime",
+      "message_id": "journal.setup.wrapper.provision.remedy",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.setup.wrapper.provision.remedy\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e73657475702e777261707065722e70726f766973696f6e2e72656d656479",
       "target": "rust"
     },
     {

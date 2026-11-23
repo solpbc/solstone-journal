@@ -1,0 +1,16 @@
+{
+  "description": "Clean-uninstall halted after failed step message.",
+  "context": "Clean-uninstall halted after failed step message.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dd4464d35d51fd793b9656246e35640994854a2eb40db3e25e56e64ed0f47560",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

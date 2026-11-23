@@ -1,0 +1,16 @@
+{
+  "description": "Identity error: installation root is unavailable.",
+  "context": "Identity error: installation root is unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "241ec7bc6e1744d14784830d6dec1f83708c080a59acd2a2a8f336a160664764",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

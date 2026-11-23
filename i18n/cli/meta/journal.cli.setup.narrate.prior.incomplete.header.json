@@ -1,0 +1,21 @@
+{
+  "description": "Setup narration header for prior incomplete run.",
+  "context": "Setup narration header for prior incomplete run.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "started_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3935f04c59448232b1d7a2d5d4406b22749302901c30f9d40a05bc9a8abcee6d",
+  "max_length": 237,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

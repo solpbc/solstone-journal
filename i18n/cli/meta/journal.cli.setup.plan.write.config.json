@@ -1,0 +1,21 @@
+{
+  "description": "Setup plan journal config step description.",
+  "context": "Setup plan journal config step description.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4e9db46572cbfb896b9de4d5b928be2a167228525640eea14caf5b1b36c96d3a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

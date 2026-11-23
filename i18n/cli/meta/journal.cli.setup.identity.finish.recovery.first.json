@@ -1,0 +1,16 @@
+{
+  "description": "Identity refusal: finish setup or recovery before changing folder.",
+  "context": "Identity refusal: finish setup or recovery before changing folder.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be2c34d9ad49c7e1af95e2ea921819558a81e92f728325dc4dc72825cb63ccd2",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

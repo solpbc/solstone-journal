@@ -1,0 +1,16 @@
+{
+  "description": "Setup explain plan heading.",
+  "context": "Setup explain plan heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e596bccd07ea1c826e672da55f57b0a0e6892adac9cbd9aafd6075e6ef928f55",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

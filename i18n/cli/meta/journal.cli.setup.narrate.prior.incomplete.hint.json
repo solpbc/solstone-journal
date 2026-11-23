@@ -1,0 +1,16 @@
+{
+  "description": "Setup narration footer for prior incomplete run.",
+  "context": "Setup narration footer for prior incomplete run.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d1a29135c38dc452bbfce95b7094437e8778a860b24e5c37b70e7a27ce7d1541",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
