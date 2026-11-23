@@ -121,6 +121,7 @@
     space_insufficient: window.JournalI18n.render('journal.window.import.ox.detail.space.insufficient'),
     nothing_new: window.JournalI18n.render('journal.window.import.ox.detail.nothing.new'),
     facet_label: window.JournalI18n.render('journal.window.import.ox.detail.facet.label'),
+    no_facet: window.JournalI18n.render('journal.window.import.ox.detail.no.facet'),
     notebook_label: window.JournalI18n.render('journal.window.import.handoff.notebook'),
     context_label: window.JournalI18n.render('journal.window.import.ox.detail.context.label'),
     context_hint: window.JournalI18n.render('journal.window.import.ox.detail.context.hint'),
@@ -794,16 +795,16 @@
       if (Number.isSafeInteger(val) && val > 0) {
         stats.push({
           value: Number(val).toLocaleString(),
-          label: window.JournalI18n.render(key, quantityArgs(val, 'count', 'quantity', Number(val).toLocaleString())).replace(/^[0-9,.\s]+/, '').trim(),
+          label: window.JournalI18n.render(key, [['quantity', Math.trunc(val)]]).trim(),
         });
       }
     };
-    pushCount(held.workouts, 'journal.window.import.preview.apple.workouts');
-    pushCount(held.nights, 'journal.window.import.preview.apple.nights');
-    pushCount(held.readings, 'journal.window.import.preview.apple.readings');
-    if (stats.length < 3) pushCount(held.mindful_sessions, 'journal.window.import.preview.apple.mindful');
-    if (stats.length < 3) pushCount(held.daily_totals, 'journal.window.import.preview.apple.daily.totals');
-    if (stats.length < 3) pushCount(held.logged, 'journal.window.import.preview.apple.logged');
+    pushCount(held.workouts, 'journal.window.import.preview.apple.workouts.label');
+    pushCount(held.nights, 'journal.window.import.preview.apple.nights.label');
+    pushCount(held.readings, 'journal.window.import.preview.apple.readings.label');
+    if (stats.length < 3) pushCount(held.mindful_sessions, 'journal.window.import.preview.apple.mindful.label');
+    if (stats.length < 3) pushCount(held.daily_totals, 'journal.window.import.preview.apple.daily.totals.label');
+    if (stats.length < 3) pushCount(held.logged, 'journal.window.import.preview.apple.logged.label');
     if (Array.isArray(held.span) && held.span.length >= 2 && held.span[0] && held.span[1]) {
       const range = window.JournalI18n.render('journal.window.import.preview.date.range', [
         ['first_date', String(held.span[0])], ['last_date', String(held.span[1])],
@@ -1099,7 +1100,7 @@
           const opts = (flow.facetState.facets || []).map(item =>
             `<option value="${escapeHtml(item.name)}"${item.name === currentChoice ? ' selected' : ''}>${escapeHtml(item.title)}</option>`
           );
-          opts.push(`<option value=""${currentChoice ? '' : ' selected'}>${escapeHtml(copy.none_option || 'no facet')}</option>`);
+          opts.push(`<option value=""${currentChoice ? '' : ' selected'}>${escapeHtml(copy.none_option || strings.no_facet)}</option>`);
           pieces.push(
             `<div class="import-option-group">`
             + `<label for="detailFacetSelect">${escapeHtml(strings.facet_label)}</label>`

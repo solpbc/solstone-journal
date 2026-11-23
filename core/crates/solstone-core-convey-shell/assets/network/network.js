@@ -354,7 +354,11 @@
       if (status === 403) {
         bodyCopyKey = 'PAIR_START_PAIRED_DEVICE_BODY';
         showRegen = false;
-      } else if (status === 400 && detail === 'no usable local address is available for pairing') {
+      } else if (
+        status === 400
+        && (body?.refusal_code === 'no_local_address'
+          || detail === 'no usable local address is available for pairing')
+      ) {
         bodyCopyKey = 'PAIR_ERROR_BODY';
         showRegen = true;
         regenCopyKey = 'CHECK_AGAIN_LABEL';

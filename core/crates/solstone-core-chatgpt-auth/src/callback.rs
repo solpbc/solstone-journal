@@ -15,6 +15,28 @@ use crate::credential::ClosedOutcome;
 pub const SUCCESS_BODY: &str = "signed in. you can close this tab and go back to your journal";
 pub const FAILURE_BODY: &str = "sign-in didn't finish. go back to your journal and try again";
 
+/// Caller-supplied plain-text bodies written to the browser tab on loopback callback.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallbackCopy {
+    pub success: String,
+    pub failure: String,
+}
+
+impl CallbackCopy {
+    pub fn english() -> Self {
+        Self {
+            success: SUCCESS_BODY.to_owned(),
+            failure: FAILURE_BODY.to_owned(),
+        }
+    }
+}
+
+impl Default for CallbackCopy {
+    fn default() -> Self {
+        Self::english()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CallbackError {
     MissingCode,
@@ -220,11 +242,19 @@ pub fn write_http_response(
 }
 
 pub fn respond_to_callback_stream(stream: Option<&mut TcpStream>, outcome: ClosedOutcome) {
+    respond_to_callback_stream_with_copy(stream, outcome, &CallbackCopy::english());
+}
+
+pub fn respond_to_callback_stream_with_copy(
+    stream: Option<&mut TcpStream>,
+    outcome: ClosedOutcome,
+    copy: &CallbackCopy,
+) {
     if let Some(s) = stream {
         if outcome == ClosedOutcome::SignedIn {
-            let _ = write_http_response(s, 200, "OK", SUCCESS_BODY);
+            let _ = write_http_response(s, 200, "OK", &copy.success);
         } else {
-            let _ = write_http_response(s, 400, "Bad Request", FAILURE_BODY);
+            let _ = write_http_response(s, 400, "Bad Request", &copy.failure);
         }
     }
 }
@@ -234,6 +264,22 @@ pub fn receive_browser_callback(
     expected_state: &str,
     expected_client_id: Option<&str>,
     timeout: Duration,
+) -> Result<CallbackRequest, ClosedOutcome> {
+    receive_browser_callback_with_copy(
+        listener,
+        expected_state,
+        expected_client_id,
+        timeout,
+        &CallbackCopy::english(),
+    )
+}
+
+pub fn receive_browser_callback_with_copy(
+    listener: &TcpListener,
+    expected_state: &str,
+    expected_client_id: Option<&str>,
+    timeout: Duration,
+    copy: &CallbackCopy,
 ) -> Result<CallbackRequest, ClosedOutcome> {
     let port = listener.local_addr().map(|a| a.port()).unwrap_or_default();
     let expected_host = format!("127.0.0.1:{port}");
@@ -273,7 +319,7 @@ pub fn receive_browser_callback(
         let path_and_query = parts.next().unwrap_or_default();
 
         if method != "GET" {
-            let _ = write_http_response(&mut stream, 400, "Bad Request", FAILURE_BODY);
+            let _ = write_http_response(&mut stream, 400, "Bad Request", &copy.failure);
             continue;
         }
 
@@ -311,7 +357,7 @@ pub fn receive_browser_callback(
         let params = match parse_query_pairs_refusing_duplicates(query) {
             Ok(p) => p,
             Err(_) => {
-                let _ = write_http_response(&mut stream, 400, "Bad Request", FAILURE_BODY);
+                let _ = write_http_response(&mut stream, 400, "Bad Request", &copy.failure);
                 continue; // Do not consume attempt on bad query structure
             }
         };
@@ -326,11 +372,11 @@ pub fn receive_browser_callback(
             }
             Err(Err(_)) => {
                 // State mismatch or missing state -> HTTP 400, do not consume attempt
-                let _ = write_http_response(&mut stream, 400, "Bad Request", FAILURE_BODY);
+                let _ = write_http_response(&mut stream, 400, "Bad Request", &copy.failure);
                 continue;
             }
             Err(Ok(outcome)) => {
-                let _ = write_http_response(&mut stream, 400, "Bad Request", FAILURE_BODY);
+                let _ = write_http_response(&mut stream, 400, "Bad Request", &copy.failure);
                 return Err(outcome);
             }
         }

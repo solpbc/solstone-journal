@@ -1,0 +1,26 @@
+{
+  "description": "Unit label for logged entries count in Apple Health preview stat card.",
+  "context": "Journal window. Unit label for logged entries count in Apple Health preview stat card.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c20e8dc5221af45421444c624c967e246a0e4734d7ea135503a2cfc1a788205e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

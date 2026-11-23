@@ -1,0 +1,21 @@
+{
+  "description": "Journal setup invalid journal ID error.",
+  "context": "Journal window. Journal setup invalid journal ID error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a06b0d2e642d9ae430ddf109e9dd2e4d9d2d6e9f342d560b6fbd30a7b6f40ed7",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

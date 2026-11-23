@@ -121,10 +121,17 @@ pub fn packaged_speech_repair_guidance(locale: &str) -> String {
 }
 
 pub fn packaged_speech_retry(verified: Result<(), String>) -> Result<(), SetupRetryError> {
+    packaged_speech_retry_for_locale(verified, solstone_core_convey_http::window_catalog::ENGLISH)
+}
+
+pub fn packaged_speech_retry_for_locale(
+    verified: Result<(), String>,
+    locale: &str,
+) -> Result<(), SetupRetryError> {
     verified.map_err(|_| SetupRetryError {
         code: "speech_package_unavailable",
         message_id: "journal.setup.refusal.speech.recognition.needs.repair",
-        detail: packaged_speech_repair_guidance(solstone_core_convey_http::window_catalog::ENGLISH),
+        detail: packaged_speech_repair_guidance(locale),
     })
 }
 

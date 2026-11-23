@@ -1,0 +1,26 @@
+{
+  "description": "Unit label for daily totals count in Apple Health preview stat card.",
+  "context": "Journal window. Unit label for daily totals count in Apple Health preview stat card.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "41589e7e8302fce954be637484a73aa0d924b0c5052c0db8d8801988424c570b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

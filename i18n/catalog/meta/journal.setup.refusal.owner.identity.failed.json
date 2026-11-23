@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup failure when saving the owner profile.",
+  "context": "Journal window. Journal setup failure when saving the owner profile.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "16e3620212b5209bc51c5924f8d9b7f744e3df5c3ae4dd8e746ff06753434778",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

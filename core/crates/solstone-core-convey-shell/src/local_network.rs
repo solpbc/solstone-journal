@@ -32,7 +32,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use axum::extract::Extension;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -233,11 +233,21 @@ pub(crate) fn routes(door: Arc<DoorLifecycle>) -> Router {
     router.layer(Extension(door))
 }
 
+fn resolved_locale(
+    locale: Option<axum::Extension<ResponseLocale>>,
+    headers: &HeaderMap,
+) -> &'static str {
+    locale
+        .map(|Extension(value)| value.0)
+        .unwrap_or_else(|| window_catalog::request_locale(headers))
+}
+
 async fn door_status(
     locale: Option<axum::Extension<ResponseLocale>>,
+    headers: HeaderMap,
     Extension(door): Extension<std::sync::Weak<DoorLifecycle>>,
 ) -> Response {
-    let locale = window_catalog::response_locale(locale);
+    let locale = resolved_locale(locale, &headers);
     match door.upgrade() {
         Some(door) => {
             let mut body = status_body(&door, None).await;
@@ -261,17 +271,19 @@ async fn status(Extension(door): Extension<Arc<DoorLifecycle>>) -> Response {
 
 async fn open(
     locale: Option<axum::Extension<ResponseLocale>>,
+    headers: HeaderMap,
     Extension(door): Extension<Arc<DoorLifecycle>>,
 ) -> Response {
-    let locale = window_catalog::response_locale(locale);
+    let locale = resolved_locale(locale, &headers);
     set_and_rebind(locale, &door, true).await
 }
 
 async fn close(
     locale: Option<axum::Extension<ResponseLocale>>,
+    headers: HeaderMap,
     Extension(door): Extension<Arc<DoorLifecycle>>,
 ) -> Response {
-    let locale = window_catalog::response_locale(locale);
+    let locale = resolved_locale(locale, &headers);
     set_and_rebind(locale, &door, false).await
 }
 
@@ -544,5 +556,35 @@ mod tests {
         .expect("json");
         assert_eq!(written["pairing"]["direct_port"], 7657);
         assert_eq!(written["pairing"]["local_network"], true);
+    }
+
+    #[tokio::test]
+    async fn door_status_resolves_locale_from_headers_without_cache_middleware() {
+        use axum::body::{Body, to_bytes};
+        use axum::http::Request;
+        use tower::ServiceExt;
+
+        let weak = std::sync::Weak::<DoorLifecycle>::new();
+        let app = status_routes().layer(Extension(weak));
+        let response = app
+            .oneshot(
+                Request::get("/app/network/api/local-network")
+                    .header("x-solstone-locale", "en-XA")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        let expected_locale = window_catalog::packaged_locale(Some("en-XA"));
+        assert_eq!(
+            body["detail"],
+            window_catalog::text(
+                expected_locale,
+                "journal.window.network.error.the.journal.is.stopping",
+            )
+        );
     }
 }

@@ -247,6 +247,15 @@ pub fn display_error(journal: &Path, status: &InstallStatus, locale: &str) -> Op
     {
         return Some(source.to_owned());
     }
+    if source == "install_interrupted"
+        && status.error_code.as_deref() == Some("install_interrupted")
+    {
+        return Some(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.install.status.interrupted",
+            &[],
+        ));
+    }
     let projected = (|| {
         let directory = directory(journal)?;
         let receipt: Receipt = directory

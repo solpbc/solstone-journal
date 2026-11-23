@@ -2120,8 +2120,6 @@ m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e726
 
 m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e726570616972 = a device syncing that day is told the journal cannot read it; a { "solstone" } app older than the 2026-09 fix shows that as offline; inspect the named stream directory's segments and their { "events.jsonl" }
 
-m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e73747265616d732e756e617661696c61626c65 = device streams unavailable: { $error }
-
 m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e73747265616d732e756e626f756e64 = no device streams bound
 
 m6a6f75726e616c2e636c692e646f63746f722e6465766963652e7265667573616c2e636f756e74 = { $i18nCategory ->
@@ -3276,7 +3274,10 @@ m6a6f75726e616c2e636c692e686f73742e6865616c74682e7461736b732e656d707479 = Tasks:
 
 m6a6f75726e616c2e636c692e686f73742e6865616c74682e74696d656f7574 = Timed out waiting for supervisor status (10s){ "\u000a" }
 
-m6a6f75726e616c2e636c692e686f73742e6865616c74682e74696d656f75742e6672616d6573 = Timed out waiting for supervisor status (10s; dropped { $count } malformed frame(s)){ "\u000a" }
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e74696d656f75742e6d616c666f726d65642e6672616d6573 = { $i18nCategory ->
+    [one] Timed out waiting for supervisor status (10s; dropped { $count } malformed frame){ "\u000a" }
+   *[other] Timed out waiting for supervisor status (10s; dropped { $count } malformed frames){ "\u000a" }
+}
 
 m6a6f75726e616c2e636c692e686f73742e6865616c74682e7573616765 = usage: { "solstone journal health [-h] [-v] [-d]" }{ "\u000a" }
 
@@ -5050,6 +5051,8 @@ m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6f6e6c7
 
 m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e7374616c652e696e7374616c6c2e7374617475732e7265766973696f6e = install status conflict: stale install status revision
 
+m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e696e746572727570746564 = the download was interrupted
+
 m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6c6f636b = status lock error: { $error }
 
 m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e66696c65 = malformed install status: { $path }
@@ -6821,6 +6824,16 @@ m6a6f75726e616c2e636c692e6d61696e74656e616e63652e75736167652e66616365 = usage: {
 
 m6a6f75726e616c2e636c692e6d61696e74656e616e63652e75736167652e756e6b6e6f776e = usage: { "solstone journal maintenance <command> [options]" }{ "\u000a" }{ "solstone journal maintenance" }: error: unrecognized arguments: { $arguments }
 
+m6a6f75726e616c2e636c692e6f617574682e63616c6c6261636b2e6661696c757265 = sign-in didn't finish. go back to your journal and try again
+
+m6a6f75726e616c2e636c692e6f617574682e63616c6c6261636b2e73756363657373 = signed in. you can close this tab and go back to your journal
+
+m6a6f75726e616c2e636c692e6f617574682e6f7572612e63616c6c6261636b2e616c6c6f776564 = you allowed it at Oura. you can close this tab; the terminal says when it's connected.
+
+m6a6f75726e616c2e636c692e6f617574682e6f7572612e63616c6c6261636b2e6465636c696e6564 = Oura wasn't connected. you can close this tab.
+
+m6a6f75726e616c2e636c692e6f617574682e6f7572612e63616c6c6261636b2e72656a6563746564 = Oura authorization rejected.
+
 m6a6f75726e616c2e636c692e6f66666c6f61642e67756964616e63652e6368616e6765642e7265747279 = offload stopped because your journal changed while it was running. nothing was removed from this computer. run it again.
 
 m6a6f75726e616c2e636c692e6f66666c6f61642e67756964616e63652e6368616e6765642e726576696577 = offload stopped because your journal changed while it was running. nothing was removed from this computer. keep offload's recovery files and review the recorded effects before retrying.
@@ -7426,6 +7439,10 @@ m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e726573756c74 = { $i18nCat
     [one] { NUMBER($passed, useGrouping: 0) }/{ NUMBER($total, useGrouping: 0) } check passed
    *[other] { NUMBER($passed, useGrouping: 0) }/{ NUMBER($total, useGrouping: 0) } checks passed
 }
+
+m6a6f75726e616c2e636c692e73657475702e686f73742e6a6f75726e616c2e62696e64696e672e6368616e676564 = journal binding changed
+
+m6a6f75726e616c2e636c692e73657475702e686f73742e7061636b616765642e7370656563682e756e617661696c61626c65 = packaged speech proof unavailable
 
 m6a6f75726e616c2e636c692e73657475702e7061727365722e637764 = could not determine current directory: { $error }
 

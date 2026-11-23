@@ -1,0 +1,26 @@
+{
+  "description": "Unit label for workouts count in Apple Health preview stat card.",
+  "context": "Journal window. Unit label for workouts count in Apple Health preview stat card.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6f9997233d07534d5ab8ae348bfb941d719d992c03af5bc8cb481a9070e2b14d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -6,9 +6,10 @@
 use std::path::PathBuf;
 
 use crate::BodyIngestError;
-pub use crate::oura_connect::{OuraApp, needs_oura_app};
+pub use crate::oura_connect::{OuraApp, OuraCallbackCopy, needs_oura_app};
 use crate::oura_connect::{
     OuraConnectOptions, OuraConnectReport, connect_oura as body_connect_oura,
+    connect_oura_with_copy as body_connect_oura_with_copy,
 };
 
 /// Inputs for the owner-present Oura connect operation.
@@ -34,4 +35,17 @@ pub fn connect_oura(request: &OuraConnectRequest) -> Result<OuraConnectOutcome, 
         app: request.app.clone(),
     };
     body_connect_oura(&request.journal_root, &options).map(|report| OuraConnectOutcome { report })
+}
+
+/// [`connect_oura`] with caller-localized browser tab responses on the loopback callback.
+pub fn connect_oura_with_copy(
+    request: &OuraConnectRequest,
+    copy: &OuraCallbackCopy,
+) -> Result<OuraConnectOutcome, BodyIngestError> {
+    let options = OuraConnectOptions {
+        timeout_seconds: request.timeout_seconds,
+        app: request.app.clone(),
+    };
+    body_connect_oura_with_copy(&request.journal_root, &options, copy)
+        .map(|report| OuraConnectOutcome { report })
 }

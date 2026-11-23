@@ -2399,7 +2399,12 @@ struct ChatGptBeginBody {
     redirect_uri: Option<String>,
 }
 
-async fn chatgpt_sign_in(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) -> Response {
+async fn chatgpt_sign_in(
+    locale: Option<Extension<ResponseLocale>>,
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    body: Bytes,
+) -> Response {
+    let locale = response_locale(locale);
     let brokered = serde_json::from_slice::<ChatGptBeginBody>(&body)
         .ok()
         .and_then(|body| body.redirect_uri);
@@ -2422,14 +2427,19 @@ async fn chatgpt_sign_in(Extension(journal): Extension<Arc<JournalRoot>>, body: 
                 answer["expected_state"] = json!(attempt.state);
             } else {
                 let j = journal.0.clone();
+                let copy = solstone_core_thinking::chatgpt::CallbackCopy {
+                    success: text(locale, "journal.window.oauth.callback.success"),
+                    failure: text(locale, "journal.window.oauth.callback.failure"),
+                };
                 std::thread::spawn(move || {
                     let transport = solstone_core_thinking::chatgpt::UreqTransport;
-                    let _ = solstone_core_thinking::chatgpt::finish_sign_in(
+                    let _ = solstone_core_thinking::chatgpt::finish_sign_in_with_copy(
                         &j,
                         &transport,
                         &attempt,
                         None,
                         Duration::from_secs(600),
+                        &copy,
                     );
                 });
             }

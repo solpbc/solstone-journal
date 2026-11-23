@@ -1,0 +1,16 @@
+{
+  "description": "Browser tab error when CLI-initiated OAuth sign-in does not finish.",
+  "context": "Browser tab error when CLI-initiated OAuth sign-in does not finish.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dbe455c0b79c41d3de5dfa1599192893a62a78f35572377702034d51e3ec8e18",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

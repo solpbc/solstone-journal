@@ -38,6 +38,46 @@ pub async fn get(locale: &str, journal_root: PathBuf) -> Response {
     }
 }
 
+fn processing_validation_detail(
+    locale: &str,
+    error: solstone_core_journal_config::processing::ProcessingValidationError,
+) -> String {
+    use solstone_core_journal_config::processing::ProcessingValidationError;
+    match error {
+        ProcessingValidationError::NotObject => text(
+            locale,
+            "journal.window.settings.config.detail.processing.not.object",
+        ),
+        ProcessingValidationError::HistoryConfirmedNotBoolean => text(
+            locale,
+            "journal.window.settings.config.detail.processing.history.confirmed.boolean",
+        ),
+        ProcessingValidationError::InvalidMode => text(
+            locale,
+            "journal.window.settings.config.detail.processing.mode.invalid",
+        ),
+        ProcessingValidationError::GateNotObject => text(
+            locale,
+            "journal.window.settings.config.detail.processing.gate.not.object",
+        ),
+        ProcessingValidationError::ConditionNotObject(name) => strings(
+            locale,
+            "journal.window.settings.config.detail.processing.condition.not.object",
+            [("name", name)],
+        ),
+        ProcessingValidationError::ConditionEnabledNotBoolean(name) => strings(
+            locale,
+            "journal.window.settings.config.detail.processing.condition.enabled.boolean",
+            [("name", name)],
+        ),
+        ProcessingValidationError::TimeWindowFieldFormat(key) => strings(
+            locale,
+            "journal.window.settings.config.detail.processing.time.window.format",
+            [("key", key)],
+        ),
+    }
+}
+
 /// A partial update keeps the other condition and its unspecified fields.
 fn merge_processing(target: &mut Map<String, Value>, patch: &Map<String, Value>) {
     for key in ["mode", "history_confirmed"] {
@@ -271,11 +311,11 @@ pub async fn update(
         );
     }
     if section == "processing"
-        && let Err(error) = solstone_core_journal_config::processing::validate_processing(Some(
-            &Value::Object(data.clone()),
-        ))
+        && let Err(error) = solstone_core_journal_config::processing::validate_processing_typed(
+            Some(&Value::Object(data.clone())),
+        )
     {
-        return invalid_config_value(locale, error);
+        return invalid_config_value(locale, processing_validation_detail(locale, error));
     }
     if section == solstone_core_trash::SETTINGS_SECTION
         && let Some(days) = data.get(solstone_core_trash::ERASE_AFTER_DAYS_KEY)
@@ -349,12 +389,12 @@ pub async fn update(
             let before = Value::Object(target.clone());
             let mut proposed = target.clone();
             merge_processing(&mut proposed, &data_for_write);
-            if let Err(error) = solstone_core_journal_config::processing::validate_processing(Some(
-                &Value::Object(proposed.clone()),
-            )) {
+            if let Err(error) = solstone_core_journal_config::processing::validate_processing_typed(
+                Some(&Value::Object(proposed.clone())),
+            ) {
                 return JournalConfigMutation {
                     changed: false,
-                    value: Err(error),
+                    value: Err(processing_validation_detail(locale, error)),
                 };
             }
             *target = proposed;
@@ -1529,5 +1569,55 @@ mod tests {
         )
         .expect("JSON");
         assert_eq!(after_disk["journal"]["name"], "Analytical Engine");
+    }
+
+    #[test]
+    fn processing_validation_messages_preserve_english_and_localize_for_packaged_locales() {
+        use solstone_core_convey_http::window_catalog::{ENGLISH, packaged_locale};
+        use solstone_core_journal_config::processing::ProcessingValidationError;
+
+        let cases = [
+            (
+                ProcessingValidationError::NotObject,
+                "processing must be an object",
+            ),
+            (
+                ProcessingValidationError::HistoryConfirmedNotBoolean,
+                "processing history_confirmed must be a boolean",
+            ),
+            (
+                ProcessingValidationError::InvalidMode,
+                "processing mode must be realtime or deferred",
+            ),
+            (
+                ProcessingValidationError::GateNotObject,
+                "processing gate must be an object",
+            ),
+            (
+                ProcessingValidationError::ConditionNotObject("time_window"),
+                "time_window must be an object",
+            ),
+            (
+                ProcessingValidationError::ConditionEnabledNotBoolean("display_powersave"),
+                "display_powersave.enabled must be a boolean",
+            ),
+            (
+                ProcessingValidationError::TimeWindowFieldFormat("start"),
+                "time_window.start must be HH:MM",
+            ),
+        ];
+        let private = packaged_locale(Some("en-XA"));
+        for (error, expected_english) in cases {
+            assert_eq!(
+                super::processing_validation_detail(ENGLISH, error),
+                expected_english
+            );
+            if private != ENGLISH {
+                assert_ne!(
+                    super::processing_validation_detail(private, error),
+                    expected_english
+                );
+            }
+        }
     }
 }

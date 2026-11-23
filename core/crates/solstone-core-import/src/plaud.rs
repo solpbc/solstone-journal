@@ -20,10 +20,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
 use solstone_core_journal_io::{FileLock, LockError, LockOptions, hold_lock};
+pub use solstone_core_oauth::callback::CallbackCopy;
 use solstone_core_oauth::callback::{
     AttemptGate, CallbackError, CallbackOutcome, CallbackPolicy, ClaimResult, ClaimSource,
     LoopbackBindSpec, LoopbackHost, LoopbackListener, is_valid_callback_path, parse_callback_url,
-    receive_loopback_callback, respond_to_callback_stream,
+    receive_loopback_callback_with_copy, respond_to_callback_stream_with_copy,
 };
 use solstone_core_oauth::client::{
     AuthorizeRequestConfig, CodeExchangeRequest, OAuthClientError, build_authorize_request,
@@ -634,14 +635,33 @@ pub fn finish_sign_in(
     callback_input: Option<&str>,
     timeout: Duration,
 ) -> Result<PlaudSignInFinished, PlaudSignInOutcome> {
+    finish_sign_in_with_copy(
+        journal_root,
+        attempt,
+        callback_input,
+        timeout,
+        &CallbackCopy::english(),
+    )
+}
+
+/// Complete a Plaud sign-in attempt against the production Plaud MCP endpoint with localized
+/// loopback browser-tab copy.
+pub fn finish_sign_in_with_copy(
+    journal_root: &Path,
+    attempt: &PlaudSignInAttempt,
+    callback_input: Option<&str>,
+    timeout: Duration,
+    copy: &CallbackCopy,
+) -> Result<PlaudSignInFinished, PlaudSignInOutcome> {
     let http = SsrfHttpsClient::new();
-    finish_sign_in_with(
+    finish_sign_in_with_callback_copy(
         journal_root,
         &http,
         PLAUD_MCP_URL,
         attempt,
         callback_input,
         timeout,
+        copy,
     )
 }
 
@@ -653,6 +673,28 @@ pub fn finish_sign_in_with(
     attempt: &PlaudSignInAttempt,
     callback_input: Option<&str>,
     timeout: Duration,
+) -> Result<PlaudSignInFinished, PlaudSignInOutcome> {
+    finish_sign_in_with_callback_copy(
+        journal_root,
+        http,
+        mcp_url,
+        attempt,
+        callback_input,
+        timeout,
+        &CallbackCopy::english(),
+    )
+}
+
+/// Complete a Plaud sign-in attempt using an explicit HTTP client, MCP resource URL, and localized
+/// loopback browser-tab copy.
+pub fn finish_sign_in_with_callback_copy(
+    journal_root: &Path,
+    http: &dyn OAuthHttpClient,
+    mcp_url: &str,
+    attempt: &PlaudSignInAttempt,
+    callback_input: Option<&str>,
+    timeout: Duration,
+    copy: &CallbackCopy,
 ) -> Result<PlaudSignInFinished, PlaudSignInOutcome> {
     if attempt.is_expired() {
         finish_and_clear(attempt, PlaudSignInOutcome::Expired, None);
@@ -673,7 +715,7 @@ pub fn finish_sign_in_with(
                 return Err(PlaudSignInOutcome::CallbackInvalid);
             };
             let cancel = attempt.gate.cancel_flag();
-            match receive_loopback_callback(listener, &policy, timeout, &cancel) {
+            match receive_loopback_callback_with_copy(listener, &policy, timeout, &cancel, copy) {
                 Ok(delivery) => (
                     delivery.outcome,
                     ClaimSource::Loopback,
@@ -693,7 +735,7 @@ pub fn finish_sign_in_with(
     let validated = match outcome {
         CallbackOutcome::Accepted(cb) => cb,
         CallbackOutcome::Ignored(_) => {
-            respond_to_callback_stream(response_stream.as_mut(), false);
+            respond_to_callback_stream_with_copy(response_stream.as_mut(), false, copy);
             return Err(PlaudSignInOutcome::CallbackInvalid);
         }
         CallbackOutcome::ProviderError { error, .. } => {
@@ -708,7 +750,7 @@ pub fn finish_sign_in_with(
             ) {
                 finish_and_clear(attempt, failure_outcome, None);
             }
-            respond_to_callback_stream(response_stream.as_mut(), false);
+            respond_to_callback_stream_with_copy(response_stream.as_mut(), false, copy);
             return Err(failure_outcome);
         }
         CallbackOutcome::InvalidForAttempt(_) => {
@@ -718,7 +760,7 @@ pub fn finish_sign_in_with(
             ) {
                 finish_and_clear(attempt, PlaudSignInOutcome::CallbackInvalid, None);
             }
-            respond_to_callback_stream(response_stream.as_mut(), false);
+            respond_to_callback_stream_with_copy(response_stream.as_mut(), false, copy);
             return Err(PlaudSignInOutcome::CallbackInvalid);
         }
     };
@@ -726,16 +768,16 @@ pub fn finish_sign_in_with(
     match attempt.gate.try_claim(claim_source, now_unix_secs()) {
         ClaimResult::Claimed => {}
         ClaimResult::Cancelled => {
-            respond_to_callback_stream(response_stream.as_mut(), false);
+            respond_to_callback_stream_with_copy(response_stream.as_mut(), false, copy);
             return Err(PlaudSignInOutcome::Cancelled);
         }
         ClaimResult::Expired => {
             finish_and_clear(attempt, PlaudSignInOutcome::Expired, None);
-            respond_to_callback_stream(response_stream.as_mut(), false);
+            respond_to_callback_stream_with_copy(response_stream.as_mut(), false, copy);
             return Err(PlaudSignInOutcome::Expired);
         }
         ClaimResult::AlreadyClaimed { .. } => {
-            respond_to_callback_stream(response_stream.as_mut(), false);
+            respond_to_callback_stream_with_copy(response_stream.as_mut(), false, copy);
             return Err(PlaudSignInOutcome::CallbackInvalid);
         }
     }
@@ -759,7 +801,7 @@ pub fn finish_sign_in_with(
         Ok(tokens) => tokens,
         Err(_) => {
             finish_and_clear(attempt, PlaudSignInOutcome::ExchangeFailed, None);
-            respond_to_callback_stream(response_stream.as_mut(), false);
+            respond_to_callback_stream_with_copy(response_stream.as_mut(), false, copy);
             return Err(PlaudSignInOutcome::ExchangeFailed);
         }
     };
@@ -772,7 +814,7 @@ pub fn finish_sign_in_with(
         Ok(user) => Some(user),
         Err(PlaudFailureKind::TokenRefused) => {
             finish_and_clear(attempt, PlaudSignInOutcome::ExchangeFailed, None);
-            respond_to_callback_stream(response_stream.as_mut(), false);
+            respond_to_callback_stream_with_copy(response_stream.as_mut(), false, copy);
             return Err(PlaudSignInOutcome::ExchangeFailed);
         }
         Err(_) => None,
@@ -786,12 +828,12 @@ pub fn finish_sign_in_with(
         Ok(lock) => lock,
         Err(LockError::Timeout(_)) => {
             finish_and_clear(attempt, PlaudSignInOutcome::Busy, None);
-            respond_to_callback_stream(response_stream.as_mut(), false);
+            respond_to_callback_stream_with_copy(response_stream.as_mut(), false, copy);
             return Err(PlaudSignInOutcome::Busy);
         }
         Err(_) => {
             finish_and_clear(attempt, PlaudSignInOutcome::Storage, None);
-            respond_to_callback_stream(response_stream.as_mut(), false);
+            respond_to_callback_stream_with_copy(response_stream.as_mut(), false, copy);
             return Err(PlaudSignInOutcome::Storage);
         }
     };
@@ -831,14 +873,14 @@ pub fn finish_sign_in_with(
 
     if save_credential_file(journal_root, &service, &doc).is_err() {
         finish_and_clear(attempt, PlaudSignInOutcome::Storage, None);
-        respond_to_callback_stream(response_stream.as_mut(), false);
+        respond_to_callback_stream_with_copy(response_stream.as_mut(), false, copy);
         return Err(PlaudSignInOutcome::Storage);
     }
     drop(_lock);
 
     record_sync_attention(journal_root, None);
     finish_and_clear(attempt, PlaudSignInOutcome::SignedIn, account_label.clone());
-    respond_to_callback_stream(response_stream.as_mut(), true);
+    respond_to_callback_stream_with_copy(response_stream.as_mut(), true, copy);
 
     Ok(PlaudSignInFinished {
         outcome: PlaudSignInOutcome::SignedIn,

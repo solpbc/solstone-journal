@@ -1,0 +1,16 @@
+{
+  "description": "Browser tab confirmation after CLI-initiated OAuth sign-in succeeds.",
+  "context": "Browser tab confirmation after CLI-initiated OAuth sign-in succeeds.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1313b7ef03bab16f572d36b7a7e95dbc79c8b0d6517aa20f6fb29b297d9abfa2",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "description": "Unit label for readings count in Apple Health preview stat card.",
+  "context": "Journal window. Unit label for readings count in Apple Health preview stat card.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0dd182013bb4ef90bebff3a2895cc693010c183cb752d565ace0c38b5b7a4c5e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

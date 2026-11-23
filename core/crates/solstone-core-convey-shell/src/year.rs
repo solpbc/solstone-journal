@@ -65,7 +65,7 @@ async fn view_route(
         let zone = solstone_core_journal_config::owner_zone(&root);
         let today =
             solstone_core_time::day_key(jiff::Timestamp::now().to_zoned_datetime(zone).date());
-        Json(year_view(&root, &today, year.as_deref())).into_response()
+        Json(year_view_in(&root, &today, year.as_deref(), locale)).into_response()
     })
     .await
 }
@@ -81,7 +81,17 @@ fn is_year(value: &str) -> bool {
 /// The layers and places are read for the year shown only. Names are read
 /// over every day held, since a name is spelled as it was first found and a
 /// day that can't be read keeps every year's names back.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn year_view(root: &Path, today: &str, year: Option<&str>) -> Value {
+    year_view_in(
+        root,
+        today,
+        year,
+        solstone_core_convey_http::window_catalog::ENGLISH,
+    )
+}
+
+pub(crate) fn year_view_in(root: &Path, today: &str, year: Option<&str>, locale: &str) -> Value {
     // Places: what the map shows, less anything the owner hid from it. A
     // hidden place's own name stays out of the names too.
     let store = solstone_core_location::places::PlaceStore::read(root);
@@ -140,7 +150,7 @@ pub(crate) fn year_view(root: &Path, today: &str, year: Option<&str>) -> Value {
             .collect();
 
     let (places, places_unavailable) =
-        match solstone_core_location::read_place_days_between(root, &from, &to) {
+        match solstone_core_location::read_place_days_between_in(root, &from, &to, locale) {
             Ok(places) => {
                 let places = places
                     .into_iter()

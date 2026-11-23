@@ -1,0 +1,16 @@
+{
+  "description": "Settings validation error when processing mode is invalid.",
+  "context": "Journal window. Settings validation error when processing mode is invalid.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bb8e86e83e42f345c8e9b2d58df205db13dba39289038d546797cde8699f48cb",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -16,6 +16,28 @@ use subtle::ConstantTimeEq;
 
 pub const SUCCESS_BODY: &str = "signed in. you can close this tab and go back to your journal";
 pub const FAILURE_BODY: &str = "sign-in didn't finish. go back to your journal and try again";
+
+/// Caller-supplied plain-text bodies written to the browser tab on loopback callback.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallbackCopy {
+    pub success: String,
+    pub failure: String,
+}
+
+impl CallbackCopy {
+    pub fn english() -> Self {
+        Self {
+            success: SUCCESS_BODY.to_owned(),
+            failure: FAILURE_BODY.to_owned(),
+        }
+    }
+}
+
+impl Default for CallbackCopy {
+    fn default() -> Self {
+        Self::english()
+    }
+}
 pub const MAX_CALLBACK_PATH_BYTES: usize = 256;
 pub const MAX_CALLBACK_HEADER_BYTES: usize = 8 * 1024;
 pub const SOCKET_IO_TIMEOUT: Duration = Duration::from_secs(5);
@@ -457,11 +479,20 @@ pub fn write_http_response(
 
 /// Write the terminal browser tab message on a held loopback callback stream.
 pub fn respond_to_callback_stream(stream: Option<&mut TcpStream>, success: bool) {
+    respond_to_callback_stream_with_copy(stream, success, &CallbackCopy::english());
+}
+
+/// Write a caller-localized browser tab message on a held loopback callback stream.
+pub fn respond_to_callback_stream_with_copy(
+    stream: Option<&mut TcpStream>,
+    success: bool,
+    copy: &CallbackCopy,
+) {
     if let Some(stream) = stream {
         if success {
-            let _ = write_http_response(stream, 200, "OK", SUCCESS_BODY);
+            let _ = write_http_response(stream, 200, "OK", &copy.success);
         } else {
-            let _ = write_http_response(stream, 400, "Bad Request", FAILURE_BODY);
+            let _ = write_http_response(stream, 400, "Bad Request", &copy.failure);
         }
     }
 }
@@ -482,6 +513,17 @@ pub fn receive_loopback_callback(
     policy: &CallbackPolicy,
     timeout: Duration,
     cancel: &AtomicBool,
+) -> Result<LoopbackDelivery, CallbackError> {
+    receive_loopback_callback_with_copy(bound, policy, timeout, cancel, &CallbackCopy::english())
+}
+
+/// [`receive_loopback_callback`] with caller-localized browser tab error copy.
+pub fn receive_loopback_callback_with_copy(
+    bound: &LoopbackListener,
+    policy: &CallbackPolicy,
+    timeout: Duration,
+    cancel: &AtomicBool,
+    copy: &CallbackCopy,
 ) -> Result<LoopbackDelivery, CallbackError> {
     bound
         .listener
@@ -511,7 +553,7 @@ pub fn receive_loopback_callback(
         let _ = stream.set_write_timeout(Some(SOCKET_IO_TIMEOUT));
 
         let Some(raw_request) = read_http_head(&mut stream) else {
-            let _ = write_http_response(&mut stream, 400, "Bad Request", FAILURE_BODY);
+            let _ = write_http_response(&mut stream, 400, "Bad Request", &copy.failure);
             continue;
         };
 
@@ -523,7 +565,7 @@ pub fn receive_loopback_callback(
         let target = parts.next().unwrap_or_default();
 
         if method != "GET" {
-            let _ = write_http_response(&mut stream, 400, "Bad Request", FAILURE_BODY);
+            let _ = write_http_response(&mut stream, 400, "Bad Request", &copy.failure);
             continue;
         }
 
@@ -555,14 +597,14 @@ pub fn receive_loopback_callback(
         let params = match parse_query_pairs_refusing_duplicates(query) {
             Ok(params) => params,
             Err(_) => {
-                let _ = write_http_response(&mut stream, 400, "Bad Request", FAILURE_BODY);
+                let _ = write_http_response(&mut stream, 400, "Bad Request", &copy.failure);
                 continue;
             }
         };
 
         match validate_callback_params(&params, policy) {
             CallbackOutcome::Ignored(_) => {
-                let _ = write_http_response(&mut stream, 400, "Bad Request", FAILURE_BODY);
+                let _ = write_http_response(&mut stream, 400, "Bad Request", &copy.failure);
                 continue;
             }
             outcome @ (CallbackOutcome::Accepted(_)

@@ -1,0 +1,16 @@
+{
+  "description": "Setup host error when packaged speech proof is unavailable.",
+  "context": "Setup host error when packaged speech proof is unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "08ba91ba3384a0a7331c564c61ececbf52c781c75de3822938d333f1288285b4",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

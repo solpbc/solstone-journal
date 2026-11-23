@@ -1,0 +1,16 @@
+{
+  "description": "Setup host error when the journal root binding changed.",
+  "context": "Setup host error when the journal root binding changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a5d8b13a2f9a70924743835fb68a00c4e9adac435bfa7997f759235bbab223a0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

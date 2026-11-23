@@ -16,8 +16,8 @@ use solstone_core_journal_io::{FileLock, LockError};
 
 use crate::authorize::{DYNAMIC_CLIENT_ID, build_authorize_params};
 use crate::callback::{
-    bind_loopback_listener, broker_redirect_uri, parse_pasted_callback_detailed,
-    receive_browser_callback, respond_to_callback_stream,
+    CallbackCopy, bind_loopback_listener, broker_redirect_uri, parse_pasted_callback_detailed,
+    receive_browser_callback_with_copy, respond_to_callback_stream_with_copy,
 };
 use crate::credential::{ClosedOutcome, CredentialError};
 use crate::exchange::exchange_code_for_tokens;
@@ -414,6 +414,24 @@ pub fn finish_sign_in(
     callback_input: Option<&str>,
     timeout: Duration,
 ) -> Result<SignInResult, ClosedOutcome> {
+    finish_sign_in_with_copy(
+        journal,
+        transport,
+        attempt,
+        callback_input,
+        timeout,
+        &CallbackCopy::english(),
+    )
+}
+
+pub fn finish_sign_in_with_copy(
+    journal: &Path,
+    transport: &dyn ChatGptTransport,
+    attempt: &SignInAttempt,
+    callback_input: Option<&str>,
+    timeout: Duration,
+    copy: &CallbackCopy,
+) -> Result<SignInResult, ClosedOutcome> {
     if attempt.is_expired() {
         return Err(ClosedOutcome::Expired);
     }
@@ -436,7 +454,13 @@ pub fn finish_sign_in(
             let Some(listener) = &attempt.listener else {
                 return Err(ClosedOutcome::CallbackInvalid);
             };
-            match receive_browser_callback(listener, &attempt.state, expected_client_id, timeout) {
+            match receive_browser_callback_with_copy(
+                listener,
+                &attempt.state,
+                expected_client_id,
+                timeout,
+                copy,
+            ) {
                 Ok(req) => (req.code, req.client_id, req.stream),
                 // The listener's wait ending is not the attempt ending; its lifetime decides.
                 Err(ClosedOutcome::Expired) => return Err(ClosedOutcome::Expired),
@@ -448,11 +472,19 @@ pub fn finish_sign_in(
     match claim(attempt) {
         Claim::Claimed => {}
         Claim::Cancelled => {
-            respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::Cancelled);
+            respond_to_callback_stream_with_copy(
+                response_stream.as_mut(),
+                ClosedOutcome::Cancelled,
+                copy,
+            );
             return Err(ClosedOutcome::Cancelled);
         }
         Claim::AlreadyClaimed => {
-            respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::CallbackInvalid);
+            respond_to_callback_stream_with_copy(
+                response_stream.as_mut(),
+                ClosedOutcome::CallbackInvalid,
+                copy,
+            );
             return Err(ClosedOutcome::CallbackInvalid);
         }
     }
@@ -464,6 +496,7 @@ pub fn finish_sign_in(
         code,
         callback_client_id,
         response_stream,
+        copy,
     );
     record_outcome(
         attempt,
@@ -520,6 +553,7 @@ fn exchange_and_save(
     code: String,
     callback_client_id: Option<String>,
     mut response_stream: Option<std::net::TcpStream>,
+    copy: &CallbackCopy,
 ) -> Result<SignInResult, ClosedOutcome> {
     let auth_base = auth_base_url();
 
@@ -528,11 +562,19 @@ fn exchange_and_save(
     let _lock = match lock_res {
         Ok(l) => l,
         Err(LockError::Timeout(_)) => {
-            respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::Busy);
+            respond_to_callback_stream_with_copy(
+                response_stream.as_mut(),
+                ClosedOutcome::Busy,
+                copy,
+            );
             return Err(ClosedOutcome::Busy);
         }
         Err(_) => {
-            respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::Storage);
+            respond_to_callback_stream_with_copy(
+                response_stream.as_mut(),
+                ClosedOutcome::Storage,
+                copy,
+            );
             return Err(ClosedOutcome::Storage);
         }
     };
@@ -540,24 +582,40 @@ fn exchange_and_save(
     let mut doc = match load_credential_file(journal) {
         LoadResult::Present(d) => d,
         _ => {
-            respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::Superseded);
+            respond_to_callback_stream_with_copy(
+                response_stream.as_mut(),
+                ClosedOutcome::Superseded,
+                copy,
+            );
             return Err(ClosedOutcome::Superseded);
         }
     };
 
     if doc.epoch != attempt.begin_epoch || doc.registration != attempt.begin_registration {
-        respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::Superseded);
+        respond_to_callback_stream_with_copy(
+            response_stream.as_mut(),
+            ClosedOutcome::Superseded,
+            copy,
+        );
         return Err(ClosedOutcome::Superseded);
     }
 
     let is_first_reg = attempt.client_id == DYNAMIC_CLIENT_ID;
     let effective_client_id = if is_first_reg {
         let Some(issued_cid) = callback_client_id else {
-            respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::CallbackInvalid);
+            respond_to_callback_stream_with_copy(
+                response_stream.as_mut(),
+                ClosedOutcome::CallbackInvalid,
+                copy,
+            );
             return Err(ClosedOutcome::CallbackInvalid);
         };
         if issued_cid.is_empty() || issued_cid == DYNAMIC_CLIENT_ID {
-            respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::CallbackInvalid);
+            respond_to_callback_stream_with_copy(
+                response_stream.as_mut(),
+                ClosedOutcome::CallbackInvalid,
+                copy,
+            );
             return Err(ClosedOutcome::CallbackInvalid);
         }
         doc.registration = Some(Registration {
@@ -568,7 +626,11 @@ fn exchange_and_save(
         doc.subject = None;
         doc.email = None;
         if save_credential_file(journal, &doc).is_err() {
-            respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::Storage);
+            respond_to_callback_stream_with_copy(
+                response_stream.as_mut(),
+                ClosedOutcome::Storage,
+                copy,
+            );
             return Err(ClosedOutcome::Storage);
         }
         issued_cid
@@ -580,7 +642,11 @@ fn exchange_and_save(
     drop(_lock); // Release lock before exchange
 
     if is_cancelled(&attempt.attempt_id) {
-        respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::Cancelled);
+        respond_to_callback_stream_with_copy(
+            response_stream.as_mut(),
+            ClosedOutcome::Cancelled,
+            copy,
+        );
         return Err(ClosedOutcome::Cancelled);
     }
 
@@ -616,11 +682,11 @@ fn exchange_and_save(
                 }
                 Err(outcome) => outcome,
             };
-            respond_to_callback_stream(response_stream.as_mut(), outcome);
+            respond_to_callback_stream_with_copy(response_stream.as_mut(), outcome, copy);
             return Err(outcome);
         }
         Err(err) => {
-            respond_to_callback_stream(response_stream.as_mut(), err);
+            respond_to_callback_stream_with_copy(response_stream.as_mut(), err, copy);
             return Err(err);
         }
     };
@@ -639,7 +705,7 @@ fn exchange_and_save(
         Ok(held) => held,
         Err(outcome) => {
             revoke();
-            respond_to_callback_stream(response_stream.as_mut(), outcome);
+            respond_to_callback_stream_with_copy(response_stream.as_mut(), outcome, copy);
             return Err(outcome);
         }
     };
@@ -657,7 +723,7 @@ fn exchange_and_save(
         } else {
             ClosedOutcome::Storage
         };
-        respond_to_callback_stream(response_stream.as_mut(), outcome);
+        respond_to_callback_stream_with_copy(response_stream.as_mut(), outcome, copy);
         return Err(outcome);
     }
 
@@ -668,7 +734,11 @@ fn exchange_and_save(
     let Ok(sign_in_id) = random_token(16) else {
         drop(lock);
         revoke();
-        respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::Storage);
+        respond_to_callback_stream_with_copy(
+            response_stream.as_mut(),
+            ClosedOutcome::Storage,
+            copy,
+        );
         return Err(ClosedOutcome::Storage);
     };
     doc.sign_in_id = Some(sign_in_id);
@@ -676,13 +746,17 @@ fn exchange_and_save(
     if save_credential_file(journal, &doc).is_err() {
         drop(lock);
         revoke();
-        respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::Storage);
+        respond_to_callback_stream_with_copy(
+            response_stream.as_mut(),
+            ClosedOutcome::Storage,
+            copy,
+        );
         return Err(ClosedOutcome::Storage);
     }
 
     drop(lock);
 
-    respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::SignedIn);
+    respond_to_callback_stream_with_copy(response_stream.as_mut(), ClosedOutcome::SignedIn, copy);
     Ok(SignInResult {
         outcome: ClosedOutcome::SignedIn,
     })

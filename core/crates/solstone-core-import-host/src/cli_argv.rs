@@ -16,7 +16,9 @@ use solstone_core_segment::{
 };
 
 use solstone_core_import::cli_render::{self, CliRun};
-use solstone_core_import::connect::{OuraConnectRequest, connect_oura, needs_oura_app};
+use solstone_core_import::connect::{
+    OuraCallbackCopy, OuraConnectRequest, connect_oura_with_copy, needs_oura_app,
+};
 use solstone_core_import::contract::{SyncPreviewRequest, SyncSaveRequest};
 use solstone_core_import::detect::{
     ManifestSummary, RegistrySource, ResolutionOptions, ResolutionOutcome, ResolutionSeams,
@@ -621,12 +623,20 @@ fn run_connect(backend: &str, journal_path: &Path) -> CliRun {
             );
         }
     }
+    let oura_copy = OuraCallbackCopy {
+        rejected: solstone_core_cli_copy::text("journal.cli.oauth.oura.callback.rejected"),
+        declined: solstone_core_cli_copy::text("journal.cli.oauth.oura.callback.declined"),
+        allowed: solstone_core_cli_copy::text("journal.cli.oauth.oura.callback.allowed"),
+    };
     let connect = |app| {
-        connect_oura(&OuraConnectRequest {
-            journal_root: journal_path.to_path_buf(),
-            timeout_seconds: 300,
-            app,
-        })
+        connect_oura_with_copy(
+            &OuraConnectRequest {
+                journal_root: journal_path.to_path_buf(),
+                timeout_seconds: 300,
+                app,
+            },
+            &oura_copy,
+        )
     };
     let result = match connect(None) {
         Err(error) if needs_oura_app(&error) => {
@@ -1712,12 +1722,17 @@ fn run_plaud_connect(journal_path: &Path) -> CliRun {
     let tx_loopback = tx.clone();
     let attempt_loopback = attempt.clone();
     let journal_loopback = journal_path.to_path_buf();
+    let callback_copy = plaud::CallbackCopy {
+        success: solstone_core_cli_copy::text("journal.cli.oauth.callback.success"),
+        failure: solstone_core_cli_copy::text("journal.cli.oauth.callback.failure"),
+    };
     std::thread::spawn(move || {
-        match plaud::finish_sign_in(
+        match plaud::finish_sign_in_with_copy(
             &journal_loopback,
             &attempt_loopback,
             None,
             Duration::from_secs(300),
+            &callback_copy,
         ) {
             Ok(finished) => {
                 let _ = tx_loopback.send(Ok(finished));

@@ -1,0 +1,16 @@
+{
+  "description": "Import discard conflict when import has already started or processed.",
+  "context": "Journal window. Import discard conflict when import has already started or processed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "48202770ad7e57ec4e3c7de1a7fa7af13d0bdbf15d2290826ae7b1e36cfa703c",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

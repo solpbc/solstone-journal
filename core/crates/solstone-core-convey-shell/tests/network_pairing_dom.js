@@ -1332,6 +1332,19 @@ async function main() {
         disableVisible: false,
       },
       {
+        name: '400 no usable local address via refusal_code with localized detail',
+        response: response({
+          reason_code: 'pairing_request_invalid',
+          refusal_code: 'no_local_address',
+          detail: '[localized no-address refusal]',
+        }, 400),
+        expectedBodyKey: 'PAIR_ERROR_BODY',
+        regenVisible: true,
+        regenKey: 'CHECK_AGAIN_LABEL',
+        repairVisible: false,
+        disableVisible: false,
+      },
+      {
         name: '400 pairing_key_invalid',
         response: response({ reason_code: 'pairing_key_invalid' }, 400),
         expectedBodyKey: 'PAIR_START_FAIL_BODY',

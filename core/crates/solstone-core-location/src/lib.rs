@@ -310,6 +310,16 @@ pub fn read_place_days_between(
     from: &str,
     to: &str,
 ) -> Result<Vec<PlaceDays>, area::AreaTierError> {
+    read_place_days_between_in(journal, from, to, ENGLISH)
+}
+
+/// [`read_place_days_between`] with generated place labels in `locale`.
+pub fn read_place_days_between_in(
+    journal: &Path,
+    from: &str,
+    to: &str,
+    locale: &str,
+) -> Result<Vec<PlaceDays>, area::AreaTierError> {
     let tier = area_tier()?;
     let packs = accuracy::installed_packs(journal);
     let store = places::PlaceStore::read(journal);
@@ -332,7 +342,7 @@ pub fn read_place_days_between(
             }
             let view = place_view(place, members, tier, packs.as_deref(), &zone);
             Some(PlaceDays {
-                label: view.label(),
+                label: view.label_in(locale),
                 place: view.place,
                 days,
             })

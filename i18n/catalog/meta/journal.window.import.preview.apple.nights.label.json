@@ -1,0 +1,26 @@
+{
+  "description": "Unit label for sleep nights count in Apple Health preview stat card.",
+  "context": "Journal window. Unit label for sleep nights count in Apple Health preview stat card.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f9340aa51ae55684ebe7d2033cf5574d4c3a56db89c0167cb888ff35ca0ded87",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -4129,7 +4129,7 @@ journal.window.map.month.location.gaps = { $quantity ->
 }
 
 journal.window.map.month.map.area.summary = { $shaded_quantity ->
-    [one] map of { $area }: { $shaded_areas } shaded area, each { $size } across. the same areas are listed under areas this month.
+    [one] map of { $area }: { $shaded_areas } shaded area, { $size } across. the same area is listed under areas this month.
    *[other] map of { $area }: { $shaded_areas } shaded areas, each { $size } across. the same areas are listed under areas this month.
 }
 
@@ -4140,8 +4140,8 @@ journal.window.map.month.map.area.summary.home = { $shaded_quantity ->
 
 journal.window.map.month.map.group.summary = { $shaded_quantity ->
     [one] { $area_quantity ->
-        [one] map of { $area }: { $shaded_areas } shaded area, each { $size } across, holding the { $areas } area listed under areas this month.
-       *[other] map of { $area }: { $shaded_areas } shaded area, each { $size } across, holding the { $areas } areas listed under areas this month.
+        [one] map of { $area }: { $shaded_areas } shaded area, { $size } across, holding the { $areas } area listed under areas this month.
+       *[other] map of { $area }: { $shaded_areas } shaded area, { $size } across, holding the { $areas } areas listed under areas this month.
     }
    *[other] { $area_quantity ->
         [one] map of { $area }: { $shaded_areas } shaded areas, each { $size } across, holding the { $areas } area listed under areas this month.
@@ -21316,3 +21316,81 @@ journal.window.import.ox.detail.expired.recovery = if you added it from a solsto
 journal.window.import.ox.detail.back.to.imports = back to imports
 
 journal.window.import.ox.detail.keep.originals.hint = turn this on if you want a copy of the original files in your journal.
+
+journal.setup.identity.io.error = { $path }: { $error }
+
+journal.setup.identity.lock.timeout = could not acquire lock for { $path } within { $seconds }s
+
+journal.setup.identity.ca.invalid = invalid local CA: { $detail }
+
+journal.setup.identity.spki.invalid = invalid journal SPKI: { $detail }
+
+journal.setup.identity.ca.randomness.unavailable = system CSPRNG unavailable
+
+journal.setup.identity.mark.asset.invalid = invalid mark asset: { $detail }
+
+journal.setup.identity.mark.jid.invalid = invalid journal ID: { $detail }
+
+journal.setup.refusal.owner.identity.failed = couldn't save your journal owner profile
+
+journal.window.settings.config.detail.processing.not.object = processing must be an object
+
+journal.window.settings.config.detail.processing.history.confirmed.boolean = processing history_confirmed must be a boolean
+
+journal.window.settings.config.detail.processing.mode.invalid = processing mode must be realtime or deferred
+
+journal.window.settings.config.detail.processing.gate.not.object = processing gate must be an object
+
+journal.window.settings.config.detail.processing.condition.not.object = { $name } must be an object
+
+journal.window.settings.config.detail.processing.condition.enabled.boolean = { $name }.enabled must be a boolean
+
+journal.window.settings.config.detail.processing.time.window.format = time_window.{ $key } must be HH:MM
+
+journal.window.import.ox.discard.journal.busy = journal is busy
+
+journal.window.import.ox.discard.import.locked = import is locked
+
+journal.window.import.ox.discard.import.active = import is currently active
+
+journal.window.import.ox.discard.metadata.unverified = import metadata cannot be verified
+
+journal.window.import.ox.discard.not.waiting = import is no longer waiting to start
+
+journal.window.import.ox.discard.already.started = import has already started or processed
+
+journal.window.import.ox.detail.no.facet = no facet
+
+journal.window.oauth.callback.success = signed in. you can close this tab and go back to your journal
+
+journal.window.oauth.callback.failure = sign-in didn't finish. go back to your journal and try again
+
+journal.window.import.preview.apple.workouts.label = { $quantity ->
+    [one] workout
+   *[other] workouts
+}
+
+journal.window.import.preview.apple.nights.label = { $quantity ->
+    [one] night put together from sleep stages
+   *[other] nights put together from sleep stages
+}
+
+journal.window.import.preview.apple.readings.label = { $quantity ->
+    [one] reading
+   *[other] readings
+}
+
+journal.window.import.preview.apple.mindful.label = { $quantity ->
+    [one] mindful session
+   *[other] mindful sessions
+}
+
+journal.window.import.preview.apple.daily.totals.label = { $quantity ->
+    [one] daily total
+   *[other] daily totals
+}
+
+journal.window.import.preview.apple.logged.label = { $quantity ->
+    [one] logged entry
+   *[other] logged entries
+}
