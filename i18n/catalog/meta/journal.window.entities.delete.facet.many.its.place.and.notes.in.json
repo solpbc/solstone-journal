@@ -16,10 +16,10 @@
     }
   ],
   "format_intent": "cardinal",
-  "source_revision": "7b385279555d56e784cf02547ee5097a5cce96124e74a81ff0a0099ee5551215",
+  "source_revision": "ece9319da42a9233af124c05c20e3118772e264e4d52d94e6c1164eb6dc8dc2b",
   "max_length": 1000,
-  "risk": "consent",
-  "auto_merge": false,
+  "risk": "routine",
+  "auto_merge": true,
   "surfaces": [
     "journal-window"
   ],

@@ -11,8 +11,8 @@
   "format_intent": "text",
   "max_length": 2048,
   "source_revision": "5fcd9a441c5507c75f51491ca1461f76a994a795e2ef6835829f138c2cb61cc0",
-  "risk": "consent",
-  "auto_merge": false,
+  "risk": "routine",
+  "auto_merge": true,
   "protected_slots": [
     {
       "name": "product",

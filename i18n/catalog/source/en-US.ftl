@@ -444,7 +444,7 @@ journal.window.backup.consent.destination.backup.only.days = { $days_quantity ->
     }
 
 journal.window.backup.consent.teardown.backup.only.days = { $days_quantity ->
-        [one] { $days } days of your journal ({ $backup_size }) exist only in this backup. deleting the backup deletes them everywhere, forever.
+        [one] { $days } day of your journal ({ $backup_size }) exists only in this backup. deleting the backup deletes it everywhere, forever.
        *[other] { $days } days of your journal ({ $backup_size }) exist only in this backup. deleting the backup deletes them everywhere, forever.
     }
 
@@ -1062,7 +1062,7 @@ journal.window.entities.delete.erased.of = { $processed_quantity ->
 journal.window.entities.delete.erases.unless.you.recover.it = erases { $erase_day } unless you recover it.
 
 journal.window.entities.delete.facet.many.its.place.and.notes.in = { $facets_quantity ->
-        [one] its place and notes in { $facets } facets
+        [one] its place and notes in { $facets } facet
        *[other] its place and notes in { $facets } facets
     }
 
@@ -1077,12 +1077,12 @@ journal.window.entities.delete.items.find.after.failed.erase = { $remaining_quan
     }
 
 journal.window.entities.delete.many.delete.entities = { $total_quantity ->
-        [one] delete { $total } entities?
+        [one] delete { $total } entity?
        *[other] delete { $total } entities?
     }
 
 journal.window.entities.delete.many.erase.entities.now = { $total_quantity ->
-        [one] erase { $total } entities now?
+        [one] erase { $total } entity now?
        *[other] erase { $total } entities now?
     }
 
@@ -3146,12 +3146,12 @@ journal.window.import.consent.removal.again.strava.erase = importing a Strava do
 journal.window.import.consent.removal.again.strava.move = importing a Strava download again brings back the workouts this deletes.
 
 journal.window.import.consent.removal.multiple.erase = { $quantity ->
-    [one] erase { $import_count } imports now?
+    [one] erase { $import_count } import now?
    *[other] erase { $import_count } imports now?
 }
 
 journal.window.import.consent.removal.multiple.move = { $quantity ->
-    [one] delete { $import_count } imports?
+    [one] delete { $import_count } import?
    *[other] delete { $import_count } imports?
 }
 
@@ -5616,27 +5616,27 @@ journal.window.settings.trash.confirm.erase.workout.count = { $quantity ->
     }
 
 journal.window.settings.trash.confirm.recover.over.existing.facets = { $quantity ->
-        [one] { $facets } facets you picked each have another with the same name in your journal now. recovering erases those, with everything in them, and puts these back.
+        [one] { $facets } facet you picked has another with the same name in your journal now. recovering erases that one, with everything in it, and puts this one back.
        *[other] { $facets } facets you picked each have another with the same name in your journal now. recovering erases those, with everything in them, and puts these back.
     }
 
 journal.window.settings.trash.confirm.stretch.held.imports = { $quantity ->
-        [one] the { $imports } imports it holds, and the files they kept, are erased with it.
+        [one] the { $imports } import it holds, and the files it kept, are erased with it.
        *[other] the { $imports } imports it holds, and the files they kept, are erased with it.
     }
 
 journal.window.settings.trash.confirm.stretch.held.imports.none.kept = { $quantity ->
-        [one] the { $imports } imports it holds are erased with it.
+        [one] the { $imports } import it holds is erased with it.
        *[other] the { $imports } imports it holds are erased with it.
     }
 
 journal.window.settings.trash.confirm.waiting.segments.multiple.imports = { $quantity ->
-        [one] the { $segments } segments from them that wait in the trash on their own are erased with them.
+        [one] the { $segments } segment from them that waits in the trash on its own is erased with them.
        *[other] the { $segments } segments from them that wait in the trash on their own are erased with them.
     }
 
 journal.window.settings.trash.confirm.waiting.segments.one.import = { $quantity ->
-        [one] the { $segments } segments from it that wait in the trash on their own are erased with it.
+        [one] the { $segments } segment from it that waits in the trash on its own is erased with it.
        *[other] the { $segments } segments from it that wait in the trash on their own are erased with it.
     }
 
@@ -13221,7 +13221,7 @@ journal.window.speakers.owner.teaching.statements = { $statements_quantity ->
     }
 
 journal.window.speakers.owner.voice.sample.count = { $statements_quantity ->
-        [one] this voice is in { $statements } statements in your journal. play a few samples before you decide.
+        [one] this voice is in { $statements } statement in your journal. play a sample before you decide.
        *[other] this voice is in { $statements } statements in your journal. play a few samples before you decide.
     }
 
@@ -15362,21 +15362,21 @@ journal.window.transcripts.consent.trash.copy.conversation.conversation = conver
 journal.window.transcripts.consent.trash.copy.messages.messages = messages
 
 journal.window.transcripts.consent.trash.import.erase.files.count = { $retained_files_quantity ->
-        [one] it's the last segment from its import, so the { $retained_files } files it kept and its row in your import history are erased with it.
+        [one] it's the last segment from its import, so the { $retained_files } file it kept and its row in your import history are erased with it.
        *[other] it's the last segment from its import, so the { $retained_files } files it kept and its row in your import history are erased with it.
     }
 
 journal.window.transcripts.consent.trash.import.erase.named = it's the last segment from { $import_name }, so that file and its row in your import history are erased with it.
 
 journal.window.transcripts.consent.trash.import.move.files.count = { $retained_files_quantity ->
-        [one] it's the last segment from its import, so the { $retained_files } files it kept and its row in your import history go to the trash with it.
+        [one] it's the last segment from its import, so the { $retained_files } file it kept and its row in your import history go to the trash with it.
        *[other] it's the last segment from its import, so the { $retained_files } files it kept and its row in your import history go to the trash with it.
     }
 
 journal.window.transcripts.consent.trash.import.move.named = it's the last segment from { $import_name }, so that file and its row in your import history go to the trash with it.
 
 journal.window.transcripts.consent.trash.import.pending.count = { $waiting_segments_quantity ->
-        [one] the import's { $waiting_segments } other segments in the trash are erased with it.
+        [one] the import's { $waiting_segments } other segment in the trash is erased with it.
        *[other] the import's { $waiting_segments } other segments in the trash are erased with it.
     }
 
@@ -15385,39 +15385,39 @@ journal.window.transcripts.consent.trash.import.set.erase.named = this includes 
 journal.window.transcripts.consent.trash.import.set.move.named = this includes the last of the segments from { $import_name }, so that file and its row in your import history go to the trash too.
 
 journal.window.transcripts.consent.trash.import.set.pending.count = { $waiting_segments_quantity ->
-        [one] { $waiting_segments } other segments from that import in the trash are erased too.
+        [one] { $waiting_segments } other segment from that import in the trash is erased too.
        *[other] { $waiting_segments } other segments from that import in the trash are erased too.
     }
 
 journal.window.transcripts.consent.trash.import.stay.named = { $import_name }, the file it came from, stays in your journal, because other segments still come from it. to remove it, delete the import.
 
 journal.window.transcripts.consent.trash.imports.set.erase.count = { $imports_quantity ->
-        [one] this includes the last of the segments from { $imports } imports, so the files they kept and their rows in your import history are erased too.
+        [one] this includes the last of the segments from { $imports } import, so the files it kept and its row in your import history are erased too.
        *[other] this includes the last of the segments from { $imports } imports, so the files they kept and their rows in your import history are erased too.
     }
 
 journal.window.transcripts.consent.trash.imports.set.erase.without.files.count = { $imports_quantity ->
-        [one] this includes the last of the segments from { $imports } imports, so their rows in your import history are erased too.
+        [one] this includes the last of the segments from { $imports } import, so its row in your import history is erased too.
        *[other] this includes the last of the segments from { $imports } imports, so their rows in your import history are erased too.
     }
 
 journal.window.transcripts.consent.trash.imports.set.move.count = { $imports_quantity ->
-        [one] this includes the last of the segments from { $imports } imports, so the files they kept and their rows in your import history go to the trash too.
+        [one] this includes the last of the segments from { $imports } import, so the files it kept and its row in your import history go to the trash too.
        *[other] this includes the last of the segments from { $imports } imports, so the files they kept and their rows in your import history go to the trash too.
     }
 
 journal.window.transcripts.consent.trash.imports.set.move.without.files.count = { $imports_quantity ->
-        [one] this includes the last of the segments from { $imports } imports, so their rows in your import history go to the trash too.
+        [one] this includes the last of the segments from { $imports } import, so its row in your import history goes to the trash too.
        *[other] this includes the last of the segments from { $imports } imports, so their rows in your import history go to the trash too.
     }
 
 journal.window.transcripts.consent.trash.imports.set.pending.count = { $waiting_segments_quantity ->
-        [one] { $waiting_segments } other segments from those imports in the trash are erased too.
+        [one] { $waiting_segments } other segment from those imports in the trash is erased too.
        *[other] { $waiting_segments } other segments from those imports in the trash are erased too.
     }
 
 journal.window.transcripts.consent.trash.imports.stay.count = { $imports_quantity ->
-        [one] the files { $imports } imports kept stay in your journal, because other segments still come from them. to remove one, delete its import on the import page.
+        [one] the files { $imports } import kept stay in your journal, because other segments still come from it. to remove them, delete the import on the import page.
        *[other] the files { $imports } imports kept stay in your journal, because other segments still come from them. to remove one, delete its import on the import page.
     }
 
@@ -15426,7 +15426,7 @@ journal.window.transcripts.consent.trash.imports.stay.named = { $import_name } s
 journal.window.transcripts.consent.trash.media.size = current raw media size: { $media_size }
 
 journal.window.transcripts.consent.trash.selection.erase.title = { $segments_quantity ->
-        [one] erase { $segments } segments now?
+        [one] erase { $segments } segment now?
        *[other] erase { $segments } segments now?
     }
 
@@ -15436,7 +15436,7 @@ journal.window.transcripts.consent.trash.selection.more = { $segments_quantity -
     }
 
 journal.window.transcripts.consent.trash.selection.move.title = { $segments_quantity ->
-        [one] delete { $segments } segments?
+        [one] delete { $segments } segment?
        *[other] delete { $segments } segments?
     }
 
@@ -20571,7 +20571,7 @@ journal.window.oauth.reconnect.heading = connect { $agent_name } again?
 
 journal.window.oauth.reconnect.scope = choose what { $agent_name } may see.
 
-journal.window.oauth.reconnect.scope.live = here's what { $agent_name } may see now. change them here or later in the agents app.
+journal.window.oauth.reconnect.scope.live = here's what { $agent_name } may see now. change what it may see here or later in the agents app.
 
 journal.window.oauth.scope.choose.detail = your code matched. { $client_name } can save and recall its own agent memories. other journal reads stay within what you choose.
 

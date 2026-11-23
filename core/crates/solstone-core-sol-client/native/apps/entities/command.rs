@@ -711,7 +711,7 @@ fn accept_merge_candidate_output(ctx: CommandContext<'_>) -> CommandOutput {
     if commit && !parsed.bool_value("--yes").unwrap_or(false) {
         return stderr(render_for(
             locale,
-            "!journal.cli.sol.entities.merge.approval",
+            "journal.cli.sol.entities.merge.approval",
             &[],
         ));
     }
@@ -841,7 +841,7 @@ pub fn merge(ctx: CommandContext<'_>) -> CommandOutput {
     {
         return stderr(render_for(
             locale,
-            "!journal.cli.sol.entities.merge.approval",
+            "journal.cli.sol.entities.merge.approval",
             &[],
         ));
     }
@@ -1303,7 +1303,7 @@ fn delete_entity_output(ctx: CommandContext<'_>) -> CommandOutput {
     if !parsed.bool_value("--yes").unwrap_or(false) {
         return stderr(render_for(
             locale,
-            "!journal.cli.sol.entities.delete.approval",
+            "journal.cli.sol.entities.delete.approval",
             &[],
         ));
     }

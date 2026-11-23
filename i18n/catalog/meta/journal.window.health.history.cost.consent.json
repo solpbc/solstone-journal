@@ -21,7 +21,7 @@
   "format_intent": "text",
   "source_revision": "fd5f097706b61cb01a3e89023fc62e837886acddd14ae6964d1b4a79175e3316",
   "max_length": 1000,
-  "risk": "consent",
+  "risk": "payment",
   "auto_merge": false,
   "surfaces": [
     "journal-window"

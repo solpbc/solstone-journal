@@ -62,18 +62,18 @@
   // Owner copy for deleting a memory: the dialog, its erase step and the receipt.
   const TRASH_COPY = {
     move: {
-      title: window.JournalI18n.renderEnglish('journal.window.agents.title.delete.this.memory'),
-      reach: window.JournalI18n.renderEnglish('journal.window.agents.trash.copy.reach.it.leaves.your.journal.now.and.variant2'),
-      stays: window.JournalI18n.renderEnglish('journal.window.agents.trash.copy.stays.summaries.made.from.it.elsewhere.in.variant2'),
-      agentRead: window.JournalI18n.renderEnglish('journal.window.agents.trash.copy.agent.read.anything.an.agent.already.read.stays'),
+      title: window.JournalI18n.render('journal.window.agents.title.delete.this.memory'),
+      reach: window.JournalI18n.render('journal.window.agents.trash.copy.reach.it.leaves.your.journal.now.and.variant2'),
+      stays: window.JournalI18n.render('journal.window.agents.trash.copy.stays.summaries.made.from.it.elsewhere.in.variant2'),
+      agentRead: window.JournalI18n.render('journal.window.agents.trash.copy.agent.read.anything.an.agent.already.read.stays'),
     },
     erase: {
-      title: window.JournalI18n.renderEnglish('journal.window.agents.title.erase.this.memory.now'),
-      reach: window.JournalI18n.renderEnglish('journal.window.agents.trash.copy.reach.it.leaves.your.journal.now.and'),
-      stays: window.JournalI18n.renderEnglish('journal.window.agents.trash.copy.stays.summaries.made.from.it.elsewhere.in'),
-      agentRead: window.JournalI18n.renderEnglish('journal.window.agents.trash.copy.agent.read.anything.an.agent.already.read.stays'),
+      title: window.JournalI18n.render('journal.window.agents.title.erase.this.memory.now'),
+      reach: window.JournalI18n.render('journal.window.agents.trash.copy.reach.it.leaves.your.journal.now.and'),
+      stays: window.JournalI18n.render('journal.window.agents.trash.copy.stays.summaries.made.from.it.elsewhere.in'),
+      agentRead: window.JournalI18n.render('journal.window.agents.trash.copy.agent.read.anything.an.agent.already.read.stays'),
     },
-    buttons: {eraseNow: window.JournalI18n.renderEnglish('journal.window.agents.trash.copy.erase.now.erase.now'), cancel: window.JournalI18n.render('journal.window.agents.trash.copy.cancel.cancel'), moveToTrash: window.JournalI18n.renderEnglish('journal.window.agents.trash.copy.move.to.trash.move.to.trash'), back: window.JournalI18n.render('journal.window.agents.trash.copy.back.back'), recover: window.JournalI18n.render('journal.window.agents.trash.copy.recover.recover'), openTrash: window.JournalI18n.render('journal.window.agents.trash.copy.open.trash.open.trash')},
+    buttons: {eraseNow: window.JournalI18n.render('journal.window.agents.trash.copy.erase.now.erase.now'), cancel: window.JournalI18n.render('journal.window.agents.trash.copy.cancel.cancel'), moveToTrash: window.JournalI18n.render('journal.window.agents.trash.copy.move.to.trash.move.to.trash'), back: window.JournalI18n.render('journal.window.agents.trash.copy.back.back'), recover: window.JournalI18n.render('journal.window.agents.trash.copy.recover.recover'), openTrash: window.JournalI18n.render('journal.window.agents.trash.copy.open.trash.open.trash')},
     receipt: {
       moved: {title: window.JournalI18n.render('journal.window.agents.title.moved.to.the.trash')},
       recovered: {title: window.JournalI18n.render('journal.window.agents.memory.receipt.recovered'), message: window.JournalI18n.render('journal.window.agents.message.it.s.back.in.your.journal')},
@@ -669,10 +669,10 @@
       const checkTime = inlineText('span', nextFormatted);
       checkTime.setAttribute('data-next-attempt', '');
       const next = nextFormatted ? ' ' + inlineHtml('journal.window.agents.status.next.check.at', [], { check_time: checkTime }) : '';
-      if (me === 'off') return `<div class="lane-body"><ul class="trust"><li data-disclosure="relay">${relay}</li><li>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.the.address.is.eight.random.characters')}</li></ul>${protection}<div class="hand"><button class="btn primary" data-action="turn-on">${window.JournalI18n.renderHtml('journal.window.agents.button.label.set.up.solstone.me')}</button><span class="meta">${window.JournalI18n.renderEnglishHtml('journal.window.agents.visible.text.you.approve.it.in.the.services')}</span></div></div>`;
+      if (me === 'off') return `<div class="lane-body"><ul class="trust"><li data-disclosure="relay">${relay}</li><li>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.the.address.is.eight.random.characters')}</li></ul>${protection}<div class="hand"><button class="btn primary" data-action="turn-on">${window.JournalI18n.renderHtml('journal.window.agents.button.label.set.up.solstone.me')}</button><span class="meta">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.you.approve.it.in.the.services')}</span></div></div>`;
       if (me === 'turnedoff') return `<div class="lane-body">${row(window.JournalI18n.render('journal.window.agents.status.text.off'), false)}<p class="note">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.agents.connected.through.solstone.me.can')}</p>${about}</div>`;
-      if (me === 'approve') return `<div class="lane-body">${row(window.JournalI18n.render('journal.window.agents.status.text.setting.up'), false)}<p class="note">${window.JournalI18n.renderEnglishHtml('journal.window.agents.visible.text.waiting.for.you.to.approve.solstone')}</p><div class="hand">${enableOp?.portal_url ? `<a class="btn primary" data-solstone-outside href="${esc(enableOp.portal_url)}" target="_blank" rel="noopener">${window.JournalI18n.renderEnglishHtml('journal.window.agents.link.label.continue.to.approve')}</a>` : ''}</div></div>`;
-      if (me === 'notyet') return `<div class="lane-body">${row(window.JournalI18n.render('journal.window.agents.status.not.on'), false)}<div class="notice"><p>${esc(enableOp.guidance || window.JournalI18n.renderEnglish('journal.window.agents.status.text.solstone.me.isn.t.on.yet'))}</p></div><div class="hand"><a class="btn primary" data-solstone-outside href="${esc(enableOp.subscribe_url || PORTAL)}" target="_blank" rel="noopener">${window.JournalI18n.renderEnglishHtml('journal.window.agents.link.label.open.the.services.portal')}</a><button class="btn" data-action="dismiss-enable">${window.JournalI18n.renderHtml('journal.window.agents.button.label.not.now')}</button></div></div>`;
+      if (me === 'approve') return `<div class="lane-body">${row(window.JournalI18n.render('journal.window.agents.status.text.setting.up'), false)}<p class="note">${window.JournalI18n.renderHtml('journal.window.agents.visible.text.waiting.for.you.to.approve.solstone')}</p><div class="hand">${enableOp?.portal_url ? `<a class="btn primary" data-solstone-outside href="${esc(enableOp.portal_url)}" target="_blank" rel="noopener">${window.JournalI18n.renderHtml('journal.window.agents.link.label.continue.to.approve')}</a>` : ''}</div></div>`;
+      if (me === 'notyet') return `<div class="lane-body">${row(window.JournalI18n.render('journal.window.agents.status.not.on'), false)}<div class="notice"><p>${esc(enableOp.guidance || window.JournalI18n.render('journal.window.agents.status.text.solstone.me.isn.t.on.yet'))}</p></div><div class="hand"><a class="btn primary" data-solstone-outside href="${esc(enableOp.subscribe_url || PORTAL)}" target="_blank" rel="noopener">${window.JournalI18n.renderHtml('journal.window.agents.link.label.open.the.services.portal')}</a><button class="btn" data-action="dismiss-enable">${window.JournalI18n.renderHtml('journal.window.agents.button.label.not.now')}</button></div></div>`;
       if (me === 'failed') return `<div class="lane-body">${row(window.JournalI18n.render('journal.window.agents.status.not.on'), false)}<div class="notice error"><p>${esc(enableOp.guidance || window.JournalI18n.render('journal.window.agents.status.text.couldn.t.finish.turning.on.solstone'))}</p></div><div class="hand"><button class="btn primary" data-action="turn-on">${window.JournalI18n.renderHtml('journal.window.agents.button.label.try.again')}</button><button class="btn" data-action="dismiss-enable">${window.JournalI18n.renderHtml('journal.window.agents.button.label.not.now')}</button></div></div>`;
       if (me === 'turning') {
         const owner = state.owner_state || {};
@@ -682,7 +682,7 @@
       if (me === 'offline') return `<div class="lane-body">${row(window.JournalI18n.render('journal.window.agents.status.text.on.not.reaching.it.right.now'), true)}${address}<div class="notice"><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.this.device.isn.t.reaching.solstone')}</p></div>${about}</div>`;
       if (me === 'stopped') return `<div class="lane-body">${row(window.JournalI18n.render('journal.window.agents.status.text.on.but.it.isn.t.working'), true)}<div class="notice"><p>${esc(state.owner_state?.detail || window.JournalI18n.render('journal.window.agents.status.text.solstone.me.isn.t.working.on'))}</p></div>${about}</div>`;
       if (me === 'renewal') return `<div class="lane-body">${row(window.JournalI18n.render('journal.window.agents.status.text.on.certificate.renewal.overdue'), true)}${address}<div class="notice"><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.the.address.s.certificate.is.past')}</p></div>${about}</div>`;
-      if (me === 'lapsed') return `<div class="lane-body">${row(window.JournalI18n.render('journal.window.agents.status.text.on.here.but.solstone.me.isn'), true)}<div class="notice"><p>${window.JournalI18n.renderEnglishHtml('journal.window.agents.visible.text.finish.turning.it.on.in.the')}${next}</p></div><div class="hand"><a class="btn primary" data-solstone-outside href="${esc(state.subscribe_url || PORTAL)}" target="_blank" rel="noopener">${window.JournalI18n.renderEnglishHtml('journal.window.agents.link.label.open.the.services.portal')}</a></div></div>`;
+      if (me === 'lapsed') return `<div class="lane-body">${row(window.JournalI18n.render('journal.window.agents.status.text.on.here.but.solstone.me.isn'), true)}<div class="notice"><p>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.finish.turning.it.on.in.the')}${next}</p></div><div class="hand"><a class="btn primary" data-solstone-outside href="${esc(state.subscribe_url || PORTAL)}" target="_blank" rel="noopener">${window.JournalI18n.renderHtml('journal.window.agents.link.label.open.the.services.portal')}</a></div></div>`;
       if (me === 'held' && state.status === 'account_changed') {
         const back = state.sme_account?.replace_pending
           ? `<p class="note" data-sme-replace-pending>${window.JournalI18n.renderHtml('journal.window.agents.visible.text.your.journal.is.asking.solstone.me')}</p>`
@@ -919,10 +919,10 @@
       }
 
       const codeSuffix = {
-        local: window.JournalI18n.renderEnglish('journal.window.agents.pair.code.scope.this.device'),
-        relay: window.JournalI18n.renderEnglish('journal.window.agents.pair.code.scope.private.link'),
-        lan: window.JournalI18n.renderEnglish('journal.window.agents.pair.code.scope.your.network'),
-        byo: window.JournalI18n.renderEnglish('journal.window.agents.pair.code.scope.your.domain'),
+        local: window.JournalI18n.render('journal.window.agents.pair.code.scope.this.device'),
+        relay: window.JournalI18n.render('journal.window.agents.pair.code.scope.private.link'),
+        lan: window.JournalI18n.render('journal.window.agents.pair.code.scope.your.network'),
+        byo: window.JournalI18n.render('journal.window.agents.pair.code.scope.your.domain'),
       }[pairingCode?.door] || '';
 
       const ended = watch && WATCH_ENDED[watch.phase];

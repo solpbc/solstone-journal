@@ -198,11 +198,11 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
             match answer_at_terminal(locale, terminal.as_mut(), &credential.instance_id) {
                 MarkAnswer::Yes => Ok(()),
                 MarkAnswer::No => Err(CommandOutput::failure(
-                    render_for(locale, "!journal.cli.sol.link.mark.join.mismatch", &[]),
+                    render_for(locale, "journal.cli.sol.link.mark.join.mismatch", &[]),
                     1,
                 )),
                 MarkAnswer::Cancelled | MarkAnswer::WalkedAway => Err(CommandOutput::failure(
-                    render_for(locale, "!journal.cli.sol.link.mark.join.cancel", &[]),
+                    render_for(locale, "journal.cli.sol.link.mark.join.cancel", &[]),
                     1,
                 )),
             }
@@ -322,17 +322,17 @@ fn answer_at_terminal(locale: &str, terminal: &mut dyn LinkJoinTerminal, jid: &s
         let spoken = format_spoken_mark(spec);
         terminal.write_text(&display_for(
             locale,
-            "!journal.cli.sol.link.mark.prompt.identified",
+            "journal.cli.sol.link.mark.prompt.identified",
             [("spoken", &spoken)],
         ));
-        render_for(locale, "!journal.cli.sol.link.mark.ask.identified", &[])
+        render_for(locale, "journal.cli.sol.link.mark.ask.identified", &[])
     } else {
         terminal.write_text(&render_for(
             locale,
-            "!journal.cli.sol.link.mark.prompt.unavailable",
+            "journal.cli.sol.link.mark.prompt.unavailable",
             &[],
         ));
-        render_for(locale, "!journal.cli.sol.link.mark.ask.unavailable", &[])
+        render_for(locale, "journal.cli.sol.link.mark.ask.unavailable", &[])
     };
     let (go_ahead, stop): (&[&str], &[&str]) = if spec.is_some() {
         (&["yes", "y"], &["no", "n"])
@@ -362,7 +362,7 @@ fn answer_at_terminal(locale: &str, terminal: &mut dyn LinkJoinTerminal, jid: &s
 fn answer_from_words(locale: &str, words: &str, jid: &str) -> Result<(), CommandOutput> {
     let Ok(mark) = crate::mark_text::mark_from_jid(jid) else {
         return Err(CommandOutput::failure(
-            render_for(locale, "!journal.cli.sol.link.mark.join.unverifiable", &[]),
+            render_for(locale, "journal.cli.sol.link.mark.join.unverifiable", &[]),
             1,
         ));
     };
@@ -375,7 +375,7 @@ fn answer_from_words(locale: &str, words: &str, jid: &str) -> Result<(), Command
         return Ok(());
     }
     Err(CommandOutput::failure(
-        render_for(locale, "!journal.cli.sol.link.mark.join.wrong", &[]),
+        render_for(locale, "journal.cli.sol.link.mark.join.wrong", &[]),
         1,
     ))
 }
@@ -404,7 +404,7 @@ fn unverified_link_accepted(bundle_dir: &Path) -> bool {
 }
 
 fn held_lines(locale: &str, label: &str) -> String {
-    display_for(locale, "!journal.cli.sol.link.held", [("label", &label)])
+    display_for(locale, "journal.cli.sol.link.held", [("label", &label)])
 }
 
 #[must_use]
@@ -473,18 +473,14 @@ pub fn link_confirm(ctx: CommandContext<'_>) -> CommandOutput {
     let answer = if let Some(mark) = parsed.mark.as_deref() {
         let Some(jid) = ca_jid.as_deref() else {
             return CommandOutput::failure(
-                render_for(
-                    locale,
-                    "!journal.cli.sol.link.mark.confirm.unavailable",
-                    &[],
-                ),
+                render_for(locale, "journal.cli.sol.link.mark.confirm.unavailable", &[]),
                 5,
             );
         };
         answer_from_words(locale, mark, jid).map_err(|_| {
             retire_bundle(seam, &selection);
             CommandOutput::failure(
-                render_for(locale, "!journal.cli.sol.link.mark.confirm.wrong", &[]),
+                render_for(locale, "journal.cli.sol.link.mark.confirm.wrong", &[]),
                 1,
             )
         })
@@ -504,14 +500,14 @@ pub fn link_confirm(ctx: CommandContext<'_>) -> CommandOutput {
             MarkAnswer::No => {
                 retire_bundle(seam, &selection);
                 Err(CommandOutput::failure(
-                    render_for(locale, "!journal.cli.sol.link.mark.confirm.mismatch", &[]),
+                    render_for(locale, "journal.cli.sol.link.mark.confirm.mismatch", &[]),
                     1,
                 ))
             }
             MarkAnswer::Cancelled => {
                 retire_bundle(seam, &selection);
                 Err(CommandOutput::failure(
-                    render_for(locale, "!journal.cli.sol.link.mark.confirm.cancel", &[]),
+                    render_for(locale, "journal.cli.sol.link.mark.confirm.cancel", &[]),
                     1,
                 ))
             }
@@ -744,7 +740,7 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
     Ok(ResidentCommand::new(startup, move |shutdown| {
         eprintln!(
             "{}",
-            render_for(locale, "!journal.cli.sol.link.serve.warning", &[])
+            render_for(locale, "journal.cli.sol.link.serve.warning", &[])
         );
         match session.serve(shutdown) {
             Ok(()) => CommandOutput::success(""),
@@ -2026,7 +2022,7 @@ fn serve_relay_error_text(locale: &str, error: crate::seam::LinkServeRelayErrorK
             render_for(locale, "journal.cli.sol.link.relay.unauthorized", &[])
         }
         crate::seam::LinkServeRelayErrorKind::Unpaid => {
-            render_for(locale, "!journal.cli.sol.link.relay.unpaid", &[])
+            render_for(locale, "journal.cli.sol.link.relay.unpaid", &[])
         }
         crate::seam::LinkServeRelayErrorKind::UnknownInstance => {
             render_for(locale, "journal.cli.sol.link.relay.unknown", &[])

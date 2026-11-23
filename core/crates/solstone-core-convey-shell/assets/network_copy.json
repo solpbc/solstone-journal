@@ -90,7 +90,7 @@
   "PRIVATE_LINK_SETUP_FAILED": "journal.window.network.private.link.setup.failed",
   "PRIVATE_LINK_NEEDS_SUBSCRIPTION_HEADLINE": "journal.window.network.private.link.needs.subscription.headline",
   "PRIVATE_LINK_NEEDS_SUBSCRIPTION_DETAIL": "journal.window.network.private.link.needs.subscription.detail",
-  "PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA": "!journal.window.network.private.link.needs.subscription.cta",
+  "PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA": "journal.window.network.private.link.needs.subscription.cta",
   "PRIVATE_LINK_DISABLE_SUCCESS": "journal.window.network.private.link.disable.success",
   "PRIVATE_LINK_DISABLE_FAILED": "journal.window.network.private.link.disable.failed",
   "PRIVATE_LINK_NEEDS_REPAIR": "journal.window.network.private.link.needs.repair",

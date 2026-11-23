@@ -178,7 +178,7 @@
         html += '<div class="week-menu-wrapper">';
         html += '<button type="button" class="week-menu-btn" aria-expanded="false" aria-label="' + window.JournalI18n.renderHtml('journal.window.home.week.menu.accessible.name', [['day', String(r.day_label)]]) + '">···</button>';
         html += '<div class="week-menu-dropdown" hidden style="display:none;">';
-        html += '<button type="button" class="week-menu-item week-leave-out-btn" data-action="leave-out" data-key="' + esc(r.key) + `"><span class="week-menu-item-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.leave.out.of.this.week')}</span><span class="week-menu-hint">${window.JournalI18n.renderEnglishHtml('journal.window.home.visible.text.only.this.week.changes.the.memory')}</span></button>`;
+        html += '<button type="button" class="week-menu-item week-leave-out-btn" data-action="leave-out" data-key="' + esc(r.key) + `"><span class="week-menu-item-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.leave.out.of.this.week')}</span><span class="week-menu-hint">${window.JournalI18n.renderHtml('journal.window.home.visible.text.only.this.week.changes.the.memory')}</span></button>`;
         html += '<a class="week-menu-item" href="' + esc(r.menu_href) + `"><span class="week-menu-item-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.this.isn.t.right')}</span><span class="week-menu-hint">${window.JournalI18n.renderHtml('journal.window.home.visible.text.opens.where.it.came.from.so')}</span></a>`;
         html += '</div>';
         html += '</div>'; // week-menu-wrapper

@@ -5670,7 +5670,7 @@ fn run_mcp_token(command: McpTokenCommand) -> ExitCode {
                 println!(
                     "{}",
                     host_text(
-                        "!journal.cli.host.mcp.token.until.you.grant.it.read.access.an.agent.using.this"
+                        "journal.cli.host.mcp.token.until.you.grant.it.read.access.an.agent.using.this"
                     )
                 );
                 let categories = solstone_core_format::content::kinds::default_permission_words()
@@ -5683,7 +5683,7 @@ fn run_mcp_token(command: McpTokenCommand) -> ExitCode {
                 println!(
                     "{}",
                     host_text(
-                        "!journal.cli.host.mcp.token.grant.before.the.agent.connects.an.agent.that.connected.first"
+                        "journal.cli.host.mcp.token.grant.before.the.agent.connects.an.agent.that.connected.first"
                     )
                 );
                 ExitCode::SUCCESS
@@ -5805,7 +5805,7 @@ fn run_mcp_pairing_at(journal_root: &Path, command: McpPairingCommand) -> ExitCo
                             println!(
                                 "{}",
                                 host_text(
-                                    "!journal.cli.host.mcp.pairing.at.it.works.only.for.an.agent.on.this.computer.to"
+                                    "journal.cli.host.mcp.pairing.at.it.works.only.for.an.agent.on.this.computer.to"
                                 )
                             );
                         }
@@ -5813,7 +5813,7 @@ fn run_mcp_pairing_at(journal_root: &Path, command: McpPairingCommand) -> ExitCo
                             println!(
                                 "{}",
                                 host_text(
-                                    "!journal.cli.host.mcp.pairing.at.it.works.only.for.an.agent.on.this.computer"
+                                    "journal.cli.host.mcp.pairing.at.it.works.only.for.an.agent.on.this.computer"
                                 )
                             );
                         }
@@ -5821,7 +5821,7 @@ fn run_mcp_pairing_at(journal_root: &Path, command: McpPairingCommand) -> ExitCo
                             println!(
                                 "{}",
                                 host_text(
-                                    "!journal.cli.host.mcp.pairing.at.it.works.only.for.an.agent.on.your.network"
+                                    "journal.cli.host.mcp.pairing.at.it.works.only.for.an.agent.on.your.network"
                                 )
                             );
                         }
@@ -5829,7 +5829,7 @@ fn run_mcp_pairing_at(journal_root: &Path, command: McpPairingCommand) -> ExitCo
                             println!(
                                 "{}",
                                 host_text(
-                                    "!journal.cli.host.mcp.pairing.at.it.works.only.through.solstone.me"
+                                    "journal.cli.host.mcp.pairing.at.it.works.only.through.solstone.me"
                                 )
                             );
                         }
@@ -5837,7 +5837,7 @@ fn run_mcp_pairing_at(journal_root: &Path, command: McpPairingCommand) -> ExitCo
                             println!(
                                 "{}",
                                 host_text(
-                                    "!journal.cli.host.mcp.pairing.at.it.works.only.at.your.own.domain"
+                                    "journal.cli.host.mcp.pairing.at.it.works.only.at.your.own.domain"
                                 )
                             );
                         }
@@ -5845,7 +5845,7 @@ fn run_mcp_pairing_at(journal_root: &Path, command: McpPairingCommand) -> ExitCo
                             println!(
                                 "{}",
                                 host_text(
-                                    "!journal.cli.host.mcp.pairing.at.it.works.only.for.an.agent.on.this.computer"
+                                    "journal.cli.host.mcp.pairing.at.it.works.only.for.an.agent.on.this.computer"
                                 )
                             );
                         }
@@ -6132,7 +6132,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                     for perm in file.permissions {
                         let row = match perm.read.as_ref().map(|read| &read.scope) {
                             Some(solstone_core::ReadScope::WholeJournal) => host_display(
-                                "!journal.cli.host.mcp.permission.list.whole",
+                                "journal.cli.host.mcp.permission.list.whole",
                                 [
                                     ("connection", &(perm.connection)),
                                     ("generation", &(perm.generation)),
@@ -6140,7 +6140,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                                 ],
                             ),
                             Some(solstone_core::ReadScope::Facets { ids }) => host_display(
-                                "!journal.cli.host.mcp.permission.list.facets",
+                                "journal.cli.host.mcp.permission.list.facets",
                                 [
                                     ("connection", &(perm.connection)),
                                     ("generation", &(perm.generation)),
@@ -6149,7 +6149,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                                 ],
                             ),
                             None => host_display(
-                                "!journal.cli.host.mcp.permission.list.none",
+                                "journal.cli.host.mcp.permission.list.none",
                                 [
                                     ("connection", &(perm.connection)),
                                     ("generation", &(perm.generation)),
@@ -6204,10 +6204,10 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                             Some(read) => {
                                 let scope = match &read.scope {
                                     solstone_core::ReadScope::WholeJournal => {
-                                        host_text("!journal.cli.host.mcp.permission.scope.whole")
+                                        host_text("journal.cli.host.mcp.permission.scope.whole")
                                     }
                                     solstone_core::ReadScope::Facets { ids } => host_display(
-                                        "!journal.cli.host.mcp.permission.scope.facets",
+                                        "journal.cli.host.mcp.permission.scope.facets",
                                         [("facets", &(permission_facet_names(&journal.path, ids)))],
                                     ),
                                 };
@@ -6225,7 +6225,8 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                                             .map_or_else(
                                                 || word.clone(),
                                                 |category| {
-                                                    solstone_core_cli::permission_kind_label(
+                                                    solstone_core_cli::permission_kind_label_for(
+                                                        host_locale(),
                                                         category.kind_spec(),
                                                     )
                                                 },
@@ -6235,7 +6236,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                                 println!(
                                     "{}",
                                     host_display(
-                                        "!journal.cli.host.mcp.permission.categories",
+                                        "journal.cli.host.mcp.permission.categories",
                                         [("categories", &(kinds.join(", ")))]
                                     )
                                 );
@@ -6247,7 +6248,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                                     println!(
                                         "{}",
                                         host_display(
-                                            "!journal.cli.host.mcp.permission.places.precision",
+                                            "journal.cli.host.mcp.permission.places.precision",
                                             [("precision", &precision.wire_value())]
                                         )
                                     );
@@ -6257,7 +6258,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                                 println!(
                                     "{}",
                                     host_text(
-                                        "!journal.cli.host.mcp.permission.read.no.read.permission.configured"
+                                        "journal.cli.host.mcp.permission.read.no.read.permission.configured"
                                     )
                                 );
                             }
@@ -6275,7 +6276,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                         println!(
                             "{}",
                             host_text(
-                                "!journal.cli.host.mcp.permission.permission.no.permission.configured"
+                                "journal.cli.host.mcp.permission.permission.no.permission.configured"
                             )
                         );
                         ExitCode::SUCCESS
@@ -6384,7 +6385,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                     println!(
                         "{}",
                         host_display(
-                            "!journal.cli.host.mcp.permission.set.mcp.read.permission.for.connection.generation",
+                            "journal.cli.host.mcp.permission.set.mcp.read.permission.for.connection.generation",
                             [
                                 ("connection", &(record.connection)),
                                 ("generation", &(record.generation))
@@ -6416,7 +6417,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                         println!(
                             "{}",
                             host_display(
-                                "!journal.cli.host.mcp.permission.cleared.permission.for.connection",
+                                "journal.cli.host.mcp.permission.cleared.permission.for.connection",
                                 [("connection", &(key))]
                             )
                         );

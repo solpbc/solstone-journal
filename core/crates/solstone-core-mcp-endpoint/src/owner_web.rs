@@ -923,18 +923,18 @@ pub(crate) fn state_value_with_iface(
         "facets": facets,
         "permission_kinds": solstone_core_format::content::kinds::permission_kinds()
             .map(|kind| {
-                use solstone_core_convey_http::window_catalog::{ENGLISH, text};
+                use solstone_core_convey_http::window_catalog::text;
                 let copy = kind.permission_copy.expect("registered permissions have copy");
                 json!({
                     "word": kind.stored_word,
-                    "label": text(ENGLISH, copy.label_id),
-                    "description": text(ENGLISH, copy.description_id),
+                    "label": text(locale, copy.label_id),
+                    "description": text(locale, copy.description_id),
                     "checked_by_default": kind.checked_by_default,
                     "option_of": kind.option_of(),
                 })
             })
             .collect::<Vec<_>>(),
-        "places_precision_options": places_precision_options_json(),
+        "places_precision_options": places_precision_options_json(locale),
         "pairing": pairing.map(pairing_json),
     });
     // App containers and Windows use the maintained TLS loopback ingress.
@@ -956,8 +956,8 @@ pub(crate) fn state_value_with_iface(
 }
 
 /// Places precision tiers advertised to the owner Agents workspace.
-fn places_precision_options_json() -> Vec<Value> {
-    use solstone_core_convey_http::window_catalog::{ENGLISH, text};
+fn places_precision_options_json(locale: &str) -> Vec<Value> {
+    use solstone_core_convey_http::window_catalog::text;
     use solstone_core_format::content::kinds::PlacesPrecision;
     [
         (
@@ -984,8 +984,8 @@ fn places_precision_options_json() -> Vec<Value> {
         json!({
             "value": tier.wire_value(),
             "stored_word": tier.stored_word(),
-            "label": text(ENGLISH, label_id),
-            "description": text(ENGLISH, desc_id),
+            "label": text(locale, label_id),
+            "description": text(locale, desc_id),
             "default": is_default,
         })
     })

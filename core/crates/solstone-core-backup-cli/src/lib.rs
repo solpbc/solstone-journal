@@ -1032,7 +1032,7 @@ fn destination_reason_text(reason: &str) -> String {
 /// The different-repository warning, with the days kept only in the current
 /// backup when media offload is on (the same totals turn off & delete shows).
 fn new_repository_warning(journal: &Path, config: &Map<String, Value>) -> String {
-    let mut text = copy::text("!journal.cli.backup.destination.switch.lead");
+    let mut text = copy::text("journal.cli.backup.destination.switch.lead");
     // Days offloaded earlier stay only in that backup even after offload is
     // turned off, so the count is read whenever offload has ever run.
     let ever_offloaded = config
@@ -1058,7 +1058,7 @@ fn new_repository_warning(journal: &Path, config: &Map<String, Value>) -> String
             Some((0, 0)) => None,
             Some((days, bytes)) => Some(window::render(
                 copy::cli_locale(),
-                "!journal.window.backup.consent.destination.backup.only.days",
+                "journal.window.backup.consent.destination.backup.only.days",
                 &[
                     (
                         "days_quantity",
@@ -1070,7 +1070,7 @@ fn new_repository_warning(journal: &Path, config: &Map<String, Value>) -> String
             )),
             None => Some(window::text(
                 copy::cli_locale(),
-                "!journal.window.backup.copy.destination.edit.confirm.days.unavailable",
+                "journal.window.backup.copy.destination.edit.confirm.days.unavailable",
             )),
         };
         if let Some(caution) = caution {
@@ -1079,9 +1079,7 @@ fn new_repository_warning(journal: &Path, config: &Map<String, Value>) -> String
         }
     }
     text.push(' ');
-    text.push_str(&copy::text(
-        "!journal.cli.backup.destination.switch.confirm",
-    ));
+    text.push_str(&copy::text("journal.cli.backup.destination.switch.confirm"));
     text
 }
 
@@ -2098,7 +2096,7 @@ fn recovery_key_rotate_result(result: RotationResult) -> CliRun {
 
 fn turn_off(confirmed: bool, _journal: &Path, _services: &BackupServices<'_>) -> CliRun {
     if !confirmed {
-        return runtime_error(copy::text("!journal.cli.backup.teardown.confirm"));
+        return runtime_error(copy::text("journal.cli.backup.teardown.confirm"));
     }
     // Borrowed injected services cannot replace the original owning admission.
     runtime_error(owned_teardown::prelaunch_held())

@@ -112,10 +112,10 @@ const KNOWN_RESULT_IDS: &[&str] = &[
     "journal.window.backup.response.destination.result.message.could.not.reach.the.backup.destination",
     "journal.window.backup.response.destination.result.message.the.destination.rejected.the.credentials",
     "journal.window.backup.response.destination.result.message.a.backup.there.doesn.t.open",
-    "!journal.window.backup.response.storage.retention.result.your.storage.keeps.earlier.versions.of",
-    "!journal.window.backup.response.storage.retention.result.your.bucket.can.lock.files.against",
-    "!journal.window.backup.response.storage.retention.result.your.b2.bucket.only.hides.deleted",
-    "!journal.window.backup.response.storage.retention.result.your.journal.couldn.t.check.whether",
+    "journal.window.backup.response.storage.retention.result.your.storage.keeps.earlier.versions.of",
+    "journal.window.backup.response.storage.retention.result.your.bucket.can.lock.files.against",
+    "journal.window.backup.response.storage.retention.result.your.b2.bucket.only.hides.deleted",
+    "journal.window.backup.response.storage.retention.result.your.journal.couldn.t.check.whether",
 ];
 
 fn result_message(value: &str) -> Option<&'static str> {

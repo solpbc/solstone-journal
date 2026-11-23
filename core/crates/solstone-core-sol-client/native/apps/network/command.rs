@@ -358,7 +358,7 @@ pub fn private_link_setup(ctx: CommandContext<'_>) -> CommandOutput {
             &mut out,
             display_for(
                 locale,
-                "!journal.cli.client.network.portal.approve",
+                "journal.cli.client.network.portal.approve",
                 [("url", &portal_url)],
             ),
         );
@@ -979,13 +979,13 @@ fn private_link_terminal_output(
                 if phase == "subscribing" {
                     render_for(
                         locale,
-                        "!journal.cli.client.network.private.link.subscribing",
+                        "journal.cli.client.network.private.link.subscribing",
                         &[],
                     )
                 } else {
                     render_for(
                         locale,
-                        "!journal.cli.client.network.private.link.needs.subscription",
+                        "journal.cli.client.network.private.link.needs.subscription",
                         &[],
                     )
                 },

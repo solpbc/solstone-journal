@@ -111,8 +111,7 @@
       .filter(id => id.startsWith(prefix) && !dynamicMessages.has(id.slice(prefix.length)))
       .map(id => {
         const key = id.slice(prefix.length);
-        const format = key === 'report.privacy.note' ? renderEnglish : render;
-        return [key.replaceAll('.', '_').toUpperCase(), format(id)];
+        return [key.replaceAll('.', '_').toUpperCase(), render(id)];
       }),
   ));
 })();

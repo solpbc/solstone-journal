@@ -33,29 +33,29 @@ const LANE_IDS: [Lane<&str>; 3] = [
         id: "local",
         label: "journal.window.thinking.lane.label.local",
         sub: "journal.window.thinking.lane.sub.on.your.journal.s.computer",
-        description: "!journal.window.thinking.lane.description.model.requests.stay.on.your.journal",
+        description: "journal.window.thinking.lane.description.model.requests.stay.on.your.journal",
     },
     Lane {
         id: "confidential",
         label: "journal.window.thinking.lane.label.confidential.processing",
         sub: "journal.window.thinking.lane.sub.operated.by.sol.pbc",
-        description: "!journal.window.thinking.lane.description.sol.pbc.runs.the.model.on",
+        description: "journal.window.thinking.lane.description.sol.pbc.runs.the.model.on",
     },
     Lane {
         id: "byo",
         label: "journal.window.thinking.lane.label.your.own.model",
         sub: "journal.window.thinking.lane.sub.your.key.or.your.own.endpoint",
-        description: "!journal.window.thinking.lane.description.your.journal.sends.model.requests.to",
+        description: "journal.window.thinking.lane.description.your.journal.sends.model.requests.to",
     },
 ];
 
 const CONFIDENTIAL_DETAIL_IDS: ConfidentialLaneDetail<&str> = ConfidentialLaneDetail {
     heading: "journal.window.thinking.lane.heading.confidential.processing",
     sub: "journal.window.thinking.lane.sub.operated.by.sol.pbc",
-    mechanism: "!journal.window.thinking.lane.mechanism.sol.pbc.runs.the.model.itself",
-    egress: "!journal.window.thinking.lane.egress.when.it.s.on.the.thinking",
-    claims: "!journal.window.thinking.lane.claims.no.content.is.retained.no.human",
-    attestation: "!journal.window.thinking.lane.attestation.your.journal.must.verify.the.service",
+    mechanism: "journal.window.thinking.lane.mechanism.sol.pbc.runs.the.model.itself",
+    egress: "journal.window.thinking.lane.egress.when.it.s.on.the.thinking",
+    claims: "journal.window.thinking.lane.claims.no.content.is.retained.no.human",
+    attestation: "journal.window.thinking.lane.attestation.your.journal.must.verify.the.service",
     early_access: "journal.window.thinking.lane.early.access.the.services.portal.shows.how.to",
 };
 
@@ -285,31 +285,31 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                         (
                             "egress_audio_on",
                             CopyValue::String(
-                                "!journal.window.thinking.copy.what.leaves.your.device.the.text",
+                                "journal.window.thinking.copy.what.leaves.your.device.the.text",
                             ),
                         ),
                         (
                             "egress_audio_off",
                             CopyValue::String(
-                                "!journal.window.thinking.copy.what.leaves.your.device.the.text.variant2",
+                                "journal.window.thinking.copy.what.leaves.your.device.the.text.variant2",
                             ),
                         ),
                         (
                             "claims",
                             CopyValue::String(
-                                "!journal.window.thinking.copy.no.content.is.retained.no.human",
+                                "journal.window.thinking.copy.no.content.is.retained.no.human",
                             ),
                         ),
                         (
                             "attestation",
                             CopyValue::String(
-                                "!journal.window.thinking.copy.your.journal.must.verify.the.service",
+                                "journal.window.thinking.copy.your.journal.must.verify.the.service",
                             ),
                         ),
                         (
                             "substrate",
                             CopyValue::String(
-                                "!journal.window.thinking.copy.sol.pbc.runs.the.model.itself",
+                                "journal.window.thinking.copy.sol.pbc.runs.the.model.itself",
                             ),
                         ),
                     ]),
@@ -343,7 +343,7 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "deferral",
                         CopyValue::String(
-                            "!journal.window.thinking.copy.transcription.is.waiting.nothing.is.sent",
+                            "journal.window.thinking.copy.transcription.is.waiting.nothing.is.sent",
                         ),
                     ),
                 ]),
@@ -410,20 +410,18 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ),
                     (
                         "early_access",
-                        CopyValue::String(
-                            "!journal.window.thinking.copy.your.sign.in.doesn.t.have",
-                        ),
+                        CopyValue::String("journal.window.thinking.copy.your.sign.in.doesn.t.have"),
                     ),
                     (
                         "subscribing",
                         CopyValue::String(
-                            "!journal.window.thinking.copy.confidential.processing.isn.t.on.yet",
+                            "journal.window.thinking.copy.confidential.processing.isn.t.on.yet",
                         ),
                     ),
                     (
                         "journal_limit",
                         CopyValue::String(
-                            "!journal.window.thinking.copy.your.sign.in.s.confidential.processing",
+                            "journal.window.thinking.copy.your.sign.in.s.confidential.processing",
                         ),
                     ),
                     (
@@ -456,7 +454,7 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "access_ended",
                 CopyValue::String(
-                    "!journal.window.thinking.copy.confidential.processing.isn.t.active.for",
+                    "journal.window.thinking.copy.confidential.processing.isn.t.active.for",
                 ),
             ),
             (
@@ -467,7 +465,7 @@ const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "portal_link",
-                CopyValue::String("!journal.window.thinking.copy.open.the.services.portal"),
+                CopyValue::String("journal.window.thinking.copy.open.the.services.portal"),
             ),
         ]),
     ),
@@ -1922,7 +1920,7 @@ pub fn localized_setup_copy(facts: &SetupCatalogFacts, locale: &str) -> serde_js
             "title": text(locale, "journal.setup.mark.title"),
             "help": text(locale, "journal.setup.mark.help"),
             "error": text(locale, "journal.setup.mark.error"),
-            "permanence": text(locale, "!journal.setup.mark.permanence"),
+            "permanence": text(locale, "journal.setup.mark.permanence"),
             "try_another": text(locale, "journal.setup.mark.try.another"),
             "continue": text(locale, "journal.setup.folder.continue")
         },

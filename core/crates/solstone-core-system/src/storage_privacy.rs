@@ -15,8 +15,8 @@ mod windows;
 
 use solstone_core_window_catalog::{ENGLISH, text};
 
-const WARNING_ID: &str = "!journal.window.health.storage.privacy.warning";
-const ACCEPTED_ID: &str = "!journal.window.health.storage.privacy.accepted";
+const WARNING_ID: &str = "journal.window.health.storage.privacy.warning";
+const ACCEPTED_ID: &str = "journal.window.health.storage.privacy.accepted";
 const PRIVATE_ID: &str = "journal.window.health.storage.privacy.private";
 const UNAVAILABLE_ID: &str = "journal.window.health.storage.privacy.unavailable";
 

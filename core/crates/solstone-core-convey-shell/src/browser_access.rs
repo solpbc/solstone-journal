@@ -65,7 +65,7 @@ const MAX_PATH_BYTES: usize = 2048;
 const CLOSED_PROGRAM_MESSAGE: &str = "this journal only opens for the account it belongs to. if it's yours and this program runs another way, as a service or inside WSL, you can open local access in your journal's settings.";
 #[cfg(not(windows))]
 const CLOSED_PROGRAM_MESSAGE: &str = "programs on this computer can no longer open this journal here. if it's yours, run solstone journal open to open it in a browser, or update this program.";
-const CONSENT_NEEDED: &str = "!journal.window.local.access.consent.needed";
+const CONSENT_NEEDED: &str = "journal.window.local.access.consent.needed";
 const UNAVAILABLE: &str = "journal.window.local.access.unavailable";
 const SAVE_FAILED: &str = "journal.window.local.access.save.failed";
 

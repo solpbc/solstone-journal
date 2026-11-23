@@ -10,6 +10,6 @@
 
 ### {{journal.window.import.guide.apple.health.line11}}
 
-{{!journal.window.import.guide.apple.health.line13}}
+{{journal.window.import.guide.apple.health.line13}}
 
-{{!journal.window.import.guide.apple.health.line15}}
+{{journal.window.import.guide.apple.health.line15}}

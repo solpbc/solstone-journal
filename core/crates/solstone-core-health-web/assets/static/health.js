@@ -887,8 +887,8 @@
     const older = inventory?.bands?.slice(4);
     const count = (key) => older?.reduce((total, band) => total + (band[key] || 0), 0);
     cost.textContent = older && fresh && inventory.complete
-      ? window.JournalI18n.renderEnglish('journal.window.health.history.cost.consent', [['recordings', String(count('segments_owed'))], ['day_outputs', String(count('daily_units_owed'))], ['activities', String(count('activities_owed'))]])
-      : window.JournalI18n.renderEnglish('journal.window.health.visible.text.finishing.older.recordings.and.day.updates');
+      ? window.JournalI18n.render('journal.window.health.history.cost.consent', [['recordings', String(count('segments_owed'))], ['day_outputs', String(count('daily_units_owed'))], ['activities', String(count('activities_owed'))]])
+      : window.JournalI18n.render('journal.window.health.visible.text.finishing.older.recordings.and.day.updates');
     section.querySelector('[data-work-confirm]').hidden = !work?.confirmation_available || work.history_confirmed;
     const details = section.querySelector('[data-work-details]');
     const errors = [...(work?.error ? [work.error] : inventory?.unreadable || []), ...(work?.retry_errors || [])];

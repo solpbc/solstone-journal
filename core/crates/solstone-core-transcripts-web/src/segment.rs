@@ -1799,11 +1799,11 @@ const TRANSCRIPTS_COPY: &[(&str, &str)] = &[
     ),
     (
         "TR_SPEAKER_VOICE_SCOPE",
-        "!journal.window.transcripts.speaker.copy.voice.scope",
+        "journal.window.transcripts.speaker.copy.voice.scope",
     ),
     (
         "TR_SPEAKER_VOICE_SCOPE_NOTE",
-        "!journal.window.transcripts.speaker.copy.voice.scope.note",
+        "journal.window.transcripts.speaker.copy.voice.scope.note",
     ),
     (
         "TR_SPEAKER_VOICE_NAMED_COUNT",

@@ -73,7 +73,7 @@ pub fn facet_delete(ctx: CommandContext<'_>) -> CommandOutput {
     if !parsed.has_flag("--yes") {
         return stderr(solstone_core_cli_copy::render_for(
             locale,
-            "!journal.cli.sol.journal.facet.delete.yes",
+            "journal.cli.sol.journal.facet.delete.yes",
             &[],
         ));
     }

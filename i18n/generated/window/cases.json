@@ -189038,7 +189038,7 @@
         "agent_name": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "here's what ⁨sample⁩ may see now. change them here or later in the agents app.",
+      "logical_expected": "here's what ⁨sample⁩ may see now. change what it may see here or later in the agents app.",
       "message_id": "journal.window.oauth.reconnect.scope.live",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.oauth.reconnect.scope.live\", [[\"agent_name\", \"sample\"]])",
@@ -506080,13 +506080,13 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "here's what ⁨sample⁩ may see now. change them here or later in the agents app.",
+      "expected": "here's what ⁨sample⁩ may see now. change what it may see here or later in the agents app.",
       "folder": null,
       "inputs": {
         "agent_name": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "here's what ⁨sample⁩ may see now. change them here or later in the agents app.",
+      "logical_expected": "here's what ⁨sample⁩ may see now. change what it may see here or later in the agents app.",
       "message_id": "journal.window.oauth.reconnect.scope.live",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.oauth.reconnect.scope.live\", &[(\"agent_name\", Value::String(\"sample\"))])",

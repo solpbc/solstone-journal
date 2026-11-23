@@ -147,7 +147,7 @@ pub fn resolve_names(ctx: CommandContext<'_>) -> CommandOutput {
     if commit && !parsed.flag("--yes") {
         return stderr(render_for(
             locale,
-            "!journal.cli.sol.speakers.resolve.names.merging.name.variants.can.t",
+            "journal.cli.sol.speakers.resolve.names.merging.name.variants.can.t",
             &[],
         ));
     }

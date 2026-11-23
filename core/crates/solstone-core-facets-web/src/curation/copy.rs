@@ -92,11 +92,11 @@ const COPY: [(&str, &str); 55] = [
     ),
     (
         "CUR_SPEAKER_CANDIDATE_PAIR_BODY",
-        "!journal.window.facets.curation.response.copy.speaker.candidate.pair.body",
+        "journal.window.facets.curation.response.copy.speaker.candidate.pair.body",
     ),
     (
         "CUR_SPEAKER_CANDIDATE_PAIR_MERGE_ACTION",
-        "!journal.window.facets.curation.response.copy.speaker.candidate.pair.merge.action",
+        "journal.window.facets.curation.response.copy.speaker.candidate.pair.merge.action",
     ),
     (
         "CUR_SPEAKER_CANDIDATE_PAIR_DISMISS_ACTION",
@@ -124,11 +124,11 @@ const COPY: [(&str, &str); 55] = [
     ),
     (
         "CUR_ENTITY_PREVIEW_LEAD",
-        "!journal.window.facets.curation.response.copy.entity.preview.lead",
+        "journal.window.facets.curation.response.copy.entity.preview.lead",
     ),
     (
         "CUR_ENTITY_CONFIRM_ACTION",
-        "!journal.window.facets.curation.response.copy.entity.confirm.action",
+        "journal.window.facets.curation.response.copy.entity.confirm.action",
     ),
     (
         "CUR_ENTITY_CANCEL_ACTION",
@@ -148,7 +148,7 @@ const COPY: [(&str, &str); 55] = [
     ),
     (
         "CUR_ENTITY_BATCH_MERGE_LEAD",
-        "!journal.window.facets.curation.response.copy.entity.batch.merge.lead",
+        "journal.window.facets.curation.response.copy.entity.batch.merge.lead",
     ),
     (
         "CUR_ENTITY_BATCH_DISMISS_LEAD",
@@ -156,7 +156,7 @@ const COPY: [(&str, &str); 55] = [
     ),
     (
         "CUR_ENTITY_BATCH_CONFIRM_MERGE_ACTION",
-        "!journal.window.facets.curation.response.copy.entity.batch.confirm.merge.action",
+        "journal.window.facets.curation.response.copy.entity.batch.confirm.merge.action",
     ),
     (
         "CUR_ENTITY_BATCH_CONFIRM_DISMISS_ACTION",
@@ -234,7 +234,7 @@ const COPY: [(&str, &str); 55] = [
     ),
     (
         "CUR_PREVIEW_PARTIAL",
-        "!journal.window.facets.curation.response.copy.preview.partial",
+        "journal.window.facets.curation.response.copy.preview.partial",
     ),
     (
         "CUR_REVIEW_RESTORE_ACTION",

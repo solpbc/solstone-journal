@@ -8,8 +8,8 @@
   "format_intent": "text",
   "source_revision": "676d3c380ccf75b91b3b62f4aa0bd27e2d8ab715524a4fcf7ef05ed2bd84ba3d",
   "max_length": 117,
-  "risk": "consent",
-  "auto_merge": false,
+  "risk": "routine",
+  "auto_merge": true,
   "surfaces": [
     "journal-window"
   ]

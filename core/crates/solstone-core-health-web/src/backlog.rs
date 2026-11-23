@@ -111,7 +111,7 @@ pub fn copy(locale: &str) -> Value {
         "day_badge": text(locale, "journal.window.health.backlog.day.badge"),
         "action_process_now": text(locale, "journal.window.health.backlog.action.process.now"),
         "action_redo_scratch": text(locale, "journal.window.health.backlog.action.redo.scratch"),
-        "confirm_redo_scratch": text(locale, "!journal.window.health.backlog.confirm.redo.scratch"),
+        "confirm_redo_scratch": text(locale, "journal.window.health.backlog.confirm.redo.scratch"),
         "queued_feedback": text(locale, "journal.window.health.backlog.queued.feedback"),
         "unfinished_template_one": text(locale, solstone_core_system_health::UNFINISHED_TEMPLATE_ONE_ID),
         "unfinished_template_many_one_day": text(locale, solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_ONE_DAY_ID),

@@ -18,8 +18,8 @@
   "format_intent": "cardinal",
   "source_revision": "f049c4e99f5d65bc8d7848a5f7cc7d714ba276490a98ce437da546ae6c910a5e",
   "max_length": 1000,
-  "risk": "consent",
-  "auto_merge": false,
+  "risk": "routine",
+  "auto_merge": true,
   "surfaces": [
     "journal-window"
   ],

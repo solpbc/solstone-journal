@@ -764,7 +764,7 @@ fn render_confidential_terminal(
             out,
             display_for(
                 locale,
-                "!journal.cli.sol.call.thinking.subscribe",
+                "journal.cli.sol.call.thinking.subscribe",
                 [("url", &subscribe_url)],
             ),
         );
@@ -807,7 +807,7 @@ fn maybe_echo_portal(locale: &str, out: &mut String, operation: Option<&Value>) 
             out,
             display_for(
                 locale,
-                "!journal.cli.sol.call.thinking.portal",
+                "journal.cli.sol.call.thinking.portal",
                 [("url", &portal_url)],
             ),
         );

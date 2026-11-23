@@ -65,9 +65,9 @@ impl OwnerDetail {
             Self::ServicesUnavailable => "journal.window.agents.service.services.unavailable",
             Self::CertificateRateLimited => "journal.window.agents.service.certificate.wait",
             Self::SubscriptionAddressKept => {
-                "!journal.window.agents.service.subscription.address.kept"
+                "journal.window.agents.service.subscription.address.kept"
             }
-            Self::Subscription => "!journal.window.agents.service.subscription",
+            Self::Subscription => "journal.window.agents.service.subscription",
             Self::NotAcceptedAddressKept => {
                 "journal.window.agents.service.not.accepted.address.kept"
             }

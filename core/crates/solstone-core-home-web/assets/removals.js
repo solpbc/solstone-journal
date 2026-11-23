@@ -49,7 +49,7 @@
     })[char]);
   }
 
-  const { renderHtml, renderEnglishHtml, cardinalQuantity } = window.JournalI18n;
+  const { renderHtml, cardinalQuantity } = window.JournalI18n;
 
   function quantity(count) {
     return ['quantity', cardinalQuantity(count)];
@@ -226,7 +226,7 @@
     });
     const notes = [];
     if (present.policy) notes.push(renderHtml('journal.window.home.originals.row.marked.by.retention', [quantity(originals.policy), originalCount(originals.policy)]) + ' ' + renderHtml('journal.window.home.originals.row.marked.by.retention.detail'));
-    if (present.offload) notes.push(renderEnglishHtml('journal.window.home.originals.row.copied.by.backup', [quantity(originals.offload), originalCount(originals.offload)]) + ' ' + renderEnglishHtml('journal.window.home.originals.row.copied.by.backup.detail', [quantity(originals.offload)]));
+    if (present.offload) notes.push(renderHtml('journal.window.home.originals.row.copied.by.backup', [quantity(originals.offload), originalCount(originals.offload)]) + ' ' + renderHtml('journal.window.home.originals.row.copied.by.backup.detail', [quantity(originals.offload)]));
     notes.push(renderHtml('journal.window.home.originals.row.nothing.else.goes', [quantity(originals.policy + originals.offload)]));
     return '<p class="removals-card-origin" data-removals-note>' + notes.join(' ') + '</p>';
   }
@@ -264,9 +264,9 @@
     if (!confirmation) return '';
     if (confirmation.kind === 'recover') {
       return '<section class="removals-card-confirm" role="dialog">'
-        + '<h3>' + renderEnglishHtml('journal.window.home.originals.copy.confirm.recover.heading') + '</h3>'
-        + '<p>' + renderEnglishHtml('journal.window.home.originals.copy.confirm.recover.body') + '</p>'
-        + '<button type="button" data-removal-action="confirm-finish">' + renderEnglishHtml('journal.window.home.originals.copy.confirm.recover.go') + '</button>'
+        + '<h3>' + renderHtml('journal.window.home.originals.copy.confirm.recover.heading') + '</h3>'
+        + '<p>' + renderHtml('journal.window.home.originals.copy.confirm.recover.body') + '</p>'
+        + '<button type="button" data-removal-action="confirm-finish">' + renderHtml('journal.window.home.originals.copy.confirm.recover.go') + '</button>'
         + '<button type="button" data-removal-action="cancel">' + renderHtml('journal.window.home.originals.copy.confirm.cancel') + '</button>'
         + '</section>';
     }
@@ -285,39 +285,39 @@
   function confirmSingleRow(row) {
     const count = rowCount(row);
     const numbered = [quantity(count)];
-    const source = { sourceEnglish: true };
+    const source = {};
     const scope = [quantity(count), originalCount(count), ['date_and_time', identityLabel(row, source)]];
     const stream = streamLabel(row.stream, source);
     if (stream !== null) scope.push(['stream_name', stream]);
     const policy = origin(row) === 'policy';
-    const heading = renderEnglishHtml('journal.window.home.originals.confirm.delete.heading', numbered);
-    const nothingElse = renderEnglishHtml('journal.window.home.originals.confirm.delete.named.stream.third', numbered);
+    const heading = renderHtml('journal.window.home.originals.confirm.delete.heading', numbered);
+    const nothingElse = renderHtml('journal.window.home.originals.confirm.delete.named.stream.third', numbered);
     if (policy) {
       const move = stream === null
         ? 'journal.window.home.originals.confirm.trash.until.erase.default.stream.first'
         : 'journal.window.home.originals.confirm.trash.until.erase.named.stream.first';
       const erase = trashDays === null
-        ? renderEnglishHtml('journal.window.home.originals.confirm.trash.named.stream.third', numbered)
-        : renderEnglishHtml('journal.window.home.originals.confirm.trash.until.erase.named.stream.third',
+        ? renderHtml('journal.window.home.originals.confirm.trash.named.stream.third', numbered)
+        : renderHtml('journal.window.home.originals.confirm.trash.until.erase.named.stream.third',
           [...numbered, ...retentionDaysArgs()]);
       const sentences = [
-        renderEnglishHtml(move, scope), nothingElse, erase,
-        renderEnglishHtml('journal.window.home.originals.confirm.trash.until.erase.named.stream.fourth', numbered)
+        renderHtml(move, scope), nothingElse, erase,
+        renderHtml('journal.window.home.originals.confirm.trash.until.erase.named.stream.fourth', numbered)
       ];
       return confirmSection(heading, [sentences.join(' ')],
-        renderEnglishHtml('journal.window.home.originals.copy.confirm.go.trash'), true);
+        renderHtml('journal.window.home.originals.copy.confirm.go.trash'), true);
     }
     const remove = stream === null
       ? 'journal.window.home.originals.confirm.delete.default.stream.first'
       : 'journal.window.home.originals.confirm.delete.named.stream.first';
     const sentences = [
-      renderEnglishHtml(remove, scope),
-      renderEnglishHtml('journal.window.home.originals.confirm.delete.named.stream.second'),
+      renderHtml(remove, scope),
+      renderHtml('journal.window.home.originals.confirm.delete.named.stream.second'),
       nothingElse,
-      renderEnglishHtml('journal.window.home.originals.confirm.delete.named.stream.fourth')
+      renderHtml('journal.window.home.originals.confirm.delete.named.stream.fourth')
     ];
     return confirmSection(heading, [sentences.join(' ')],
-      renderEnglishHtml('journal.window.home.originals.confirm.delete.action', numbered), false);
+      renderHtml('journal.window.home.originals.confirm.delete.action', numbered), false);
   }
 
   function confirmSelectedRows(confirmRows) {
@@ -325,46 +325,46 @@
     confirmRows.forEach(row => { byOrigin[origin(row)] += rowCount(row); });
     const n = byOrigin.policy + byOrigin.offload;
     const selectedRows = [quantity(confirmRows.length)];
-    const heading = renderEnglishHtml('journal.window.home.originals.confirm.delete.heading', selectedRows);
+    const heading = renderHtml('journal.window.home.originals.confirm.delete.heading', selectedRows);
     if (byOrigin.offload === 0) {
       const erase = trashDays === null
-        ? renderEnglishHtml('journal.window.home.originals.confirm.bulk.trash.third')
-        : renderEnglishHtml('journal.window.home.originals.confirm.bulk.trash.until.erase.third', retentionDaysArgs());
+        ? renderHtml('journal.window.home.originals.confirm.bulk.trash.third')
+        : renderHtml('journal.window.home.originals.confirm.bulk.trash.until.erase.third', retentionDaysArgs());
       const sentences = [
-        renderEnglishHtml('journal.window.home.originals.confirm.bulk.trash.until.erase.first', [originalCount(n)]),
-        renderEnglishHtml('journal.window.home.originals.confirm.bulk.delete.third'),
+        renderHtml('journal.window.home.originals.confirm.bulk.trash.until.erase.first', [originalCount(n)]),
+        renderHtml('journal.window.home.originals.confirm.bulk.delete.third'),
         erase,
-        renderEnglishHtml('journal.window.home.originals.confirm.bulk.trash.until.erase.fourth')
+        renderHtml('journal.window.home.originals.confirm.bulk.trash.until.erase.fourth')
       ];
       return confirmSection(heading, [sentences.join(' ')],
-        renderEnglishHtml('journal.window.home.originals.copy.confirm.go.trash'), true);
+        renderHtml('journal.window.home.originals.copy.confirm.go.trash'), true);
     }
-    const unavailable = renderEnglishHtml('journal.window.home.originals.confirm.delete.named.stream.second');
-    const go = renderEnglishHtml('journal.window.home.originals.confirm.delete.action', selectedRows);
+    const unavailable = renderHtml('journal.window.home.originals.confirm.delete.named.stream.second');
+    const go = renderHtml('journal.window.home.originals.confirm.delete.action', selectedRows);
     if (byOrigin.policy === 0) {
       const sentences = [
-        renderEnglishHtml('journal.window.home.originals.confirm.bulk.delete.first', [originalCount(n)]),
+        renderHtml('journal.window.home.originals.confirm.bulk.delete.first', [originalCount(n)]),
         unavailable,
-        renderEnglishHtml('journal.window.home.originals.confirm.bulk.delete.third'),
-        renderEnglishHtml('journal.window.home.originals.confirm.delete.named.stream.fourth')
+        renderHtml('journal.window.home.originals.confirm.bulk.delete.third'),
+        renderHtml('journal.window.home.originals.confirm.delete.named.stream.fourth')
       ];
       return confirmSection(heading, [sentences.join(' ')], go, false);
     }
     const offload = [
-      renderEnglishHtml('journal.window.home.originals.confirm.mixed.delete.first', [quantity(byOrigin.offload)]),
+      renderHtml('journal.window.home.originals.confirm.mixed.delete.first', [quantity(byOrigin.offload)]),
       unavailable,
-      renderEnglishHtml('journal.window.home.originals.confirm.mixed.delete.third', [quantity(byOrigin.offload)])
+      renderHtml('journal.window.home.originals.confirm.mixed.delete.third', [quantity(byOrigin.offload)])
     ];
     const erase = trashDays === null
-      ? renderEnglishHtml('journal.window.home.originals.confirm.mixed.trash.first', [quantity(byOrigin.policy)])
-      : renderEnglishHtml('journal.window.home.originals.confirm.mixed.trash.until.erase.first',
+      ? renderHtml('journal.window.home.originals.confirm.mixed.trash.first', [quantity(byOrigin.policy)])
+      : renderHtml('journal.window.home.originals.confirm.mixed.trash.until.erase.first',
         [quantity(byOrigin.policy), ...retentionDaysArgs()]);
     const policy = [
       erase,
-      renderEnglishHtml('journal.window.home.originals.confirm.trash.until.erase.named.stream.fourth', [quantity(byOrigin.policy)])
+      renderHtml('journal.window.home.originals.confirm.trash.until.erase.named.stream.fourth', [quantity(byOrigin.policy)])
     ];
     return confirmSection(heading, [
-      renderEnglishHtml('journal.window.home.originals.confirm.mixed.summary', [
+      renderHtml('journal.window.home.originals.confirm.mixed.summary', [
         ['deleted_count', String(byOrigin.offload)], ['trashed_count', String(byOrigin.policy)]
       ]),
       offload.join(' '), policy.join(' ')

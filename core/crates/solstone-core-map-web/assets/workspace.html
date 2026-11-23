@@ -1202,7 +1202,7 @@ button.map-month-row:hover { background: var(--cream); }
     };
     const source = installed ? (installed.containment ? 'outlines' : 'places') : 'base';
     if (installed) elements.overture = link('https://docs.overturemaps.org/attribution/');
-    return markupHtml(window.JournalI18n.renderEnglishMarkup(`journal.window.map.attribution.${source}`, [], { elements }));
+    return markupHtml(window.JournalI18n.renderMarkup(`journal.window.map.attribution.${source}`, [], { elements }));
   }
 
   function renderDay(data) {

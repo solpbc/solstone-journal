@@ -3,7 +3,7 @@
   "SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL": "journal.window.handoff.spl.private.link.consent.link.prepare.failed.detail",
   "SPL_OUTCOME_GUIDANCE": {
     "approved": null,
-    "pending": "!journal.window.handoff.spl.outcome.guidance.pending",
+    "pending": "journal.window.handoff.spl.outcome.guidance.pending",
     "revoked": "journal.window.handoff.spl.outcome.guidance.revoked",
     "expired": "journal.window.handoff.spl.outcome.guidance.expired",
     "malformed": "journal.window.handoff.spl.outcome.guidance.malformed",
@@ -23,6 +23,6 @@
     "malformed": "journal.window.handoff.sme.outcome.guidance.malformed",
     "network_error": "journal.window.handoff.sme.outcome.guidance.network.error",
     "local_error": "journal.window.handoff.sme.outcome.guidance.local.error",
-    "needs_subscription": "!journal.window.handoff.sme.outcome.guidance.needs.subscription"
+    "needs_subscription": "journal.window.handoff.sme.outcome.guidance.needs.subscription"
   }
 }

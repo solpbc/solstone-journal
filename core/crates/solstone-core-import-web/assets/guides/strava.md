@@ -7,8 +7,8 @@
 5. {{journal.window.import.guide.strava.line7}}
 6. {{journal.window.import.guide.strava.line8}}
 
-{{!journal.window.import.guide.strava.line10}}
+{{journal.window.import.guide.strava.line10}}
 
 ### {{journal.window.import.guide.strava.line12}}
 
-{{!journal.window.import.guide.strava.line14}}
+{{journal.window.import.guide.strava.line14}}

@@ -8,7 +8,7 @@
   "format_intent": "text",
   "source_revision": "f341f0fb9a07e7c8e805c92ccd1da59e32709120d11f8b3fb4603429e3db1553",
   "max_length": 531,
-  "risk": "legal",
+  "risk": "consent",
   "auto_merge": false,
   "surfaces": [
     "journal-cli"

@@ -467,10 +467,14 @@ catalog for its native screen copy, events and HTTP responses. Read
 `SOLSTONE_LOCALE` in the CLI process and use the request locale in HTTP
 handlers. Keep protocol fields stable and render display fields for the caller.
 Reference messages from workspace markup with `{{journal.window.…}}` markers.
-For localized copy, use `JournalI18n.render` for JavaScript text and
-`JournalI18n.renderHtml` for text inserted into HTML. Keep restricted messages
-in source English with `{{!journal.window.…}}`, `JournalI18n.renderEnglish`
-or `JournalI18n.renderEnglishHtml`.
+For localized copy, use `JournalI18n.render` for JavaScript text,
+`JournalI18n.renderHtml` for text inserted into HTML and
+`JournalI18n.renderMarkup` for messages with inline DOM elements. Keep only
+`legal` and `statutory` messages in source English with `{{!journal.window.…}}`,
+`JournalI18n.renderEnglish`, `JournalI18n.renderEnglishHtml` or
+`JournalI18n.renderEnglishMarkup`. Render `consent` and `payment` messages
+through the normal localized path; their sidecars keep `auto_merge: false`, and
+translations require human review before shipping.
 
 Keep each sentence whole in one catalog message. Pass named arguments directly
 and describe them in the message's sidecar. Use Fluent cardinal selectors for
@@ -486,7 +490,7 @@ Follow the [catalog compiler guide](tools/i18n/README.md) to refresh source
 revisions. Run
 `make journal-window-catalog` and commit the generated resources.
 
-Use the window catalog for stored backup diagnostics and for notices about backup, agent access, device access and updates. Render the English text when writing a backup record or broadcasting a notice on Callosum. Keep the English detail in saved agent service and activity records for older readers. On the OAuth authorization page, keep consent messages in English and render status messages in the language of the request.
+Use the window catalog for stored backup diagnostics and for notices about backup, agent access, device access and updates. Render the English text when writing a backup record or broadcasting a notice on Callosum. Keep the English detail in saved agent service and activity records for older readers. On the OAuth authorization page, render consent and status messages in the language of the request.
 
 Use the window catalog for device ingest notices and for journal-written labels in calendar and Obsidian entries. Keep the source event and the note text as received. For a new Obsidian transcript, store its display receipt in the segment’s `talents/note_transcript.md.display`. Read older transcripts as written.
 

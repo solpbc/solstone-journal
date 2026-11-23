@@ -25,7 +25,7 @@
   "format_intent": "text",
   "source_revision": "bc4464e9a2393ecbb905f2598e598a242e37796c185f4c7457bc63822fbefe3d",
   "max_length": 1000,
-  "risk": "legal",
+  "risk": "consent",
   "auto_merge": false,
   "surfaces": [
     "journal-window"

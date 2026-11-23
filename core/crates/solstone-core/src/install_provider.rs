@@ -33,17 +33,17 @@ const OBSERVE_PROGRESS_INTERVAL: Duration = Duration::from_secs(10);
 // would name two parties the native path never contacts. Carried verbatim from
 // the reference's post-flip wording rather than re-authored.
 const PARAKEET_DOWNLOAD_DISCLOSURE: &str =
-    "!journal.cli.host.install.provider.global.parakeet.cpp.fetches.two.artifacts";
+    "journal.cli.host.install.provider.global.parakeet.cpp.fetches.two.artifacts";
 const LOCAL_DOWNLOAD_DISCLOSURE: &str =
-    "!journal.cli.host.install.provider.global.local.model.assets.downloading.llama";
+    "journal.cli.host.install.provider.global.local.model.assets.downloading.llama";
 const WINDOWS_PARAKEET_BUNDLED: &str =
-    "!journal.cli.host.install.provider.global.parakeet.cpp.and.its.speech";
+    "journal.cli.host.install.provider.global.parakeet.cpp.and.its.speech";
 const MAC_PARAKEET_UNAVAILABLE: &str =
     "journal.cli.host.install.provider.global.parakeet.cpp.can.t.run";
 const WINDOWS_LOCAL_DOWNLOAD_DISCLOSURE: &str =
-    "!journal.cli.host.install.provider.global.local.thinking.downloads.model.and";
+    "journal.cli.host.install.provider.global.local.thinking.downloads.model.and";
 const MLX_LOCAL_DOWNLOAD_DISCLOSURE: &str =
-    "!journal.cli.host.install.provider.global.local.thinking.downloads.model.apache";
+    "journal.cli.host.install.provider.global.local.thinking.downloads.model.apache";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct InstallProviderOutcome {

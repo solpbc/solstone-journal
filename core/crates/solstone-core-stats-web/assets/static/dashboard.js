@@ -14,7 +14,7 @@
   const BACKLOG_COPY = Object.freeze({
     ACTION_PROCESS_NOW: window.JournalI18n.render('journal.window.stats.backlog.process.now'),
     ACTION_REDO_SCRATCH: window.JournalI18n.render('journal.window.health.backlog.action.redo.scratch'),
-    CONFIRM_REDO_SCRATCH: window.JournalI18n.renderEnglish('journal.window.stats.backlog.redo.confirm'),
+    CONFIRM_REDO_SCRATCH: window.JournalI18n.render('journal.window.stats.backlog.redo.confirm'),
     QUEUED_FEEDBACK: window.JournalI18n.render('journal.window.stats.backlog.queued'),
     VERDICT_CAUGHT_UP: window.JournalI18n.render('journal.window.stats.backlog.caught.up'),
     VERDICT_CANT_TELL: window.JournalI18n.render('journal.window.stats.backlog.unknown'),

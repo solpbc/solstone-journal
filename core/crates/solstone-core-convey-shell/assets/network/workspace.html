@@ -1600,8 +1600,8 @@ systemctl --user start solstone-linux</code></div>
         setHidden(privateLinkOperationLink, !linkUrl);
         setAttr(privateLinkOperationLink, 'href', linkUrl);
         setText(privateLinkOperationLink, subscribeUrl
-          ? linkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA || window.JournalI18n.renderEnglish('journal.window.network.status.text.open.the.services.portal')
-          : linkCopy.PRIVATE_LINK_PORTAL_CTA || window.JournalI18n.renderEnglish('journal.window.network.status.text.continue.to.approve'));
+          ? linkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA || window.JournalI18n.render('journal.window.network.status.text.open.the.services.portal')
+          : linkCopy.PRIVATE_LINK_PORTAL_CTA || window.JournalI18n.render('journal.window.network.status.text.continue.to.approve'));
       }
       if (privateLinkOperationRetry) {
         setHidden(privateLinkOperationRetry, !privateLinkRetryAction);

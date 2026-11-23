@@ -6,30 +6,30 @@
 
   const BACKUP_COPY = {
     "service_name": window.JournalI18n.render('journal.window.backup.copy.service.name'),
-    "brand_lock": window.JournalI18n.renderEnglish('journal.window.backup.copy.brand.lock'),
+    "brand_lock": window.JournalI18n.render('journal.window.backup.copy.brand.lock'),
     "intro": {
       "title": window.JournalI18n.render('journal.window.backup.copy.intro.title'),
-      "subtitle": window.JournalI18n.renderEnglish('journal.window.backup.copy.intro.subtitle'),
+      "subtitle": window.JournalI18n.render('journal.window.backup.copy.intro.subtitle'),
       "bullets": [
         window.JournalI18n.render('journal.window.backup.copy.intro.bullets.item1'),
         window.JournalI18n.render('journal.window.backup.copy.intro.bullets.item2'),
         window.JournalI18n.render('journal.window.backup.copy.intro.bullets.item3')
       ],
       "optional": window.JournalI18n.render('journal.window.backup.copy.intro.optional'),
-      "steps": window.JournalI18n.renderEnglish('journal.window.backup.copy.intro.steps')
+      "steps": window.JournalI18n.render('journal.window.backup.copy.intro.steps')
     },
     "educate": {
-      "stakes": window.JournalI18n.renderEnglish('journal.window.backup.copy.educate.stakes')
+      "stakes": window.JournalI18n.render('journal.window.backup.copy.educate.stakes')
     },
     "key": {
-      "theft_honesty": window.JournalI18n.renderEnglish('journal.window.backup.copy.key.theft.honesty'),
-      "pm_caution": window.JournalI18n.renderEnglish('journal.window.backup.copy.key.pm.caution'),
+      "theft_honesty": window.JournalI18n.render('journal.window.backup.copy.key.theft.honesty'),
+      "pm_caution": window.JournalI18n.render('journal.window.backup.copy.key.pm.caution'),
       "save_key": window.JournalI18n.render('journal.window.backup.copy.key.save.key'),
       "save_failed": window.JournalI18n.render('journal.window.backup.copy.key.save.failed'),
       "copy_failed": window.JournalI18n.render('journal.window.backup.copy.key.copy.failed'),
       "copy_label": window.JournalI18n.render('journal.window.backup.copy.key.copy.label'),
       "continue": window.JournalI18n.render('journal.window.backup.copy.key.continue'),
-      "clipboard_caveat": window.JournalI18n.renderEnglish('journal.window.backup.copy.key.clipboard.caveat')
+      "clipboard_caveat": window.JournalI18n.render('journal.window.backup.copy.key.clipboard.caveat')
     },
     "confirm": {
       "prompt": window.JournalI18n.render('journal.window.backup.copy.confirm.prompt'),
@@ -68,8 +68,8 @@
         "saved_existing": window.JournalI18n.render('journal.window.backup.copy.destination.edit.saved.existing'),
         "saved_new": window.JournalI18n.render('journal.window.backup.copy.destination.edit.saved.new'),
         "confirm_title": window.JournalI18n.render('journal.window.backup.copy.destination.edit.confirm.title'),
-        "confirm_lead": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.edit.confirm.lead'),
-        "confirm_days_unavailable": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.edit.confirm.days.unavailable'),
+        "confirm_lead": window.JournalI18n.render('journal.window.backup.copy.destination.edit.confirm.lead'),
+        "confirm_days_unavailable": window.JournalI18n.render('journal.window.backup.copy.destination.edit.confirm.days.unavailable'),
         "confirm_action": window.JournalI18n.render('journal.window.backup.copy.destination.edit.confirm.action'),
         "refusals": {
           "auth_failed": window.JournalI18n.render('journal.window.backup.copy.destination.edit.refusals.auth.failed'),
@@ -85,18 +85,18 @@
         "byo": {
           "title": window.JournalI18n.render('journal.window.backup.copy.destination.modes.byo.title'),
           "desc": window.JournalI18n.render('journal.window.backup.copy.destination.modes.byo.desc'),
-          "note": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.modes.byo.note')
+          "note": window.JournalI18n.render('journal.window.backup.copy.destination.modes.byo.note')
         },
         "hosted": {
           "title": window.JournalI18n.render('journal.window.backup.copy.destination.modes.hosted.title'),
           "desc": window.JournalI18n.render('journal.window.backup.copy.destination.modes.hosted.desc'),
-          "note": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.modes.hosted.note'),
+          "note": window.JournalI18n.render('journal.window.backup.copy.destination.modes.hosted.note'),
           "cta": window.JournalI18n.render('journal.window.backup.copy.destination.modes.hosted.cta')
         }
       }
     },
     "hosted": {
-      "setup_hint": window.JournalI18n.renderEnglish('journal.window.backup.copy.hosted.setup.hint'),
+      "setup_hint": window.JournalI18n.render('journal.window.backup.copy.hosted.setup.hint'),
       "location_label": window.JournalI18n.render('journal.window.backup.copy.hosted.location.label'),
       "location_detail_summary": window.JournalI18n.render('journal.window.backup.copy.hosted.location.detail.summary'),
       "manage_label": window.JournalI18n.render('journal.window.backup.copy.hosted.manage.label'),
@@ -104,11 +104,11 @@
     },
     "management": {
       "destructive_action": window.JournalI18n.render('journal.window.backup.copy.management.destructive.action'),
-      "destructive_caption": window.JournalI18n.renderEnglish('journal.window.backup.copy.management.destructive.caption'),
-      "teardown_gate_unavailable_lead": window.JournalI18n.renderEnglish('journal.window.backup.copy.management.teardown.gate.unavailable.lead'),
-      "teardown_gate_zero_lead": window.JournalI18n.renderEnglish('journal.window.backup.copy.management.teardown.gate.zero.lead'),
+      "destructive_caption": window.JournalI18n.render('journal.window.backup.copy.management.destructive.caption'),
+      "teardown_gate_unavailable_lead": window.JournalI18n.render('journal.window.backup.copy.management.teardown.gate.unavailable.lead'),
+      "teardown_gate_zero_lead": window.JournalI18n.render('journal.window.backup.copy.management.teardown.gate.zero.lead'),
       "teardown_confirm_phrase": "delete",
-      "teardown_confirm_prompt": window.JournalI18n.renderEnglish('journal.window.backup.copy.management.teardown.confirm.prompt'),
+      "teardown_confirm_prompt": window.JournalI18n.render('journal.window.backup.copy.management.teardown.confirm.prompt'),
       "teardown_restore_first_action": window.JournalI18n.render('journal.window.backup.copy.management.teardown.restore.first.action'),
       "rotate_key_summary": window.JournalI18n.render('journal.window.backup.copy.management.rotate.key.summary'),
       "rotate_key_caption": window.JournalI18n.render('journal.window.backup.copy.management.rotate.key.caption'),
@@ -179,7 +179,7 @@
     "offload": {
       "title": window.JournalI18n.render('journal.window.backup.copy.offload.title'),
       "unsupported": window.JournalI18n.render('journal.window.backup.copy.offload.unsupported'),
-      "stakes": window.JournalI18n.renderEnglish('journal.window.backup.copy.offload.stakes'),
+      "stakes": window.JournalI18n.render('journal.window.backup.copy.offload.stakes'),
       "stalled_lead": window.JournalI18n.render('journal.window.backup.copy.offload.stalled.lead'),
       "backup_only_label": window.JournalI18n.render('journal.window.backup.copy.offload.backup.only.label'),
       "restore_report": {
@@ -348,7 +348,7 @@
       "cleanup_contended": window.JournalI18n.render('journal.window.backup.copy.action.labels.cleanup.contended'),
       "check_cleanup": window.JournalI18n.render('journal.window.backup.copy.action.labels.check.cleanup'),
       "start": window.JournalI18n.render('journal.window.backup.copy.action.labels.start'),
-      "understand": window.JournalI18n.renderEnglish('journal.window.backup.copy.action.labels.understand'),
+      "understand": window.JournalI18n.render('journal.window.backup.copy.action.labels.understand'),
       "save_destination": window.JournalI18n.render('journal.window.backup.copy.action.labels.save.destination'),
       "change_destination": window.JournalI18n.render('journal.window.backup.copy.action.labels.change.destination'),
       "pause": window.JournalI18n.render('journal.window.backup.copy.action.labels.pause'),
@@ -1477,9 +1477,9 @@
       if (restoreFirst) setButtonDisabled(restoreFirst, true);
       return;
     }
-    stakes.textContent = window.JournalI18n.renderEnglish('journal.window.backup.consent.teardown.backup.only.days', [
+    stakes.textContent = window.JournalI18n.render('journal.window.backup.consent.teardown.backup.only.days', [
       ...backupCount('days', totals.days, totals.days.toLocaleString()),
-      ['backup_size', formatBytes(totals.bytes, { sourceEnglish: true })],
+      ['backup_size', formatBytes(totals.bytes)],
     ]);
     if (restoreFirst) setButtonDisabled(restoreFirst, false);
   }
@@ -2488,9 +2488,9 @@
     let line = '';
     if (totals === null) line = editCopy.confirm_days_unavailable || '';
     else if (kept) {
-      line = window.JournalI18n.renderEnglish('journal.window.backup.consent.destination.backup.only.days', [
+      line = window.JournalI18n.render('journal.window.backup.consent.destination.backup.only.days', [
         ...backupCount('days', totals.days, totals.days.toLocaleString()),
-        ['backup_size', formatBytes(totals.bytes, { sourceEnglish: true })],
+        ['backup_size', formatBytes(totals.bytes)],
       ]);
     }
     showMessage('[data-switch-days]', line);

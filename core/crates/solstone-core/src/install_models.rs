@@ -21,7 +21,7 @@ use solstone_core_journal_config::{
 fn rfdetr_bundled_asset_disclosure() -> String {
     solstone_core_cli_copy::display_for(
         crate::host_locale(),
-        "!journal.cli.host.install.models.rfdetr.bundled.asset.disclosure.rf.detr.assets.verifying.bundled",
+        "journal.cli.host.install.models.rfdetr.bundled.asset.disclosure.rf.detr.assets.verifying.bundled",
         [("version", &rfdetr_install::ENGINE_VERSION)],
     )
 }
@@ -473,7 +473,7 @@ where
                 exit_code: 0,
                 stdout: [provider_stdout, vec![ready_line(&path)]].concat(),
                 stderr: (!options.check)
-                    .then(|| solstone_core_cli_copy::render_for(crate::host_locale(), "!journal.cli.host.install.models.coreml.disclosure.parakeet.assets.downloading.parakeet.tdt", &[]))
+                    .then(|| solstone_core_cli_copy::render_for(crate::host_locale(), "journal.cli.host.install.models.coreml.disclosure.parakeet.assets.downloading.parakeet.tdt", &[]))
                     .into_iter()
                     .collect(),
             },

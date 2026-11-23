@@ -1076,7 +1076,7 @@ fn said_model(
                 .collect::<Vec<_>>();
             json!({
                 "heading": text(locale, "journal.window.home.week.said.heading"),
-                "leave_out_hint": text(locale, "!journal.window.home.week.said.leave.out.scope"),
+                "leave_out_hint": text(locale, "journal.window.home.week.said.leave.out.scope"),
                 "days": days,
             })
         }

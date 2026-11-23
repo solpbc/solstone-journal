@@ -33,7 +33,7 @@
   "format_intent": "text",
   "source_revision": "486902f43f92aaa7109f01a6a08ec2b9f5659603c0101e1444564b0319bbdcd8",
   "max_length": 1000,
-  "risk": "legal",
+  "risk": "consent",
   "auto_merge": false,
   "surfaces": [
     "journal-window"

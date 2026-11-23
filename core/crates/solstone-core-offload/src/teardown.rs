@@ -70,16 +70,16 @@ pub fn storage_retention_message_id(
     match retention {
         StorageRetention::Removes => None,
         StorageRetention::Keeps(StorageKeeps::Versions) => Some(
-            "!journal.window.backup.response.storage.retention.result.your.storage.keeps.earlier.versions.of",
+            "journal.window.backup.response.storage.retention.result.your.storage.keeps.earlier.versions.of",
         ),
         StorageRetention::Keeps(StorageKeeps::ObjectLock | StorageKeeps::FileLock) => Some(
-            "!journal.window.backup.response.storage.retention.result.your.bucket.can.lock.files.against",
+            "journal.window.backup.response.storage.retention.result.your.bucket.can.lock.files.against",
         ),
         StorageRetention::Keeps(StorageKeeps::HiddenFiles) => Some(
-            "!journal.window.backup.response.storage.retention.result.your.b2.bucket.only.hides.deleted",
+            "journal.window.backup.response.storage.retention.result.your.b2.bucket.only.hides.deleted",
         ),
         StorageRetention::Unknown => Some(
-            "!journal.window.backup.response.storage.retention.result.your.journal.couldn.t.check.whether",
+            "journal.window.backup.response.storage.retention.result.your.journal.couldn.t.check.whether",
         ),
     }
 }

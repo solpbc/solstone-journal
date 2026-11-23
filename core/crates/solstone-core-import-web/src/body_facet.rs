@@ -31,37 +31,37 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ("heading", "journal.window.import.body.facet.shared.heading"),
     (
         "ask_existing",
-        "!journal.window.import.body.facet.shared.ask.named",
+        "journal.window.import.body.facet.shared.ask.named",
     ),
     (
         "ask_make_body",
-        "!journal.window.import.body.facet.shared.ask.make.body",
+        "journal.window.import.body.facet.shared.ask.make.body",
     ),
     (
         "ask_unmute",
-        "!journal.window.import.body.facet.shared.ask.unmute",
+        "journal.window.import.body.facet.shared.ask.unmute",
     ),
     (
         "no_means",
-        "!journal.window.import.body.facet.shared.no.means",
+        "journal.window.import.body.facet.shared.no.means",
     ),
-    ("yes", "!journal.window.import.body.facet.shared.yes"),
-    ("no", "!journal.window.import.body.facet.shared.no"),
+    ("yes", "journal.window.import.body.facet.shared.yes"),
+    ("no", "journal.window.import.body.facet.shared.no"),
     (
         "this_import",
-        "!journal.window.import.body.facet.shared.this.import",
+        "journal.window.import.body.facet.shared.this.import",
     ),
     (
         "none_option",
-        "!journal.window.import.body.facet.shared.none.option",
+        "journal.window.import.body.facet.shared.none.option",
     ),
     (
         "files_earlier",
-        "!journal.window.import.body.facet.shared.files.named",
+        "journal.window.import.body.facet.shared.files.named",
     ),
     (
         "none_hint",
-        "!journal.window.import.body.facet.shared.none.hint",
+        "journal.window.import.body.facet.shared.none.hint",
     ),
     (
         "unanswered",
@@ -83,27 +83,27 @@ pub(crate) const COPY: &[(&str, &str)] = &[
 pub(crate) const APPLE_COPY: &[(&str, &str)] = &[
     (
         "ask_existing",
-        "!journal.window.import.body.facet.apple.ask.named",
+        "journal.window.import.body.facet.apple.ask.named",
     ),
     (
         "ask_make_body",
-        "!journal.window.import.body.facet.apple.ask.make.body",
+        "journal.window.import.body.facet.apple.ask.make.body",
     ),
     (
         "ask_unmute",
-        "!journal.window.import.body.facet.apple.ask.unmute",
+        "journal.window.import.body.facet.apple.ask.unmute",
     ),
     (
         "no_means",
-        "!journal.window.import.body.facet.apple.no.means",
+        "journal.window.import.body.facet.apple.no.means",
     ),
     (
         "files_earlier",
-        "!journal.window.import.body.facet.apple.files.named",
+        "journal.window.import.body.facet.apple.files.named",
     ),
     (
         "none_hint",
-        "!journal.window.import.body.facet.apple.none.hint",
+        "journal.window.import.body.facet.apple.none.hint",
     ),
 ];
 

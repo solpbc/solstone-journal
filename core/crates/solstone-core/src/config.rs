@@ -855,7 +855,7 @@ fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) 
             "{}",
             solstone_core_cli_copy::render_for(
                 crate::host_locale(),
-                "!journal.cli.host.config.execute.warning.force.bypasses.confirmation.and",
+                "journal.cli.host.config.execute.warning.force.bypasses.confirmation.and",
                 &[]
             )
         );

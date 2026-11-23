@@ -26,7 +26,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 Status::Warn
             },
             if !privacy.private && !privacy.consented {
-                solstone_core_cli_copy::text("!journal.cli.doctor.storage.privacy.choice")
+                solstone_core_cli_copy::text("journal.cli.doctor.storage.privacy.choice")
             } else {
                 privacy.message
             },

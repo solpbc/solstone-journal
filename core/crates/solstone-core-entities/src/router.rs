@@ -4881,7 +4881,7 @@ fn merged_entity_refusal(journal_root: &Path, identity_id: &str, successor: &str
     refusal(
         ReasonCode::EntityMerged,
         RefusalDetail::Formatted(
-            "!journal.window.entities.response.entity.merged.permanent",
+            "journal.window.entities.response.entity.merged.permanent",
             vec![
                 ("merged_id", identity_id.to_string()),
                 ("survivor_id", survivor.to_string()),

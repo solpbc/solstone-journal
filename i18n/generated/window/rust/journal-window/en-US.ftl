@@ -1792,7 +1792,7 @@ m6a6f75726e616c2e77696e646f772e6261636b75702e636f6e73656e742e64657374696e6174696
 }
 
 m6a6f75726e616c2e77696e646f772e6261636b75702e636f6e73656e742e74656172646f776e2e6261636b75702e6f6e6c792e64617973 = { $i18nCategory ->
-    [one] { $days } days of your journal ({ $backup_size }) exist only in this backup. deleting the backup deletes them everywhere, forever.
+    [one] { $days } day of your journal ({ $backup_size }) exists only in this backup. deleting the backup deletes it everywhere, forever.
    *[other] { $days } days of your journal ({ $backup_size }) exist only in this backup. deleting the backup deletes them everywhere, forever.
 }
 
@@ -4624,7 +4624,7 @@ m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e6572617365642e6f6
 m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e6572617365732e756e6c6573732e796f752e7265636f7665722e6974 = erases { $erase_day } unless you recover it.
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e66616365742e6d616e792e6974732e706c6163652e616e642e6e6f7465732e696e = { $i18nCategory ->
-    [one] its place and notes in { $facets } facets
+    [one] its place and notes in { $facets } facet
    *[other] its place and notes in { $facets } facets
 }
 
@@ -4639,12 +4639,12 @@ m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e6974656d732e66696
 }
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e6d616e792e64656c6574652e656e746974696573 = { $i18nCategory ->
-    [one] delete { $total } entities?
+    [one] delete { $total } entity?
    *[other] delete { $total } entities?
 }
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e6d616e792e65726173652e656e7469746965732e6e6f77 = { $i18nCategory ->
-    [one] erase { $total } entities now?
+    [one] erase { $total } entity now?
    *[other] erase { $total } entities now?
 }
 
@@ -9553,12 +9553,12 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e616
 m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e616761696e2e7374726176612e6d6f7665 = importing a Strava download again brings back the workouts this deletes.
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e6d756c7469706c652e6572617365 = { $i18nCategory ->
-    [one] erase { $import_count } imports now?
+    [one] erase { $import_count } import now?
    *[other] erase { $import_count } imports now?
 }
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e6d756c7469706c652e6d6f7665 = { $i18nCategory ->
-    [one] delete { $import_count } imports?
+    [one] delete { $import_count } import?
    *[other] delete { $import_count } imports?
 }
 
@@ -13320,7 +13320,7 @@ m6a6f75726e616c2e77696e646f772e6f617574682e7265636f6e6e6563742e68656164696e67 = 
 
 m6a6f75726e616c2e77696e646f772e6f617574682e7265636f6e6e6563742e73636f7065 = choose what { $agent_name } may see.
 
-m6a6f75726e616c2e77696e646f772e6f617574682e7265636f6e6e6563742e73636f70652e6c697665 = here's what { $agent_name } may see now. change them here or later in the agents app.
+m6a6f75726e616c2e77696e646f772e6f617574682e7265636f6e6e6563742e73636f70652e6c697665 = here's what { $agent_name } may see now. change what it may see here or later in the agents app.
 
 m6a6f75726e616c2e77696e646f772e6f617574682e73636f70652e63686f6f73652e64657461696c = your code matched. { $client_name } can save and recall its own agent memories. other journal reads stay within what you choose.
 
@@ -16928,27 +16928,27 @@ m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e636f6e6669726d2e657
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e636f6e6669726d2e7265636f7665722e6f7665722e6578697374696e672e666163657473 = { $i18nCategory ->
-    [one] { $facets } facets you picked each have another with the same name in your journal now. recovering erases those, with everything in them, and puts these back.
+    [one] { $facets } facet you picked has another with the same name in your journal now. recovering erases that one, with everything in it, and puts this one back.
    *[other] { $facets } facets you picked each have another with the same name in your journal now. recovering erases those, with everything in them, and puts these back.
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e636f6e6669726d2e737472657463682e68656c642e696d706f727473 = { $i18nCategory ->
-    [one] the { $imports } imports it holds, and the files they kept, are erased with it.
+    [one] the { $imports } import it holds, and the files it kept, are erased with it.
    *[other] the { $imports } imports it holds, and the files they kept, are erased with it.
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e636f6e6669726d2e737472657463682e68656c642e696d706f7274732e6e6f6e652e6b657074 = { $i18nCategory ->
-    [one] the { $imports } imports it holds are erased with it.
+    [one] the { $imports } import it holds is erased with it.
    *[other] the { $imports } imports it holds are erased with it.
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e636f6e6669726d2e77616974696e672e7365676d656e74732e6d756c7469706c652e696d706f727473 = { $i18nCategory ->
-    [one] the { $segments } segments from them that wait in the trash on their own are erased with them.
+    [one] the { $segments } segment from them that waits in the trash on its own is erased with them.
    *[other] the { $segments } segments from them that wait in the trash on their own are erased with them.
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e636f6e6669726d2e77616974696e672e7365676d656e74732e6f6e652e696d706f7274 = { $i18nCategory ->
-    [one] the { $segments } segments from it that wait in the trash on their own are erased with it.
+    [one] the { $segments } segment from it that waits in the trash on its own is erased with it.
    *[other] the { $segments } segments from it that wait in the trash on their own are erased with it.
 }
 
@@ -19141,7 +19141,7 @@ m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e7465616368696e672e7
 }
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e766f6963652e73616d706c652e636f756e74 = { $i18nCategory ->
-    [one] this voice is in { $statements } statements in your journal. play a few samples before you decide.
+    [one] this voice is in { $statements } statement in your journal. play a sample before you decide.
    *[other] this voice is in { $statements } statements in your journal. play a few samples before you decide.
 }
 
@@ -22363,21 +22363,21 @@ m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e747261736
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e756e6b6e6f776e2e69742e732e7468652e6c6173742e7365676d656e742e66726f6d2e76617269616e7432 = it's the last segment from its import, so any file it kept and its row in your import history go to the trash with it.
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f72742e65726173652e66696c65732e636f756e74 = { $i18nCategory ->
-    [one] it's the last segment from its import, so the { $retained_files } files it kept and its row in your import history are erased with it.
+    [one] it's the last segment from its import, so the { $retained_files } file it kept and its row in your import history are erased with it.
    *[other] it's the last segment from its import, so the { $retained_files } files it kept and its row in your import history are erased with it.
 }
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f72742e65726173652e6e616d6564 = it's the last segment from { $import_name }, so that file and its row in your import history are erased with it.
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f72742e6d6f76652e66696c65732e636f756e74 = { $i18nCategory ->
-    [one] it's the last segment from its import, so the { $retained_files } files it kept and its row in your import history go to the trash with it.
+    [one] it's the last segment from its import, so the { $retained_files } file it kept and its row in your import history go to the trash with it.
    *[other] it's the last segment from its import, so the { $retained_files } files it kept and its row in your import history go to the trash with it.
 }
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f72742e6d6f76652e6e616d6564 = it's the last segment from { $import_name }, so that file and its row in your import history go to the trash with it.
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f72742e70656e64696e672e636f756e74 = { $i18nCategory ->
-    [one] the import's { $waiting_segments } other segments in the trash are erased with it.
+    [one] the import's { $waiting_segments } other segment in the trash is erased with it.
    *[other] the import's { $waiting_segments } other segments in the trash are erased with it.
 }
 
@@ -22386,39 +22386,39 @@ m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e747261736
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f72742e7365742e6d6f76652e6e616d6564 = this includes the last of the segments from { $import_name }, so that file and its row in your import history go to the trash too.
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f72742e7365742e70656e64696e672e636f756e74 = { $i18nCategory ->
-    [one] { $waiting_segments } other segments from that import in the trash are erased too.
+    [one] { $waiting_segments } other segment from that import in the trash is erased too.
    *[other] { $waiting_segments } other segments from that import in the trash are erased too.
 }
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f72742e737461792e6e616d6564 = { $import_name }, the file it came from, stays in your journal, because other segments still come from it. to remove it, delete the import.
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f7274732e7365742e65726173652e636f756e74 = { $i18nCategory ->
-    [one] this includes the last of the segments from { $imports } imports, so the files they kept and their rows in your import history are erased too.
+    [one] this includes the last of the segments from { $imports } import, so the files it kept and its row in your import history are erased too.
    *[other] this includes the last of the segments from { $imports } imports, so the files they kept and their rows in your import history are erased too.
 }
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f7274732e7365742e65726173652e776974686f75742e66696c65732e636f756e74 = { $i18nCategory ->
-    [one] this includes the last of the segments from { $imports } imports, so their rows in your import history are erased too.
+    [one] this includes the last of the segments from { $imports } import, so its row in your import history is erased too.
    *[other] this includes the last of the segments from { $imports } imports, so their rows in your import history are erased too.
 }
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f7274732e7365742e6d6f76652e636f756e74 = { $i18nCategory ->
-    [one] this includes the last of the segments from { $imports } imports, so the files they kept and their rows in your import history go to the trash too.
+    [one] this includes the last of the segments from { $imports } import, so the files it kept and its row in your import history go to the trash too.
    *[other] this includes the last of the segments from { $imports } imports, so the files they kept and their rows in your import history go to the trash too.
 }
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f7274732e7365742e6d6f76652e776974686f75742e66696c65732e636f756e74 = { $i18nCategory ->
-    [one] this includes the last of the segments from { $imports } imports, so their rows in your import history go to the trash too.
+    [one] this includes the last of the segments from { $imports } import, so its row in your import history goes to the trash too.
    *[other] this includes the last of the segments from { $imports } imports, so their rows in your import history go to the trash too.
 }
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f7274732e7365742e70656e64696e672e636f756e74 = { $i18nCategory ->
-    [one] { $waiting_segments } other segments from those imports in the trash are erased too.
+    [one] { $waiting_segments } other segment from those imports in the trash is erased too.
    *[other] { $waiting_segments } other segments from those imports in the trash are erased too.
 }
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e696d706f7274732e737461792e636f756e74 = { $i18nCategory ->
-    [one] the files { $imports } imports kept stay in your journal, because other segments still come from them. to remove one, delete its import on the import page.
+    [one] the files { $imports } import kept stay in your journal, because other segments still come from it. to remove them, delete the import on the import page.
    *[other] the files { $imports } imports kept stay in your journal, because other segments still come from them. to remove one, delete its import on the import page.
 }
 
@@ -22427,7 +22427,7 @@ m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e747261736
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e6d656469612e73697a65 = current raw media size: { $media_size }
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e73656c656374696f6e2e65726173652e7469746c65 = { $i18nCategory ->
-    [one] erase { $segments } segments now?
+    [one] erase { $segments } segment now?
    *[other] erase { $segments } segments now?
 }
 
@@ -22437,7 +22437,7 @@ m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e747261736
 }
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e73656c656374696f6e2e6d6f76652e7469746c65 = { $i18nCategory ->
-    [one] delete { $segments } segments?
+    [one] delete { $segments } segment?
    *[other] delete { $segments } segments?
 }
 

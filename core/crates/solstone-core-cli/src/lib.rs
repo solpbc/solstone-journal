@@ -682,11 +682,17 @@ pub const MCP_HELP: &str = concat!(
 
 /// The help for each `journal mcp` subcommand, chosen by [`mcp_help`].
 pub fn permission_kind_label(kind: &solstone_core_format::content::kinds::KindSpec) -> String {
-    use solstone_core_window_catalog::{ENGLISH, text};
+    permission_kind_label_for(solstone_core_window_catalog::ENGLISH, kind)
+}
+
+pub fn permission_kind_label_for(
+    locale: &str,
+    kind: &solstone_core_format::content::kinds::KindSpec,
+) -> String {
     let copy = kind
         .permission_copy
         .expect("registered permissions have copy");
-    text(ENGLISH, copy.label_id)
+    solstone_core_window_catalog::text(locale, copy.label_id)
 }
 
 fn mcp_subcommand_help(locale: &str, words: &[&str]) -> String {

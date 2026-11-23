@@ -20,8 +20,8 @@
   "format_intent": "text",
   "max_length": 2048,
   "source_revision": "0b56a438e9173d3279559dd473790b7aa587545140e9975a8ee00f0046f7c525",
-  "risk": "consent",
-  "auto_merge": false,
+  "risk": "routine",
+  "auto_merge": true,
   "protected_slots": [
     {
       "name": "space1",

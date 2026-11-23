@@ -6,7 +6,7 @@ use super::{
     html_escape, html_status_with_csp, parse_redirect_uri, redirect_host_label, redirect_origin,
 };
 use crate::http1::HttpResponse;
-use solstone_core_window_catalog::{self as catalog, ENGLISH, Value, html, text};
+use solstone_core_window_catalog::{self as catalog, Value, html, text};
 
 // This marker only occurs in the renderer’s input. Insert escaped owner text
 // or the escaped callback host in trusted emphasis markup after escaping the
@@ -38,7 +38,7 @@ pub(super) fn consent_page(
     let parsed = parse_redirect_uri(redirect_uri).ok();
     let host = parsed.as_ref().map(redirect_host_label).unwrap_or_else(|| {
         text(
-            ENGLISH,
+            locale,
             "journal.window.shared.status.pane.visible.text.unknown",
         )
     });
@@ -53,18 +53,18 @@ pub(super) fn consent_page(
     let transaction = html_escape(transaction_id);
     let facet_detail = match stage {
         ConsentStage::Code { .. } | ConsentStage::TargetedCode { .. } => {
-            html(locale, "!journal.window.oauth.scope.facets.after.code")
+            html(locale, "journal.window.oauth.scope.facets.after.code")
         }
         ConsentStage::Choose { .. } | ConsentStage::Confirm { .. } => {
-            html(locale, "!journal.window.oauth.scope.facets.detail")
+            html(locale, "journal.window.oauth.scope.facets.detail")
         }
     };
     let choices = format!(
         r#"<fieldset><label class="check"><input type="radio" name="scope" value="whole_journal" required{whole_checked}> <strong>{scope_whole}</strong><br><span class="muted">{whole_detail}</span></label><label class="check"><input type="radio" name="scope" value="facets" required{facets_checked}> <strong>{scope_facets}</strong><br><span class="muted">{facet_detail}</span></label></fieldset>{facet_list}<fieldset><legend>{kinds}</legend>{kind_choices}</fieldset>"#,
-        scope_whole = html(locale, "!journal.window.oauth.scope.whole"),
-        whole_detail = html(locale, "!journal.window.oauth.scope.whole.detail"),
-        scope_facets = html(locale, "!journal.window.oauth.scope.facets"),
-        kinds = html(locale, "!journal.window.oauth.scope.kinds"),
+        scope_whole = html(locale, "journal.window.oauth.scope.whole"),
+        whole_detail = html(locale, "journal.window.oauth.scope.whole.detail"),
+        scope_facets = html(locale, "journal.window.oauth.scope.facets"),
+        kinds = html(locale, "journal.window.oauth.scope.kinds"),
         whole_checked = checked(selection.scope == Some("whole_journal")),
         facets_checked = checked(selection.scope == Some("facets")),
         facet_list = match stage {
@@ -81,8 +81,8 @@ pub(super) fn consent_page(
                     if kind.option_of().is_some() { " option" } else { "" },
                     kind.stored_word,
                     checked(selection.categories.iter().any(|word| word == kind.stored_word)),
-                    html_escape(&text(ENGLISH, copy.label_id)),
-                    html_escape(&text(ENGLISH, copy.description_id)),
+                    html_escape(&text(locale, copy.label_id)),
+                    html_escape(&text(locale, copy.description_id)),
                 );
                 if kind.stored_word == "places" {
                     use solstone_core_format::content::kinds::PlacesPrecision;
@@ -151,7 +151,7 @@ pub(super) fn consent_page(
             let choose = if incomplete {
                 format!(
                     r#"<p class="error" role="alert">{}</p>"#,
-                    html(locale, "!journal.window.oauth.scope.required.before.code")
+                    html(locale, "journal.window.oauth.scope.required.before.code")
                 )
             } else {
                 String::new()
@@ -160,36 +160,36 @@ pub(super) fn consent_page(
                 r#"<h1>{heading}</h1><p>{return_to}</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><h2>{may_see}</h2>{choose}{choices}{code}<button type="submit">{connect}</button><p class="muted">{cancel}</p></form>"#,
                 return_to = inline_html(
                     locale,
-                    "!journal.window.oauth.connect.return.and.scope",
+                    "journal.window.oauth.connect.return.and.scope",
                     "return_host",
                     &return_host
                 ),
                 heading = inline_html(
                     locale,
-                    "!journal.window.oauth.connect.heading",
+                    "journal.window.oauth.connect.heading",
                     "client_name",
                     &client
                 ),
                 may_see = inline_html(
                     locale,
-                    "!journal.window.oauth.scope.heading",
+                    "journal.window.oauth.scope.heading",
                     "client_name",
                     &client
                 ),
                 connect = inline_html(
                     locale,
-                    "!journal.window.oauth.connect.button",
+                    "journal.window.oauth.connect.button",
                     "client_name",
                     &client
                 ),
-                cancel = html(locale, "!journal.window.oauth.cancel.before.code"),
+                cancel = html(locale, "journal.window.oauth.cancel.before.code"),
             )
         }
         ConsentStage::Choose { incomplete } => {
             let notice = if incomplete {
                 format!(
                     r#"<p class="error" role="alert">{}</p>"#,
-                    html(locale, "!journal.window.oauth.scope.required.after.code")
+                    html(locale, "journal.window.oauth.scope.required.after.code")
                 )
             } else {
                 String::new()
@@ -198,23 +198,23 @@ pub(super) fn consent_page(
                 r#"<h1>{choose_heading}</h1><p>{choose_detail}</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}">{notice}{choices}<button type="submit">{connect}</button><p class="muted">{cancel}</p></form>"#,
                 choose_heading = inline_html(
                     locale,
-                    "!journal.window.oauth.scope.choose.heading",
+                    "journal.window.oauth.scope.choose.heading",
                     "client_name",
                     &client
                 ),
                 choose_detail = inline_html(
                     locale,
-                    "!journal.window.oauth.scope.choose.detail",
+                    "journal.window.oauth.scope.choose.detail",
                     "client_name",
                     &client
                 ),
                 connect = inline_html(
                     locale,
-                    "!journal.window.oauth.connect.button",
+                    "journal.window.oauth.connect.button",
                     "client_name",
                     &client
                 ),
-                cancel = html(locale, "!journal.window.oauth.cancel.after.code"),
+                cancel = html(locale, "journal.window.oauth.cancel.after.code"),
             )
         }
         ConsentStage::TargetedCode { wrong_code } => {
@@ -229,11 +229,11 @@ pub(super) fn consent_page(
                 ),
                 heading = inline_html(
                     locale,
-                    "!journal.window.oauth.connect.heading",
+                    "journal.window.oauth.connect.heading",
                     "client_name",
                     &client
                 ),
-                cancel = html(locale, "!journal.window.oauth.cancel.before.code"),
+                cancel = html(locale, "journal.window.oauth.cancel.before.code"),
                 next = html(locale, "journal.window.backup.copy.key.continue"),
             )
         }
@@ -246,16 +246,16 @@ pub(super) fn consent_page(
             let agent = format!("{} · {}", html_escape(&name), html_escape(&short_key));
             let effect = if memory_count == 0 {
                 let id = if live_holder {
-                    "!journal.window.oauth.reconnect.body.live"
+                    "journal.window.oauth.reconnect.body.live"
                 } else {
-                    "!journal.window.oauth.reconnect.body"
+                    "journal.window.oauth.reconnect.body"
                 };
                 inline_html(locale, id, "agent_name", &agent)
             } else {
                 let id = if live_holder {
-                    "!journal.window.oauth.reconnect.body.live.memories"
+                    "journal.window.oauth.reconnect.body.live.memories"
                 } else {
-                    "!journal.window.oauth.reconnect.body.memories"
+                    "journal.window.oauth.reconnect.body.memories"
                 };
                 let count = memory_count.to_string();
                 let words = catalog::render(
@@ -273,9 +273,9 @@ pub(super) fn consent_page(
                 insert_inline(&words, &agent)
             };
             let scope_id = if live_holder {
-                "!journal.window.oauth.reconnect.scope.live"
+                "journal.window.oauth.reconnect.scope.live"
             } else {
-                "!journal.window.oauth.reconnect.scope"
+                "journal.window.oauth.reconnect.scope"
             };
             let may_see = format!(
                 "<p>{}</p>",
@@ -285,17 +285,17 @@ pub(super) fn consent_page(
                 r#"<h1>{heading}</h1><p>{effect}</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}">{may_see}{choices}<button type="submit">{again}</button><p class="muted">{cancel}</p></form>"#,
                 heading = inline_html(
                     locale,
-                    "!journal.window.oauth.reconnect.heading",
+                    "journal.window.oauth.reconnect.heading",
                     "agent_name",
                     &agent
                 ),
                 again = inline_html(
                     locale,
-                    "!journal.window.oauth.reconnect.button",
+                    "journal.window.oauth.reconnect.button",
                     "agent_name",
                     &agent
                 ),
-                cancel = html(locale, "!journal.window.oauth.cancel.reconnect"),
+                cancel = html(locale, "journal.window.oauth.cancel.reconnect"),
             )
         }
     };

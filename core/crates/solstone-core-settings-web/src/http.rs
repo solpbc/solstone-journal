@@ -86,8 +86,8 @@ pub fn settings_operation_failed_with_detail(locale: &str, detail: impl Into<Str
 pub fn owner_voice_consent_required(locale: &str) -> Response {
     error_envelope(
         "owner_voice_consent_required",
-        text(locale, "!journal.window.settings.http.owner.voice.consent.required.only.the.journal.s.owner.can"),
-        text(locale, "!journal.window.settings.http.owner.voice.consent.required.turn.on.leave.out.other.voices"),
+        text(locale, "journal.window.settings.http.owner.voice.consent.required.only.the.journal.s.owner.can"),
+        text(locale, "journal.window.settings.http.owner.voice.consent.required.turn.on.leave.out.other.voices"),
         StatusCode::FORBIDDEN,
     )
     .into_response()

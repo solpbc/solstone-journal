@@ -1424,17 +1424,17 @@ a.body-day-cell:focus-visible {
   const TRASH_PAGE = "/app/settings#trash";
   const WORKOUT_COPY = {
     move: {
-      title: window.JournalI18n.renderEnglish('journal.window.body.title.delete.this.workout'),
-      reach: window.JournalI18n.renderEnglish('journal.window.body.workout.copy.reach.it.leaves.your.journal.now.and.variant2'),
-      stays: window.JournalI18n.renderEnglish('journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from.variant2'),
+      title: window.JournalI18n.render('journal.window.body.title.delete.this.workout'),
+      reach: window.JournalI18n.render('journal.window.body.workout.copy.reach.it.leaves.your.journal.now.and.variant2'),
+      stays: window.JournalI18n.render('journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from.variant2'),
     },
     erase: {
-      title: window.JournalI18n.renderEnglish('journal.window.body.title.erase.this.workout.now'),
-      reach: window.JournalI18n.renderEnglish('journal.window.body.workout.copy.reach.it.leaves.your.journal.now.and'),
-      stays: window.JournalI18n.renderEnglish('journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from'),
+      title: window.JournalI18n.render('journal.window.body.title.erase.this.workout.now'),
+      reach: window.JournalI18n.render('journal.window.body.workout.copy.reach.it.leaves.your.journal.now.and'),
+      stays: window.JournalI18n.render('journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from'),
     },
-    again: window.JournalI18n.renderEnglish('journal.window.body.workout.copy.again.importing.a.strava.download.again.brings'),
-    buttons: { eraseNow: window.JournalI18n.renderEnglish('journal.window.body.workout.copy.erase.now.erase.now'), cancel: window.JournalI18n.render('journal.window.body.workout.copy.cancel.cancel'), moveToTrash: window.JournalI18n.renderEnglish('journal.window.body.workout.copy.move.to.trash.move.to.trash'), back: window.JournalI18n.render('journal.window.body.workout.copy.back.back'), recover: window.JournalI18n.render('journal.window.body.workout.copy.recover.recover'), openTrash: window.JournalI18n.render('journal.window.body.workout.copy.open.trash.open.trash') },
+    again: window.JournalI18n.render('journal.window.body.workout.copy.again.importing.a.strava.download.again.brings'),
+    buttons: { eraseNow: window.JournalI18n.render('journal.window.body.workout.copy.erase.now.erase.now'), cancel: window.JournalI18n.render('journal.window.body.workout.copy.cancel.cancel'), moveToTrash: window.JournalI18n.render('journal.window.body.workout.copy.move.to.trash.move.to.trash'), back: window.JournalI18n.render('journal.window.body.workout.copy.back.back'), recover: window.JournalI18n.render('journal.window.body.workout.copy.recover.recover'), openTrash: window.JournalI18n.render('journal.window.body.workout.copy.open.trash.open.trash') },
     receipt: {
       moved: { title: window.JournalI18n.render('journal.window.body.title.moved.to.the.trash') },
       recovered: { title: window.JournalI18n.render('journal.window.body.title.workout.recovered'), message: window.JournalI18n.render('journal.window.body.message.it.s.back.in.your.journal') },
@@ -1722,7 +1722,7 @@ a.body-day-cell:focus-visible {
       closeDialog();
       const id = button.getAttribute("data-strava-delete");
       const start = button.getAttribute("data-strava-start") || "";
-      const meta = [workoutDayLabel(day, true), start, "Strava"].filter(Boolean).join(" · ");
+      const meta = [workoutDayLabel(day), start, "Strava"].filter(Boolean).join(" · ");
       let trigger = button;
       button = null;
       let dialog = document.createElement("dialog");

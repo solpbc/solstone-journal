@@ -8,8 +8,8 @@
   "format_intent": "text",
   "source_revision": "dbfa1f39efba576e751d09bd463fb4eff3b1c3622bdee51ddb5eacf0feabe804",
   "max_length": 270,
-  "risk": "payment",
-  "auto_merge": false,
+  "risk": "routine",
+  "auto_merge": true,
   "surfaces": [
     "journal-cli"
   ],

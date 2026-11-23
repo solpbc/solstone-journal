@@ -185,7 +185,7 @@ pub fn run_chatgpt_sign_in(options: ChatGptSignInOptions) -> ExitCode {
                 "{}",
                 solstone_core_cli_copy::render_for(
                     crate::host_locale(),
-                    "!journal.cli.host.thinking.run.chatgpt.sign.in.account.mismatch.run.thinking.chatgpt",
+                    "journal.cli.host.thinking.run.chatgpt.sign.in.account.mismatch.run.thinking.chatgpt",
                     &[]
                 )
             );
@@ -360,7 +360,7 @@ fn credential_error(
         ),
         CredentialError::Storage(path) => solstone_core_cli_copy::display_for(
             locale,
-            "!journal.cli.host.thinking.credential.path.credential.storage.unreadable.or",
+            "journal.cli.host.thinking.credential.path.credential.storage.unreadable.or",
             [("path", &path.display())],
         ),
         CredentialError::Io(msg) => solstone_core_cli_copy::display_for(

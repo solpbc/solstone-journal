@@ -894,9 +894,7 @@
       if (left) extraLines.push(tally('journal.window.import.preview.apple.left.out', left));
       if (size.listed_moves?.count) {
         const moved = size.listed_moves.count;
-        const moveText = typeof window.JournalI18n.renderEnglish === 'function'
-          ? window.JournalI18n.renderEnglish('journal.window.import.preview.apple.move.listed', quantityArgs(moved, 'count', 'quantity', Number(moved).toLocaleString()))
-          : window.JournalI18n.render('journal.window.import.preview.apple.move.listed', quantityArgs(moved, 'count', 'quantity', Number(moved).toLocaleString()));
+        const moveText = window.JournalI18n.render('journal.window.import.preview.apple.move.listed', quantityArgs(moved, 'count', 'quantity', Number(moved).toLocaleString()));
         extraLines.push(moveText);
       }
       const spaceFits = !space || space.fits !== false;
@@ -1082,8 +1080,8 @@
         const facetTitle = name => ((flow.facetState.facets || []).find(f => f.name === name)?.title || name || '');
         if (String(offer.state).startsWith('ask_')) {
           const q = offer.state === 'ask_existing'
-            ? (typeof window.JournalI18n.renderEnglish === 'function'
-                ? window.JournalI18n.renderEnglish(`journal.window.import.body.facet.${hint === 'apple_health' ? 'apple' : 'shared'}.ask.named`, [['facet_name', facetTitle(offer.facet)]])
+            ? (typeof window.JournalI18n.render === 'function'
+                ? window.JournalI18n.render(`journal.window.import.body.facet.${hint === 'apple_health' ? 'apple' : 'shared'}.ask.named`, [['facet_name', facetTitle(offer.facet)]])
                 : String(copy[offer.state] || ''))
             : String(copy[offer.state] || '');
           pieces.push(
