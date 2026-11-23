@@ -2061,7 +2061,7 @@ function buildHistoryHeader(total, totalEntriesWritten) {
 
 function sourceLabel(imp) {
   if (imp.source_type === 'audio_archive') return window.JournalI18n.render('journal.window.import.source.audio.archive.name');
-  const knownSourceName = pageSourceName(imp.source_type);
+  const knownSourceName = sourceMetadataByName[imp.source_type]?.display_name || '';
   const recordedDisplay = typeof imp.source_display === 'string' ? imp.source_display.trim() : '';
   const recordedIsFilename = /\.[a-z0-9]{2,5}$/i.test(recordedDisplay);
   return knownSourceName || (recordedIsFilename ? '' : recordedDisplay);

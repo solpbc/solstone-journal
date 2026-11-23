@@ -122,6 +122,11 @@ function makeContext(globals) {
     'prepareImportPreview', 'renderThinkingProgress', 'scheduleThinkingProgress']) {
     vm.runInContext(functionSource(source, name), context);
   }
+  // A source's name on the page: its card's word, else the page's own table.
+  vm.runInContext(`const IMPORT_SOURCE_NAMES = ${balancedBlock(source, source.indexOf('const IMPORT_SOURCE_NAMES'))};`, context);
+  for (const name of ['pageSourceName', 'eventSourceName']) {
+    vm.runInContext(functionSource(source, name), context);
+  }
   return context;
 }
 
