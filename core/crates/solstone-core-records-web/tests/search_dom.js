@@ -348,6 +348,34 @@ test('a spoken hit names its speaker, never stored Markdown or caption voice mar
   assert.strictEqual(card('no speaker <strong>here</strong>').querySelectorAll('.search-speaker').length, 0);
 });
 
+test('fallback assistant and unknown message roles localize while real author names stay literal', () => {
+  const env = seededSearch();
+  const conversation = { file: 'conversation_transcript.jsonl', day: '20261117', untimed: true, source: 'Claude', content_kind: 'messages' };
+  const assistantCard = env.window.renderHit({
+    day: '20261117', stream: 'import.claude', path: '20261117/import.claude/100000_300/conversation_transcript.jsonl',
+    text: 'hello <strong>world</strong>', conversation_item: conversation,
+    message: { file: 'conversation_transcript.jsonl', turn_id: 't1', author: 'Assistant', role: 'assistant', is_owner: false },
+  }, '/app/transcripts/20261117');
+  const assistantMeta = assistantCard.querySelector('.search-meta').querySelectorAll('span').map((span) => span.textContent);
+  assert.ok(assistantMeta.includes(env.window.JournalI18n.render('journal.window.search.message.assistant')), assistantMeta.join(' | '));
+
+  const unknownCard = env.window.renderHit({
+    day: '20261117', stream: 'import.claude', path: '20261117/import.claude/100000_300/conversation_transcript.jsonl',
+    text: 'hello <strong>world</strong>', conversation_item: conversation,
+    message: { file: 'conversation_transcript.jsonl', turn_id: 't2', author: 'Unknown', role: 'unknown' },
+  }, '/app/transcripts/20261117');
+  const unknownMeta = unknownCard.querySelector('.search-meta').querySelectorAll('span').map((span) => span.textContent);
+  assert.ok(unknownMeta.includes(env.window.JournalI18n.render('journal.window.search.message.unknown')), unknownMeta.join(' | '));
+
+  const literalCard = env.window.renderHit({
+    day: '20261117', stream: 'import.text', path: '20261117/import.text/100000_300/conversation_transcript.jsonl',
+    text: 'hello <strong>world</strong>', conversation_item: conversation,
+    message: { file: 'conversation_transcript.jsonl', turn_id: 't3', author: 'Assistant' },
+  }, '/app/transcripts/20261117');
+  const literalMeta = literalCard.querySelector('.search-meta').querySelectorAll('span').map((span) => span.textContent);
+  assert.ok(literalMeta.includes('Assistant'), literalMeta.join(' | '));
+});
+
 require('./search_contract_dom.js')({ manifestDir, searchHtml, dateFormatSource, test: asyncTest })
   .then(() => console.log(`DOM CASES: ${cases} passed`))
   .catch((err) => { console.error(err); process.exit(1); });

@@ -1,0 +1,16 @@
+{
+  "description": "Legacy human speaker label shown in the Import content detail view for imported conversation turns stored as Human.",
+  "context": "Legacy human speaker label shown in the Import content detail view for imported conversation turns stored as Human.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e040cbfe56e4afb42f12517f774433c8fdcfc4f83381342929a21bb7230e0a95",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

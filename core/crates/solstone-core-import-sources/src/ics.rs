@@ -45,6 +45,7 @@ pub struct CalendarEntry {
     pub location: Option<String>,
     pub attendees: Vec<CalendarAttendee>,
     pub recurrence: Option<String>,
+    pub(crate) title_fallback: bool,
     pub(crate) recurrence_structured:
         Option<solstone_core_format::stored_markdown::imported::EventRecurrence>,
 }
@@ -464,8 +465,11 @@ fn event_item(
         "meta": meta,
         "segments": [{ "day": day, "key": segment, "stream": stream }],
     });
-    if all_day_days.is_some() || entry.recurrence_structured.is_some() {
+    if entry.title_fallback || all_day_days.is_some() || entry.recurrence_structured.is_some() {
         let mut display = Map::new();
+        if entry.title_fallback {
+            display.insert("title_fallback".to_owned(), json!("event_untitled"));
+        }
         if let Some(days) = all_day_days {
             display.insert("all_day_days".to_owned(), json!(days));
         }
@@ -474,7 +478,9 @@ fn event_item(
         {
             display.insert("recurrence".to_owned(), value);
         }
-        if description.is_empty() {
+        if description.is_empty()
+            && (all_day_days.is_some() || entry.recurrence_structured.is_some())
+        {
             display.insert("preview_from_meta".to_owned(), json!(true));
         }
         item["display"] = Value::Object(display);
@@ -631,10 +637,10 @@ fn parse_event(event: &Event, zone: &TimeZone) -> Option<CalendarEntry> {
     let recurrence = recurrence_structured
         .as_ref()
         .map(|rule| rule.render(solstone_core_window_catalog::ENGLISH));
+    let summary = nonempty(event.property_value("SUMMARY"));
+    let title_fallback = summary.is_none();
     Some(CalendarEntry {
-        title: nonempty(event.property_value("SUMMARY"))
-            .unwrap_or("Untitled event")
-            .to_owned(),
+        title: summary.unwrap_or("Untitled event").to_owned(),
         content: event
             .property_value("DESCRIPTION")
             .unwrap_or_default()
@@ -649,6 +655,7 @@ fn parse_event(event: &Event, zone: &TimeZone) -> Option<CalendarEntry> {
         location: nonempty(event.property_value("LOCATION")).map(str::to_owned),
         attendees,
         recurrence,
+        title_fallback,
         recurrence_structured,
     })
 }

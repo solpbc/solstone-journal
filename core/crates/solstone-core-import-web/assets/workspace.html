@@ -5716,9 +5716,18 @@ function renderContentDetail(data) {
     if (part.type === 'markdown') {
       return `<div class="import-content-markdown">${window.AppServices.renderMarkdown(part.content)}</div>`;
     }
-    const speaker = part.speaker || 'Unknown';
-    const cls = speaker === 'You' || speaker === 'Human' ? 'human'
-      : speaker === 'Assistant' ? 'assistant' : '';
+    const rawSpeaker = part.speaker || '';
+    const isOwner = part.is_owner === true || rawSpeaker === 'You' || rawSpeaker === 'Human';
+    const isAssistant = (part.is_owner === false && (!rawSpeaker || rawSpeaker === 'Assistant')) || rawSpeaker === 'Assistant';
+    const isUnknown = part.speaker_role === 'unknown' || !rawSpeaker || (part.is_owner == null && rawSpeaker === 'Unknown');
+    const cls = isOwner ? 'human' : isAssistant ? 'assistant' : '';
+    const speaker = isOwner && (!rawSpeaker || rawSpeaker === 'You' || rawSpeaker === 'Human')
+      ? window.JournalI18n.render(rawSpeaker === 'Human' ? 'journal.window.import.content.speaker.human' : 'journal.window.import.content.speaker.you')
+      : isAssistant
+        ? window.JournalI18n.render('journal.window.import.content.speaker.assistant')
+        : isUnknown
+          ? window.JournalI18n.render('journal.window.import.content.speaker.unknown')
+          : rawSpeaker;
     return `<div class="import-content-message"><span class="import-content-speaker ${cls}">${escapeContentHtml(speaker)}:</span> ${escapeContentHtml(part.text || '')}</div>`;
   }).join('');
 }

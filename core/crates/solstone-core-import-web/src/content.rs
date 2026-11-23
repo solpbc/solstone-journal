@@ -16,7 +16,7 @@ use axum::{
 use serde_json::{Value, json};
 use solstone_core_convey_http::{
     coalesce::ResponseLocale,
-    window_catalog::{ENGLISH, text},
+    window_catalog::{ENGLISH, strings, text},
 };
 
 use crate::{
@@ -177,19 +177,20 @@ fn derive_content_items(
                 .chars()
                 .take(200)
                 .collect::<String>();
-            let title = header
+            let (title, fallback_title) = match header
                 .get("topics")
                 .and_then(Value::as_str)
                 .filter(|value| !value.is_empty())
-                .map(ToOwned::to_owned)
-                .unwrap_or_else(|| {
-                    if preview.is_empty() {
-                        "Conversation segment".to_owned()
-                    } else {
-                        preview.chars().take(80).collect::<String>()
-                    }
-                });
-            entries.push(json!({"id": format!("seg-{index}"), "title": title, "date": day, "type": "conversation", "preview": preview, "meta": {"message_count": messages.len()}, "segments": segments}));
+            {
+                Some(topic) => (topic.to_owned(), false),
+                None if preview.is_empty() => ("Conversation segment".to_owned(), true),
+                None => (preview.chars().take(80).collect::<String>(), false),
+            };
+            let mut entry = json!({"id": format!("seg-{index}"), "title": title, "date": day, "type": "conversation", "preview": preview, "meta": {"message_count": messages.len()}, "segments": segments});
+            if fallback_title {
+                entry["display"] = json!({"title_fallback": "conversation_segment"});
+            }
+            entries.push(entry);
             index += 1;
         } else if path.extension().is_some_and(|ext| ext == "md") {
             let text = fs::read_to_string(&path)?;
@@ -249,10 +250,8 @@ fn image_content_items(
         return Ok(None);
     }
 
-    let title = import_meta
-        .get("original_filename")
-        .and_then(Value::as_str)
-        .unwrap_or("Image import");
+    let filename = import_meta.get("original_filename").and_then(Value::as_str);
+    let title = filename.unwrap_or("Image import");
 
     let Some(segments) = imported.get("segments").and_then(Value::as_array) else {
         return Ok(None);
@@ -267,14 +266,18 @@ fn image_content_items(
             .and_then(Value::as_str)
             .unwrap_or("import.image");
         if !day.is_empty() && !key.is_empty() {
-            items.push(json!({
+            let mut item = json!({
                 "id": format!("item_{idx}"),
                 "title": title,
                 "date": day,
                 "type": "image",
                 "stream": stream,
                 "segments": [{"day": day, "key": key, "stream": stream}],
-            }));
+            });
+            if filename.is_none() {
+                item["display"] = json!({"title_fallback": "image"});
+            }
+            items.push(item);
         }
     }
     Ok(if items.is_empty() { None } else { Some(items) })
@@ -297,10 +300,8 @@ fn audio_content_items(
         return Ok(None);
     }
 
-    let title = import_meta
-        .get("original_filename")
-        .and_then(Value::as_str)
-        .unwrap_or("Audio import");
+    let filename = import_meta.get("original_filename").and_then(Value::as_str);
+    let title = filename.unwrap_or("Audio import");
 
     let Some(segments) = imported.get("segments").and_then(Value::as_array) else {
         return Ok(None);
@@ -315,14 +316,18 @@ fn audio_content_items(
             .and_then(Value::as_str)
             .unwrap_or("import.audio");
         if !day.is_empty() && !key.is_empty() {
-            items.push(json!({
+            let mut item = json!({
                 "id": format!("item_{idx}"),
                 "title": title,
                 "date": day,
                 "type": "audio",
                 "stream": stream,
                 "segments": [{"day": day, "key": key, "stream": stream}],
-            }));
+            });
+            if filename.is_none() {
+                item["display"] = json!({"title_fallback": "audio"});
+            }
+            items.push(item);
         }
     }
     Ok(if items.is_empty() { None } else { Some(items) })
@@ -520,11 +525,70 @@ fn project_manifest_item(item: &mut Value, locale: &str) {
     let Some(Value::Object(display)) = display else {
         return;
     };
-    if display.get("title_fallback").and_then(Value::as_str) == Some("note") {
-        obj.insert(
-            "title".to_owned(),
-            json!(text(locale, "journal.window.import.content.fallback.note")),
-        );
+    match display.get("title_fallback").and_then(Value::as_str) {
+        Some("note") => {
+            obj.insert(
+                "title".to_owned(),
+                json!(text(locale, "journal.window.import.content.fallback.note")),
+            );
+        }
+        Some("conversation_numbered") => {
+            if let Some(number) = display.get("number").and_then(Value::as_u64) {
+                let number_text = number.to_string();
+                obj.insert(
+                    "title".to_owned(),
+                    json!(strings(
+                        locale,
+                        "journal.window.import.content.fallback.conversation.numbered",
+                        [("number", number_text.as_str())],
+                    )),
+                );
+            }
+        }
+        Some("activity_numbered") => {
+            if let Some(number) = display.get("number").and_then(Value::as_u64) {
+                let number_text = number.to_string();
+                obj.insert(
+                    "title".to_owned(),
+                    json!(strings(
+                        locale,
+                        "journal.window.import.content.fallback.activity.numbered",
+                        [("number", number_text.as_str())],
+                    )),
+                );
+            }
+        }
+        Some("conversation_segment") => {
+            obj.insert(
+                "title".to_owned(),
+                json!(text(
+                    locale,
+                    "journal.window.import.content.fallback.conversation.segment"
+                )),
+            );
+        }
+        Some("image") => {
+            obj.insert(
+                "title".to_owned(),
+                json!(text(locale, "journal.window.import.content.fallback.image")),
+            );
+        }
+        Some("audio") => {
+            obj.insert(
+                "title".to_owned(),
+                json!(text(locale, "journal.window.import.content.fallback.audio")),
+            );
+        }
+        Some("event_untitled") => {
+            obj.insert(
+                "title".to_owned(),
+                json!(text(
+                    locale,
+                    "journal.window.import.content.fallback.event.untitled"
+                )),
+            );
+        }
+        _ => {}
     }
     use solstone_core_format::stored_markdown::imported::{
         EventRecurrence, render_event_preview_days,
@@ -1226,6 +1290,46 @@ mod tests {
         if locale != ENGLISH {
             assert_ne!(manifest_item["meta"]["recurrence"], "Weekly on Mon, 1 time");
             assert_ne!(manifest_item["preview"], "all day · Weekly on Mon, 1 time");
+        }
+    }
+
+    #[test]
+    fn fallback_titles_project_for_non_english_locale_and_strip_display_metadata() {
+        let locale = solstone_core_convey_http::window_catalog::packaged_locale(Some("en-XA"));
+        let cases = [
+            (
+                "Conversation 3",
+                json!({"title_fallback": "conversation_numbered", "number": 3}),
+            ),
+            (
+                "Activity 7",
+                json!({"title_fallback": "activity_numbered", "number": 7}),
+            ),
+            (
+                "Conversation segment",
+                json!({"title_fallback": "conversation_segment"}),
+            ),
+            ("Image import", json!({"title_fallback": "image"})),
+            ("Audio import", json!({"title_fallback": "audio"})),
+            (
+                "Untitled event",
+                json!({"title_fallback": "event_untitled"}),
+            ),
+        ];
+        for (english_title, display) in cases {
+            let mut en_item = json!({"id": "x", "title": english_title, "display": display});
+            project_manifest_item(&mut en_item, ENGLISH);
+            assert!(en_item.get("display").is_none());
+            assert_eq!(en_item["title"], english_title);
+
+            let mut loc_item = json!({"id": "x", "title": english_title, "display": display});
+            project_manifest_item(&mut loc_item, locale);
+            assert!(loc_item.get("display").is_none());
+            if locale == ENGLISH {
+                assert_eq!(loc_item["title"], english_title);
+            } else {
+                assert_ne!(loc_item["title"], english_title);
+            }
         }
     }
 }

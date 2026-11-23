@@ -124,7 +124,7 @@
  // Who wrote a message and who it went to, as far as the source said.
  function messageMeta(message){
   if(!message)return '';
-  const sender=message.is_owner===true?window.JournalI18n.render('journal.window.search.message.you'):String(message.author||'');
+  const sender=message.is_owner===true?window.JournalI18n.render('journal.window.search.message.you'):message.role==='assistant'&&(!message.author||message.author==='Assistant')?window.JournalI18n.render('journal.window.search.message.assistant'):message.role==='unknown'&&(!message.author||message.author==='Unknown')?window.JournalI18n.render('journal.window.search.message.unknown'):String(message.author||'');
   if(!sender)return '';
   const to=Array.isArray(message.to)?message.to.filter((name)=>typeof name==='string'&&name.trim()):[];
   if(!to.length)return sender;

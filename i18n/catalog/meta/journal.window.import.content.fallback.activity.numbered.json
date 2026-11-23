@@ -1,0 +1,21 @@
+{
+  "description": "Fallback title shown in the Import content list for an untitled imported Gemini activity.",
+  "context": "Fallback title shown in the Import content list for an untitled imported Gemini activity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "number",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2b3ae3064682ce39819fb1ccc29b4a0c7c4dffc17308a02d1605151a0504d2ad",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

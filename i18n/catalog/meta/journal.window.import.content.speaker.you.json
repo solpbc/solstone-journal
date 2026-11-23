@@ -1,0 +1,16 @@
+{
+  "description": "Owner speaker label shown in the Import content detail view for imported conversation turns authored by the journal owner.",
+  "context": "Owner speaker label shown in the Import content detail view for imported conversation turns authored by the journal owner.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "676d4e8d4dc716494c1f75ccc1c98bf59e0531a773acbe2ad67f4d2a6f6ad4ca",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

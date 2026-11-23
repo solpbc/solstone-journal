@@ -4099,7 +4099,11 @@
       const text = String(item.text || '');
       const who = message.is_owner === true
         ? window.JournalI18n.render('journal.window.transcripts.message.you')
-        : (message.author || '');
+        : message.role === 'assistant' && (!message.author || message.author === 'Assistant')
+          ? window.JournalI18n.render('journal.window.transcripts.message.assistant')
+          : message.role === 'unknown' && (!message.author || message.author === 'Unknown')
+            ? window.JournalI18n.render('journal.window.transcripts.message.unknown')
+            : (message.author || '');
       const sent = message.sent_at ? messageSentLabel(message.sent_at) : '';
       const to = messageToLine(message, groupAudience);
       const blocks = messageBlocks(message, text);

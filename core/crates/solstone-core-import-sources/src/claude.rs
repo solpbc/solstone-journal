@@ -10,8 +10,8 @@ use serde_json::{Map, Value};
 use solstone_core_import::ImportPreview;
 
 use crate::shared::{
-    ParsedEntry, PlannedThread, SourcePathKind, has_extension, parse_iso_utc, plan_entries,
-    read_zip_json, skip_conversation, skip_message, source_path_kind,
+    ParsedEntry, PlannedThread, SourcePathKind, ThreadTitleFallback, has_extension, parse_iso_utc,
+    plan_entries, read_zip_json, skip_conversation, skip_message, source_path_kind,
 };
 use crate::{ImportPlan, SkipReason, SkippedEntry, SourceError};
 
@@ -82,9 +82,11 @@ pub fn plan(path: &Path, zone: &TimeZone) -> Result<ImportPlan, SourceError> {
     let mut skipped = Vec::new();
     let mut threads = Vec::with_capacity(conversations.len());
     for (conversation_index, conversation) in conversations.iter().enumerate() {
+        let (title, title_fallback) = conversation_title(conversation, "name", conversation_index);
         threads.push(PlannedThread::from_export(
             conversation,
-            conversation_title(conversation, "name", conversation_index),
+            title,
+            title_fallback,
             &["uuid", "id"],
             &["conversation_url", "url"],
         ));
@@ -94,13 +96,23 @@ pub fn plan(path: &Path, zone: &TimeZone) -> Result<ImportPlan, SourceError> {
 }
 
 /// A conversation's title, or its position when the export names none.
-fn conversation_title(conversation: &Value, key: &str, index: usize) -> String {
-    conversation
+fn conversation_title(
+    conversation: &Value,
+    key: &str,
+    index: usize,
+) -> (String, Option<ThreadTitleFallback>) {
+    match conversation
         .get(key)
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|title| !title.is_empty())
-        .map_or_else(|| format!("Conversation {}", index + 1), str::to_owned)
+    {
+        Some(title) => (title.to_owned(), None),
+        None => (
+            format!("Conversation {}", index + 1),
+            Some(ThreadTitleFallback::Conversation(index + 1)),
+        ),
+    }
 }
 
 fn parse_conversation(

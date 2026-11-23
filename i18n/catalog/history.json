@@ -81523,6 +81523,94 @@
       "selector": null
     },
     {
+      "id": "journal.window.import.content.fallback.activity.numbered",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e61637469766974792e6e756d6265726564",
+      "namespace": "journal.window.import.content.fallback.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "number",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.content.fallback.audio",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e617564696f",
+      "namespace": "journal.window.import.content.fallback",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.content.fallback.conversation.numbered",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e636f6e766572736174696f6e2e6e756d6265726564",
+      "namespace": "journal.window.import.content.fallback.conversation",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "number",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.content.fallback.conversation.segment",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e636f6e766572736174696f6e2e7365676d656e74",
+      "namespace": "journal.window.import.content.fallback.conversation",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.content.fallback.event.untitled",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e6576656e742e756e7469746c6564",
+      "namespace": "journal.window.import.content.fallback.event",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.content.fallback.image",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e696d616765",
+      "namespace": "journal.window.import.content.fallback",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.import.content.fallback.note",
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e66616c6c6261636b2e6e6f7465",
       "namespace": "journal.window.import.content.fallback",
@@ -81629,6 +81717,54 @@
         "enum_values": [],
         "enum_default": null
       }
+    },
+    {
+      "id": "journal.window.import.content.speaker.assistant",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e737065616b65722e617373697374616e74",
+      "namespace": "journal.window.import.content.speaker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.content.speaker.human",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e737065616b65722e68756d616e",
+      "namespace": "journal.window.import.content.speaker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.content.speaker.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e737065616b65722e756e6b6e6f776e",
+      "namespace": "journal.window.import.content.speaker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.content.speaker.you",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e737065616b65722e796f75",
+      "namespace": "journal.window.import.content.speaker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
     },
     {
       "id": "journal.window.import.content.type.audio",
@@ -116449,6 +116585,18 @@
       "selector": null
     },
     {
+      "id": "journal.window.search.message.assistant",
+      "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e617373697374616e74",
+      "namespace": "journal.window.search.message",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.search.message.everyone",
       "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e65766572796f6e65",
       "namespace": "journal.window.search.message",
@@ -116484,6 +116632,18 @@
           "max": null
         }
       ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.search.message.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e756e6b6e6f776e",
+      "namespace": "journal.window.search.message",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
       "protected_slots": [],
       "selector": null
     },
@@ -175338,6 +175498,18 @@
       "selector": null
     },
     {
+      "id": "journal.window.transcripts.message.assistant",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e617373697374616e74",
+      "namespace": "journal.window.transcripts.message",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.transcripts.message.show.from.start",
       "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e73686f772e66726f6d2e7374617274",
       "namespace": "journal.window.transcripts.message.show.from",
@@ -175404,6 +175576,18 @@
     {
       "id": "journal.window.transcripts.message.truncated",
       "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7472756e6361746564",
+      "namespace": "journal.window.transcripts.message",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.message.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e756e6b6e6f776e",
       "namespace": "journal.window.transcripts.message",
       "owner": "journal",
       "tombstone": false,

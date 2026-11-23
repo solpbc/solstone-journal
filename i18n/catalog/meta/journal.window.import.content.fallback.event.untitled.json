@@ -1,0 +1,16 @@
+{
+  "description": "Fallback title shown in the Import content list for a calendar event with no summary.",
+  "context": "Fallback title shown in the Import content list for a calendar event with no summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c7377c3ee2127d28d1e7f9e2230b852d64dcbaec44dc845b9cf018bf9a427962",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

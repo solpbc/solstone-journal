@@ -60,6 +60,9 @@ pub fn render(source: RegistrySource, plan: ImportPlan, import_id: &str) -> Rend
                     _ => None,
                 },
             });
+            if entry.speaker == "Unknown" {
+                row["speaker_role"] = json!("unknown");
+            }
             if let Some(thread) = plan.threads.get(entry.thread) {
                 if let Some(id) = &thread.id {
                     row["conversation_id"] = json!(id);
@@ -120,6 +123,15 @@ pub fn render(source: RegistrySource, plan: ImportPlan, import_id: &str) -> Rend
             }
             if let Some(url) = &reference.url {
                 item["meta"]["conversation_url"] = json!(url);
+            }
+            if let Some(fallback) = reference.title_fallback {
+                let (kind, number) = match fallback {
+                    crate::shared::ThreadTitleFallback::Conversation(n) => {
+                        ("conversation_numbered", n)
+                    }
+                    crate::shared::ThreadTitleFallback::Activity(n) => ("activity_numbered", n),
+                };
+                item["display"] = json!({ "title_fallback": kind, "number": number });
             }
             item
         })

@@ -1,0 +1,16 @@
+{
+  "description": "Fallback unknown speaker label shown in the Import content detail view when an imported conversation turn has no identified speaker.",
+  "context": "Fallback unknown speaker label shown in the Import content detail view when an imported conversation turn has no identified speaker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "27938d29ddd80d6fa83fe8e08f898af62dfb3a3e9b496d101aa1636b7091cf8a",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -10,8 +10,8 @@ use serde_json::{Map, Value};
 use solstone_core_import::ImportPreview;
 
 use crate::shared::{
-    ParsedEntry, PlannedThread, SourcePathKind, has_extension, parse_iso_utc, plan_entries,
-    read_json_file, read_zip_json, read_zip_member, source_path_kind,
+    ParsedEntry, PlannedThread, SourcePathKind, ThreadTitleFallback, has_extension, parse_iso_utc,
+    plan_entries, read_json_file, read_zip_json, read_zip_member, source_path_kind,
 };
 use crate::{ImportPlan, SkipLocator, SkipReason, SkippedEntry, SourceError};
 
@@ -85,9 +85,11 @@ pub fn plan(path: &Path, zone: &TimeZone) -> Result<ImportPlan, SourceError> {
     let mut skipped = Vec::new();
     let mut threads = Vec::with_capacity(activities.len());
     for (activity_index, activity) in activities.iter().enumerate() {
+        let (title, title_fallback) = activity_title(activity, activity_index);
         let mut thread = PlannedThread::from_export(
             activity,
-            activity_title(activity, activity_index),
+            title,
+            title_fallback,
             &["conversationId", "conversation_id", "id"],
             &["conversationUrl", "url", "titleUrl"],
         );
@@ -208,7 +210,7 @@ fn parse_activity(
 }
 
 /// An activity is its own thread, titled by the start of its prompt.
-fn activity_title(activity: &Value, index: usize) -> String {
+fn activity_title(activity: &Value, index: usize) -> (String, Option<ThreadTitleFallback>) {
     let title = activity
         .as_object()
         .map(prompt)
@@ -217,9 +219,12 @@ fn activity_title(activity: &Value, index: usize) -> String {
         .take(80)
         .collect::<String>();
     if title.trim().is_empty() {
-        format!("Activity {}", index + 1)
+        (
+            format!("Activity {}", index + 1),
+            Some(ThreadTitleFallback::Activity(index + 1)),
+        )
     } else {
-        title
+        (title, None)
     }
 }
 

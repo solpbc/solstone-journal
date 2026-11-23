@@ -195,6 +195,12 @@ pub fn message_fields(
     }
     if native && let Some(owner) = row.get("is_owner").and_then(Value::as_bool) {
         fields["role"] = Value::from(if owner { "user" } else { "assistant" });
+    } else if row.get("speaker_role").and_then(Value::as_str) == Some("unknown")
+        || (native
+            && row.get("is_owner").and_then(Value::as_bool).is_none()
+            && row.get("speaker").and_then(Value::as_str) == Some("Unknown"))
+    {
+        fields["role"] = Value::from("unknown");
     }
     if let Some(to) = row.get("to").and_then(Value::as_array).filter(|names| {
         !names.is_empty()
@@ -891,5 +897,58 @@ mod tests {
         }
         header["imported"]["triage"] = Value::Null;
         assert_eq!(imported_text_medium(&header, Some(&proof)), Unresolved);
+    }
+
+    #[test]
+    fn fallback_unknown_speaker_role_applies_only_to_ai_or_explicit_marker() {
+        let row_with_marker: crate::content::JsonObject = serde_json::from_value(json!({
+            "speaker": "Unknown",
+            "speaker_role": "unknown",
+            "is_owner": null,
+            "text": "hello"
+        }))
+        .unwrap();
+        let fields = message_fields(
+            "import.claude",
+            "conversation_transcript.jsonl",
+            0,
+            &row_with_marker,
+            true,
+        )
+        .unwrap();
+        assert_eq!(fields["role"], "unknown");
+        assert_eq!(fields["author"], "Unknown");
+
+        let legacy_native: crate::content::JsonObject = serde_json::from_value(json!({
+            "speaker": "Unknown",
+            "is_owner": null,
+            "text": "legacy"
+        }))
+        .unwrap();
+        let fields = message_fields(
+            "import.claude",
+            "conversation_transcript.jsonl",
+            1,
+            &legacy_native,
+            true,
+        )
+        .unwrap();
+        assert_eq!(fields["role"], "unknown");
+
+        let human_stream: crate::content::JsonObject = serde_json::from_value(json!({
+            "speaker": "Unknown",
+            "text": "real person"
+        }))
+        .unwrap();
+        let fields = message_fields(
+            "import.text",
+            "conversation_transcript.jsonl",
+            2,
+            &human_stream,
+            true,
+        )
+        .unwrap();
+        assert!(fields.get("role").is_none());
+        assert_eq!(fields["author"], "Unknown");
     }
 }

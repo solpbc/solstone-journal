@@ -1,0 +1,16 @@
+{
+  "description": "Fallback title shown in the Import content list for an image import without an original filename.",
+  "context": "Fallback title shown in the Import content list for an image import without an original filename.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ffa666a19927b1b050f531fbee60a7be8bf770d053fbb3425746dd8c2f183374",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

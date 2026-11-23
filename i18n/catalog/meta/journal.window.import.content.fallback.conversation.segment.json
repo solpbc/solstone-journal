@@ -1,0 +1,16 @@
+{
+  "description": "Fallback title shown in the Import content list when rebuilding a conversation segment with no topic or preview.",
+  "context": "Fallback title shown in the Import content list when rebuilding a conversation segment with no topic or preview.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2cdde198f9af348669bea76974b0c22ed6bf437d38c32eed4ef7fde4a32c8e4",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

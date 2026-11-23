@@ -27,10 +27,18 @@ pub struct ImportPlan {
     pub threads: Vec<PlannedThread>,
 }
 
+/// How a conversation title was synthesized when the export carried none.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ThreadTitleFallback {
+    Conversation(usize),
+    Activity(usize),
+}
+
 /// The title and source locator for a conversation in an export.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PlannedThread {
     pub title: String,
+    pub title_fallback: Option<ThreadTitleFallback>,
     pub id: Option<String>,
     pub url: Option<String>,
 }
@@ -39,6 +47,7 @@ impl PlannedThread {
     pub(crate) fn from_export(
         export: &Value,
         title: String,
+        title_fallback: Option<ThreadTitleFallback>,
         id_fields: &[&str],
         url_fields: &[&str],
     ) -> Self {
@@ -51,6 +60,7 @@ impl PlannedThread {
         };
         Self {
             title,
+            title_fallback,
             id: first(id_fields),
             url: first(url_fields),
         }

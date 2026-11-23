@@ -22152,3 +22152,31 @@ journal.window.stored.evernote.url = url: { $url }
 journal.window.stored.evernote.task.due = { $title }, due { $due }
 
 journal.window.import.content.fallback.note = Note
+
+journal.window.import.content.fallback.conversation.numbered = Conversation { $number }
+
+journal.window.import.content.fallback.activity.numbered = Activity { $number }
+
+journal.window.import.content.fallback.conversation.segment = Conversation segment
+
+journal.window.import.content.fallback.image = Image import
+
+journal.window.import.content.fallback.audio = Audio import
+
+journal.window.import.content.fallback.event.untitled = Untitled event
+
+journal.window.import.content.speaker.you = You
+
+journal.window.import.content.speaker.human = Human
+
+journal.window.import.content.speaker.assistant = Assistant
+
+journal.window.import.content.speaker.unknown = Unknown
+
+journal.window.transcripts.message.assistant = Assistant
+
+journal.window.transcripts.message.unknown = Unknown
+
+journal.window.search.message.assistant = Assistant
+
+journal.window.search.message.unknown = Unknown

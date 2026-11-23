@@ -1,0 +1,16 @@
+{
+  "description": "Fallback assistant sender label shown in Transcripts for imported AI conversation messages.",
+  "context": "Fallback assistant sender label shown in Transcripts for imported AI conversation messages.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c06d73beabdc3f89af91e809306e97ead12b31030edd442684a83173c7645a0e",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

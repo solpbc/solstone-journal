@@ -1,0 +1,16 @@
+{
+  "description": "Fallback assistant speaker label shown in the Import content detail view for imported AI conversation turns.",
+  "context": "Fallback assistant speaker label shown in the Import content detail view for imported AI conversation turns.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c06d73beabdc3f89af91e809306e97ead12b31030edd442684a83173c7645a0e",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

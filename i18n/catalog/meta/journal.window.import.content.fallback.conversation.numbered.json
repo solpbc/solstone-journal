@@ -1,0 +1,21 @@
+{
+  "description": "Fallback title shown in the Import content list for an untitled imported conversation.",
+  "context": "Fallback title shown in the Import content list for an untitled imported conversation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "number",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6491fa08a281aea8678bd2efe8e36c276748d9b39921fc862391c90ebbad6a58",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

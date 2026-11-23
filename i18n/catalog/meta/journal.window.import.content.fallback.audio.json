@@ -1,0 +1,16 @@
+{
+  "description": "Fallback title shown in the Import content list for an audio import without an original filename.",
+  "context": "Fallback title shown in the Import content list for an audio import without an original filename.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ba464ac4596d00eb932f28b8173ee407adfc5aabfb66e191525f6638cd799fe",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
