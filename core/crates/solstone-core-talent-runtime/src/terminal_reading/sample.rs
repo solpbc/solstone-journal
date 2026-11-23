@@ -33,8 +33,9 @@ entries left out are named with their time span.\n";
 pub(super) fn output_only_line(session: &str) -> String {
     format!(
         "Nobody was at the keyboard of session \"{session}\": it was taken in on its output alone, which the \
-owner turns on for a session where an AI agent or a program works on its own. What appears here is that \
-agent's or program's work, not the owner's.\n"
+owner turns on for a session where an AI agent or a program works on its own. What appears here is the work \
+of the agent in {session}, not the owner's, except a message written to the agent in its transcript, which is \
+the owner's request to it.\n"
     )
 }
 
@@ -168,9 +169,11 @@ fn render(sessions: &[Session], base_ms: i64, choice: &Choice) -> (Vec<String>, 
                 }
                 Kind::FirstSeen | Kind::NewText => {
                     let what = if item.kind == Kind::FirstSeen {
-                        "already on screen at its first capture (earlier work)"
+                        "already on screen at its first capture (earlier work)".to_owned()
+                    } else if session.output_only {
+                        format!("new text from the agent in {}", session.name)
                     } else {
-                        "new text"
+                        "new text".to_owned()
                     };
                     let (lines, count) = capped(item, choice.cap);
                     shown += count;

@@ -391,3 +391,55 @@ fn a_session_taken_in_on_output_alone_is_read_as_nobody_at_its_keyboard() {
         );
     }
 }
+
+#[test]
+fn a_listed_session_a_client_used_is_still_nobodys_when_nothing_was_typed() {
+    // A capture on output alone shows the owner listed the session; a later
+    // capture with the cursor only means a client used it. Typing decides.
+    let frame = |time: f64, content: &str, cursor: Option<(usize, usize)>| -> String {
+        let mut pane = json!({"id":"%0","active":true,"content":content,"alternate_on":true,"pane_in_mode":false});
+        if let Some((x, y)) = cursor {
+            pane["cursor_x"] = json!(x);
+            pane["cursor_y"] = json!(y);
+            pane["cursor_visible"] = json!(true);
+        }
+        let raw = json!({"timestamp":time,"analysis":{"primary":"tmux"},"content":{"tmux":{"session":"qa","window":{"id":"@0","name":"work"},"panes":[pane]}}});
+        format!("{raw}\n")
+    };
+    let untyped = frame(0.0, "⏺ Running the replays\n", None)
+        + &frame(
+            5.0,
+            "⏺ Running the replays\n⏺ Ran five replays\n",
+            Some((0, 2)),
+        );
+    let typed = frame(0.0, "⏺ Ran five replays\n❯ ", Some((2, 1)))
+        + &frame(5.0, "⏺ Ran five replays\n❯ now score them", Some((16, 1)))
+        + &frame(
+            10.0,
+            "⏺ Ran five replays\n❯ now score them\n⏺ Scoring\n",
+            None,
+        );
+    for (frames, labelled) in [(untyped, true), (typed, false)] {
+        let (_root, paths, context, request) = setup("");
+        fs::write(
+            context
+                .journal
+                .join("chronicle/20261021/device/100000_300/tmux_main_screen.jsonl"),
+            &frames,
+        )
+        .unwrap();
+        let prepared = crate::prepare::prepare(
+            request.clone(),
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Preview,
+        )
+        .unwrap();
+        let text = source_text(&prepared);
+        assert_eq!(
+            text.contains(&super::sample::output_only_line("qa")),
+            labelled,
+            "{frames}: {text}"
+        );
+    }
+}

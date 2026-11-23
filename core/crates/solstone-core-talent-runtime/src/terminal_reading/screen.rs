@@ -69,7 +69,8 @@ pub(super) struct Session {
     pub captures: usize,
     /// Typed inputs left out because all typed input exceeded its budget.
     pub typed_left_out: usize,
-    /// Every capture was taken in on output alone, with nobody at the keyboard.
+    /// The owner has the session taken in on its output alone, and nothing was
+    /// typed at its keyboard here.
     pub output_only: bool,
 }
 
@@ -307,7 +308,6 @@ pub(super) fn read(
     let mut session = Session {
         name: name.to_owned(),
         captures: frames.len(),
-        output_only: !frames.is_empty() && frames.iter().all(output_only),
         ..Default::default()
     };
     let mut states: HashMap<(String, String), PaneState> = HashMap::new();
@@ -416,6 +416,9 @@ pub(super) fn read(
         }
     }
     let mut typed = cursor::typed(frames);
+    // One capture on output alone shows the owner listed the session; a capture
+    // with the cursor only means a client used it, so typing decides.
+    session.output_only = frames.iter().any(output_only) && typed.is_empty();
     let mut total = 0;
     let keep = typed
         .iter()
