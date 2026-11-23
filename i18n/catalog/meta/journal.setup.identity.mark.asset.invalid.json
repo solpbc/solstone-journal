@@ -1,0 +1,21 @@
+{
+  "description": "Journal setup invalid mark asset error.",
+  "context": "Journal window. Journal setup invalid mark asset error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a0c1586df549ebdb318ba104d4ca8e1b3174e0e437ee85253b2032673046b925",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

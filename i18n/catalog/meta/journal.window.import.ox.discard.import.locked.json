@@ -1,0 +1,16 @@
+{
+  "description": "Import discard conflict when import is locked.",
+  "context": "Journal window. Import discard conflict when import is locked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1c0d7af3fc0df63c7bd2bfa0436a34f7c39b1a1f02da0e200852aae03166a1ac",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

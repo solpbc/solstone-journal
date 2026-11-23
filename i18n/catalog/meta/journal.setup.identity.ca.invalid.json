@@ -1,0 +1,21 @@
+{
+  "description": "Journal setup invalid local CA error.",
+  "context": "Journal window. Journal setup invalid local CA error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5af83d1525ee09d7ad17db8f70e2fac37a52dca1b4246ef63e677d564a9d0fe3",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

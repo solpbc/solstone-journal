@@ -1,0 +1,16 @@
+{
+  "description": "Settings validation error when processing section is not an object.",
+  "context": "Journal window. Settings validation error when processing section is not an object.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b4897515a62468ed07a5b3ab2e2f931885c1c410fd41c84ce6af9a924d650908",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

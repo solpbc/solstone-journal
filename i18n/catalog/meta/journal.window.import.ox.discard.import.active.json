@@ -1,0 +1,16 @@
+{
+  "description": "Import discard conflict when import is active.",
+  "context": "Journal window. Import discard conflict when import is active.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "48b85dbd3f6e080e1a91a7f29fd2caa47fa42294b402bbf23d2889f3547b01f8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

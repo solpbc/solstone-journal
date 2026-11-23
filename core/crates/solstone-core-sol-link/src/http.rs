@@ -47,7 +47,8 @@ fn local_provider_val() -> Value {
 pub use crate::setup_progress::{
     SetupDownloadError, SetupDownloadTask, SetupDownloads, SetupProgress, SetupProgressError,
     SetupProgressThinking, SetupRetryError, localized_setup_downloads, packaged_speech_retry,
-    read_setup_downloads, read_setup_downloads_with_packaged_speech, read_setup_progress,
+    packaged_speech_retry_for_locale, read_setup_downloads,
+    read_setup_downloads_with_packaged_speech, read_setup_progress,
 };
 
 pub trait SetupHost: Send + Sync {
@@ -1571,10 +1572,16 @@ async fn init_action(
             if let Err(error) =
                 solstone_core_entity::ensure_configured_principal(&state.journal_root)
             {
+                log::warn!("setup owner identity failed: {error}");
+                let detail = if locale == ENGLISH {
+                    error
+                } else {
+                    text(locale, "journal.setup.refusal.owner.identity.failed")
+                };
                 return error_envelope(
                     "owner_identity_failed",
                     text(locale, "journal.setup.refusal.internal.server.error"),
-                    error,
+                    detail,
                     StatusCode::INTERNAL_SERVER_ERROR,
                 )
                 .into_response();
@@ -1784,12 +1791,23 @@ async fn init_finalize(
     if wrote_first_completion && should_start_local {
         let journal = state.journal_root.clone();
         let host = state.host.clone();
-        let start_res = tokio::task::spawn_blocking(move || host.start_local(&journal)).await;
+        let start_res =
+            tokio::task::spawn_blocking(move || host.start_local_for_locale(&journal, locale))
+                .await;
         if let Err(err) = start_res {
+            log::warn!("setup local thinking start worker failed: {err}");
+            let detail = if locale == ENGLISH {
+                err.to_string()
+            } else {
+                text(
+                    locale,
+                    "journal.setup.refusal.thinking.download.could.not.start",
+                )
+            };
             return error_envelope(
                 "start_failed",
                 text(locale, "journal.setup.refusal.internal.server.error"),
-                err.to_string(),
+                detail,
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
             .into_response();
@@ -1797,10 +1815,16 @@ async fn init_finalize(
     }
 
     if let Err(error) = solstone_core_entity::ensure_configured_principal(&state.journal_root) {
+        log::warn!("setup finalize owner identity failed: {error}");
+        let detail = if locale == ENGLISH {
+            error
+        } else {
+            text(locale, "journal.setup.refusal.owner.identity.failed")
+        };
         return error_envelope(
             "owner_identity_failed",
             text(locale, "journal.setup.refusal.internal.server.error"),
-            error,
+            detail,
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response();

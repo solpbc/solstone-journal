@@ -144,8 +144,6 @@ journal.cli.doctor.device.day.listing.repair = a device syncing that day is told
 
 journal.cli.doctor.device.day.listing.fault = day { $day } stream { $stream } device { $device }: { $reason }
 
-journal.cli.doctor.device.day.listing.streams.unavailable = device streams unavailable: { $error }
-
 journal.cli.doctor.device.day.listing.streams.unbound = no device streams bound
 
 journal.cli.doctor.device.day.listing.readable = the journal can read the last { $days } days for every bound device
@@ -10167,8 +10165,6 @@ journal.cli.host.health.tasks.empty = Tasks: none{ $line_break }
 
 journal.cli.host.health.timeout = Timed out waiting for supervisor status (10s){ $line_break }
 
-journal.cli.host.health.timeout.frames = Timed out waiting for supervisor status (10s; dropped { $count } malformed frame(s)){ $line_break }
-
 journal.cli.host.health.usage = usage: { $syntax }{ $line_break }
 
 journal.cli.host.heartbeat.error = { $command }: { $detail }
@@ -12034,3 +12030,24 @@ journal.cli.maintenance.face.log.failed = face backfill failed: { $detail }
 journal.cli.maintenance.speakers.discovery.helper = speaker discovery helper failed at { $stage }: { $reason }
 
 journal.cli.maintenance.speakers.discovery.input = speaker discovery failed: { $detail }
+
+journal.cli.host.health.timeout.malformed.frames = { $quantity ->
+    [one] Timed out waiting for supervisor status (10s; dropped { $count } malformed frame){ $line_break }
+   *[other] Timed out waiting for supervisor status (10s; dropped { $count } malformed frames){ $line_break }
+}
+
+journal.cli.install.status.interrupted = the download was interrupted
+
+journal.cli.setup.host.journal.binding.changed = journal binding changed
+
+journal.cli.setup.host.packaged.speech.unavailable = packaged speech proof unavailable
+
+journal.cli.oauth.callback.success = signed in. you can close this tab and go back to your journal
+
+journal.cli.oauth.callback.failure = sign-in didn't finish. go back to your journal and try again
+
+journal.cli.oauth.oura.callback.rejected = Oura authorization rejected.
+
+journal.cli.oauth.oura.callback.declined = Oura wasn't connected. you can close this tab.
+
+journal.cli.oauth.oura.callback.allowed = you allowed it at Oura. you can close this tab; the terminal says when it's connected.

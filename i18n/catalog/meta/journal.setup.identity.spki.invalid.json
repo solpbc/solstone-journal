@@ -1,0 +1,21 @@
+{
+  "description": "Journal setup invalid SPKI error.",
+  "context": "Journal window. Journal setup invalid SPKI error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "05f4c987cf444e93162142d354ee1588e90c89f68552610ce2551928240154f4",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

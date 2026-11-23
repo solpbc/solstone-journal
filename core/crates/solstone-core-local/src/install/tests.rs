@@ -6175,6 +6175,26 @@ fn installer_receipts_follow_typed_writes_and_keep_raw_english() {
             archive_detail.render(private)
         );
     }
+    let mut interrupted = archived.clone();
+    interrupted.install_error = Some("install_interrupted".to_owned());
+    interrupted.error_code = Some("install_interrupted".to_owned());
+    assert_eq!(
+        super::status::display_error(root, &interrupted, "en-US").as_deref(),
+        Some("install_interrupted")
+    );
+    if private != "en-US" {
+        assert_eq!(
+            super::status::display_error(root, &interrupted, private).as_deref(),
+            Some(
+                solstone_core_cli_copy::render_for(
+                    private,
+                    "journal.cli.install.status.interrupted",
+                    &[]
+                )
+                .as_str()
+            )
+        );
+    }
     println!(
         "{}",
         json!({"gpu":{"record":before,"human":detail.render("en-US")},"archive":{"record":raw_archive,"human":archive_detail.render("en-US")}})

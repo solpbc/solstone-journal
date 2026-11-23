@@ -1,0 +1,16 @@
+{
+  "description": "Settings validation error when processing history_confirmed is not a boolean.",
+  "context": "Journal window. Settings validation error when processing history_confirmed is not a boolean.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5135700c81891eacae9be73621f4cc4c8a9f05d696bc300b7852cf7febbc7730",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

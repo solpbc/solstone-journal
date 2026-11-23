@@ -1,0 +1,16 @@
+{
+  "description": "Browser tab message when the owner declines Oura authorization.",
+  "context": "Browser tab message when the owner declines Oura authorization.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0551bedf408d17ef0b989982b5ec2f1c74de29aca43ac39d395058bc78956868",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

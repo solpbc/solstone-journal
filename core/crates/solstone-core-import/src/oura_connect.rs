@@ -110,7 +110,33 @@ trait ConnectPlatform {
     fn exchange(&mut self, form: &BTreeMap<String, String>) -> Result<Value, BodyIngestError>;
 }
 
-struct LiveConnectPlatform;
+/// Caller-supplied plain-text bodies written to the browser tab on Oura OAuth callback.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OuraCallbackCopy {
+    pub rejected: String,
+    pub declined: String,
+    pub allowed: String,
+}
+
+impl OuraCallbackCopy {
+    pub fn english() -> Self {
+        Self {
+            rejected: "Oura authorization rejected.".to_owned(),
+            declined: "Oura wasn't connected. you can close this tab.".to_owned(),
+            allowed: "you allowed it at Oura. you can close this tab; the terminal says when it's connected.".to_owned(),
+        }
+    }
+}
+
+impl Default for OuraCallbackCopy {
+    fn default() -> Self {
+        Self::english()
+    }
+}
+
+struct LiveConnectPlatform {
+    copy: OuraCallbackCopy,
+}
 
 impl ConnectPlatform for LiveConnectPlatform {
     fn authorization_code(
@@ -133,14 +159,18 @@ impl ConnectPlatform for LiveConnectPlatform {
                 return Err(source("authorization_timeout"));
             }
             match listener.accept() {
-                Ok((mut stream, _)) => match read_callback(&mut stream, expected_state) {
-                    Ok(Some(code)) => return Ok(code),
-                    Ok(None) => {}
-                    Err(error) if error.stage() == "authorization_declined" => return Err(error),
-                    Err(_) => {
-                        let _ = callback_response(&mut stream, 400, "Oura authorization rejected.");
+                Ok((mut stream, _)) => {
+                    match read_callback_with_copy(&mut stream, expected_state, &self.copy) {
+                        Ok(Some(code)) => return Ok(code),
+                        Ok(None) => {}
+                        Err(error) if error.stage() == "authorization_declined" => {
+                            return Err(error);
+                        }
+                        Err(_) => {
+                            let _ = callback_response(&mut stream, 400, &self.copy.rejected);
+                        }
                     }
-                },
+                }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                     thread::sleep(Duration::from_millis(50));
                 }
@@ -158,7 +188,15 @@ pub fn connect_oura(
     journal: &Path,
     options: &OuraConnectOptions,
 ) -> Result<OuraConnectReport, BodyIngestError> {
-    let mut platform = LiveConnectPlatform;
+    connect_oura_with_copy(journal, options, &OuraCallbackCopy::english())
+}
+
+pub fn connect_oura_with_copy(
+    journal: &Path,
+    options: &OuraConnectOptions,
+    copy: &OuraCallbackCopy,
+) -> Result<OuraConnectReport, BodyIngestError> {
+    let mut platform = LiveConnectPlatform { copy: copy.clone() };
     connect_with_platform(journal, options, &mut platform)
 }
 
@@ -332,9 +370,10 @@ fn authorization_url(client_id: &str, state: &str, challenge: &str, scopes: &[St
     format!("{AUTH_URL}?{query}")
 }
 
-fn read_callback(
+fn read_callback_with_copy(
     stream: &mut TcpStream,
     expected_state: &str,
+    copy: &OuraCallbackCopy,
 ) -> Result<Option<String>, BodyIngestError> {
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
@@ -375,31 +414,23 @@ fn read_callback(
     // A request that names another host, such as a page rebound onto this port, is refused and
     // the connect keeps waiting.
     if !names_callback_host(request) {
-        callback_response(stream, 400, "Oura authorization rejected.")?;
+        callback_response(stream, 400, &copy.rejected)?;
         return Ok(None);
     }
     let code = match callback_code(target, expected_state) {
         Err(error) if error.stage() == "authorization_declined" => {
-            callback_response(
-                stream,
-                200,
-                "Oura wasn't connected. you can close this tab.",
-            )?;
+            callback_response(stream, 200, &copy.declined)?;
             return Err(error);
         }
         other => other?,
     };
     match code {
         Some(code) => {
-            callback_response(
-                stream,
-                200,
-                "you allowed it at Oura. you can close this tab; the terminal says when it's connected.",
-            )?;
+            callback_response(stream, 200, &copy.allowed)?;
             Ok(Some(code))
         }
         None => {
-            callback_response(stream, 400, "Oura authorization rejected.")?;
+            callback_response(stream, 400, &copy.rejected)?;
             Ok(None)
         }
     }

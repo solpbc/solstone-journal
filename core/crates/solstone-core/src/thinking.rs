@@ -105,15 +105,29 @@ pub fn run_chatgpt_sign_in(options: ChatGptSignInOptions) -> ExitCode {
     let j_clone = journal.clone();
     let attempt_clone = attempt.clone();
 
+    let callback_copy = solstone_core_thinking::chatgpt::CallbackCopy {
+        success: solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.oauth.callback.success",
+            &[],
+        ),
+        failure: solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.oauth.callback.failure",
+            &[],
+        ),
+    };
+
     // Loopback listener thread (waits up to 600 seconds)
     std::thread::spawn(move || {
         let transport = solstone_core_thinking::chatgpt::UreqTransport;
-        let res = solstone_core_thinking::chatgpt::finish_sign_in(
+        let res = solstone_core_thinking::chatgpt::finish_sign_in_with_copy(
             &j_clone,
             &transport,
             &attempt_clone,
             None,
             std::time::Duration::from_secs(600),
+            &callback_copy,
         );
         let _ = tx_clone.send(res);
     });

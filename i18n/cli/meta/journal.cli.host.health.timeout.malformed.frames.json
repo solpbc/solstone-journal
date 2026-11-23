@@ -1,0 +1,37 @@
+{
+  "description": "Journal host health timeout reporting dropped malformed frames.",
+  "context": "Journal host health timeout reporting dropped malformed frames.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2c434bca5afded2b50794e997222b3c2957aaf7ca9928be2356ca52e5a171094",
+  "max_length": 297,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -9,7 +9,7 @@ use std::thread;
 use solstone_core_cli_copy::{ENGLISH, MessageDetail};
 use solstone_core_sol_link::http::{
     SetupDownloads, SetupHost, SetupProgressError, SetupRetryError, localized_setup_downloads,
-    packaged_speech_retry, read_setup_downloads_with_packaged_speech,
+    packaged_speech_retry_for_locale, read_setup_downloads_with_packaged_speech,
 };
 use solstone_core_thinking_copy::{
     DownloadMember, SetupCatalogFacts, current_setup_facts, sum_download_bytes,
@@ -45,13 +45,25 @@ impl ConveySetupHost {
         self
     }
 
-    fn packaged_speech(&self, journal: &Path) -> Result<&Arc<dyn PackagedSpeechSetup>, String> {
+    fn packaged_speech(
+        &self,
+        journal: &Path,
+        locale: &str,
+    ) -> Result<&Arc<dyn PackagedSpeechSetup>, String> {
         if journal != self.backup.journal_root {
-            return Err("journal binding changed".into());
+            return Err(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.setup.host.journal.binding.changed",
+                &[],
+            ));
         }
-        self.packaged_speech
-            .as_ref()
-            .ok_or_else(|| "packaged speech proof unavailable".into())
+        self.packaged_speech.as_ref().ok_or_else(|| {
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.setup.host.packaged.speech.unavailable",
+                &[],
+            )
+        })
     }
 
     fn start_local_for_key(&self, journal: &Path, key: &str) -> Result<(), String> {
@@ -66,7 +78,10 @@ impl ConveySetupHost {
                 .retained_root()
                 .map_err(|error| error.to_string())?;
             if root.canonical_path() != journal {
-                return Err("journal binding changed".into());
+                return Err(MessageDetail::message(
+                    "journal.cli.setup.host.journal.binding.changed",
+                    [],
+                ));
             }
             crate::thinking_install::start_mobile(root, "local/qwen3.5-4b", false)
                 .map(|_| ())
@@ -113,9 +128,10 @@ impl SetupHost for ConveySetupHost {
         locale: &str,
     ) -> Result<(), SetupRetryError> {
         if self.packaged_speech.is_some() || cfg!(any(target_os = "android", target_os = "ios")) {
-            return packaged_speech_retry(
-                self.packaged_speech(journal_root)
+            return packaged_speech_retry_for_locale(
+                self.packaged_speech(journal_root, locale)
                     .and_then(|speech| speech.retry()),
+                locale,
             );
         }
         #[cfg(target_os = "windows")]
@@ -156,7 +172,7 @@ impl SetupHost for ConveySetupHost {
         if self.packaged_speech.is_some() || cfg!(any(target_os = "android", target_os = "ios")) {
             read_setup_downloads_with_packaged_speech(
                 journal_root,
-                self.packaged_speech(journal_root)
+                self.packaged_speech(journal_root, locale)
                     .and_then(|speech| speech.status()),
                 locale,
             )
@@ -321,7 +337,7 @@ fn retry_speech_for(
     locale: &str,
 ) -> Result<(), SetupRetryError> {
     if let SpeechWork::WindowsPackage(verified) = work {
-        return packaged_speech_retry(verified);
+        return packaged_speech_retry_for_locale(verified, locale);
     }
 
     let observed = solstone_core_local::install::status::read_observed_status(journal, "parakeet")
@@ -338,10 +354,7 @@ fn retry_speech_for(
             return Err(SetupRetryError {
                 code: "speech_admission_pending",
                 message_id: "journal.setup.speech.starting",
-                detail: crate::window_catalog::text(
-                    crate::window_catalog::ENGLISH,
-                    "journal.setup.speech.check.progress",
-                ),
+                detail: crate::window_catalog::text(locale, "journal.setup.speech.check.progress"),
             });
         }
         Err(error) => {
@@ -418,7 +431,7 @@ fn retry_speech_for(
                             .as_ref()
                             .map_or("install_failed", |error| error.reason_code.as_str())
                             .to_owned();
-                        (code, MessageDetail::from(format!("{error:?}")))
+                        (code, error.into_detail())
                     })
                 }
                 #[cfg(all(test, feature = "full-tests"))]
@@ -510,10 +523,7 @@ fn retry_speech_for(
         Err(_) => Err(SetupRetryError {
             code: "speech_admission_pending",
             message_id: "journal.setup.speech.starting",
-            detail: crate::window_catalog::text(
-                crate::window_catalog::ENGLISH,
-                "journal.setup.speech.check.progress",
-            ),
+            detail: crate::window_catalog::text(locale, "journal.setup.speech.check.progress"),
         }),
     }
 }

@@ -1,0 +1,16 @@
+{
+  "description": "Import detail fallback option label for choosing no facet.",
+  "context": "Journal window. Import detail fallback option label for choosing no facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "002870d686b2333ff5dcdf3da004b48ad85988100761e392e8b1f83fa3a2dbd2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

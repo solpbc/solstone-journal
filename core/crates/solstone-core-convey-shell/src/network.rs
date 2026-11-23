@@ -29,8 +29,8 @@ use solstone_core_sol_link::pairing::addresses::{
 };
 use solstone_core_sol_link::pairing::nonces::{NonceStore, relay_pairing_nonce_open};
 use solstone_core_sol_link::pairing::{
-    CeremonyRequest, MintRequest, PairingError, complete_pairing, mint_pairing, pair_response_json,
-    read_configured_home,
+    CeremonyRequest, MintRequest, PairingError, PairingRequestRefusal, complete_pairing,
+    mint_pairing, pair_response_json, read_configured_home,
 };
 
 use crate::door::PairingAdmission;
@@ -985,13 +985,32 @@ fn pairing_refusal(error: PairingError, locale: &str) -> Response {
             StatusCode::from_u16(error.status()).expect("pairing status is valid"),
         ),
     };
+    let refusal_code = match &error {
+        PairingError::PairingRequestInvalid(PairingRequestRefusal::NoLocalAddress) => {
+            Some("no_local_address")
+        }
+        _ => None,
+    };
     let detail = error.detail_for(locale).unwrap_or_else(|| {
         crate::window_catalog::text(
             locale,
             "journal.window.network.error.pairing.request.invalid.pairing.request.could.not.be",
         )
     });
-    refusal(reason, &detail, status)
+    match refusal_code {
+        Some(code) => (
+            status,
+            Json(json!({
+                "reason_code": reason,
+                "reason": reason,
+                "refusal_code": code,
+                "error": detail,
+                "detail": detail,
+            })),
+        )
+            .into_response(),
+        None => refusal(reason, &detail, status),
+    }
 }
 
 pub(crate) fn refusal(reason_code: &str, detail: &str, status: StatusCode) -> Response {
@@ -1276,6 +1295,11 @@ mod tests {
             .expect("refusal body");
         let value: Value = serde_json::from_slice(&body).expect("refusal JSON");
         assert_eq!(value["reason_code"], "pairing_request_invalid");
+        assert_eq!(value["refusal_code"], "no_local_address");
+        assert_eq!(
+            value["detail"],
+            "no usable local address is available for pairing"
+        );
     }
 
     #[tokio::test]

@@ -1,0 +1,16 @@
+{
+  "description": "Browser tab confirmation after the owner allows Oura authorization.",
+  "context": "Browser tab confirmation after the owner allows Oura authorization.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2455e168ed0b95bc91185985c8e17bb9fe163bd1a81305413195ddf0227e5d77",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

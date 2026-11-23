@@ -1,0 +1,21 @@
+{
+  "description": "Settings validation error when a processing time_window field is not HH:MM.",
+  "context": "Journal window. Settings validation error when a processing time_window field is not HH:MM.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "87dff678ddbcee645db7c33c7d1205ea4beb50f73f12c30b43ff83e3579d18e5",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -165,8 +165,18 @@ pub async fn begin_sign_in(locale: &str, root: PathBuf, body: Bytes) -> Response
     if attempt.listener.is_some() {
         let bg_attempt = attempt.clone();
         let bg_root = root;
+        let copy = plaud::CallbackCopy {
+            success: text(locale, "journal.window.oauth.callback.success"),
+            failure: text(locale, "journal.window.oauth.callback.failure"),
+        };
         std::thread::spawn(move || {
-            let _ = plaud::finish_sign_in(&bg_root, &bg_attempt, None, LOOPBACK_SIGNIN_TIMEOUT);
+            let _ = plaud::finish_sign_in_with_copy(
+                &bg_root,
+                &bg_attempt,
+                None,
+                LOOPBACK_SIGNIN_TIMEOUT,
+                &copy,
+            );
         });
     }
 

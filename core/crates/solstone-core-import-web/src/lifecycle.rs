@@ -32,7 +32,7 @@ use tempfile::NamedTempFile;
 use crate::{
     AppState,
     callosum::{BusError, TaskWatch, request_required},
-    http::{error, import_not_found, json as json_response},
+    http::{error, import_not_found, json as json_response, refusal},
     mobile_import_contract::{
         ImportErrorKind, ImportReasonCode, SavedSource, inprocess_start_response,
         queued_start_response,
@@ -310,13 +310,15 @@ pub(crate) async fn discard(
     }
 }
 
-fn discard_conflict(detail: &str) -> Response {
-    json_response(
+fn discard_conflict(detail: &str, message: &'static str) -> Response {
+    refusal(
         StatusCode::CONFLICT,
         json!({
-            "error": detail,
+            "error": "",
             "reason_code": "discard_not_allowed",
+            "detail": detail,
         }),
+        message,
     )
 }
 
@@ -332,25 +334,44 @@ fn discard_sync(root: &Path, route: Option<&crate::ImportRouteSlot>, timestamp: 
     let _target_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(root)
     {
         Ok(guard) => guard,
-        Err(_) => return discard_conflict("journal is busy"),
+        Err(_) => {
+            return discard_conflict(
+                "journal is busy",
+                "journal.window.import.ox.discard.journal.busy",
+            );
+        }
     };
     let _lock = match solstone_core_import::hold_import_lock(root, timestamp) {
         Ok(lock) => lock,
-        Err(_) => return discard_conflict("import is locked"),
+        Err(_) => {
+            return discard_conflict(
+                "import is locked",
+                "journal.window.import.ox.discard.import.locked",
+            );
+        }
     };
     if !import_json_path.exists() {
         return import_not_found("Import not found");
     }
     if route.is_some_and(|slot| slot.retains(timestamp)) {
-        return discard_conflict("import is currently active");
+        return discard_conflict(
+            "import is currently active",
+            "journal.window.import.ox.discard.import.active",
+        );
     }
     let Ok(metadata) = read_import_metadata(root, timestamp) else {
-        return discard_conflict("import metadata cannot be verified");
+        return discard_conflict(
+            "import metadata cannot be verified",
+            "journal.window.import.ox.discard.metadata.unverified",
+        );
     };
     if solstone_core_import::saved_start::saved_start_state(&metadata, timestamp)
         != solstone_core_import::saved_start::SavedStartState::Eligible
     {
-        return discard_conflict("import is no longer waiting to start");
+        return discard_conflict(
+            "import is no longer waiting to start",
+            "journal.window.import.ox.discard.not.waiting",
+        );
     }
     let projection = solstone_core_import::project_import_result(root, timestamp);
     if projection.status != solstone_core_import::ProjectionStatus::Pending
@@ -360,7 +381,10 @@ fn discard_sync(root: &Path, route: Option<&crate::ImportRouteSlot>, timestamp: 
         || solstone_core_import::metadata::attempt_holder(root, timestamp)
             == solstone_core_import::metadata::AttemptHolder::Held
     {
-        return discard_conflict("import has already started or processed");
+        return discard_conflict(
+            "import has already started or processed",
+            "journal.window.import.ox.discard.already.started",
+        );
     }
     if let Err(err) = solstone_core_import::discard_abandoned_import_records(root, timestamp) {
         return metadata_failed(format!("could not discard staged import: {err}"));
@@ -7420,5 +7444,50 @@ mod tests {
             .unwrap();
         assert_eq!(resp_ran.status(), StatusCode::CONFLICT);
         assert!(ran_dir.exists());
+
+        // 9. Discard 409 conflicts pass through render_refusal for locale translation while
+        // preserving exact English text in en-US.
+        let private = solstone_core_convey_http::window_catalog::packaged_locale(Some("en-XA"));
+        let mut req_en = Request::post(format!("/app/import/api/{ran_id}/discard"))
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+        req_en
+            .extensions_mut()
+            .insert(solstone_core_convey_http::coalesce::ResponseLocale(
+                solstone_core_convey_http::window_catalog::ENGLISH,
+            ));
+        let resp_en = crate::routes(root.path().to_path_buf())
+            .oneshot(req_en)
+            .await
+            .unwrap();
+        assert_eq!(resp_en.status(), StatusCode::CONFLICT);
+        let body_en: Value =
+            serde_json::from_slice(&to_bytes(resp_en.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body_en["error"], "import has already started or processed");
+        if private != solstone_core_convey_http::window_catalog::ENGLISH {
+            let mut req_xa = Request::post(format!("/app/import/api/{ran_id}/discard"))
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap();
+            req_xa
+                .extensions_mut()
+                .insert(solstone_core_convey_http::coalesce::ResponseLocale(private));
+            let resp_xa = crate::routes(root.path().to_path_buf())
+                .oneshot(req_xa)
+                .await
+                .unwrap();
+            let body_xa: Value =
+                serde_json::from_slice(&to_bytes(resp_xa.into_body(), usize::MAX).await.unwrap())
+                    .unwrap();
+            assert_eq!(
+                body_xa["error"],
+                solstone_core_convey_http::window_catalog::text(
+                    private,
+                    "journal.window.import.ox.discard.already.started"
+                )
+            );
+        }
     }
 }

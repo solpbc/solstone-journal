@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup system randomness unavailable error.",
+  "context": "Journal window. Journal setup system randomness unavailable error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d7eba1247a190788c6aa71b0f38ab6b3dbb832240376555b75e1ece22444436",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

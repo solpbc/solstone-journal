@@ -1,0 +1,21 @@
+{
+  "description": "Settings validation error when a processing gate condition enabled field is not a boolean.",
+  "context": "Journal window. Settings validation error when a processing gate condition enabled field is not a boolean.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0336eeca767fdebffd470a9cef202f1126ea558833e0521e065e0ff81774aebe",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

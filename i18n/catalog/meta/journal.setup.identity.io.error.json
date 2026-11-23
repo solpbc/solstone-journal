@@ -1,0 +1,25 @@
+{
+  "description": "Journal setup identity file I/O failure.",
+  "context": "Journal window. Journal setup identity file I/O failure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5a55148ccb1177d8cbab81e1c52bcf876c2be99afe96d7cf0e9c88be25437844",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

@@ -76,10 +76,67 @@ impl EstablishError {
     pub(crate) fn presentation(&self, locale: &str) -> String {
         use solstone_core_convey_http::window_catalog::{strings, text};
         match self {
-            Self::Lock(error) => error.to_string(),
-            Self::Publish(error) => error.to_string(),
-            Self::Ca(error) => error.to_string(),
-            Self::Mark(error) => error.to_string(),
+            Self::Lock(LockError::Io { path, source }) => {
+                let path = path.display().to_string();
+                let source = source.to_string();
+                strings(
+                    locale,
+                    "journal.setup.identity.io.error",
+                    [("path", path.as_str()), ("error", source.as_str())],
+                )
+            }
+            Self::Lock(LockError::Timeout(timeout)) => {
+                let path = timeout.path.display().to_string();
+                let seconds = timeout.timeout.as_secs_f64().to_string();
+                strings(
+                    locale,
+                    "journal.setup.identity.lock.timeout",
+                    [("path", path.as_str()), ("seconds", seconds.as_str())],
+                )
+            }
+            Self::Publish(StagedWriteError::Io { path, source }) => {
+                let path = path.display().to_string();
+                let source = source.to_string();
+                strings(
+                    locale,
+                    "journal.setup.identity.io.error",
+                    [("path", path.as_str()), ("error", source.as_str())],
+                )
+            }
+            Self::Publish(StagedWriteError::Populate { path, source }) => {
+                let path = path.display().to_string();
+                let source = source.to_string();
+                strings(
+                    locale,
+                    "journal.setup.identity.io.error",
+                    [("path", path.as_str()), ("error", source.as_str())],
+                )
+            }
+            Self::Ca(CaError::Rcgen(error)) => error.to_string(),
+            Self::Ca(CaError::InvalidCa(message)) => strings(
+                locale,
+                "journal.setup.identity.ca.invalid",
+                [("detail", *message)],
+            ),
+            Self::Ca(CaError::InvalidSpki(message)) => strings(
+                locale,
+                "journal.setup.identity.spki.invalid",
+                [("detail", *message)],
+            ),
+            Self::Ca(CaError::Randomness) => {
+                text(locale, "journal.setup.identity.ca.randomness.unavailable")
+            }
+            Self::Mark(MarkError::Asset(message)) => strings(
+                locale,
+                "journal.setup.identity.mark.asset.invalid",
+                [("detail", message.as_str())],
+            ),
+            Self::Mark(MarkError::Argon2(error)) => error.to_string(),
+            Self::Mark(MarkError::InvalidJid(message)) => strings(
+                locale,
+                "journal.setup.identity.mark.jid.invalid",
+                [("detail", message.as_str())],
+            ),
             Self::NoCandidate => text(locale, "journal.setup.identity.no.candidate"),
             Self::ProposalConflict => {
                 text(locale, "journal.setup.refusal.identity.proposal.conflict")

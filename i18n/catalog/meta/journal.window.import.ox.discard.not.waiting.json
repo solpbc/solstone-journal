@@ -1,0 +1,16 @@
+{
+  "description": "Import discard conflict when import is no longer waiting to start.",
+  "context": "Journal window. Import discard conflict when import is no longer waiting to start.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "957831869caed34d9e4f35ec20898029b7b38aad006033ba491373611e6c4fad",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -30,17 +30,18 @@ mod full_seam_tests;
 pub use attempt::{
     AttemptState, AttemptStatus, ChatGptStatus, SignInAttempt, SignInResult, SignInState,
     SignOutResult, account_identity, active_attempt_named, attempt_status, begin_brokered_sign_in,
-    begin_sign_in, finish_active_sign_in, finish_sign_in, get_active_attempt, get_status,
-    registration, set_active_attempt, sign_out,
+    begin_sign_in, finish_active_sign_in, finish_sign_in, finish_sign_in_with_copy,
+    get_active_attempt, get_status, registration, set_active_attempt, sign_out,
 };
 pub use authorize::{
     API_RESOURCE, AUTHORIZE_PATH, AuthorizeParams, DEFAULT_SCOPE, DYNAMIC_CLIENT_ID,
     build_authorize_params,
 };
 pub use callback::{
-    CallbackError, CallbackRequest, FAILURE_BODY, SUCCESS_BODY, bind_loopback_listener,
-    broker_redirect_uri, parse_pasted_callback, parse_pasted_callback_detailed,
-    receive_browser_callback, respond_to_callback_stream,
+    CallbackCopy, CallbackError, CallbackRequest, FAILURE_BODY, SUCCESS_BODY,
+    bind_loopback_listener, broker_redirect_uri, parse_pasted_callback,
+    parse_pasted_callback_detailed, receive_browser_callback, receive_browser_callback_with_copy,
+    respond_to_callback_stream, respond_to_callback_stream_with_copy,
 };
 pub use credential::{ChatGptCredential, ClosedOutcome, CredentialError};
 pub use exchange::{

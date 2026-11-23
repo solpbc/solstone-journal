@@ -1,0 +1,16 @@
+{
+  "description": "Import discard conflict when journal is busy.",
+  "context": "Journal window. Import discard conflict when journal is busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "730ac1e5fb09d30b214462fc0e9b030495075790d2848af1dfa72a0f8839d09f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

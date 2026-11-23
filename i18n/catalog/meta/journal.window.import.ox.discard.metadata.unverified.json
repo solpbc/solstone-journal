@@ -1,0 +1,16 @@
+{
+  "description": "Import discard conflict when import metadata cannot be verified.",
+  "context": "Journal window. Import discard conflict when import metadata cannot be verified.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6ef1abb4d9993d754baf5f01ebc82c85c496f040a566a17c53bb64820947db54",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

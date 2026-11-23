@@ -61,7 +61,10 @@ pub use allocate::{
     stored_source_timestamp_for_hash,
 };
 pub use body_ingest_error::{BodyIngestError, BodyIngestErrorKind};
-pub use connect::{OuraApp, OuraConnectOutcome, OuraConnectRequest, connect_oura, needs_oura_app};
+pub use connect::{
+    OuraApp, OuraCallbackCopy, OuraConnectOutcome, OuraConnectRequest, connect_oura,
+    connect_oura_with_copy, needs_oura_app,
+};
 pub use contract::{
     ImportPreview, ImportResult, OwnerSource, OwnerSourceMetadata, PreviewRequest, SaveRequest,
     SourceHash, SourceImmutabilityReport, SyncBackendRequest, SyncGuidance, SyncPreviewRequest,

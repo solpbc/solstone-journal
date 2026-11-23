@@ -1,0 +1,16 @@
+{
+  "description": "Settings validation error when processing gate is not an object.",
+  "context": "Journal window. Settings validation error when processing gate is not an object.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ded20eb30933e61c24ad7d1f2eee658763e38dddb51a79ce26642d25933fe85a",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

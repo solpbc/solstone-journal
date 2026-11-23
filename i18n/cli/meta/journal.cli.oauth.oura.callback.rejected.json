@@ -1,0 +1,16 @@
+{
+  "description": "Browser tab error when Oura OAuth callback is rejected.",
+  "context": "Browser tab error when Oura OAuth callback is rejected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "66c98e1013474c92e24981c205c6374b6d41cf4d22b1710ac1c1b975c7d6d87e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

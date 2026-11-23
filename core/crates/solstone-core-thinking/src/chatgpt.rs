@@ -41,6 +41,8 @@ fn logged_begin(journal: &Path, attempt: SignInAttempt) -> Result<SignInAttempt,
     Ok(attempt)
 }
 
+pub use solstone_core_chatgpt_auth::CallbackCopy;
+
 pub fn finish_sign_in(
     journal: &Path,
     transport: &dyn ChatGptTransport,
@@ -48,12 +50,31 @@ pub fn finish_sign_in(
     callback_input: Option<&str>,
     timeout: Duration,
 ) -> Result<SignInResult, ClosedOutcome> {
-    let result = solstone_core_chatgpt_auth::finish_sign_in(
+    finish_sign_in_with_copy(
         journal,
         transport,
         attempt,
         callback_input,
         timeout,
+        &CallbackCopy::english(),
+    )
+}
+
+pub fn finish_sign_in_with_copy(
+    journal: &Path,
+    transport: &dyn ChatGptTransport,
+    attempt: &SignInAttempt,
+    callback_input: Option<&str>,
+    timeout: Duration,
+    copy: &CallbackCopy,
+) -> Result<SignInResult, ClosedOutcome> {
+    let result = solstone_core_chatgpt_auth::finish_sign_in_with_copy(
+        journal,
+        transport,
+        attempt,
+        callback_input,
+        timeout,
+        copy,
     );
 
     let outcome = match &result {

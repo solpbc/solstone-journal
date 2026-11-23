@@ -6834,13 +6834,6 @@
       "locales": []
     },
     {
-      "id": "journal.cli.doctor.device.day.listing.streams.unavailable",
-      "source": "4c5580fbac901a1ca863cdd33f517f6bc55abaea50a7bfeb53cee997b98c2ace",
-      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
-      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
-    },
-    {
       "id": "journal.cli.doctor.device.day.listing.streams.unbound",
       "source": "d3ae25899ed83790abf2082db8c9ef072bc2e36eabea983bd90838daf34a62fe",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -10299,9 +10292,9 @@
       "locales": []
     },
     {
-      "id": "journal.cli.host.health.timeout.frames",
-      "source": "ef55d8b8884fd828d896f21ca072e1e0a86f0240b575e0dd07addd1b794aba7a",
-      "contract": "19e7d110b0675a598f9a9e24dfeb3bbb9e32c316ba52b9871ff2708989a5ef3e",
+      "id": "journal.cli.host.health.timeout.malformed.frames",
+      "source": "2c434bca5afded2b50794e997222b3c2957aaf7ca9928be2356ca52e5a171094",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
       "protected": "f9f7e7b88cdf0b18cd50a7d9741937e5c0fc01dc4800cc552823000c13334bd7",
       "locales": []
     },
@@ -15572,6 +15565,13 @@
     {
       "id": "journal.cli.install.status.conflict.stale.install.status.revision",
       "source": "c3fdb6823d8c19bc6c5d9322183e71863a0eca70f8cebc54891d6afc6894c4a6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.install.status.interrupted",
+      "source": "1c60b133f7151cd0982ce893351ee84e028f362a514c869a2ad23f0d66b13f3d",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
@@ -21387,6 +21387,41 @@
       "locales": []
     },
     {
+      "id": "journal.cli.oauth.callback.failure",
+      "source": "dbe455c0b79c41d3de5dfa1599192893a62a78f35572377702034d51e3ec8e18",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.oauth.callback.success",
+      "source": "1313b7ef03bab16f572d36b7a7e95dbc79c8b0d6517aa20f6fb29b297d9abfa2",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.oauth.oura.callback.allowed",
+      "source": "2455e168ed0b95bc91185985c8e17bb9fe163bd1a81305413195ddf0227e5d77",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.oauth.oura.callback.declined",
+      "source": "0551bedf408d17ef0b989982b5ec2f1c74de29aca43ac39d395058bc78956868",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.oauth.oura.callback.rejected",
+      "source": "66c98e1013474c92e24981c205c6374b6d41cf4d22b1710ac1c1b975c7d6d87e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.cli.offload.guidance.changed.retry",
       "source": "6d28b339bc1120ed523d1f52794190e440a60773bf29e623791983cc99709dd1",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -23210,6 +23245,20 @@
       "id": "journal.cli.segment.verify.result",
       "source": "bef28a5c8e9382f7c4570b9a8c70e0d1c69f20abcff442e69164fbd0b5d5498b",
       "contract": "c0413cce40811d37c7db88e7c489a8f17de9fb4b25ad57ffb111cfefe86cc855",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.host.journal.binding.changed",
+      "source": "a5d8b13a2f9a70924743835fb68a00c4e9adac435bfa7997f759235bbab223a0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.setup.host.packaged.speech.unavailable",
+      "source": "08ba91ba3384a0a7331c564c61ececbf52c781c75de3822938d333f1288285b4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },

@@ -278,10 +278,16 @@ fn present_health(
         ),
         Err(PresentedHealthError::Fetch(HealthFetchError::MalformedFrames(count))) => (
             stdout,
-            display_for(
+            render_for(
                 crate::host_locale(),
-                "journal.cli.host.health.timeout.frames",
-                [("count", &(count))],
+                "journal.cli.host.health.timeout.malformed.frames",
+                &[
+                    ("count", CopyValue::String(&count.to_string())),
+                    (
+                        "quantity",
+                        CopyValue::Cardinal(crate::host_count_quantity(count)),
+                    ),
+                ],
             ),
             std::process::ExitCode::FAILURE,
         ),

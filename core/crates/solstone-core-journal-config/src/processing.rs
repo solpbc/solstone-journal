@@ -168,35 +168,69 @@ fn parse_time(value: Option<&str>) -> Option<Time> {
     value.and_then(|value| Time::strptime("%H:%M", value).ok())
 }
 
-/// Reject malformed supplied fields, while absent fields retain their defaults.
-pub fn validate_processing(value: Option<&Value>) -> Result<(), String> {
+/// Structured validation failures for the `processing` settings section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessingValidationError {
+    NotObject,
+    HistoryConfirmedNotBoolean,
+    InvalidMode,
+    GateNotObject,
+    ConditionNotObject(&'static str),
+    ConditionEnabledNotBoolean(&'static str),
+    TimeWindowFieldFormat(&'static str),
+}
+
+impl std::fmt::Display for ProcessingValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotObject => f.write_str("processing must be an object"),
+            Self::HistoryConfirmedNotBoolean => {
+                f.write_str("processing history_confirmed must be a boolean")
+            }
+            Self::InvalidMode => f.write_str("processing mode must be realtime or deferred"),
+            Self::GateNotObject => f.write_str("processing gate must be an object"),
+            Self::ConditionNotObject(name) => write!(f, "{name} must be an object"),
+            Self::ConditionEnabledNotBoolean(name) => {
+                write!(f, "{name}.enabled must be a boolean")
+            }
+            Self::TimeWindowFieldFormat(key) => write!(f, "time_window.{key} must be HH:MM"),
+        }
+    }
+}
+
+impl std::error::Error for ProcessingValidationError {}
+
+/// Reject malformed supplied fields with a typed failure, while absent fields retain their defaults.
+pub fn validate_processing_typed(value: Option<&Value>) -> Result<(), ProcessingValidationError> {
     let Some(value) = value else { return Ok(()) };
-    let obj = value.as_object().ok_or("processing must be an object")?;
+    let obj = value
+        .as_object()
+        .ok_or(ProcessingValidationError::NotObject)?;
     if obj
         .get("history_confirmed")
         .is_some_and(|value| !value.is_boolean())
     {
-        return Err("processing history_confirmed must be a boolean".into());
+        return Err(ProcessingValidationError::HistoryConfirmedNotBoolean);
     }
     if let Some(mode) = obj.get("mode")
         && !matches!(mode.as_str(), Some("realtime" | "deferred"))
     {
-        return Err("processing mode must be realtime or deferred".into());
+        return Err(ProcessingValidationError::InvalidMode);
     }
     if let Some(gate) = obj.get("gate") {
         let gate = gate
             .as_object()
-            .ok_or("processing gate must be an object")?;
+            .ok_or(ProcessingValidationError::GateNotObject)?;
         for name in ["time_window", "display_powersave"] {
             if let Some(condition) = gate.get(name) {
                 let condition = condition
                     .as_object()
-                    .ok_or_else(|| format!("{name} must be an object"))?;
+                    .ok_or(ProcessingValidationError::ConditionNotObject(name))?;
                 if condition
                     .get("enabled")
                     .is_some_and(|value| !value.is_boolean())
                 {
-                    return Err(format!("{name}.enabled must be a boolean"));
+                    return Err(ProcessingValidationError::ConditionEnabledNotBoolean(name));
                 }
                 if name == "time_window" {
                     for key in ["start", "end"] {
@@ -204,7 +238,7 @@ pub fn validate_processing(value: Option<&Value>) -> Result<(), String> {
                             && (value.as_str().is_none_or(|s| s.len() != 5)
                                 || parse_time(value.as_str()).is_none())
                         {
-                            return Err(format!("time_window.{key} must be HH:MM"));
+                            return Err(ProcessingValidationError::TimeWindowFieldFormat(key));
                         }
                     }
                 }
@@ -212,6 +246,11 @@ pub fn validate_processing(value: Option<&Value>) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Reject malformed supplied fields, while absent fields retain their defaults.
+pub fn validate_processing(value: Option<&Value>) -> Result<(), String> {
+    validate_processing_typed(value).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

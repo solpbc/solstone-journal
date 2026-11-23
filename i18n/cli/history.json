@@ -18720,7 +18720,7 @@
       "resource": "m6a6f75726e616c2e636c692e646f63746f722e6465766963652e6461792e6c697374696e672e73747265616d732e756e617661696c61626c65",
       "namespace": "journal.cli.doctor.device.day.listing.streams",
       "owner": "journal",
-      "tombstone": false,
+      "tombstone": true,
       "replacement": null,
       "format_intent": "text",
       "arguments": [
@@ -30988,8 +30988,8 @@
       "resource": "m6a6f75726e616c2e636c692e686f73742e6865616c74682e74696d656f75742e6672616d6573",
       "namespace": "journal.cli.host.health.timeout",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.cli.host.health.timeout.malformed.frames",
       "format_intent": "text",
       "arguments": [
         {
@@ -31008,6 +31008,44 @@
         }
       ],
       "selector": null
+    },
+    {
+      "id": "journal.cli.host.health.timeout.malformed.frames",
+      "resource": "m6a6f75726e616c2e636c692e686f73742e6865616c74682e74696d656f75742e6d616c666f726d65642e6672616d6573",
+      "namespace": "journal.cli.host.health.timeout.malformed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.cli.host.health.usage",
@@ -49696,6 +49734,18 @@
       "selector": null
     },
     {
+      "id": "journal.cli.install.status.interrupted",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e696e746572727570746564",
+      "namespace": "journal.cli.install.status",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.cli.install.status.lock",
       "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6c6f636b",
       "namespace": "journal.cli.install.status",
@@ -68113,6 +68163,66 @@
       "selector": null
     },
     {
+      "id": "journal.cli.oauth.callback.failure",
+      "resource": "m6a6f75726e616c2e636c692e6f617574682e63616c6c6261636b2e6661696c757265",
+      "namespace": "journal.cli.oauth.callback",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.oauth.callback.success",
+      "resource": "m6a6f75726e616c2e636c692e6f617574682e63616c6c6261636b2e73756363657373",
+      "namespace": "journal.cli.oauth.callback",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.oauth.oura.callback.allowed",
+      "resource": "m6a6f75726e616c2e636c692e6f617574682e6f7572612e63616c6c6261636b2e616c6c6f776564",
+      "namespace": "journal.cli.oauth.oura.callback",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.oauth.oura.callback.declined",
+      "resource": "m6a6f75726e616c2e636c692e6f617574682e6f7572612e63616c6c6261636b2e6465636c696e6564",
+      "namespace": "journal.cli.oauth.oura.callback",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.oauth.oura.callback.rejected",
+      "resource": "m6a6f75726e616c2e636c692e6f617574682e6f7572612e63616c6c6261636b2e72656a6563746564",
+      "namespace": "journal.cli.oauth.oura.callback",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.cli.offload.guidance.changed.retry",
       "resource": "m6a6f75726e616c2e636c692e6f66666c6f61642e67756964616e63652e6368616e6765642e7265747279",
       "namespace": "journal.cli.offload.guidance.changed",
@@ -73356,6 +73466,30 @@
         "enum_values": [],
         "enum_default": null
       }
+    },
+    {
+      "id": "journal.cli.setup.host.journal.binding.changed",
+      "resource": "m6a6f75726e616c2e636c692e73657475702e686f73742e6a6f75726e616c2e62696e64696e672e6368616e676564",
+      "namespace": "journal.cli.setup.host.journal.binding",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.setup.host.packaged.speech.unavailable",
+      "resource": "m6a6f75726e616c2e636c692e73657475702e686f73742e7061636b616765642e7370656563682e756e617661696c61626c65",
+      "namespace": "journal.cli.setup.host.packaged.speech",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
     },
     {
       "id": "journal.cli.setup.parser.cwd",
