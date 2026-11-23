@@ -1,0 +1,21 @@
+{
+  "description": "Detected objects line appended to frame or photo descriptions.",
+  "context": "Detected objects line appended to frame or photo descriptions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "summary",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f423743ddcbbbf0e562ee9acce98b56ba19c41dfc594ca1b95c690fde398dc65",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

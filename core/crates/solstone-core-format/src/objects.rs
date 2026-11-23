@@ -13,6 +13,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
 const DEVICE_CLASSES: &[&str] = &["laptop", "tv", "cell phone"];
 const PERSON_CLASS: &str = "person";
@@ -86,17 +87,45 @@ pub fn object_counts(objects: &[QualifiedObject]) -> Vec<(String, usize)> {
     ordered
 }
 
+fn class_label(class_name: &str, locale: &str) -> String {
+    let id = match class_name {
+        "person" => "journal.window.content.objects.class.person",
+        "car" => "journal.window.content.objects.class.car",
+        "bird" => "journal.window.content.objects.class.bird",
+        "tie" => "journal.window.content.objects.class.tie",
+        "bottle" => "journal.window.content.objects.class.bottle",
+        "cup" => "journal.window.content.objects.class.cup",
+        "truck" => "journal.window.content.objects.class.truck",
+        "bowl" => "journal.window.content.objects.class.bowl",
+        "laptop" => "journal.window.content.objects.class.laptop",
+        "tv" => "journal.window.content.objects.class.tv",
+        "cell phone" => "journal.window.content.objects.class.cell.phone",
+        _ => return class_name.to_owned(),
+    };
+    text(locale, id)
+}
+
 /// `person ×3, car`, or `None` when nothing qualified.
 pub fn objects_summary(objects: &[QualifiedObject]) -> Option<String> {
+    objects_summary_for_locale(objects, ENGLISH)
+}
+
+/// Localized object summary for owner display.
+pub fn objects_summary_for_locale(objects: &[QualifiedObject], locale: &str) -> Option<String> {
     let counts = object_counts(objects);
     (!counts.is_empty()).then(|| {
         counts
             .iter()
             .map(|(name, count)| {
+                let localized = class_label(name, locale);
                 if *count == 1 {
-                    name.clone()
+                    localized
                 } else {
-                    format!("{name} ×{count}")
+                    strings(
+                        locale,
+                        "journal.window.content.objects.count",
+                        [("name", localized.as_str()), ("count", &count.to_string())],
+                    )
                 }
             })
             .collect::<Vec<_>>()
@@ -106,12 +135,28 @@ pub fn objects_summary(objects: &[QualifiedObject]) -> Option<String> {
 
 /// The `**Objects:**` line for a stored `detections` block.
 pub fn objects_line(detections: &Value) -> Option<String> {
-    objects_summary(&qualified_objects(detections)).map(|summary| format!("**Objects:** {summary}"))
+    objects_line_for_locale(detections, ENGLISH)
+}
+
+/// The localized `**Objects:**` line for a stored `detections` block.
+pub fn objects_line_for_locale(detections: &Value, locale: &str) -> Option<String> {
+    objects_summary_for_locale(&qualified_objects(detections), locale).map(|summary| {
+        strings(
+            locale,
+            "journal.window.content.objects.line",
+            [("summary", summary.as_str())],
+        )
+    })
 }
 
 /// Qualified objects with their boxes and the detector's image size, for a
 /// viewer that draws them over the frame. `None` when nothing qualified.
 pub fn objects_overlay(detections: &Value) -> Option<Value> {
+    objects_overlay_for_locale(detections, ENGLISH)
+}
+
+/// Localized overlay carrying translated class labels for owner display.
+pub fn objects_overlay_for_locale(detections: &Value, locale: &str) -> Option<Value> {
     let objects = qualified_objects(detections);
     if objects.is_empty() {
         return None;
@@ -127,7 +172,7 @@ pub fn objects_overlay(detections: &Value) -> Option<Value> {
         .into_iter()
         .filter_map(|object| {
             Some(json!({
-                "label": object.class_name,
+                "label": class_label(&object.class_name, locale),
                 "score": object.score,
                 "bbox": object.bbox?,
             }))

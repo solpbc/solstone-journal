@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for agent memory entries.",
+  "context": "Search result chip label for agent memory entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3e54b4cc68664bfcf1ca42d60ed5709b91402788266b5481d3d768d7c6779d9f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

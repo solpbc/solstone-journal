@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for describe entries.",
+  "context": "Search result chip label for describe entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c525d35e58ac63770bb1c72a03cc0063ad4662451326c88cd6fc097983845231",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

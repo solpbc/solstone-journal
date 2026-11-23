@@ -10,23 +10,29 @@
 //! computes nothing from it.
 
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
-use super::{JsonObject, ProducedChunks, recorded_chunk};
+use super::{JsonObject, ProducedChunks, recorded_chunk_for_locale};
 
+#[allow(dead_code)]
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(records: &[JsonObject], locale: &str) -> ProducedChunks {
     let chunks = records
         .first()
         .filter(|tile| is_first_piece(tile))
         .and_then(|tile| {
             let workout = tile.get("workout")?.as_object()?;
-            let content = render_workout(workout);
+            let content = render_workout(workout, locale);
             let occurrence = workout
                 .get("start")
                 .and_then(Value::as_str)
                 .and_then(|start| solstone_core_time::parse_rfc3339(start).ok())
                 .map(|start| start.timestamp().as_millisecond())
                 .unwrap_or(0);
-            Some(recorded_chunk(content, occurrence, tile))
+            Some(recorded_chunk_for_locale(content, occurrence, tile, locale))
         })
         .into_iter()
         .collect();
@@ -46,8 +52,8 @@ fn is_first_piece(tile: &JsonObject) -> bool {
         .is_none_or(|index| index == 0)
 }
 
-fn render_workout(workout: &JsonObject) -> String {
-    let text = |key: &str| {
+fn render_workout(workout: &JsonObject, locale: &str) -> String {
+    let field_text = |key: &str| {
         workout
             .get(key)
             .and_then(Value::as_str)
@@ -55,73 +61,145 @@ fn render_workout(workout: &JsonObject) -> String {
             .filter(|value| !value.is_empty())
     };
     let number = |key: &str| workout.get(key).and_then(Value::as_f64);
-    let kind = text("type");
-    let name = text("name").or(kind).unwrap_or("workout");
-    let mut lines = vec![format!("## Strava workout: {name}")];
+    let kind = field_text("type");
+    let default_name = text(locale, "journal.window.content.workout.name.default");
+    let name = field_text("name").or(kind).unwrap_or(default_name.as_str());
+    let mut lines = vec![strings(
+        locale,
+        "journal.window.content.workout.heading",
+        [("name", name)],
+    )];
 
     let mut when = Vec::new();
     if let Some(kind) = kind {
         when.push(kind.to_string());
     }
     if let Some(start) =
-        text("start").and_then(|start| solstone_core_time::parse_rfc3339(start).ok())
+        field_text("start").and_then(|start| solstone_core_time::parse_rfc3339(start).ok())
     {
-        when.push(format!(
-            "started {}",
-            start.datetime().strftime("%Y-%m-%d %H:%M")
+        let formatted = start.datetime().strftime("%Y-%m-%d %H:%M").to_string();
+        when.push(strings(
+            locale,
+            "journal.window.content.workout.started",
+            [("time", formatted.as_str())],
         ));
     }
     if let Some(seconds) = number("elapsed_seconds") {
-        when.push(format!("{} elapsed", duration(seconds)));
+        let dur = duration(seconds, locale);
+        when.push(strings(
+            locale,
+            "journal.window.content.workout.elapsed",
+            [("duration", dur.as_str())],
+        ));
     }
     if let Some(seconds) = number("moving_seconds") {
-        when.push(format!("{} moving", duration(seconds)));
+        let dur = duration(seconds, locale);
+        when.push(strings(
+            locale,
+            "journal.window.content.workout.moving",
+            [("duration", dur.as_str())],
+        ));
     }
     push_line(&mut lines, when);
 
     let mut distance = Vec::new();
     if let Some(metres) = number("distance_m") {
-        distance.push(format!("{:.1} km", metres / 1000.0));
+        let km = format!("{:.1}", metres / 1000.0);
+        distance.push(strings(
+            locale,
+            "journal.window.content.workout.distance",
+            [("km", km.as_str())],
+        ));
     }
     if let Some(gain) = number("elevation_gain_m") {
-        distance.push(format!("elevation gain {} m", whole(gain)));
+        let m = whole(gain);
+        distance.push(strings(
+            locale,
+            "journal.window.content.workout.elevation",
+            [("m", m.as_str())],
+        ));
     }
     push_line(&mut lines, distance);
 
     let mut recorded = Vec::new();
     match (number("heart_rate_avg_bpm"), number("heart_rate_max_bpm")) {
-        (Some(avg), Some(max)) => recorded.push(format!(
-            "heart rate average {} bpm, max {} bpm",
-            whole(avg),
-            whole(max)
-        )),
-        (Some(avg), None) => recorded.push(format!("heart rate average {} bpm", whole(avg))),
-        (None, Some(max)) => recorded.push(format!("heart rate max {} bpm", whole(max))),
+        (Some(avg), Some(max)) => {
+            let avg = whole(avg);
+            let max = whole(max);
+            recorded.push(strings(
+                locale,
+                "journal.window.content.workout.hr.avg.max",
+                [("avg", avg.as_str()), ("max", max.as_str())],
+            ));
+        }
+        (Some(avg), None) => {
+            let avg = whole(avg);
+            recorded.push(strings(
+                locale,
+                "journal.window.content.workout.hr.avg",
+                [("avg", avg.as_str())],
+            ));
+        }
+        (None, Some(max)) => {
+            let max = whole(max);
+            recorded.push(strings(
+                locale,
+                "journal.window.content.workout.hr.max",
+                [("max", max.as_str())],
+            ));
+        }
         (None, None) => {}
     }
     match (number("power_avg_w"), number("power_weighted_w")) {
-        (Some(avg), Some(weighted)) => recorded.push(format!(
-            "power average {} W, weighted {} W",
-            whole(avg),
-            whole(weighted)
-        )),
-        (Some(avg), None) => recorded.push(format!("power average {} W", whole(avg))),
-        (None, Some(weighted)) => recorded.push(format!("power weighted {} W", whole(weighted))),
+        (Some(avg), Some(weighted)) => {
+            let avg = whole(avg);
+            let weighted = whole(weighted);
+            recorded.push(strings(
+                locale,
+                "journal.window.content.workout.power.avg.weighted",
+                [("avg", avg.as_str()), ("weighted", weighted.as_str())],
+            ));
+        }
+        (Some(avg), None) => {
+            let avg = whole(avg);
+            recorded.push(strings(
+                locale,
+                "journal.window.content.workout.power.avg",
+                [("avg", avg.as_str())],
+            ));
+        }
+        (None, Some(weighted)) => {
+            let weighted = whole(weighted);
+            recorded.push(strings(
+                locale,
+                "journal.window.content.workout.power.weighted",
+                [("weighted", weighted.as_str())],
+            ));
+        }
         (None, None) => {}
     }
     if let Some(kcal) = number("calories_kcal") {
-        recorded.push(format!("{} kcal", whole(kcal)));
+        let kcal = whole(kcal);
+        recorded.push(strings(
+            locale,
+            "journal.window.content.workout.calories",
+            [("kcal", kcal.as_str())],
+        ));
     }
     if !recorded.is_empty() {
-        lines.push(format!("as Strava recorded it: {}", recorded.join(" · ")));
+        lines.push(strings(
+            locale,
+            "journal.window.content.workout.recorded",
+            [("details", recorded.join(" · ").as_str())],
+        ));
     }
 
     let mut flags = Vec::new();
     if workout.get("commute").and_then(Value::as_bool) == Some(true) {
-        flags.push("commute".to_string());
+        flags.push(text(locale, "journal.window.content.workout.flag.commute"));
     }
     if workout.get("entered_by_hand").and_then(Value::as_bool) == Some(true) {
-        flags.push("entered by hand".to_string());
+        flags.push(text(locale, "journal.window.content.workout.flag.manual"));
     }
     push_line(&mut lines, flags);
 
@@ -135,7 +213,7 @@ fn render_workout(workout: &JsonObject) -> String {
             .collect::<Vec<_>>();
         if !fields.is_empty() {
             lines.push(String::new());
-            lines.push("more from Strava:".to_string());
+            lines.push(text(locale, "journal.window.content.workout.more"));
             lines.extend(fields);
         }
     }
@@ -152,12 +230,27 @@ fn whole(value: f64) -> String {
     format!("{}", value.round() as i64)
 }
 
-fn duration(seconds: f64) -> String {
+fn duration(seconds: f64, locale: &str) -> String {
     let minutes = (seconds / 60.0).round() as i64;
     match (minutes / 60, minutes % 60) {
-        (0, minutes) => format!("{minutes} min"),
-        (hours, 0) => format!("{hours} h"),
-        (hours, minutes) => format!("{hours} h {minutes} min"),
+        (0, minutes) => strings(
+            locale,
+            "journal.window.content.workout.duration.m",
+            [("minutes", &minutes.to_string())],
+        ),
+        (hours, 0) => strings(
+            locale,
+            "journal.window.content.workout.duration.h",
+            [("hours", &hours.to_string())],
+        ),
+        (hours, minutes) => strings(
+            locale,
+            "journal.window.content.workout.duration.hm",
+            [
+                ("hours", &hours.to_string()),
+                ("minutes", &minutes.to_string()),
+            ],
+        ),
     }
 }
 

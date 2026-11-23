@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for weekly reflection entries.",
+  "context": "Search result chip label for weekly reflection entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9186cd5df955673090e40067776680d20293dfe87a5cf91f58b359711f98571f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

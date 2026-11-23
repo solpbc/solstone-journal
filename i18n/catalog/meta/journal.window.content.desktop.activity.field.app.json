@@ -1,0 +1,21 @@
+{
+  "description": "App field in a desktop activity block.",
+  "context": "App field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "606071d1009529d50a6f6cc6b6510e4ebbcf5a0b0b11b4d74206b8f6c094d9d6",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Working directory field in a desktop activity block.",
+  "context": "Working directory field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "99f2daf2334a5e39d754fd4d6c46365c629b13fad112965b86ea3a7452b66783",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

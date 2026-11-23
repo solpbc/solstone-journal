@@ -1,0 +1,16 @@
+{
+  "description": "Manually entered flag in a Strava workout entry.",
+  "context": "Manually entered flag in a Strava workout entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "93833f6d1f41a9d2495dd6c4beb57841e8b7a152caa2fdefbece4af361cd8f96",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

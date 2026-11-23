@@ -1,0 +1,21 @@
+{
+  "description": "Heart rate average in a Strava workout entry.",
+  "context": "Heart rate average in a Strava workout entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "avg",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3cf51fd1f0a591482fb27bb5dac20d82c1aced53a7fb8a9b20acf49a7b47302f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

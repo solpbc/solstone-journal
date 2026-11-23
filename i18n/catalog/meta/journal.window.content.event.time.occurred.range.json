@@ -1,0 +1,25 @@
+{
+  "description": "Time range line for an occurred event.",
+  "context": "Time range line for an occurred event.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start",
+      "type": "string"
+    },
+    {
+      "name": "end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "901d72d7d773a1d8ed2736c16aebc5c438fceb294e2182513caafb2db509cfaf",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

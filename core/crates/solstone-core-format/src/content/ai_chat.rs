@@ -3,11 +3,17 @@
 
 use jiff::tz::Offset;
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
-use super::{JsonObject, ProducedChunks, recorded_chunk};
+use super::{JsonObject, ProducedChunks, recorded_chunk_for_locale};
 use crate::segment::segment_parse;
 
+#[allow(dead_code)]
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(rel, records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(rel: &str, records: &[JsonObject], locale: &str) -> ProducedChunks {
     if records.is_empty() {
         return ProducedChunks {
             chunks: Vec::new(),
@@ -29,13 +35,14 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
 
     for record in records {
-        let Some(content) = indexed_turn_text(record) else {
+        let Some(content) = indexed_turn_text_for_locale(record, locale) else {
             continue;
         };
-        chunks.push(recorded_chunk(
+        chunks.push(recorded_chunk_for_locale(
             content,
             ai_chat_timestamp(rel, record),
             record,
+            locale,
         ));
     }
 
@@ -49,10 +56,28 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
 }
 
 pub(super) fn indexed_turn_text(record: &JsonObject) -> Option<String> {
+    indexed_turn_text_for_locale(record, ENGLISH)
+}
+
+fn localized_speaker(speaker: &str, locale: &str) -> String {
+    if locale == ENGLISH {
+        return speaker.to_owned();
+    }
+    let id = match speaker {
+        "You" => "journal.window.content.chat.speaker.you",
+        "Assistant" => "journal.window.content.chat.speaker.assistant",
+        "Human" => "journal.window.content.chat.speaker.human",
+        "Unknown" => "journal.window.content.chat.speaker.unknown",
+        _ => return speaker.to_owned(),
+    };
+    text(locale, id)
+}
+
+fn indexed_turn_text_for_locale(record: &JsonObject, locale: &str) -> Option<String> {
     if !record.contains_key("start") {
         return None;
     }
-    let text = record
+    let body = record
         .get("text")?
         .as_str()
         .filter(|text| !text.is_empty())?;
@@ -61,8 +86,15 @@ pub(super) fn indexed_turn_text(record: &JsonObject) -> Option<String> {
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
     {
-        Some(speaker) => Some(format!("**{speaker}:** {text}")),
-        None => Some(text.to_owned()),
+        Some(speaker) => {
+            let speaker = localized_speaker(speaker, locale);
+            Some(strings(
+                locale,
+                "journal.window.content.chat.turn",
+                [("speaker", speaker.as_str()), ("text", body)],
+            ))
+        }
+        None => Some(body.to_owned()),
     }
 }
 

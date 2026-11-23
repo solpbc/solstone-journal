@@ -1,0 +1,29 @@
+{
+  "description": "Heading for a body experience search entry.",
+  "context": "Heading for a body experience search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ade0e36b51f6fefa933ddac8b33866b18bca7dd31e07155f54f46989312797f8",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

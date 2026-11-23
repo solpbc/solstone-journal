@@ -2,9 +2,10 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
 use super::{
-    JsonObject, ProducedChunks, display_value, json_truthy, recorded_chunk,
+    JsonObject, ProducedChunks, display_value, json_truthy, recorded_chunk_for_locale,
     stripped_truthy_display, titleize,
 };
 
@@ -171,50 +172,93 @@ pub fn is_strava_reading(record: &JsonObject) -> bool {
 }
 
 pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(rel, records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(
+    rel: Option<&str>,
+    records: &[JsonObject],
+    locale: &str,
+) -> ProducedChunks {
     let mut chunks = Vec::new();
     for record in records
         .iter()
         .filter(|record| !is_retired_plan(record) && !is_body_record(record))
     {
         let normalized = normalize_record(record);
-        let mut lines = vec![format!("### {}", fallback_title(record))];
+        let mut lines = vec![format!("### {}", fallback_title(record, locale))];
 
         if let Some(activity) = activity_type(record) {
-            lines.push(format!("- Activity: {activity}"));
+            lines.push(strings(
+                locale,
+                "journal.window.content.activity.field.activity",
+                [("value", activity.as_str())],
+            ));
         }
         if let Some(facet) = stripped_truthy_display(record, "facet") {
-            lines.push(format!("- Facet: {facet}"));
+            lines.push(strings(
+                locale,
+                "journal.window.content.activity.field.facet",
+                [("value", facet.as_str())],
+            ));
         }
         if let Some(day) = stripped_truthy_display(record, "day") {
-            lines.push(format!("- Day: {day}"));
+            lines.push(strings(
+                locale,
+                "journal.window.content.activity.field.day",
+                [("value", day.as_str())],
+            ));
         }
         if let Some(time_range) = activity_time_range(record.get("segments")) {
-            lines.push(format!("- Time: {time_range}"));
+            lines.push(strings(
+                locale,
+                "journal.window.content.activity.field.time",
+                [("value", time_range.as_str())],
+            ));
         }
         if let Some(level) = record.get("level_avg") {
-            lines.push(format!(
-                "- Last engaged segment level: {}",
-                display_value(level)
+            let level = display_value(level);
+            lines.push(strings(
+                locale,
+                "journal.window.content.activity.field.level",
+                [("value", level.as_str())],
             ));
         }
         if let Some(description) = stripped_truthy_display(record, "description") {
-            lines.push(format!("- Description: {description}"));
+            lines.push(strings(
+                locale,
+                "journal.window.content.activity.field.description",
+                [("value", description.as_str())],
+            ));
         }
         if let Some(details) = stripped_truthy_display(record, "details") {
-            lines.push(format!("- Details: {details}"));
+            lines.push(strings(
+                locale,
+                "journal.window.content.activity.field.details",
+                [("value", details.as_str())],
+            ));
         }
         // Who attended, whose names were said, and which names were only on
         // screen are different claims; a row without a known role keeps the
         // plain list.
-        for (label, role) in [
-            ("Attendees", Some("attendee")),
-            ("In conversation", Some("heard")),
-            ("Mentioned", Some("mentioned")),
-            ("On screen", Some("visible")),
-            ("Participation", None),
+        for (id, role) in [
+            (
+                "journal.window.content.activity.role.attendee",
+                Some("attendee"),
+            ),
+            ("journal.window.content.activity.role.heard", Some("heard")),
+            (
+                "journal.window.content.activity.role.mentioned",
+                Some("mentioned"),
+            ),
+            (
+                "journal.window.content.activity.role.visible",
+                Some("visible"),
+            ),
+            ("journal.window.content.activity.role.other", None),
         ] {
             if let Some(names) = participation(record, role) {
-                lines.push(format!("- {label}: {names}"));
+                lines.push(strings(locale, id, [("names", names.as_str())]));
             }
         }
 
@@ -235,25 +279,34 @@ pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunk
                     .map(str::to_string)
                     .collect();
                 if !topic_values.is_empty() {
-                    lines.push(format!("Topics: {}", topic_values.join(", ")));
+                    lines.push(strings(
+                        locale,
+                        "journal.window.content.activity.topics",
+                        [("topics", topic_values.join(", ").as_str())],
+                    ));
                 }
             }
         }
 
         if is_hidden_activity(record) {
-            lines.push("- Hidden: yes".to_string());
+            lines.push(text(locale, "journal.window.content.activity.hidden"));
         }
 
         let occurrence = record
             .get("created_at")
             .and_then(Value::as_i64)
             .unwrap_or(0);
-        let text = with_stored_details(lines.join("\n"), record);
-        chunks.push(recorded_chunk(text, occurrence, &normalized));
+        let text = with_stored_details(lines.join("\n"), record, locale);
+        chunks.push(recorded_chunk_for_locale(
+            text,
+            occurrence,
+            &normalized,
+            locale,
+        ));
     }
     // After every other record's, so no other entry's position moves.
     for record in records.iter().filter(|record| body_record_indexed(record)) {
-        chunks.push(body_chunk(rel, record));
+        chunks.push(body_chunk(rel, record, locale));
     }
     ProducedChunks {
         chunks,
@@ -265,7 +318,7 @@ pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunk
 }
 
 /// A body record's entry: the owner's own words, its kind and its day.
-fn body_chunk(rel: Option<&str>, record: &JsonObject) -> super::IndexChunk {
+fn body_chunk(rel: Option<&str>, record: &JsonObject, locale: &str) -> super::IndexChunk {
     let held = |field: &str| {
         activity_field_held(record, field)
             .then(|| stripped_truthy_display(record, field))
@@ -276,18 +329,34 @@ fn body_chunk(rel: Option<&str>, record: &JsonObject) -> super::IndexChunk {
         "### {}",
         held("title").unwrap_or_else(|| titleize(&kind))
     )];
-    lines.push(format!("- Kind: {kind}"));
+    lines.push(strings(
+        locale,
+        "journal.window.content.activity.field.kind",
+        [("value", kind.as_str())],
+    ));
     if let Some(day) = rel.and_then(day_of_rel) {
-        lines.push(format!("- Day: {day}"));
+        lines.push(strings(
+            locale,
+            "journal.window.content.activity.field.day",
+            [("value", day)],
+        ));
     }
     if let Some(description) = held("description") {
-        lines.push(format!("- Description: {description}"));
+        lines.push(strings(
+            locale,
+            "journal.window.content.activity.field.description",
+            [("value", description.as_str())],
+        ));
     }
     if let Some(details) = held("details") {
-        lines.push(format!("- Details: {details}"));
+        lines.push(strings(
+            locale,
+            "journal.window.content.activity.field.details",
+            [("value", details.as_str())],
+        ));
     }
     if is_hidden_activity(record) {
-        lines.push("- Hidden: yes".to_string());
+        lines.push(text(locale, "journal.window.content.activity.hidden"));
     }
     let occurrence = record
         .get("account")
@@ -307,7 +376,7 @@ fn body_chunk(rel: Option<&str>, record: &JsonObject) -> super::IndexChunk {
         "hidden".to_string(),
         Value::Bool(is_hidden_activity(record)),
     );
-    recorded_chunk(lines.join("\n"), occurrence, &source)
+    recorded_chunk_for_locale(lines.join("\n"), occurrence, &source, locale)
 }
 
 fn day_of_rel(rel: &str) -> Option<&str> {
@@ -320,37 +389,51 @@ fn day_of_rel(rel: &str) -> Option<&str> {
 /// The byte limits an indexed entry is read back under, smallest first: the
 /// owner's search view reads at 16 KiB and an agent's fetch at 64 KiB.
 const READ_LIMITS: [usize; 2] = [16 * 1024, 64 * 1024];
+#[cfg(test)]
 const OMITTED: &str = "\n\nNot everything saved with this activity fit in this entry. The full activity record has all of it.";
-const STORED_ARRAYS: [(&str, &str); 1] = [("relations", "Saved relation")];
+const STORED_ARRAYS: [(&str, &str); 1] = [(
+    "relations",
+    "journal.window.content.activity.saved.relation",
+)];
 
 /// Append whole saved relations within the existing read limit.
 /// The shared chunk renderer separately reserves space for input limitations.
-fn with_stored_details(mut text: String, record: &JsonObject) -> String {
-    let Some(limit) = READ_LIMITS.into_iter().find(|limit| text.len() <= *limit) else {
-        return text;
+fn with_stored_details(mut content: String, record: &JsonObject, locale: &str) -> String {
+    let omitted_line = format!(
+        "\n\n{}",
+        text(locale, "journal.window.content.activity.omitted")
+    );
+    let Some(limit) = READ_LIMITS
+        .into_iter()
+        .find(|limit| content.len() <= *limit)
+    else {
+        return content;
     };
-    let limit = limit - OMITTED.len();
-    if text.len() > limit {
-        return text;
+    let limit = limit.saturating_sub(omitted_line.len());
+    if content.len() > limit {
+        return content;
     }
     let mut additions = Vec::new();
-    for (key, label) in STORED_ARRAYS {
+    for (key, id) in STORED_ARRAYS {
         if let Some(Value::Array(items)) = record.get(key) {
-            additions.extend(items.iter().map(|item| format!("\n\n{label}: {item}")));
+            additions.extend(items.iter().map(|item| {
+                let value = item.to_string();
+                format!("\n\n{}", strings(locale, id, [("value", value.as_str())]))
+            }));
         }
     }
     let mut omitted = false;
     for addition in additions {
-        if text.len() + addition.len() <= limit {
-            text.push_str(&addition);
+        if content.len() + addition.len() <= limit {
+            content.push_str(&addition);
         } else {
             omitted = true;
         }
     }
     if omitted {
-        text.push_str(OMITTED);
+        content.push_str(&omitted_line);
     }
-    text
+    content
 }
 
 fn normalize_record(record: &JsonObject) -> JsonObject {
@@ -423,7 +506,7 @@ fn activity_header(rel: Option<&str>) -> String {
     }
 }
 
-fn fallback_title(record: &JsonObject) -> String {
+fn fallback_title(record: &JsonObject, locale: &str) -> String {
     if let Some(title) = stripped_truthy_display(record, "title") {
         return title;
     }
@@ -433,7 +516,7 @@ fn fallback_title(record: &JsonObject) -> String {
     if let Some(activity) = activity_type(record) {
         return titleize(&activity);
     }
-    "Untitled activity".to_string()
+    text(locale, "journal.window.content.activity.untitled")
 }
 
 fn activity_type(record: &JsonObject) -> Option<String> {

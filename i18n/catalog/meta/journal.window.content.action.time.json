@@ -1,0 +1,21 @@
+{
+  "description": "Time metadata field in an action log entry.",
+  "context": "Time metadata field in an action log entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8966e284ebc2cfab62b01cd8f0a3466f5035656fe74f717d1f63d38477445aa0",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

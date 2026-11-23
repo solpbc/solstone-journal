@@ -1,0 +1,21 @@
+{
+  "description": "Kind field in a desktop activity block.",
+  "context": "Kind field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "af3d6e829e0d9e2f0c07875f5724a0fc19532ca752c4c0c022529c60cfbf8910",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

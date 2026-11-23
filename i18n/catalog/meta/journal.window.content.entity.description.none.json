@@ -1,0 +1,16 @@
+{
+  "description": "Placeholder when an entity record has no description.",
+  "context": "Placeholder when an entity record has no description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "622ba42a0b3644039e44f150eb51f336d78656f4dee43b9b74d951e317ec0c48",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

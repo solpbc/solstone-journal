@@ -1,0 +1,21 @@
+{
+  "description": "Heading for a protected-video pause notice.",
+  "context": "Heading for a protected-video pause notice.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "service",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3a2b4c5809a9076ed160e39b5fde349bfa70310239980d6d1f8a199e23420e45",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

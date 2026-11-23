@@ -1,0 +1,16 @@
+{
+  "description": "Document analysis section heading: Parties and Roles.",
+  "context": "Document analysis section heading: Parties and Roles.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c45e09111142e14db441815725a012884acbca0c22e63feb06ba846abcf5bc79",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

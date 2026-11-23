@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for screen text entries.",
+  "context": "Search result chip label for screen text entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "caede4992ff3eeb196fc4dfc2182259abc20e481b99fb2b18b4158e82f4cc610",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

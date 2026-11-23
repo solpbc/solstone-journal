@@ -3,6 +3,7 @@
 
 use jiff::tz::Offset;
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
 use super::{
     IndexChunk, JsonObject, OccurrenceTimeMs, ProducedChunks, display_value, json_truthy, titleize,
@@ -21,11 +22,16 @@ const SKIP_FIELDS: &[&str] = &[
     "aka",
 ];
 
+#[allow(dead_code)]
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(rel, records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(rel: &str, records: &[JsonObject], locale: &str) -> ProducedChunks {
     let detected_day = detected_day(rel);
     let chunks = records
         .iter()
-        .map(|record| render_record(record, detected_day))
+        .map(|record| render_record(record, detected_day, locale))
         .collect();
     ProducedChunks {
         chunks,
@@ -75,15 +81,15 @@ fn file_stem(rel: &str) -> &str {
         .unwrap_or(filename)
 }
 
-fn render_record(record: &JsonObject, detected_day: Option<&str>) -> IndexChunk {
+fn render_record(record: &JsonObject, detected_day: Option<&str>, locale: &str) -> IndexChunk {
     let entity_type = record
         .get("type")
         .map(display_value)
-        .unwrap_or_else(|| "Unknown".to_string());
+        .unwrap_or_else(|| text(locale, "journal.window.content.entity.type.unknown"));
     let name = record
         .get("name")
         .map(display_value)
-        .unwrap_or_else(|| "Unnamed".to_string());
+        .unwrap_or_else(|| text(locale, "journal.window.content.entity.name.unnamed"));
     let mut lines = vec![format!("### {entity_type}: {name}"), String::new()];
 
     if let Some(description) = record
@@ -92,12 +98,27 @@ fn render_record(record: &JsonObject, detected_day: Option<&str>) -> IndexChunk 
     {
         lines.push(display_value(description));
     } else {
-        lines.push("*(No description available)*".to_string());
+        lines.push(text(
+            locale,
+            "journal.window.content.entity.description.none",
+        ));
     }
     lines.push(String::new());
 
-    append_array_field(record, "tags", "**Tags:**", &mut lines);
-    append_array_field(record, "aka", "**Also known as:**", &mut lines);
+    append_array_field(
+        record,
+        "tags",
+        "journal.window.content.entity.tags",
+        locale,
+        &mut lines,
+    );
+    append_array_field(
+        record,
+        "aka",
+        "journal.window.content.entity.aka",
+        locale,
+        &mut lines,
+    );
 
     for (key, value) in record {
         if SKIP_FIELDS.contains(&key.as_str()) {
@@ -164,7 +185,13 @@ fn day_timestamp(day: &str) -> Option<i64> {
         .map(|instant| instant.as_millisecond())
 }
 
-fn append_array_field(record: &JsonObject, key: &str, label: &str, lines: &mut Vec<String>) {
+fn append_array_field(
+    record: &JsonObject,
+    key: &str,
+    message_id: &str,
+    locale: &str,
+    lines: &mut Vec<String>,
+) {
     let Some(value) = record.get(key).filter(|value| json_truthy(Some(value))) else {
         return;
     };
@@ -176,7 +203,7 @@ fn append_array_field(record: &JsonObject, key: &str, label: &str, lines: &mut V
         .map(display_value)
         .collect::<Vec<_>>()
         .join(", ");
-    lines.push(format!("{label} {joined}"));
+    lines.push(strings(locale, message_id, [("items", joined.as_str())]));
 }
 
 #[cfg(test)]
@@ -194,6 +221,7 @@ mod tests {
         let chunk = render_record(
             &record(json!({"name":"Alice","attached_at":"2026-09-27T18:30:00.000000Z"})),
             None,
+            ENGLISH,
         );
         assert_eq!(
             chunk.occurrence_time_ms,
@@ -203,7 +231,7 @@ mod tests {
 
     #[test]
     fn a_link_with_no_activity_is_indexed_without_a_time() {
-        let chunk = render_record(&record(json!({"name":"Alice"})), None);
+        let chunk = render_record(&record(json!({"name":"Alice"})), None, ENGLISH);
         assert_eq!(chunk.occurrence_time_ms, None);
     }
 }

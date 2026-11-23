@@ -1,0 +1,16 @@
+{
+  "description": "Fallback title when an activity record has no title, description, or type.",
+  "context": "Fallback title when an activity record has no title, description, or type.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3be998d04047452a3bfe94eca944852b7d158de7c663868a1c169e5de74b36ac",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

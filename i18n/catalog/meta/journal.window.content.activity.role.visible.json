@@ -1,0 +1,21 @@
+{
+  "description": "Visible-on-screen participation field in an activity search entry.",
+  "context": "Visible-on-screen participation field in an activity search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2999f29f6e41a67d87751f6b2f43f797f805acd888b6c13aea07e9fb1fb36a76",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

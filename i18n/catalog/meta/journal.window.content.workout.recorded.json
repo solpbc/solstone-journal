@@ -1,0 +1,21 @@
+{
+  "description": "Attribution line for Strava workout metrics.",
+  "context": "Attribution line for Strava workout metrics.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "details",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3b8fda74100617eb9ea2b918c8378b1b745705419956498eed327b7472fa3e28",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

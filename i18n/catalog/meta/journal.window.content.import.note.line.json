@@ -1,0 +1,21 @@
+{
+  "description": "Note line for a legacy structured highlight.",
+  "context": "Note line for a legacy structured highlight.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "content",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f66a215a69d3a8c28ff7b4d516dfa3513db856be55338b94cc2b5ee543dafe5d",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Repeated object class count inside detected objects summary.",
+  "context": "Repeated object class count inside detected objects summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d098245473bbeab0454661af672cd83dfbf7755751dd6ce3d0674fe267b5efa4",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

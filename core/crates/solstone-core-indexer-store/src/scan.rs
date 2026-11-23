@@ -3229,7 +3229,8 @@ fn index_file(
             rel,
             text.as_bytes(),
         )
-        .or_else(|| solstone_core_format::stored_markdown::index_stamp(journal, path, &text)),
+        .or_else(|| solstone_core_format::stored_markdown::index_stamp(journal, path, &text))
+        .or_else(|| solstone_core_format::structured_display::index_stamp(rel, text.as_bytes())),
         warnings,
         undecidable,
     })

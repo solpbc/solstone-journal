@@ -1,0 +1,21 @@
+{
+  "description": "Capability field in a desktop activity block.",
+  "context": "Capability field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3a5725e4ce0ed147dff537ac19108fbcd7b5079aee3e5420d08d141eeeec1ede",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for browser entries.",
+  "context": "Search result chip label for browser entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dcfbcabfc050c8bddccf736944a4980b1caac795de2a2e2f45fdf98bd1788ec2",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

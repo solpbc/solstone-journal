@@ -152,7 +152,7 @@
   // an import ("Imported" beside an imported label).
   let showAgentLabel=!itemLabel&&Boolean(hit.agent_label);
   if(showAgentLabel&&rawStream){
-   const agentKey=String(hit.agent_label).trim().toLowerCase();
+   const agentKey=String(hit.agent||hit.agent_label).trim().toLowerCase().replace(/_/g,' ');
    const says=window.JournalFormat.streamSays(rawStream);
    if((says.imported&&agentKey==='imported')||(says.what&&agentKey===says.what))showAgentLabel=false;
   }

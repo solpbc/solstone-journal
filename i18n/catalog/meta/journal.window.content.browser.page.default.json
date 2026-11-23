@@ -1,0 +1,16 @@
+{
+  "description": "Fallback heading when a browser snapshot has no title, site, or URL.",
+  "context": "Fallback heading when a browser snapshot has no title, site, or URL.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6893247c57bb0836448d53feaa4f05ded67d518a879e0c2c4aa1e4a5824ba2e0",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

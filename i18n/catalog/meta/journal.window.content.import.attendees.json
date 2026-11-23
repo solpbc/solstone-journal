@@ -1,0 +1,21 @@
+{
+  "description": "Attendees line in a legacy structured calendar event.",
+  "context": "Attendees line in a legacy structured calendar event.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "attendees",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1096a8fc60276b8961ead699aef758e45d8eebb9ca535a183e84ff2c9d0cf27a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for conversation transcript entries.",
+  "context": "Search result chip label for conversation transcript entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "353d02406492bfb0c2c4cc15746df32c05e5e62f1b67acad8976894b466a493f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

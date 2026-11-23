@@ -1,0 +1,16 @@
+{
+  "description": "Placeholder when a document analysis section is empty.",
+  "context": "Placeholder when a document analysis section is empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5235237447843e8b0e62a0fe8ff6082f70821573815da1f9d21330218210fa1a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Last engaged segment level field in an activity search entry.",
+  "context": "Last engaged segment level field in an activity search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "07c32b7668edf45506256b32ee0a5e03aebbf0a9ce2475ec899db6c88ad1c377",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

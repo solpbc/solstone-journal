@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for detected objects entries.",
+  "context": "Search result chip label for detected objects entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a4b57ceb9ea2f3e8d292c0a10d504000f2016b9aa0a4baca31a58c2b22e91ce",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Heading for a Strava workout search entry.",
+  "context": "Heading for a Strava workout search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a83e489657ba7f61a9f604f6c8cef9bef36f3c3fd5403cb2201d50080c3da19a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

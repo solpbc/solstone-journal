@@ -2,13 +2,19 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
 use super::{
-    JsonObject, ProducedChunks, display_or_default, display_value, json_falsy, recorded_chunk,
+    JsonObject, ProducedChunks, display_value, json_falsy, recorded_chunk_for_locale,
     truthy_display,
 };
 
+#[allow(dead_code)]
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(records: &[JsonObject], locale: &str) -> ProducedChunks {
     let Some(header) = records.first() else {
         return ProducedChunks {
             chunks: Vec::new(),
@@ -28,7 +34,7 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
 
     for entry in &records[1..] {
         let entry_type = entry.get("type").and_then(Value::as_str).unwrap_or("");
-        let markdown = format_entry(entry_type, entry);
+        let markdown = format_entry(entry_type, entry, locale);
         if !markdown.is_empty() {
             let occurrence = entry
                 .get("ts")
@@ -36,7 +42,9 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
                 .and_then(|value| solstone_core_time::parse_rfc3339(value).ok())
                 .map(|value| value.timestamp().as_millisecond())
                 .unwrap_or(0);
-            chunks.push(recorded_chunk(markdown, occurrence, entry));
+            chunks.push(recorded_chunk_for_locale(
+                markdown, occurrence, entry, locale,
+            ));
         }
     }
 
@@ -55,17 +63,18 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     }
 }
 
-fn format_entry(entry_type: &str, entry: &JsonObject) -> String {
+fn format_entry(entry_type: &str, entry: &JsonObject, locale: &str) -> String {
     match entry_type {
-        "calendar_event" => format_calendar_event(entry),
-        "note" => format_note(entry),
-        "highlight" => format_highlight(entry),
+        "calendar_event" => format_calendar_event(entry, locale),
+        "note" => format_note(entry, locale),
+        "highlight" => format_highlight(entry, locale),
         _ => format_generic(entry),
     }
 }
 
-fn format_calendar_event(entry: &JsonObject) -> String {
-    let title = display_or_default(entry, "title", "Untitled event");
+fn format_calendar_event(entry: &JsonObject, locale: &str) -> String {
+    let title = truthy_display(entry, "title")
+        .unwrap_or_else(|| text(locale, "journal.window.content.import.event.untitled"));
     let mut lines = vec![format!("## {title}")];
 
     let mut time_parts = Vec::new();
@@ -75,18 +84,30 @@ fn format_calendar_event(entry: &JsonObject) -> String {
         time_parts.push(time);
     }
     if let Some(duration) = truthy_display(entry, "duration_minutes") {
-        time_parts.push(format!("{duration} min"));
+        time_parts.push(strings(
+            locale,
+            "journal.window.content.import.duration.min",
+            [("minutes", duration.as_str())],
+        ));
     }
     if !time_parts.is_empty() {
         lines.push(time_parts.join(" | "));
     }
 
     if let Some(location) = truthy_display(entry, "location") {
-        lines.push(format!("Location: {location}"));
+        lines.push(strings(
+            locale,
+            "journal.window.content.import.location",
+            [("location", location.as_str())],
+        ));
     }
 
     if let Some(attendees) = display_attendees(entry.get("attendees")) {
-        lines.push(format!("Attendees: {attendees}"));
+        lines.push(strings(
+            locale,
+            "journal.window.content.import.attendees",
+            [("attendees", attendees.as_str())],
+        ));
     }
 
     if let Some(content) = truthy_display(entry, "content") {
@@ -97,16 +118,25 @@ fn format_calendar_event(entry: &JsonObject) -> String {
     lines.join("\n")
 }
 
-fn format_note(entry: &JsonObject) -> String {
-    let title = display_or_default(entry, "title", "Untitled note");
+fn format_note(entry: &JsonObject, locale: &str) -> String {
+    let title = truthy_display(entry, "title")
+        .unwrap_or_else(|| text(locale, "journal.window.content.import.note.untitled"));
     let mut lines = vec![format!("## {title}")];
 
     if let Some(tags) = display_array(entry.get("tags")) {
-        lines.push(format!("Tags: {tags}"));
+        lines.push(strings(
+            locale,
+            "journal.window.content.import.tags",
+            [("tags", tags.as_str())],
+        ));
     }
 
     if let Some(wikilinks) = display_array(entry.get("wikilinks")) {
-        lines.push(format!("Links: {wikilinks}"));
+        lines.push(strings(
+            locale,
+            "journal.window.content.import.links",
+            [("links", wikilinks.as_str())],
+        ));
     }
 
     if let Some(content) = truthy_display(entry, "content") {
@@ -117,20 +147,33 @@ fn format_note(entry: &JsonObject) -> String {
     lines.join("\n")
 }
 
-fn format_highlight(entry: &JsonObject) -> String {
-    let book = display_or_default(entry, "book_title", "Unknown book");
-    let mut header = format!("## {book}");
-    if let Some(author) = truthy_display(entry, "author") {
-        header.push_str(&format!(" by {author}"));
-    }
+fn format_highlight(entry: &JsonObject, locale: &str) -> String {
+    let book = truthy_display(entry, "book_title")
+        .unwrap_or_else(|| text(locale, "journal.window.content.import.book.unknown"));
+    let header = match truthy_display(entry, "author") {
+        Some(author) => strings(
+            locale,
+            "journal.window.content.import.book.by",
+            [("book", book.as_str()), ("author", author.as_str())],
+        ),
+        None => format!("## {book}"),
+    };
     let mut lines = vec![header];
 
     let mut loc_parts = Vec::new();
     if let Some(page) = truthy_display(entry, "page") {
-        loc_parts.push(format!("Page {page}"));
+        loc_parts.push(strings(
+            locale,
+            "journal.window.content.import.page",
+            [("page", page.as_str())],
+        ));
     }
     if let Some(location) = truthy_display(entry, "location") {
-        loc_parts.push(format!("Location {location}"));
+        loc_parts.push(strings(
+            locale,
+            "journal.window.content.import.loc",
+            [("location", location.as_str())],
+        ));
     }
     if !loc_parts.is_empty() {
         lines.push(loc_parts.join(" | "));
@@ -139,7 +182,11 @@ fn format_highlight(entry: &JsonObject) -> String {
     if let Some(content) = truthy_display(entry, "content") {
         lines.push(String::new());
         if entry.get("clip_type").and_then(Value::as_str) == Some("note") {
-            lines.push(format!("Note: {content}"));
+            lines.push(strings(
+                locale,
+                "journal.window.content.import.note.line",
+                [("content", content.as_str())],
+            ));
         } else {
             lines.push(format!("> {content}"));
         }

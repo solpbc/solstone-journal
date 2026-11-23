@@ -1,0 +1,21 @@
+{
+  "description": "Short browser tab age duration in seconds.",
+  "context": "Short browser tab age duration in seconds.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c96bf2fc3ce3873fcbb3db315acc85fa06b64268ba09d3d92360924e37d60ef2",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

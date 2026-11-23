@@ -4,9 +4,10 @@
 use jiff::civil::Time;
 use jiff::tz::Offset;
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
 use super::{
-    JsonObject, ProducedChunks, capitalize, display_value, json_truthy, recorded_chunk,
+    JsonObject, ProducedChunks, capitalize, display_value, json_truthy, recorded_chunk_for_locale,
     truthy_display,
 };
 
@@ -18,34 +19,64 @@ pub fn is_retired_event_plan(record: &JsonObject) -> bool {
         && record.get("occurred").and_then(Value::as_bool) == Some(false)
 }
 
+#[allow(dead_code)]
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(rel, records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(rel: &str, records: &[JsonObject], locale: &str) -> ProducedChunks {
     let mut chunks = Vec::new();
     for event in records.iter().filter(|event| !is_retired_event_plan(event)) {
         let Some(title) = truthy_display(event, "title") else {
             continue;
         };
-        let event_type =
-            capitalize(&truthy_display(event, "type").unwrap_or_else(|| "event".to_string()));
+        let event_type = match truthy_display(event, "type") {
+            Some(kind) => capitalize(&kind),
+            None => text(locale, "journal.window.content.event.type.default"),
+        };
         let occurred = event
             .get("occurred")
             .is_none_or(|value| json_truthy(Some(value)));
-        let planned_prefix = if occurred { "" } else { "Planned " };
-        let mut lines = vec![
-            format!("### {planned_prefix}{event_type}: {title}"),
-            String::new(),
-        ];
+        let heading = if occurred {
+            strings(
+                locale,
+                "journal.window.content.event.heading.occurred",
+                [("kind", event_type.as_str()), ("title", title.as_str())],
+            )
+        } else {
+            strings(
+                locale,
+                "journal.window.content.event.heading.planned",
+                [("kind", event_type.as_str()), ("title", title.as_str())],
+            )
+        };
+        let mut lines = vec![heading, String::new()];
 
         let start_time = event.get("start").and_then(Value::as_str).unwrap_or("");
         if !start_time.is_empty() {
             let end_time = event.get("end").and_then(Value::as_str).unwrap_or("");
-            let label = if occurred { "Occurred" } else { "Scheduled" };
             let start_display = first_five(start_time);
             if end_time.is_empty() {
-                lines.push(format!("**Time {label}:** {start_display}"));
+                let id = if occurred {
+                    "journal.window.content.event.time.occurred"
+                } else {
+                    "journal.window.content.event.time.scheduled"
+                };
+                lines.push(strings(locale, id, [("start", start_display.as_str())]));
             } else {
-                lines.push(format!(
-                    "**Time {label}:** {start_display} - {}",
-                    first_five(end_time)
+                let end_display = first_five(end_time);
+                let id = if occurred {
+                    "journal.window.content.event.time.occurred.range"
+                } else {
+                    "journal.window.content.event.time.scheduled.range"
+                };
+                lines.push(strings(
+                    locale,
+                    id,
+                    [
+                        ("start", start_display.as_str()),
+                        ("end", end_display.as_str()),
+                    ],
                 ));
             }
         }
@@ -63,12 +94,12 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
                 })
                 .collect();
             if !names.is_empty() {
-                let label = if occurred {
-                    "Participants"
+                let id = if occurred {
+                    "journal.window.content.event.participants.occurred"
                 } else {
-                    "Expected Participants"
+                    "journal.window.content.event.participants.planned"
                 };
-                lines.push(format!("**{label}:** {}", names.join(", ")));
+                lines.push(strings(locale, id, [("names", names.join(", ").as_str())]));
             }
         }
 
@@ -76,7 +107,11 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
             && let Some(source) = event.get("source").and_then(Value::as_str)
             && let Some(created) = created_day(source)
         {
-            lines.push(format!("**Created on:** {created}"));
+            lines.push(strings(
+                locale,
+                "journal.window.content.event.created",
+                [("date", created.as_str())],
+            ));
         }
 
         lines.push(String::new());
@@ -90,10 +125,11 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
             lines.push(String::new());
         }
 
-        chunks.push(recorded_chunk(
+        chunks.push(recorded_chunk_for_locale(
             lines.join("\n"),
             event_timestamp(rel, start_time),
             event,
+            locale,
         ));
     }
     ProducedChunks {

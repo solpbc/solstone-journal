@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for observation entries.",
+  "context": "Search result chip label for observation entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70671be435d327f1653fdc81f4d9522255d01ef077301c8657509b530fd17195",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

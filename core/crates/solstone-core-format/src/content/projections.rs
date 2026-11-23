@@ -2,14 +2,27 @@
 // Copyright (c) 2026 sol pbc
 
 use super::{
-    Family, JsonObject, RawPerceptFamily, produce_chunks_by_shape,
-    produce_raw_percept_chunks_by_shape,
+    Family, JsonObject, RawPerceptFamily, produce_chunks_by_shape_for_locale,
+    produce_raw_percept_chunks_by_shape_for_locale,
 };
 
 /// Render already-parsed raw-screen records as the owner-facing text stream.
 pub fn render_raw_screen_text(rel: &str, records: &[JsonObject]) -> String {
-    let produced =
-        produce_raw_percept_chunks_by_shape(RawPerceptFamily::RawScreen, Some(rel), records);
+    render_raw_screen_text_for_locale(rel, records, solstone_core_window_catalog::ENGLISH)
+}
+
+/// Render already-parsed raw-screen records as the owner-facing text stream in `locale`.
+pub fn render_raw_screen_text_for_locale(
+    rel: &str,
+    records: &[JsonObject],
+    locale: &str,
+) -> String {
+    let produced = produce_raw_percept_chunks_by_shape_for_locale(
+        RawPerceptFamily::RawScreen,
+        Some(rel),
+        records,
+        locale,
+    );
     let mut parts = Vec::new();
     if let Some(header) = produced.header {
         parts.push(header);
@@ -20,7 +33,12 @@ pub fn render_raw_screen_text(rel: &str, records: &[JsonObject]) -> String {
 
 /// Render already-parsed browser records as the owner-facing text stream.
 pub fn render_browser_text(records: &[JsonObject]) -> String {
-    let produced = produce_chunks_by_shape(Family::Browser, None, records);
+    render_browser_text_for_locale(records, solstone_core_window_catalog::ENGLISH)
+}
+
+/// Render already-parsed browser records as the owner-facing text stream in `locale`.
+pub fn render_browser_text_for_locale(records: &[JsonObject], locale: &str) -> String {
+    let produced = produce_chunks_by_shape_for_locale(Family::Browser, None, records, locale);
     produced
         .chunks
         .into_iter()
@@ -31,10 +49,16 @@ pub fn render_browser_text(records: &[JsonObject]) -> String {
 
 /// Render one parsed morning briefing as its owner-facing Markdown document.
 pub fn render_morning_briefing_text(briefing: &JsonObject) -> String {
-    let produced = produce_chunks_by_shape(
+    render_morning_briefing_text_for_locale(briefing, solstone_core_window_catalog::ENGLISH)
+}
+
+/// Render one parsed morning briefing as its owner-facing Markdown document in `locale`.
+pub fn render_morning_briefing_text_for_locale(briefing: &JsonObject, locale: &str) -> String {
+    let produced = produce_chunks_by_shape_for_locale(
         Family::MorningBriefing,
         None,
         std::slice::from_ref(briefing),
+        locale,
     );
     produced
         .chunks

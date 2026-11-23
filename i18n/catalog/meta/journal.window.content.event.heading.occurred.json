@@ -1,0 +1,25 @@
+{
+  "description": "Heading for an occurred event chunk.",
+  "context": "Heading for an occurred event chunk.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "title",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0273019a34eae48b2b4b272e10649c2a4b092fde86b8d8c82094f3941399511a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

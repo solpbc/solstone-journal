@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for screenshot transcript entries.",
+  "context": "Search result chip label for screenshot transcript entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af11f62cc9c28667894e0076e7c34d4c384c05320d81ad47fd1ed0ebe890a8e0",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

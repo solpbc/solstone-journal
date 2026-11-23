@@ -1,0 +1,16 @@
+{
+  "description": "Fallback book title for a legacy structured highlight.",
+  "context": "Fallback book title for a legacy structured highlight.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c039a8bc117de491cc4a969061d2b52f1b2db95ef4861a9fc1f1440e3778a6d3",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

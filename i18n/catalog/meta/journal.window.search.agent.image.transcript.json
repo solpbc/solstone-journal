@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for image transcript entries.",
+  "context": "Search result chip label for image transcript entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8bc89f1164c276b553d41e92d9345b7f19ebdd00b4cbdb058d531c4ee8873d5b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

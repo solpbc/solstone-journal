@@ -1,0 +1,21 @@
+{
+  "description": "Method field in a desktop activity block.",
+  "context": "Method field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0600587220ee05a0cd2527d30da69b717d22ddf12e3f2c9899c549dc0746555f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

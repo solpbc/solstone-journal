@@ -1,0 +1,16 @@
+{
+  "description": "Browser attention state: muted media playing.",
+  "context": "Browser attention state: muted media playing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fdacad0e6bb87b0f4548d5dfbfef6e3f64bc4b17b53810dfc5d5ff3bb3ff4cc1",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

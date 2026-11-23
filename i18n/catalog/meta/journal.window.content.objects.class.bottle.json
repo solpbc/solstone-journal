@@ -1,0 +1,16 @@
+{
+  "description": "Detected object class name: bottle.",
+  "context": "Detected object class name: bottle.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bb15a0f1479bec3434af0c1b3e1691c9f468f88d94982f8ac5d1884e95256806",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

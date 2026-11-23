@@ -1,0 +1,25 @@
+{
+  "description": "Source attribution naming both source and recording device/app.",
+  "context": "Source attribution naming both source and recording device/app.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "by",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3c8fab01a9285bd8011ba69d9aeab0737c50555e5e7369713c6cf66f1b9d6c77",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

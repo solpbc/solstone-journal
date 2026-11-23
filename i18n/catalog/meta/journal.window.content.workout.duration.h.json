@@ -1,0 +1,21 @@
+{
+  "description": "Workout duration in whole hours.",
+  "context": "Workout duration in whole hours.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hours",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "614093250b9479750b1cd6076eaa7b07e0fcd1cd05bdf53ba79c9406bcbd683a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Executable field in a desktop activity block.",
+  "context": "Executable field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "679f116ae2ca749d0e3ea53e125f5f738e6c450e242769673cdc5613e0c8b4a9",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

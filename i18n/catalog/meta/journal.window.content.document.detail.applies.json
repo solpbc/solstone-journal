@@ -1,0 +1,21 @@
+{
+  "description": "Detail line naming who a key provision applies to.",
+  "context": "Detail line naming who a key provision applies to.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f86a27cfc4a04b94e4249f004eb83da291a4714b6d926db27170b79275273d2e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

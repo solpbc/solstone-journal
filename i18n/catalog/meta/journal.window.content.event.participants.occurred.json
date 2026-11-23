@@ -1,0 +1,21 @@
+{
+  "description": "Participants line for an occurred event.",
+  "context": "Participants line for an occurred event.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "002a751e920093cbfbe0adab426d11fc7acfac6d1375f882c006d2b0b56d2d88",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

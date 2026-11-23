@@ -1,0 +1,16 @@
+{
+  "description": "Document analysis section heading: Important Dates.",
+  "context": "Document analysis section heading: Important Dates.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c4ba573c150c76381f1f1d828959a4d66e3afa0b791e01b9c54bbf7a1d990bc",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

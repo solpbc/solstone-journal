@@ -1,0 +1,21 @@
+{
+  "description": "Details field in an activity search entry.",
+  "context": "Details field in an activity search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "938b5874afbe77bf49ee5ec7dac2e668c5017203fd63730ffc020796ef5c8adb",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

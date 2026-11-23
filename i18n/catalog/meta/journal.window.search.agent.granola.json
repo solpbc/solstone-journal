@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for Granola entries.",
+  "context": "Search result chip label for Granola entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5d967d188de207b9bf83252cc3d80a91d9343e9b97f22ad4daa339f310ea0782",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

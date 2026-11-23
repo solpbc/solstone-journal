@@ -1,0 +1,25 @@
+{
+  "description": "Heart rate average and maximum in a Strava workout entry.",
+  "context": "Heart rate average and maximum in a Strava workout entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "avg",
+      "type": "string"
+    },
+    {
+      "name": "max",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "858e5f9a159319b231765072e64a23634a27663ff9506f66955292c34caaf85b",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

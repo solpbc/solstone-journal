@@ -4,10 +4,15 @@
 use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
-use super::{JsonObject, ProducedChunks, display_value, json_falsy, recorded_chunk};
+use super::{JsonObject, ProducedChunks, display_value, json_falsy, recorded_chunk_for_locale};
 
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(records: &[JsonObject], locale: &str) -> ProducedChunks {
     let mut chunks = Vec::new();
     let mut attention_memory: HashMap<(Option<String>, Option<String>), String> = HashMap::new();
 
@@ -15,7 +20,7 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
         let kind = clean_text(record.get("t"));
         let markdown = match kind.as_str() {
             "segment_start" => {
-                let (md, attention) = format_snapshot(record);
+                let (md, attention) = format_snapshot(record, locale);
                 if !md.is_empty() {
                     let key = memory_key(record);
                     // Snapshot resets attention memory for this key; empty attention removes it.
@@ -32,14 +37,19 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
                 if block_text.is_empty() {
                     String::new()
                 } else {
-                    let attention = parse_attention_text(record);
+                    let attention = parse_attention_text(record, locale);
                     if attention.is_empty() {
                         block_text
                     } else {
                         let key = memory_key(record);
                         let remembered = attention_memory.get(&key);
                         if remembered.map(String::as_str) != Some(attention.as_str()) {
-                            let prefixed = format!("context: {attention}\n{block_text}");
+                            let ctx_line = strings(
+                                locale,
+                                "journal.window.content.browser.context",
+                                [("details", attention.as_str())],
+                            );
+                            let prefixed = format!("{ctx_line}\n{block_text}");
                             attention_memory.insert(key, attention);
                             prefixed
                         } else {
@@ -52,7 +62,9 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
         };
         if !markdown.is_empty() {
             let occurrence = record.get("ts").and_then(integer_milliseconds).unwrap_or(0);
-            chunks.push(recorded_chunk(markdown, occurrence, record));
+            chunks.push(recorded_chunk_for_locale(
+                markdown, occurrence, record, locale,
+            ));
         }
     }
 
@@ -136,7 +148,7 @@ fn open_page_line(page: &JsonObject, state: &JsonObject) -> String {
     if !site.is_empty() && site != heading {
         line.push_str(&format!(" ({site})"));
     }
-    let attention = parse_attention_text(state);
+    let attention = parse_attention_text(state, ENGLISH);
     if !attention.is_empty() {
         line.push_str(&format!(" · {attention}"));
     }
@@ -177,46 +189,79 @@ fn collapsed_bounded_string(value: Option<&Value>) -> Option<String> {
     }
 }
 
-fn format_duration(ms: i64) -> String {
+fn format_duration(ms: i64, locale: &str) -> String {
     // Duration: largest whole unit plus next non-zero smaller unit; seconds only under one minute.
     let s = ms / 1000;
     if s < 60 {
-        return format!("{s}s");
+        return strings(
+            locale,
+            "journal.window.content.browser.duration.s",
+            [("seconds", &s.to_string())],
+        );
     }
     let m = s / 60;
     if m < 60 {
-        return format!("{m}m");
+        return strings(
+            locale,
+            "journal.window.content.browser.duration.m",
+            [("minutes", &m.to_string())],
+        );
     }
     let h = m / 60;
     let rem_m = m % 60;
     if h < 24 {
         if rem_m > 0 {
-            return format!("{h}h {rem_m}m");
+            return strings(
+                locale,
+                "journal.window.content.browser.duration.hm",
+                [("hours", &h.to_string()), ("minutes", &rem_m.to_string())],
+            );
         } else {
-            return format!("{h}h");
+            return strings(
+                locale,
+                "journal.window.content.browser.duration.h",
+                [("hours", &h.to_string())],
+            );
         }
     }
     let d = h / 24;
     let rem_h = h % 24;
     if rem_h > 0 {
-        format!("{d}d {rem_h}h")
+        strings(
+            locale,
+            "journal.window.content.browser.duration.dh",
+            [("days", &d.to_string()), ("hours", &rem_h.to_string())],
+        )
     } else {
-        format!("{d}d")
+        strings(
+            locale,
+            "journal.window.content.browser.duration.d",
+            [("days", &d.to_string())],
+        )
     }
 }
 
-fn parse_attention_parts(row: &JsonObject) -> Vec<&'static str> {
+fn parse_attention_parts(row: &JsonObject, locale: &str) -> Vec<String> {
     let mut parts = Vec::new();
     if let Some(Value::Object(tab)) = row.get("tab") {
         let front = tab.get("front").and_then(Value::as_bool);
         let focused = tab.get("focused").and_then(Value::as_bool);
         match front {
             Some(true) => match focused {
-                Some(true) => parts.push("front tab, window focused"),
-                Some(false) => parts.push("front tab, window not focused"),
-                None => parts.push("front tab"),
+                Some(true) => parts.push(text(
+                    locale,
+                    "journal.window.content.browser.tab.front.focused",
+                )),
+                Some(false) => parts.push(text(
+                    locale,
+                    "journal.window.content.browser.tab.front.unfocused",
+                )),
+                None => parts.push(text(locale, "journal.window.content.browser.tab.front")),
             },
-            Some(false) => parts.push("background tab"),
+            Some(false) => parts.push(text(
+                locale,
+                "journal.window.content.browser.tab.background",
+            )),
             None => {}
         }
     }
@@ -224,36 +269,45 @@ fn parse_attention_parts(row: &JsonObject) -> Vec<&'static str> {
         && media.get("playing").and_then(Value::as_bool) == Some(true)
     {
         if media.get("muted").and_then(Value::as_bool) == Some(true) {
-            parts.push("media playing, muted");
+            parts.push(text(
+                locale,
+                "journal.window.content.browser.media.playing.muted",
+            ));
         } else {
-            parts.push("media playing");
+            parts.push(text(locale, "journal.window.content.browser.media.playing"));
         }
     }
     if row.get("solstone_paused").and_then(Value::as_bool) == Some(true) {
-        parts.push("solstone app paused");
+        parts.push(text(locale, "journal.window.content.browser.app.paused"));
     }
     parts
 }
 
-fn parse_attention_text(row: &JsonObject) -> String {
-    parse_attention_parts(row).join(" · ")
+fn parse_attention_text(row: &JsonObject, locale: &str) -> String {
+    parse_attention_parts(row, locale).join(" · ")
 }
 
-fn parse_snapshot_context(row: &JsonObject) -> (Option<String>, String) {
-    let mut parts: Vec<String> = parse_attention_parts(row)
-        .into_iter()
-        .map(str::to_string)
-        .collect();
+fn parse_snapshot_context(row: &JsonObject, locale: &str) -> (Option<String>, String) {
+    let mut parts: Vec<String> = parse_attention_parts(row, locale);
     let attention_text = parts.join(" · ");
 
     if let Some(Value::Object(tab)) = row.get("tab")
         && let Some(ms) = tab.get("age_ms").and_then(integer_milliseconds)
         && ms >= 0
     {
-        parts.push(format!("tab open at least {}", format_duration(ms)));
+        let duration = format_duration(ms, locale);
+        parts.push(strings(
+            locale,
+            "journal.window.content.browser.tab.age",
+            [("duration", duration.as_str())],
+        ));
     }
     if let Some(lang) = collapsed_bounded_string(row.get("lang")) {
-        parts.push(format!("language {lang}"));
+        parts.push(strings(
+            locale,
+            "journal.window.content.browser.language",
+            [("lang", lang.as_str())],
+        ));
     }
     if let Some(Value::Object(browser)) = row.get("browser") {
         let vendor = collapsed_bounded_string(browser.get("vendor"));
@@ -268,19 +322,24 @@ fn parse_snapshot_context(row: &JsonObject) -> (Option<String>, String) {
     let context_line = if parts.is_empty() {
         None
     } else {
-        Some(format!("context: {}", parts.join(" · ")))
+        Some(strings(
+            locale,
+            "journal.window.content.browser.context",
+            [("details", parts.join(" · ").as_str())],
+        ))
     };
 
     (context_line, attention_text)
 }
 
 /// A snapshot's heading lines, and its attention state.
-fn snapshot_heading(row: &JsonObject) -> (Vec<String>, String) {
+fn snapshot_heading_for_locale(row: &JsonObject, locale: &str) -> (Vec<String>, String) {
     let title = clean_text(row.get("title"));
     let site = clean_text(row.get("site"));
     let url = clean_text(row.get("url"));
-    let heading =
-        first_non_empty(&[title.as_str(), site.as_str(), url.as_str()]).unwrap_or("Browser Page");
+    let fallback = text(locale, "journal.window.content.browser.page.default");
+    let heading = first_non_empty(&[title.as_str(), site.as_str(), url.as_str()])
+        .unwrap_or(fallback.as_str());
     let mut lines = vec![format!("## {heading}")];
 
     let adapter = clean_text(row.get("adapter"));
@@ -294,15 +353,19 @@ fn snapshot_heading(row: &JsonObject) -> (Vec<String>, String) {
         lines.push(subline);
     }
 
-    let (context_line, attention_text) = parse_snapshot_context(row);
+    let (context_line, attention_text) = parse_snapshot_context(row, locale);
     if let Some(context_line) = context_line {
         lines.push(context_line);
     }
     (lines, attention_text)
 }
 
-fn format_snapshot(row: &JsonObject) -> (String, String) {
-    let (mut lines, attention_text) = snapshot_heading(row);
+fn snapshot_heading(row: &JsonObject) -> (Vec<String>, String) {
+    snapshot_heading_for_locale(row, ENGLISH)
+}
+
+fn format_snapshot(row: &JsonObject, locale: &str) -> (String, String) {
+    let (mut lines, attention_text) = snapshot_heading_for_locale(row, locale);
     let block_lines = format_blocks(row.get("blocks"));
     if !block_lines.is_empty() {
         lines.push(String::new());
@@ -584,7 +647,7 @@ fn read_pages(records: &[JsonObject], count: &dyn Fn(&str) -> u32) -> Vec<ReadPa
                     }
                 };
                 let page = &mut pages[index];
-                let attention = parse_attention_text(record);
+                let attention = parse_attention_text(record, ENGLISH);
                 if !attention.is_empty() && attention != page.attention {
                     let line = format!("context: {attention}");
                     if !page.seen.contains_key(&line) {

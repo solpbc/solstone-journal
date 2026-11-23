@@ -1,0 +1,25 @@
+{
+  "description": "Source attribution line followed by restated values.",
+  "context": "Source attribution line followed by restated values.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "attribution",
+      "type": "string"
+    },
+    {
+      "name": "values",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "53877759215d8e08b520072589710c4f4bf7ed6287d8613bd0adaa44cbf1c8b4",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

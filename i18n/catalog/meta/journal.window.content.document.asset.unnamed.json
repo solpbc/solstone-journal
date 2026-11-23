@@ -1,0 +1,16 @@
+{
+  "description": "Fallback asset label when a document asset has no name.",
+  "context": "Fallback asset label when a document asset has no name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "190d3029f1ec4d91f365d323c7f7b89a785d9b10e6712ecf6aff54417de7c57f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

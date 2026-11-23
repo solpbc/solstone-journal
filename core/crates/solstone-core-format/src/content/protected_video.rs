@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use super::{JsonObject, ProducedChunks, recorded_chunk};
+use solstone_core_window_catalog::{ENGLISH, Value as CatalogValue, render as render_msg, strings};
 
+use super::{JsonObject, ProducedChunks, recorded_chunk_for_locale};
+
+#[allow(dead_code)]
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(records: &[JsonObject], locale: &str) -> ProducedChunks {
     let mut chunks = Vec::new();
 
     for record in records {
@@ -49,28 +56,56 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
             .filter(|s| !s.is_empty());
 
         let span = i128::from(end_ts) - i128::from(ts);
-        let minutes = u64::try_from(((span + 30_000) / 60_000).max(1)).expect("minute count");
-        let duration = if minutes == 1 {
-            "1 minute".to_string()
-        } else {
-            format!("{minutes} minutes")
-        };
-
-        let app_clause = match app {
-            Some(app) => format!(" in {app}"),
-            None => String::new(),
-        };
-
-        let title_clause = match title {
-            Some(title) => format!(", titled \"{title}\","),
-            None => String::new(),
-        };
-
-        let prose = format!(
-            "## Protected video: {service}\n\nA {service} window was on screen{app_clause}{title_clause} for about {duration} while intake (screen and audio) was paused."
+        let minutes = i64::try_from(((span + 30_000) / 60_000).max(1)).expect("minute count");
+        let duration = render_msg(
+            locale,
+            "journal.window.content.protected.video.minutes",
+            &[("quantity", CatalogValue::Cardinal(minutes))],
         );
 
-        chunks.push(recorded_chunk(prose, ts, record));
+        let heading = strings(
+            locale,
+            "journal.window.content.protected.video.heading",
+            [("service", service)],
+        );
+        let body = match (app, title) {
+            (Some(app), Some(title)) => strings(
+                locale,
+                "journal.window.content.protected.video.body.app.title",
+                [
+                    ("service", service),
+                    ("app", app),
+                    ("title", title),
+                    ("duration", duration.as_str()),
+                ],
+            ),
+            (Some(app), None) => strings(
+                locale,
+                "journal.window.content.protected.video.body.app",
+                [
+                    ("service", service),
+                    ("app", app),
+                    ("duration", duration.as_str()),
+                ],
+            ),
+            (None, Some(title)) => strings(
+                locale,
+                "journal.window.content.protected.video.body.title",
+                [
+                    ("service", service),
+                    ("title", title),
+                    ("duration", duration.as_str()),
+                ],
+            ),
+            (None, None) => strings(
+                locale,
+                "journal.window.content.protected.video.body",
+                [("service", service), ("duration", duration.as_str())],
+            ),
+        };
+        let prose = format!("{heading}\n\n{body}");
+
+        chunks.push(recorded_chunk_for_locale(prose, ts, record, locale));
     }
 
     ProducedChunks {

@@ -1,0 +1,21 @@
+{
+  "description": "Location segment for a legacy structured highlight.",
+  "context": "Location segment for a legacy structured highlight.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "location",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7edab3c8a02db1ef23bed32c76e8b16d5b61ef4be7675e1113ff8ba9a1a27f6b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

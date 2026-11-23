@@ -1,0 +1,21 @@
+{
+  "description": "Aliases line in a facet entity chunk.",
+  "context": "Aliases line in a facet entity chunk.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "items",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dff30cf429e2f743558b8c67f84874422773543f94da54a1e7a13135b02a8fde",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

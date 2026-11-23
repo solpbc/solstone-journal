@@ -1,0 +1,21 @@
+{
+  "description": "Unclassified participation field in an activity search entry.",
+  "context": "Unclassified participation field in an activity search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0060f87ed00ffd2740768c1fe11ba5a0edba949ee43431c4b2ff8a41b2feb4c6",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

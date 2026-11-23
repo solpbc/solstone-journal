@@ -1,0 +1,21 @@
+{
+  "description": "App identifier field in a desktop activity block.",
+  "context": "App identifier field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5baa6f78137076f3fcc81f23db611096381aa41190ad7f269b741189c7c30c82",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

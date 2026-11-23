@@ -1,0 +1,21 @@
+{
+  "description": "Source metadata field in an action log entry.",
+  "context": "Source metadata field in an action log entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1dbf9d86c740841d962faab175269a4642f6d3b6c55950bbdcac40eb132cd47a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

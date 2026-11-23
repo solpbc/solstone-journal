@@ -1,0 +1,21 @@
+{
+  "description": "Elevation gain in metres in a Strava workout entry.",
+  "context": "Elevation gain in metres in a Strava workout entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "m",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ef42de10538196adf23f48d4a6abd2d99a1f31bb718896128bf2a85c380e403f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

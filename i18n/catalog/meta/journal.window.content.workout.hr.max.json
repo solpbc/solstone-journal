@@ -1,0 +1,21 @@
+{
+  "description": "Heart rate maximum in a Strava workout entry.",
+  "context": "Heart rate maximum in a Strava workout entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "max",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3ce6d6f793a9f43adeb6435cb6bcb374e8e9f0e7ccd1895fe14b6b21f8d432e6",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Time span line for a body experience search entry.",
+  "context": "Time span line for a body experience search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start",
+      "type": "string"
+    },
+    {
+      "name": "end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5b68024533ad00320a5d3bb8ecfdd9bc6e19725a8d3fc49333180024cb5cf899",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

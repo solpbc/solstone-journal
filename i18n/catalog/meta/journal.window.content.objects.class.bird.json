@@ -1,0 +1,16 @@
+{
+  "description": "Detected object class name: bird.",
+  "context": "Detected object class name: bird.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "88093782f5f47b427a5d3b001709b6741f25d6fdd6ed2dbd1b6c27e6d640b738",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Tags line in a legacy structured note.",
+  "context": "Tags line in a legacy structured note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "tags",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "30cab96607a58dbc7f1a425c42df1c3791c63b182528c7730d048becb17a4811",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

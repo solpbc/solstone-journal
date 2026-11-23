@@ -1,0 +1,16 @@
+{
+  "description": "Display speaker label for the owner in imported chat search entries.",
+  "context": "Display speaker label for the owner in imported chat search entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "676d4e8d4dc716494c1f75ccc1c98bf59e0531a773acbe2ad67f4d2a6f6ad4ca",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

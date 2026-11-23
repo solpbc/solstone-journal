@@ -1,0 +1,16 @@
+{
+  "description": "Document analysis section heading: Conditions and Triggers.",
+  "context": "Document analysis section heading: Conditions and Triggers.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "90b3b372c8bb8e16591680ed460e70a07dd25ba8682517d1ca2293400221d792",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

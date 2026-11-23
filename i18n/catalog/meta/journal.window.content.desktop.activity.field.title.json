@@ -1,0 +1,21 @@
+{
+  "description": "Window title field in a desktop activity block.",
+  "context": "Window title field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "746bbb24f803dbb53802e78b2f91cebb175f314dbf7c3f2c5f935a883e61a8e4",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -210,6 +210,8 @@ test('renderHit drops an agent label the stream label already says, and keeps an
   assert.strictEqual(agentShown({ stream: 'ja1r', agent_label: 'Audio' }), true);
   assert.strictEqual(agentShown({ stream: 'phone_audio', agent_label: 'Audio Transcript' }), true);
   assert.strictEqual(agentShown({ stream: 'import.oura', agent_label: 'Event Transcript' }), true);
+  assert.strictEqual(agentShown({ stream: 'ja1r', agent: 'screen', agent_label: '⟦Şćřḗḗƞ⟧' }), false);
+  assert.strictEqual(agentShown({ stream: 'import.oura', agent: 'imported', agent_label: '⟦Īḿƥǿřŧḗḓ⟧' }), false);
   assert.strictEqual(agentShown({ stream: 'ja1r', agent_label: 'Describe' }), true);
 });
 

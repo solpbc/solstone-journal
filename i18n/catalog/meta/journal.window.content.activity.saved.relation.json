@@ -1,0 +1,21 @@
+{
+  "description": "Saved relation line appended to an activity search entry.",
+  "context": "Saved relation line appended to an activity search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2a6644aa9e4107dc84b3992e33fff65aa2aea50d9079bbe0f228aefec6ea8fcc",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

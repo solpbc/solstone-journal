@@ -1,0 +1,25 @@
+{
+  "description": "Time range line for a scheduled event.",
+  "context": "Time range line for a scheduled event.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start",
+      "type": "string"
+    },
+    {
+      "name": "end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "32d0b20d8b211fec196b350b99615367353ec47c87f4d4796dee3cc9b674a9c9",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

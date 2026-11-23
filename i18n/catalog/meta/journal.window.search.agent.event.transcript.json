@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for event transcript entries.",
+  "context": "Search result chip label for event transcript entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aff5dacb860a3e38b49c7d0e01819d0eba9e58c6c39581f3bce6b14a13af85f5",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

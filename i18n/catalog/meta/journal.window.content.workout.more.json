@@ -1,0 +1,16 @@
+{
+  "description": "Heading for additional Strava workout fields.",
+  "context": "Heading for additional Strava workout fields.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6950a75f51e96efd2f510341d8eb5681ec41429594bfeec4aac270d7b3ca6253",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

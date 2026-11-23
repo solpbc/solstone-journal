@@ -1,0 +1,16 @@
+{
+  "description": "Fallback party label when a document party has no name.",
+  "context": "Fallback party label when a document party has no name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "012c91cc4667d66aa92e9b69981bf7476906e13ae459c7f76c8543c0b6330852",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

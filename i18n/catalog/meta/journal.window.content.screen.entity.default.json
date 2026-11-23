@@ -1,0 +1,16 @@
+{
+  "description": "Fallback label for an unnamed screen entity.",
+  "context": "Fallback label for an unnamed screen entity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c253730c37323cd8810214d8fafafa6afc2ec8b69a1221fcf46333f52ddf2962",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

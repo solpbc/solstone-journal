@@ -478,7 +478,11 @@ pub fn index_stamp(root: &Path, source: &Path, rel: &str, bytes: &[u8]) -> Optio
     if family == crate::content::Family::MorningBriefing {
         return Some(hash(bytes));
     }
-    Some(combined_stamp(bytes, &read(root, source)?))
+    match read(root, source) {
+        Some(receipts) => Some(combined_stamp(bytes, &receipts)),
+        None if family == crate::content::Family::Activity => Some(hash(bytes)),
+        None => None,
+    }
 }
 
 pub struct IndexedTalent(Vec<(String, String)>);
@@ -488,7 +492,13 @@ impl IndexedTalent {
         (source == english && source != shown).then_some(shown)
     }
     pub fn load(root: &Path, rel: &str, stamp: &str, locale: &str) -> Option<Self> {
-        use crate::content::{Family, parse_jsonl_objects, produce_chunks_by_shape};
+        use crate::content::{
+            Family, parse_jsonl_objects, produce_chunks_by_shape,
+            produce_chunks_by_shape_for_locale,
+        };
+        if locale == solstone_core_window_catalog::ENGLISH {
+            return None;
+        }
         let family = family(rel)?;
         let relative = Path::new(rel);
         if relative
@@ -512,21 +522,27 @@ impl IndexedTalent {
                 .flatten()
                 .map(|pair| Self(vec![pair]));
         }
-        let receipts = read(root, &root.join(path))?;
-        if combined_stamp(&bytes, &receipts) != stamp {
-            return None;
-        }
+        let receipts = match read(root, &root.join(&path)) {
+            Some(receipts) if combined_stamp(&bytes, &receipts) == stamp => Some(receipts),
+            _ if family == Family::Activity && hash(&bytes) == stamp => None,
+            _ => return None,
+        };
         let mut rows = parse_jsonl_objects(std::str::from_utf8(&bytes).ok()?);
-        let chunks = |rows: &[_]| produce_chunks_by_shape(family, Some(rel), rows).chunks;
-        let original = chunks(&rows);
-        for (idx, row) in rows.iter_mut().enumerate() {
-            if family == Family::Activity {
-                project_story(row, &receipts, locale);
-            } else if let Some(receipt) = receipts.get(idx.to_string()) {
-                project_pulse(row, receipt, locale);
+        let original = produce_chunks_by_shape(family, Some(rel), &rows).chunks;
+        if let Some(receipts) = receipts {
+            for (idx, row) in rows.iter_mut().enumerate() {
+                if family == Family::Activity {
+                    project_story(row, &receipts, locale);
+                } else if let Some(receipt) = receipts.get(idx.to_string()) {
+                    project_pulse(row, receipt, locale);
+                }
             }
         }
-        let shown = chunks(&rows);
+        let shown = if family == Family::Activity {
+            produce_chunks_by_shape_for_locale(family, Some(rel), &rows, locale).chunks
+        } else {
+            produce_chunks_by_shape(family, Some(rel), &rows).chunks
+        };
         if original.len() != shown.len() {
             return None;
         }

@@ -23,13 +23,13 @@ use solstone_core_format::audio_archive::{
     AUDIO_ARCHIVE_PLACEMENT_FILENAME, AudioArchivePlacement,
 };
 use solstone_core_format::content::{
-    Family, RawPerceptFamily, iter_talent_text_projections, produce_chunks,
-    produce_raw_percept_chunks,
+    Family, RawPerceptFamily, iter_talent_text_projections_for_locale, produce_chunks_for_locale,
+    produce_raw_percept_chunks, produce_raw_percept_chunks_for_locale,
 };
 use solstone_core_format::content::{
     FileFacts, FileFormat, FormatterView, SegmentReader, format_file, segment_file_offers,
 };
-use solstone_core_format::objects::objects_overlay;
+use solstone_core_format::objects::objects_overlay_for_locale;
 use solstone_core_format::segment::segment_parse;
 use solstone_core_processing_record::vocab;
 use solstone_core_system_health::{DataState, derive_modality_state};
@@ -350,7 +350,7 @@ fn prepare_segment_localized(
             }
         } else if offered_format == Some(FileFormat::Content(Family::Browser)) {
             match read_entries(path) {
-                Ok(entries) => browser_chunks(&mut chunks, &zone, name, &entries),
+                Ok(entries) => browser_chunks(&mut chunks, &zone, name, &entries, locale),
                 Err(error) => warnings.push(warning("browser", path, error, now)),
             }
         } else if offered_format == Some(FileFormat::Content(Family::Calendar)) {
@@ -384,7 +384,8 @@ fn prepare_segment_localized(
         } else if offered_format == Some(FileFormat::Content(Family::ProtectedVideo)) {
             match fs::read_to_string(path) {
                 Ok(text) => {
-                    let produced = produce_chunks(Family::ProtectedVideo, name, &text);
+                    let produced =
+                        produce_chunks_for_locale(Family::ProtectedVideo, name, &text, locale);
                     for chunk in produced.chunks {
                         let timestamp = chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0);
                         chunks.push(json!({
@@ -401,7 +402,12 @@ fn prepare_segment_localized(
             match fs::read_to_string(path) {
                 Ok(text) => {
                     let four_part_rel = format!("{day}/{stream}/{key}/{name}");
-                    let produced = produce_chunks(Family::DesktopActivity, &four_part_rel, &text);
+                    let produced = produce_chunks_for_locale(
+                        Family::DesktopActivity,
+                        &four_part_rel,
+                        &text,
+                        locale,
+                    );
                     for message in produced.warnings {
                         warnings.push(warning("desktop_activity", path, message.to_string(), now));
                     }
@@ -460,14 +466,16 @@ fn prepare_segment_localized(
                                         depict_detection_error(locale, record.as_ref(), entry, err);
                                 }
                                 let detections = entry.get("detections");
-                                if let Some(overlay) = detections.and_then(objects_overlay) {
+                                if let Some(overlay) =
+                                    detections.and_then(|d| objects_overlay_for_locale(d, locale))
+                                {
                                     source_ref["objects"] = overlay;
                                 }
                                 let markdown = format_file(
                                     FileFormat::PhotoDescription,
                                     raw_name,
                                     &serde_json::to_string(entry).expect("JSON object serializes"),
-                                    FormatterView::Stored,
+                                    FormatterView::Localized(locale),
                                 )
                                 .chunks
                                 .into_iter()
@@ -613,7 +621,7 @@ fn prepare_segment_localized(
     let talents_dir = dir.join("talents");
     let mut sense_display = None;
     let mut md_files: std::collections::BTreeMap<_, _> =
-        iter_talent_text_projections(&talents_dir, "", None)
+        iter_talent_text_projections_for_locale(&talents_dir, "", None, locale)
             .unwrap_or_default()
             .into_iter()
             .map(|entry| {
@@ -1495,7 +1503,8 @@ fn screen_chunks(
         "{}/{name}",
         crate::segment_media::segment_rel(context.day, context.stream, context.key)
     );
-    let produced = produce_raw_percept_chunks(RawPerceptFamily::RawScreen, &rel, &text);
+    let produced =
+        produce_raw_percept_chunks_for_locale(RawPerceptFamily::RawScreen, &rel, &text, locale);
     let monitor = if name == "screen.jsonl" {
         ""
     } else {
@@ -1521,7 +1530,10 @@ fn screen_chunks(
         let time = wall_time(context.key, offset);
         let participants = participants(source.get("content"));
         let mut chunk = json!({"type":"screen","time":time,"timestamp":day_timestamp(&context.zone, context.day, &time, chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0)),"markdown":chunk.content,"source_ref":{"frame_id":source.get("frame_id"),"filename":name,"raw":source_raw,"media_kind":kind,"monitor":monitor,"offset":source.get("timestamp"),"box_2d":source.get("box_2d"),"analysis":source.get("analysis"),"participants":if participants.is_empty(){Value::Null}else{json!(participants)}},"basic":source.get("analysis").is_none() && source.get("content").is_none_or(|value| value.is_null() || value.as_object().is_some_and(Map::is_empty))});
-        if let Some(overlay) = source.get("detections").and_then(objects_overlay) {
+        if let Some(overlay) = source
+            .get("detections")
+            .and_then(|d| objects_overlay_for_locale(d, locale))
+        {
             chunk["source_ref"]["objects"] = overlay;
         }
         chunks.push(chunk);
@@ -1533,13 +1545,14 @@ fn browser_chunks(
     zone: &TimeZone,
     name: &str,
     entries: &[Map<String, Value>],
+    locale: &str,
 ) {
     let text = entries
         .iter()
         .map(|entry| serde_json::to_string(entry).unwrap())
         .collect::<Vec<_>>()
         .join("\n");
-    let produced = produce_chunks(Family::Browser, name, &text);
+    let produced = produce_chunks_for_locale(Family::Browser, name, &text, locale);
     let start = entries
         .iter()
         .find(|entry| entry.get("t").and_then(Value::as_str) == Some("segment_start"));

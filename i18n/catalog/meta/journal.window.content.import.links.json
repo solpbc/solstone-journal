@@ -1,0 +1,21 @@
+{
+  "description": "Wikilinks line in a legacy structured note.",
+  "context": "Wikilinks line in a legacy structured note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "links",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3ae590871e4806a6801e1fcfa0204fc3d935fc6dc8038020a30eda0a6ed1fb54",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

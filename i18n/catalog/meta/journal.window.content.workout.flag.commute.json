@@ -1,0 +1,16 @@
+{
+  "description": "Commute flag in a Strava workout entry.",
+  "context": "Commute flag in a Strava workout entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70557393f7e94dcda405eb7bb3c0049863f92a1f69442bd0cf7a1720e3df2317",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

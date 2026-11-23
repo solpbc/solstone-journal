@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for story entries.",
+  "context": "Search result chip label for story entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "75c554649a819347aadc1c588536d7bbe1b6e67876d8c79dc35669e7db344334",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

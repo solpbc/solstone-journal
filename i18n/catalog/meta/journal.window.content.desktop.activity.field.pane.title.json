@@ -1,0 +1,21 @@
+{
+  "description": "Terminal pane title field in a desktop activity block.",
+  "context": "Terminal pane title field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c3193d4ae3cb9405fd1ca18a6807508da78299b9140f76b32a8dc0bfc348ed27",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Average power in a Strava workout entry.",
+  "context": "Average power in a Strava workout entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "avg",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2ac0c0b069f46d72336896aea08a629a617d8ea687268903bf1d1463df3e2ef5",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

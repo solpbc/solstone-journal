@@ -1,0 +1,16 @@
+{
+  "description": "Detected object class name: cell phone.",
+  "context": "Detected object class name: cell phone.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fa32e7b0cb8e0ecab5da31598d90ee72f487e7269a52710b39a9d41a5fe279af",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

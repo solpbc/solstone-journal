@@ -1,0 +1,21 @@
+{
+  "description": "Terminal window field in a desktop activity block.",
+  "context": "Terminal window field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d126648e6ad684d7e9cde7e716a2cbb93ce76ea8d2aa6e8e5f4c7eabdf9f6890",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

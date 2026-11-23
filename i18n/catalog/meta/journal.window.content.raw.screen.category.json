@@ -1,0 +1,21 @@
+{
+  "description": "Screen frame analysis category line.",
+  "context": "Screen frame analysis category line.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "category",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "61c9bca4ddb5e213edfa9ac2698a4ce024d6e99a0360e02b759ac0124101158e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

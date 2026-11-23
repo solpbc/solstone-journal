@@ -1,0 +1,21 @@
+{
+  "description": "Kind field in a body-record activity search entry.",
+  "context": "Kind field in a body-record activity search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8cb86aef4ebf0bd3e3b5a73984a39c82ce18d9072e42e86bdc884c9b8458d926",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "URL field in a desktop activity block.",
+  "context": "URL field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "49299a8fd4e00ea56fb31852069c1d87f5024c772170087097d283fce8750368",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

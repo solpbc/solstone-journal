@@ -1,0 +1,21 @@
+{
+  "description": "Time range field in an activity search entry.",
+  "context": "Time range field in an activity search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b34044606967bcc5807212c01baf3cfd27ed125b90987c183f1422091a2b02dc",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

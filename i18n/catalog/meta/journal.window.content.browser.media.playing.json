@@ -1,0 +1,16 @@
+{
+  "description": "Browser attention state: media playing.",
+  "context": "Browser attention state: media playing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbaf845adace6fc928ba7206a0b38a728eaf93a25a5888193807bb28d1d1f1dd",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

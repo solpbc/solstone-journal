@@ -1,0 +1,21 @@
+{
+  "description": "Calories in kilocalories in a Strava workout entry.",
+  "context": "Calories in kilocalories in a Strava workout entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "kcal",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "beff49470378f4e8a5199c38ecbf05142bb295b3221addcccd563b2325a688f1",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

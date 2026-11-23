@@ -1,0 +1,16 @@
+{
+  "description": "Screen share heading without presenter in raw screen frames.",
+  "context": "Screen share heading without presenter in raw screen frames.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ae0b01ad7c36438a355718d496159684dd5a97944a29b1bc7d1dcac9732bb2fb",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

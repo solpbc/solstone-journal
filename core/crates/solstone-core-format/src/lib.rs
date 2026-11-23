@@ -16,6 +16,7 @@ pub mod paths;
 pub mod screenshots;
 pub mod segment;
 pub mod stored_markdown;
+pub mod structured_display;
 pub mod talent_display;
 
 #[cfg(test)]

@@ -1,0 +1,21 @@
+{
+  "description": "Start time segment in a Strava workout entry.",
+  "context": "Start time segment in a Strava workout entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cf9ec6aba2be570a17ae84ca3533181a2ceed1cac4b788911497c5f2a7151acb",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

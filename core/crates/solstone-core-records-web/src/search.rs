@@ -280,7 +280,7 @@ fn search_response_with_index_in(
                 let agent_label = if sense.is_some() {
                     if is_sense_list { text(locale, "journal.window.search.hit.names") } else { String::new() }
                 } else {
-                    agent_label(&hit.metadata.agent)
+                    agent_label_for_locale(locale, &hit.metadata.agent)
                 };
                 let shown_record = projected.as_deref().unwrap_or(&hit.text);
                 let readable = readable_record(shown_record);
@@ -477,6 +477,7 @@ async fn entry_response(
             && locale != ENGLISH
             && (is_display_document(std::path::Path::new(&query.path))
                 || solstone_core_format::talent_display::indexed_path(&query.path)
+                || solstone_core_format::structured_display::indexed_path(&query.path)
                 || OwnerDisplay::calendar(&query.path));
         let (entry, stamp) = if display {
             read_owner_entry_for_display(
@@ -805,7 +806,61 @@ fn format_date(day: &str) -> String {
 }
 
 /// A talent's name as the product writes it: lowercase words.
+#[cfg(test)]
 fn agent_label(agent: &str) -> String {
+    agent_label_for_locale(ENGLISH, agent)
+}
+
+fn agent_label_for_locale(locale: &str, agent: &str) -> String {
+    let key = agent.trim().to_ascii_lowercase();
+    let id = match key.as_str() {
+        "action" => Some("journal.window.search.agent.action"),
+        "activity" => Some("journal.window.search.agent.activity"),
+        "audio" => Some("journal.window.search.agent.audio"),
+        "audio_transcript" => Some("journal.window.search.agent.audio.transcript"),
+        "body" => Some("journal.window.search.agent.body"),
+        "brief" => Some("journal.window.search.agent.brief"),
+        "browser" => Some("journal.window.search.agent.browser"),
+        "calendar" => Some("journal.window.search.agent.calendar"),
+        "conversation_transcript" => Some("journal.window.search.agent.conversation.transcript"),
+        "describe" => Some("journal.window.search.agent.describe"),
+        "desktop_activity" => Some("journal.window.search.agent.desktop.activity"),
+        "document_transcript" => Some("journal.window.search.agent.document.transcript"),
+        "documents" => Some("journal.window.search.agent.documents"),
+        "entity:attached" => Some("journal.window.search.agent.entity.attached"),
+        "entity:detected" => Some("journal.window.search.agent.entity.detected"),
+        "event" => Some("journal.window.search.agent.event"),
+        "event_transcript" => Some("journal.window.search.agent.event.transcript"),
+        "flow" => Some("journal.window.search.agent.flow"),
+        "granola" => Some("journal.window.search.agent.granola"),
+        "image_transcript" => Some("journal.window.search.agent.image.transcript"),
+        "import" => Some("journal.window.search.agent.import"),
+        "imported" => Some("journal.window.search.agent.imported"),
+        "location" => Some("journal.window.search.agent.location"),
+        "memory" => Some("journal.window.search.agent.memory"),
+        "morning_briefing" => Some("journal.window.search.agent.morning.briefing"),
+        "note_transcript" => Some("journal.window.search.agent.note.transcript"),
+        "objects" => Some("journal.window.search.agent.objects"),
+        "observation" => Some("journal.window.search.agent.observation"),
+        "possible_names" => Some("journal.window.search.agent.possible.names"),
+        "protected_video" => Some("journal.window.search.agent.protected.video"),
+        "pulse" => Some("journal.window.search.agent.pulse"),
+        "reflection" => Some("journal.window.search.agent.reflection"),
+        "screen" => Some("journal.window.search.agent.screen"),
+        "screen_text" => Some("journal.window.search.agent.screen.text"),
+        "screenshot_transcript" => Some("journal.window.search.agent.screenshot.transcript"),
+        "sense" => Some("journal.window.search.agent.sense"),
+        "session_review" => Some("journal.window.search.agent.session.review"),
+        "story" => Some("journal.window.search.agent.story"),
+        "topics" => Some("journal.window.search.agent.topics"),
+        _ => None,
+    };
+    if let Some(id) = id {
+        return text(
+            solstone_core_convey_http::window_catalog::packaged_locale(Some(locale)),
+            id,
+        );
+    }
     agent
         .split('_')
         .filter(|word| !word.is_empty())
@@ -1083,6 +1138,7 @@ fn unescape_display_text<'a>(path: &str, text: &'a str) -> Cow<'a, str> {
 enum OwnerDisplay {
     Document(IndexedDisplay),
     Talent(solstone_core_format::talent_display::IndexedTalent),
+    Structured(solstone_core_format::structured_display::IndexedStructured),
     Calendar(IndexedCalendarDisplay),
 }
 
@@ -1104,6 +1160,11 @@ impl OwnerDisplay {
         if solstone_core_format::talent_display::indexed_path(path) {
             solstone_core_format::talent_display::IndexedTalent::load(root, path, stamp, locale)
                 .map(Self::Talent)
+        } else if solstone_core_format::structured_display::indexed_path(path) {
+            solstone_core_format::structured_display::IndexedStructured::load(
+                root, path, stamp, locale,
+            )
+            .map(Self::Structured)
         } else if Self::calendar(path) {
             IndexedCalendarDisplay::load(root, path, stamp, locale, indices).map(Self::Calendar)
         } else {
@@ -1114,6 +1175,7 @@ impl OwnerDisplay {
     fn get(&self, idx: i64, english: &str) -> Option<&str> {
         match self {
             Self::Talent(display) => display.get(idx, english),
+            Self::Structured(display) => display.get(idx, english),
             Self::Calendar(display) => display.get(idx, english),
             Self::Document(display) => display.get(idx, english),
         }
@@ -2118,15 +2180,15 @@ mod facet_reader_tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    async fn body_to_json(response: axum::response::Response) -> Value {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        serde_json::from_slice(&bytes).expect("json body")
+    }
+
     #[tokio::test]
     async fn screen_text_search_hit_citation_and_digest_filtering() {
-        async fn body_to_json(response: axum::response::Response) -> Value {
-            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-                .await
-                .expect("body");
-            serde_json::from_slice(&bytes).expect("json body")
-        }
-
         let root = std::env::temp_dir().join(format!(
             "solstone-test-search-screentext-{}",
             std::process::id()
@@ -2221,5 +2283,122 @@ mod facet_reader_tests {
         assert!(hits2[0]["path"].as_str().unwrap().ends_with("audio.md"));
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn structured_families_project_for_owner_locale_while_keeping_english_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let workout_path = root.join("chronicle/20261004/import.strava/070200_300/workout.json");
+        std::fs::create_dir_all(workout_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &workout_path,
+            r#"{"tile":{"index":0,"count":1},"workout":{"name":"Creek Run","type":"Run","start":"2026-10-04T07:02:00-06:00","elapsed_seconds":2880,"distance_m":10200.0}}"#,
+        )
+        .unwrap();
+        let event_path = root.join("facets/work/events/20261004.jsonl");
+        std::fs::create_dir_all(event_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &event_path,
+            "{\"title\":\"Creek Planning\",\"type\":\"meeting\",\"start\":\"09:00\",\"end\":\"10:00\",\"occurred\":true}\n",
+        )
+        .unwrap();
+        let activity_path = root.join("facets/work/activities/20261004.jsonl");
+        std::fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &activity_path,
+            "{\"id\":\"a1\",\"title\":\"Creek Sync\",\"activity\":\"meeting\",\"facet\":\"work\",\"day\":\"20261004\",\"created_at\":1791118920000}\n",
+        )
+        .unwrap();
+
+        solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+
+        let locale = solstone_core_convey_http::window_catalog::packaged_locale(Some("en-XA"));
+        let owner = body_to_json(search_response_in(
+            root.to_path_buf(),
+            SearchQuery {
+                q: Some("Creek".into()),
+                owner_view: true,
+                ..Default::default()
+            },
+            locale,
+        ))
+        .await;
+        let agent = body_to_json(search_response_in(
+            root.to_path_buf(),
+            SearchQuery {
+                q: Some("Creek".into()),
+                owner_view: false,
+                ..Default::default()
+            },
+            locale,
+        ))
+        .await;
+        let owner_hits = owner["days"][0]["results"].as_array().unwrap();
+        let agent_hits = agent["days"][0]["results"].as_array().unwrap();
+        assert_eq!(owner_hits.len(), 3);
+        assert_eq!(agent_hits.len(), 3);
+
+        for path_suffix in [
+            "workout.json",
+            "events/20261004.jsonl",
+            "activities/20261004.jsonl",
+        ] {
+            let oh = owner_hits
+                .iter()
+                .find(|h| h["path"].as_str().unwrap().ends_with(path_suffix))
+                .expect(path_suffix);
+            let ah = agent_hits
+                .iter()
+                .find(|h| h["path"].as_str().unwrap().ends_with(path_suffix))
+                .expect(path_suffix);
+            let entry_owner = body_to_json(
+                entry_api(
+                    root.to_path_buf(),
+                    Query(EntryQuery {
+                        path: oh["path"].as_str().unwrap().into(),
+                        idx: oh["idx"].as_i64().unwrap(),
+                        entry_id: oh["entry_id"].as_i64().unwrap(),
+                    }),
+                    locale,
+                )
+                .await,
+            )
+            .await;
+            let entry_raw = body_to_json(
+                read_api(
+                    root.to_path_buf(),
+                    Query(ReadQuery {
+                        path: Some(oh["path"].as_str().unwrap().into()),
+                        idx: Some(oh["idx"].as_i64().unwrap()),
+                        entry_id: Some(oh["entry_id"].as_i64().unwrap()),
+                        ..Default::default()
+                    }),
+                    locale,
+                )
+                .await,
+            )
+            .await;
+            if locale == ENGLISH {
+                assert_eq!(oh["text"], ah["text"]);
+                assert_eq!(entry_owner["content"], entry_raw["content"]);
+            } else {
+                assert_ne!(
+                    oh["text"], ah["text"],
+                    "expected localized hit for {path_suffix}"
+                );
+                assert_ne!(
+                    entry_owner["content"], entry_raw["content"],
+                    "expected localized entry for {path_suffix}"
+                );
+                if path_suffix != "workout.json" {
+                    assert_ne!(
+                        oh["agent_label"].as_str().unwrap(),
+                        agent_label(oh["agent"].as_str().unwrap()),
+                        "expected localized agent_label for {path_suffix}"
+                    );
+                }
+            }
+        }
     }
 }

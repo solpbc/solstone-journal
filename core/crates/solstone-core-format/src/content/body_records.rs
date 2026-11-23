@@ -15,8 +15,9 @@ use std::collections::BTreeMap;
 use jiff::ZonedDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
-use super::{JsonObject, ProducedChunks, recorded_chunk};
+use super::{JsonObject, ProducedChunks, recorded_chunk_for_locale};
 
 /// The one file a body window holds.
 pub const BODY_RECORDS_FILE: &str = "body.jsonl";
@@ -451,7 +452,12 @@ pub fn decode_rows(text: &str) -> Result<Vec<BodyRow>, serde_json::Error> {
         .collect()
 }
 
+#[allow(dead_code)]
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(records: &[JsonObject], locale: &str) -> ProducedChunks {
     let mut agent_override = None;
     let chunks = records
         .iter()
@@ -466,7 +472,12 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
                 .and_then(parse_source_time)
                 .map(|time| time.timestamp().as_millisecond())
                 .unwrap_or(0);
-            Some(recorded_chunk(search_text(&row), occurrence, record))
+            Some(recorded_chunk_for_locale(
+                search_text(&row, locale),
+                occurrence,
+                record,
+                locale,
+            ))
         })
         .collect();
     ProducedChunks {
@@ -478,7 +489,7 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     }
 }
 
-fn clock_span(row: &BodyRow) -> String {
+fn clock_span(row: &BodyRow, locale: &str) -> String {
     let format = |text: &str| {
         parse_source_time(text).map_or_else(
             || text.to_owned(),
@@ -486,7 +497,15 @@ fn clock_span(row: &BodyRow) -> String {
         )
     };
     match (row.start.as_deref(), row.end.as_deref()) {
-        (Some(start), Some(end)) => format!("{} to {}", format(start), format(end)),
+        (Some(start), Some(end)) => {
+            let start = format(start);
+            let end = format(end);
+            strings(
+                locale,
+                "journal.window.content.body.span",
+                [("start", start.as_str()), ("end", end.as_str())],
+            )
+        }
         (Some(start), None) => format(start),
         _ => String::new(),
     }
@@ -494,11 +513,20 @@ fn clock_span(row: &BodyRow) -> String {
 
 /// An experience as search holds it: names, words, times and the values its
 /// reader chose. `fields` never reaches this text, so a key nobody listed can't.
-fn search_text(row: &BodyRow) -> String {
+fn search_text(row: &BodyRow, locale: &str) -> String {
     let source = source_words(&row.source);
-    let kind = row.experience.as_deref().unwrap_or("experience");
-    let mut lines = vec![format!("## {source} {kind}: {}", row.label)];
-    lines.push(clock_span(row));
+    let default_kind = text(locale, "journal.window.content.body.kind.default");
+    let kind = row.experience.as_deref().unwrap_or(default_kind.as_str());
+    let mut lines = vec![strings(
+        locale,
+        "journal.window.content.body.heading",
+        [
+            ("source", source),
+            ("kind", kind),
+            ("label", row.label.as_str()),
+        ],
+    )];
+    lines.push(clock_span(row, locale));
     if let Some(assembled) = &row.assembled {
         lines.push(assembled.clone());
     }
@@ -507,8 +535,16 @@ fn search_text(row: &BodyRow) -> String {
     }
     // A source that is its own recorder, as Oura is, is named once.
     let attribution = match row.by.as_deref() {
-        Some(by) if by != source => format!("as {source} recorded it, from {by}"),
-        _ => format!("as {source} recorded it"),
+        Some(by) if by != source => strings(
+            locale,
+            "journal.window.content.body.attribution.from",
+            [("source", source), ("by", by)],
+        ),
+        _ => strings(
+            locale,
+            "journal.window.content.body.attribution",
+            [("source", source)],
+        ),
     };
     if row.values.is_empty() {
         lines.push(attribution);
@@ -519,7 +555,14 @@ fn search_text(row: &BodyRow) -> String {
             .map(|(name, value)| format!("{name} {value}"))
             .collect::<Vec<_>>()
             .join(" · ");
-        lines.push(format!("{attribution}: {values}"));
+        lines.push(strings(
+            locale,
+            "journal.window.content.body.attribution.values",
+            [
+                ("attribution", attribution.as_str()),
+                ("values", values.as_str()),
+            ],
+        ));
     }
     lines.join("\n")
 }
@@ -900,7 +943,7 @@ mod tests {
             line.contains("Oura") && !line.contains("Oura, Oura"),
             "{line}"
         );
-        let text = search_text(&row);
+        let text = search_text(&row, ENGLISH);
         assert!(text.contains("as Oura recorded it"), "{text}");
         assert!(!text.contains("from Oura"), "{text}");
         // Apple names its device as well.

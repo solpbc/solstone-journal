@@ -56,10 +56,15 @@ pub mod screen_text;
 pub mod week_left_out;
 
 pub use crate::matcher::PatternRoot;
-pub use projections::{render_browser_text, render_morning_briefing_text, render_raw_screen_text};
+pub use projections::{
+    render_browser_text, render_browser_text_for_locale, render_morning_briefing_text,
+    render_morning_briefing_text_for_locale, render_raw_screen_text,
+    render_raw_screen_text_for_locale,
+};
 pub use shape::{SHAPE_SIDECAR_BASENAME, parse_shape_name, resolve_content_shape};
 pub use talent_projections::{
-    ConsumedOriginal, TalentTextProjection, iter_talent_text_projections, talent_projection_map,
+    ConsumedOriginal, TalentTextProjection, iter_talent_text_projections,
+    iter_talent_text_projections_for_locale, talent_projection_map,
 };
 
 /// Private import provenance. This file is not a content input.
@@ -2288,6 +2293,16 @@ pub fn produce_chunks_by_shape(
     rel: Option<&str>,
     records: &[JsonObject],
 ) -> ProducedChunks {
+    produce_chunks_by_shape_for_locale(family, rel, records, solstone_core_window_catalog::ENGLISH)
+}
+
+/// Render an indexed non-Markdown content family from already-parsed records in `locale`.
+pub fn produce_chunks_by_shape_for_locale(
+    family: Family,
+    rel: Option<&str>,
+    records: &[JsonObject],
+    locale: &str,
+) -> ProducedChunks {
     let rel_text = rel.unwrap_or("");
     let mut produced = match family {
         // Markdown renders from text, not records, so there is nothing to
@@ -2307,25 +2322,25 @@ pub fn produce_chunks_by_shape(
             ),
             warnings: Vec::new(),
         },
-        Family::Event => events::render(rel_text, records),
-        Family::Activity => activities::render(rel, records),
-        Family::ActionLog => action_logs::render(rel_text, records),
-        Family::StructuredImport => imports::render(records),
-        Family::AiChat => ai_chat::render(rel_text, records),
-        Family::Browser => browser::render(records),
-        Family::ProtectedVideo => protected_video::render(records),
-        Family::DesktopActivity => desktop_activity::render(rel_text, records),
+        Family::Event => events::render_for_locale(rel_text, records, locale),
+        Family::Activity => activities::render_for_locale(rel, records, locale),
+        Family::ActionLog => action_logs::render_for_locale(rel_text, records, locale),
+        Family::StructuredImport => imports::render_for_locale(records, locale),
+        Family::AiChat => ai_chat::render_for_locale(rel_text, records, locale),
+        Family::Browser => browser::render_for_locale(records, locale),
+        Family::ProtectedVideo => protected_video::render_for_locale(records, locale),
+        Family::DesktopActivity => desktop_activity::render_for_locale(rel_text, records, locale),
         Family::DayAccumulator => day_accumulator::render(rel_text, records),
-        Family::FacetEntity => facet_entities::render(rel_text, records),
-        Family::Observation => observations::render(rel_text, records),
-        Family::Documents => documents::render(records),
-        Family::Screen => screen::render(records),
+        Family::FacetEntity => facet_entities::render_for_locale(rel_text, records, locale),
+        Family::Observation => observations::render_for_locale(rel_text, records, locale),
+        Family::Documents => documents::render_for_locale(records, locale),
+        Family::Screen => screen::render_for_locale(records, locale),
         Family::Sense => sense::render(records),
-        Family::MorningBriefing => morning_briefing::render(records),
-        Family::Workout => workout::render(records),
-        Family::BodyRecords => body_records::render(records),
+        Family::MorningBriefing => morning_briefing::render_for_locale(records, locale),
+        Family::Workout => workout::render_for_locale(records, locale),
+        Family::BodyRecords => body_records::render_for_locale(records, locale),
         Family::Calendar => render_calendar(records),
-        Family::PossibleNames => possible_names::render(records),
+        Family::PossibleNames => possible_names::render_for_locale(records, locale),
         Family::AgentMemory => ProducedChunks {
             chunks: Vec::new(),
             agent_override: Some("memory".to_string()),
@@ -2350,7 +2365,7 @@ pub fn produce_chunks_by_shape(
         }) {
             produced
                 .chunks
-                .push(recorded_chunk(String::new(), 0, record));
+                .push(recorded_chunk_for_locale(String::new(), 0, record, locale));
         }
     }
     produced
@@ -2421,7 +2436,22 @@ pub fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
     )
 }
 
-fn produce_content_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
+/// Render an indexed content family for owner display in `locale`.
+pub fn produce_chunks_for_locale(
+    family: Family,
+    rel: &str,
+    text: &str,
+    locale: &str,
+) -> ProducedChunks {
+    format_file(
+        FileFormat::Content(family),
+        rel,
+        text,
+        FormatterView::Localized(locale),
+    )
+}
+
+fn produce_content_chunks(family: Family, rel: &str, text: &str, locale: &str) -> ProducedChunks {
     if family == Family::ScreenText {
         return screen_text::produce_screen_text_chunks(text);
     }
@@ -2464,7 +2494,7 @@ fn produce_content_chunks(family: Family, rel: &str, text: &str) -> ProducedChun
     }
 
     let records = parse_records_for_family(family, text);
-    produce_chunks_by_shape(family, Some(rel), &records)
+    produce_chunks_by_shape_for_locale(family, Some(rel), &records, locale)
 }
 
 /// Render a raw percept from already-parsed records outside the indexed
@@ -2474,10 +2504,25 @@ pub fn produce_raw_percept_chunks_by_shape(
     rel: Option<&str>,
     records: &[JsonObject],
 ) -> ProducedChunks {
+    produce_raw_percept_chunks_by_shape_for_locale(
+        family,
+        rel,
+        records,
+        solstone_core_window_catalog::ENGLISH,
+    )
+}
+
+/// Render a raw percept from already-parsed records in `locale`.
+pub fn produce_raw_percept_chunks_by_shape_for_locale(
+    family: RawPerceptFamily,
+    rel: Option<&str>,
+    records: &[JsonObject],
+    locale: &str,
+) -> ProducedChunks {
     let rel = rel.unwrap_or("");
     match family {
         RawPerceptFamily::Audio => audio::render(rel, records),
-        RawPerceptFamily::RawScreen => raw_screen::render(rel, records),
+        RawPerceptFamily::RawScreen => raw_screen::render_for_locale(rel, records, locale),
     }
 }
 
@@ -2488,6 +2533,21 @@ pub fn produce_raw_percept_chunks(
     text: &str,
 ) -> ProducedChunks {
     format_file(FileFormat::Raw(family), rel, text, FormatterView::Stored)
+}
+
+/// Render a raw percept for owner display in `locale`.
+pub fn produce_raw_percept_chunks_for_locale(
+    family: RawPerceptFamily,
+    rel: &str,
+    text: &str,
+    locale: &str,
+) -> ProducedChunks {
+    format_file(
+        FileFormat::Raw(family),
+        rel,
+        text,
+        FormatterView::Localized(locale),
+    )
 }
 
 /// The records a raw percept renders from, parsed exactly as
@@ -2542,7 +2602,23 @@ pub fn has_partial_input(record: &JsonObject) -> bool {
 /// Only partial results reserve space by shortening the rendered projection;
 /// their full saved source remains available.
 pub fn with_partial_input_notice(text: String, record: &JsonObject) -> String {
-    partial_input_document(crate::stored_markdown::Document::plain(text), record).into_text()
+    with_partial_input_notice_for_locale(text, record, solstone_core_cli_copy::ENGLISH)
+}
+
+/// Render any partial-input notice appended to `text` in `locale`.
+pub fn with_partial_input_notice_for_locale(
+    text: String,
+    record: &JsonObject,
+    locale: &str,
+) -> String {
+    let mut doc = crate::stored_markdown::Document::plain(text);
+    let retained = append_partial_input_notice(&mut doc, record);
+    if locale == solstone_core_cli_copy::ENGLISH || retained == doc.len() {
+        doc.into_text()
+    } else {
+        let tail = doc.render_from(retained, locale);
+        format!("{}{tail}", &doc[..retained])
+    }
 }
 
 pub fn partial_input_document(
@@ -2611,8 +2687,22 @@ pub(super) fn recorded_chunk(
     occurrence_time_ms: i64,
     source: &JsonObject,
 ) -> IndexChunk {
+    recorded_chunk_for_locale(
+        content,
+        occurrence_time_ms,
+        source,
+        solstone_core_cli_copy::ENGLISH,
+    )
+}
+
+pub(super) fn recorded_chunk_for_locale(
+    content: String,
+    occurrence_time_ms: i64,
+    source: &JsonObject,
+    locale: &str,
+) -> IndexChunk {
     IndexChunk {
-        content: with_partial_input_notice(content, source),
+        content: with_partial_input_notice_for_locale(content, source, locale),
         occurrence_time_ms: Some(OccurrenceTimeMs(occurrence_time_ms)),
         source: Some(source.clone()),
         group_offset_ms: None,
@@ -2721,10 +2811,6 @@ fn stripped_truthy_display(record: &JsonObject, key: &str) -> Option<String> {
     } else {
         Some(stripped)
     }
-}
-
-fn display_or_default(record: &JsonObject, key: &str, default: &str) -> String {
-    truthy_display(record, key).unwrap_or_else(|| default.to_string())
 }
 
 fn capitalize(value: &str) -> String {

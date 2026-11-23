@@ -2,15 +2,21 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, text};
 
-use super::{JsonObject, ProducedChunks, clean_value, recorded_chunk};
+use super::{JsonObject, ProducedChunks, clean_value, recorded_chunk_for_locale};
 
+#[allow(dead_code)]
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(records: &[JsonObject], locale: &str) -> ProducedChunks {
     let chunks = records
         .first()
         .and_then(|record| {
-            let content = render_record(record);
-            (!content.is_empty()).then(|| recorded_chunk(content, 0, record))
+            let content = render_record(record, locale);
+            (!content.is_empty()).then(|| recorded_chunk_for_locale(content, 0, record, locale))
         })
         .into_iter()
         .collect();
@@ -24,21 +30,24 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     }
 }
 
-fn render_record(record: &JsonObject) -> String {
+fn render_record(record: &JsonObject, locale: &str) -> String {
     let mut lines = Vec::new();
     let narrative = clean_value(record.get("narrative"));
     if !narrative.is_empty() {
         lines.push(narrative);
     }
 
-    let entity_lines = entities(record);
+    let entity_lines = entities(record, locale);
     if !lines.is_empty() {
         lines.push(String::new());
     }
-    lines.push("## Entities".to_string());
+    lines.push(text(
+        locale,
+        "journal.window.content.screen.entities.heading",
+    ));
     lines.push(String::new());
     if entity_lines.is_empty() {
-        lines.push("Not specified".to_string());
+        lines.push(text(locale, "journal.window.content.screen.entities.none"));
     } else {
         lines.extend(entity_lines);
     }
@@ -46,7 +55,7 @@ fn render_record(record: &JsonObject) -> String {
     lines.join("\n").trim().to_string()
 }
 
-fn entities(record: &JsonObject) -> Vec<String> {
+fn entities(record: &JsonObject, locale: &str) -> Vec<String> {
     let mut lines = Vec::new();
     let Some(Value::Array(entities)) = record.get("entities") else {
         return lines;
@@ -78,7 +87,7 @@ fn entities(record: &JsonObject) -> Vec<String> {
             format!("{entity_type}: {name}")
         };
         if label.is_empty() {
-            label = "Entity".to_string();
+            label = text(locale, "journal.window.content.screen.entity.default");
         }
         if !role.is_empty() {
             label.push_str(&format!(" ({role})"));

@@ -1,0 +1,16 @@
+{
+  "description": "Document analysis section heading: Key Provisions.",
+  "context": "Document analysis section heading: Key Provisions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f6ce84001502fac46d231b06bfa7c9cf22f8c90702092e126543d2f65513faf",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

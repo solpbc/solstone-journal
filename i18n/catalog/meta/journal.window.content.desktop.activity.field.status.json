@@ -1,0 +1,21 @@
+{
+  "description": "Availability status field in a desktop activity block.",
+  "context": "Availability status field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0ca7167a55c156f17b1c552c0ee11b0b6ff2c234e647130d51bd46a1f25f0790",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

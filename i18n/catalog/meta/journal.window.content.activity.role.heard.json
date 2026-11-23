@@ -1,0 +1,21 @@
+{
+  "description": "Heard-in-conversation participation field in an activity search entry.",
+  "context": "Heard-in-conversation participation field in an activity search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a76eb2037c3cb95794a9676cf311b7397dfd9a57e126338cd2e830dd3f51a94b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

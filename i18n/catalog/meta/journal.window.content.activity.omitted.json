@@ -1,0 +1,16 @@
+{
+  "description": "Notice appended when saved activity details exceed the entry read limit.",
+  "context": "Notice appended when saved activity details exceed the entry read limit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5d09e4200d2a13c972996ce9fece5ee2e08a27955e39d33f366f22bed36d0e1f",
+  "max_length": 294,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

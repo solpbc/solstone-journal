@@ -1,0 +1,16 @@
+{
+  "description": "Detected object class name: tie.",
+  "context": "Detected object class name: tie.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "51e944114d88f512a502c8425de674ffd2d8b3fba6a036baed9d306ee519bfb3",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Weighted power in a Strava workout entry.",
+  "context": "Weighted power in a Strava workout entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "weighted",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b101ee17aa8a392797411a510e26ec4985b82b8386aa32b0f47e4334ce1c1392",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

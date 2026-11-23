@@ -11,6 +11,7 @@
 //! labels never enter the index.
 
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings};
 
 use super::{IndexChunk, JsonObject, ProducedChunks};
 
@@ -27,6 +28,16 @@ pub fn possible_name_label(name: &str) -> String {
     format!("{POSSIBLE_NAME_LABEL}{name}")
 }
 
+/// The localized words that label a possible name for owner display.
+#[must_use]
+pub fn possible_name_label_for_locale(name: &str, locale: &str) -> String {
+    strings(
+        locale,
+        "journal.window.content.possible.name",
+        [("name", name)],
+    )
+}
+
 /// Whether a stored search path is a possible-names sidecar.
 pub fn is_possible_names_path(rel: &str) -> bool {
     let normalized = rel.strip_prefix("chronicle/").unwrap_or(rel);
@@ -38,14 +49,19 @@ pub fn is_possible_names_path(rel: &str) -> bool {
 /// One chunk per entry, so chunk `idx` is entry `idx`. A sidecar that does not
 /// declare the schema, or has an entry without a name, renders nothing rather
 /// than a misaligned list.
+#[allow(dead_code)]
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(records: &[JsonObject], locale: &str) -> ProducedChunks {
     let chunks = records
         .first()
         .and_then(entry_names)
         .unwrap_or_default()
         .into_iter()
         .map(|name| IndexChunk {
-            content: possible_name_label(name),
+            content: possible_name_label_for_locale(name, locale),
             occurrence_time_ms: None,
             source: None,
             group_offset_ms: None,

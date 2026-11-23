@@ -1,0 +1,21 @@
+{
+  "description": "Talent link line in an action log entry.",
+  "context": "Talent link line in an action log entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "46c01b447a4d6c71e974165296c6bd4830bf3f99f4b3df00a648ef3dc2889522",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

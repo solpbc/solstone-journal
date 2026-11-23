@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for document transcript entries.",
+  "context": "Search result chip label for document transcript entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c94ac2e089083387659e6dbd4dd056e546d4609c2c959888fc18d38e9e4e33dd",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

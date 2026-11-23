@@ -1,0 +1,25 @@
+{
+  "description": "Observation bullet with source observation day.",
+  "context": "Observation bullet with source observation day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "content",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "70d811042d591a8b516bbc8127be7dbe9fc223d42de33ee1bf481365534d342d",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

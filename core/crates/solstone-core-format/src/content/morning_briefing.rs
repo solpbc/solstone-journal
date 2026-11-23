@@ -4,7 +4,7 @@
 use serde_json::Value;
 use solstone_core_window_catalog::{ENGLISH, text};
 
-use super::{JsonObject, ProducedChunks, clean_value, recorded_chunk};
+use super::{JsonObject, ProducedChunks, clean_value, recorded_chunk_for_locale};
 
 const SECTION_KEYS: [(&str, &str); 2] = [
     ("yesterday", "journal.window.date.yesterday"),
@@ -14,12 +14,17 @@ const SECTION_KEYS: [(&str, &str); 2] = [
     ),
 ];
 
+#[allow(dead_code)]
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(records: &[JsonObject], locale: &str) -> ProducedChunks {
     let chunks = records
         .first()
         .and_then(|briefing| {
-            let content = render_briefing(briefing, ENGLISH);
-            (!content.is_empty()).then(|| recorded_chunk(content, 0, briefing))
+            let content = render_briefing(briefing, locale);
+            (!content.is_empty()).then(|| recorded_chunk_for_locale(content, 0, briefing, locale))
         })
         .into_iter()
         .collect();

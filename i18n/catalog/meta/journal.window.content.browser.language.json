@@ -1,0 +1,21 @@
+{
+  "description": "Browser context item describing page language.",
+  "context": "Browser context item describing page language.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "lang",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b124a0c4ad048ad688d99bdbe869bb2be74f758e152abe5dee511518852e978f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

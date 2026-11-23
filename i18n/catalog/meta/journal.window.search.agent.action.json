@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for action log entries.",
+  "context": "Search result chip label for action log entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ec0627a5bcd9aff86e4dd16f3e7b460a378a91398614471f333368c4005cdd9f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

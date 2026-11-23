@@ -1,0 +1,21 @@
+{
+  "description": "Elapsed duration segment in a Strava workout entry.",
+  "context": "Elapsed duration segment in a Strava workout entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "duration",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2f3f8ec389c74b63be7f0fe007dec07ac430c966ad4aca1090ca3f717c417880",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

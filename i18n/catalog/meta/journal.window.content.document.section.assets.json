@@ -1,0 +1,16 @@
+{
+  "description": "Document analysis section heading: Assets and Property.",
+  "context": "Document analysis section heading: Assets and Property.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "495c870f837f7eaf9d695d46bac41a02b666695553085e2c007abf7859cd4f4f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

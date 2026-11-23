@@ -1,0 +1,25 @@
+{
+  "description": "Formatted chat turn in imported chat search entries.",
+  "context": "Formatted chat turn in imported chat search entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "speaker",
+      "type": "string"
+    },
+    {
+      "name": "text",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a1715d7695b1dc23e54719803a49c039e34b244dae3339e9fbe5e05760921377",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

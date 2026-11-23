@@ -1,0 +1,16 @@
+{
+  "description": "Parameters heading in an action log entry.",
+  "context": "Parameters heading in an action log entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a8d696fa514f516c0b6f7947f5b9b27d75487a33a1401f7ae08b453f5b1b886c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

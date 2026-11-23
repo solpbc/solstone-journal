@@ -1,0 +1,21 @@
+{
+  "description": "Creation date line for a planned event.",
+  "context": "Creation date line for a planned event.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "be35aac17905fe8ed2a89b414c98c98913018fa124d345ae2ce814fce6cda039",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

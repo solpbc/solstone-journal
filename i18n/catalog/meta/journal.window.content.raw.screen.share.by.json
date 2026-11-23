@@ -1,0 +1,21 @@
+{
+  "description": "Screen share heading naming presenter in raw screen frames.",
+  "context": "Screen share heading naming presenter in raw screen frames.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "presenter",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "125d75fa7b81913c47a227466eb93d0e46da97375589bc7ea4213fadf14c279a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Location line in a legacy structured calendar event.",
+  "context": "Location line in a legacy structured calendar event.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "location",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d27d5027176601d0f1986f25956a90c6ebd74900d4633540bf0c35df3acfba5c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Stream field in a desktop activity block.",
+  "context": "Stream field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e390acd438c7ea615eadf699eafa30ee1614e92d7fdc943ceb0ce9a47137fc31",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

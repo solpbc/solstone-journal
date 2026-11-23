@@ -1,0 +1,21 @@
+{
+  "description": "Attendee participation field in an activity search entry.",
+  "context": "Attendee participation field in an activity search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1329639dfe1ce25334d3235586ef363dd57d45fc3866f9f8d28c50e684b93b8c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

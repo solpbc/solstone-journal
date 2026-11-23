@@ -1,0 +1,25 @@
+{
+  "description": "Book and author heading for a legacy structured highlight.",
+  "context": "Book and author heading for a legacy structured highlight.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "book",
+      "type": "string"
+    },
+    {
+      "name": "author",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a399d595e21e15460200dd037162f31202c03d77276963ce46b048a626059105",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

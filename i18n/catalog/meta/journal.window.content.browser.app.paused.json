@@ -1,0 +1,16 @@
+{
+  "description": "Browser attention state: solstone app paused.",
+  "context": "Browser attention state: solstone app paused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dab285938c4ad9e41c784b9679fe0afc287daa550961b5863dce480fb56675b7",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

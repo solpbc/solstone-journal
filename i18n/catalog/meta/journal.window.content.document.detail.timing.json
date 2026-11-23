@@ -1,0 +1,21 @@
+{
+  "description": "Detail line naming condition timing.",
+  "context": "Detail line naming condition timing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "82cf64a153afa49d032922a9b9e3780f0c733b6d2e95d1272790b748475b5ece",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

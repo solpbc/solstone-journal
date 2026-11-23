@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for imported entries.",
+  "context": "Search result chip label for imported entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "25a6c8add9e1cdc002adbfe384b078787872bc05f6cbe89c22122fa514aad6c4",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for attached facet entity entries.",
+  "context": "Search result chip label for attached facet entity entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0685b3c983118d9ef6e24dbae9b80a3b6fc3ebeb6a4c9b4e6f190a8d24040634",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

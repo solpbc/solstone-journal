@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for morning briefing entries.",
+  "context": "Search result chip label for morning briefing entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d89a278d66f4e19963cb3dae1ecc59d45d9b6fb9b6ee36505944e26165e0c0dc",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

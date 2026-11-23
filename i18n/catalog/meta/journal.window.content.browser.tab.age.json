@@ -1,0 +1,21 @@
+{
+  "description": "Browser context item describing minimum tab age.",
+  "context": "Browser context item describing minimum tab age.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "duration",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "99affec7fb1c29772ba3d832b5e0411f8f88c0c3c5f4f6a6367af2b660a9f22c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

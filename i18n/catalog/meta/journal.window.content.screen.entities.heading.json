@@ -1,0 +1,16 @@
+{
+  "description": "Entities section heading in screen analysis output.",
+  "context": "Entities section heading in screen analysis output.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9f7ef7e3d7ffe5ab0f95ce9a01c4fc5972c1d87a43e76f8fe8192e61549e01f0",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

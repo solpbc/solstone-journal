@@ -1,0 +1,26 @@
+{
+  "description": "Duration phrase in minutes for a protected-video pause notice.",
+  "context": "Duration phrase in minutes for a protected-video pause notice.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "bb6408c35af8aec50652f84fb5705d37b6cd0d45181bf163d813935077281f80",
+  "max_length": 243,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for flow talent entries.",
+  "context": "Search result chip label for flow talent entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbdd4d61ddffc180a9060cda17a899d7875837c789842a1a1d60fed26dae20bd",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

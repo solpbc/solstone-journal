@@ -1,0 +1,25 @@
+{
+  "description": "Workout duration in hours and minutes.",
+  "context": "Workout duration in hours and minutes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hours",
+      "type": "string"
+    },
+    {
+      "name": "minutes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8bb90cca526e1775dac4261cff9f525a3aebafdbe38cae27a1d1bdcde5389948",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

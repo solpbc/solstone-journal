@@ -1,0 +1,16 @@
+{
+  "description": "Fallback title for a legacy structured note.",
+  "context": "Fallback title for a legacy structured note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "31af7f9c8de3195230d4f1bed0238659472a59c5c3db65acd63822edee48bc20",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

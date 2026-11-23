@@ -1,0 +1,21 @@
+{
+  "description": "Facet field in an activity search entry.",
+  "context": "Facet field in an activity search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "72f3e5c3b818c79507822273f5187745f913c27181c083a8e0ac75687c7f4dd7",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Distance in kilometres in a Strava workout entry.",
+  "context": "Distance in kilometres in a Strava workout entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "km",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6b9c388e831f27b11e984fee7da6302a830cf457af367ad4994ef396b0148af5",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

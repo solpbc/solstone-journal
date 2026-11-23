@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for pulse entries.",
+  "context": "Search result chip label for pulse entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9c97e56302f69b866a78f051b45c9ccd7f21c38466dc06d6182be84d07ad1410",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

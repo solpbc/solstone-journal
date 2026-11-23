@@ -1,0 +1,25 @@
+{
+  "description": "Average and weighted power in a Strava workout entry.",
+  "context": "Average and weighted power in a Strava workout entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "avg",
+      "type": "string"
+    },
+    {
+      "name": "weighted",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "07cbf6b888470518b6ebd40f9c9fd4f7bddb007c1b9ffaf6bf5868ded20853ba",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

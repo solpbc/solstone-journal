@@ -1,0 +1,16 @@
+{
+  "description": "Title-cased fallback name for an unnamed meeting participant in raw screen frames.",
+  "context": "Title-cased fallback name for an unnamed meeting participant in raw screen frames.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "27938d29ddd80d6fa83fe8e08f898af62dfb3a3e9b496d101aa1636b7091cf8a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

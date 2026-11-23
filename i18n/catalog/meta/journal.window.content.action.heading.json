@@ -1,0 +1,25 @@
+{
+  "description": "Heading for an action log entry.",
+  "context": "Heading for an action log entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "action",
+      "type": "string"
+    },
+    {
+      "name": "actor",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0e5994628cc1569953af759f71b89b19ad8b50cd92313c4d3910e4818edf9339",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

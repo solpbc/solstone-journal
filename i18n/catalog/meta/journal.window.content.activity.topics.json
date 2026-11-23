@@ -1,0 +1,21 @@
+{
+  "description": "Topics line appended to an activity story.",
+  "context": "Topics line appended to an activity story.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "topics",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "29d3a21fde5f549e3f00fe8e4d5c7f87b2d75213e7db9de70ad5a48eed34b849",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

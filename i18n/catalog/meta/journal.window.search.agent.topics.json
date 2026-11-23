@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for topics entries.",
+  "context": "Search result chip label for topics entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f952175c6be40086b7e0320bb8a73d075fcd146b446a58073db1b45f3444324f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

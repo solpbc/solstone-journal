@@ -2,16 +2,26 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings};
 
-use super::{JsonObject, ProducedChunks, display_value, json_truthy, recorded_chunk};
+use super::{JsonObject, ProducedChunks, display_value, json_truthy, recorded_chunk_for_locale};
 
+#[allow(dead_code)]
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(rel, records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(rel: &str, records: &[JsonObject], locale: &str) -> ProducedChunks {
     let live_records: Vec<_> = records
         .iter()
         .filter(|record| !json_truthy(record.get("retired")))
         .collect();
     ProducedChunks {
-        chunks: live_records.iter().copied().map(render_record).collect(),
+        chunks: live_records
+            .iter()
+            .copied()
+            .map(|record| render_record(record, locale))
+            .collect(),
         agent_override: Some("observation".to_string()),
         header: Some(observation_header(rel, live_records.len())),
         error: None,
@@ -38,23 +48,28 @@ fn observation_header(rel: &str, count: usize) -> String {
     format!("# Observations: {entity}\n\n{count} observations")
 }
 
-fn render_record(record: &JsonObject) -> super::IndexChunk {
+fn render_record(record: &JsonObject, locale: &str) -> super::IndexChunk {
     let content = record.get("content").map(display_value).unwrap_or_default();
-    let mut markdown = format!("- {content}");
-    if let Some(source_day) = record
+    let markdown = if let Some(source_day) = record
         .get("source_day")
         .filter(|value| json_truthy(Some(value)))
     {
-        markdown.push_str(" (observed: ");
-        markdown.push_str(&display_value(source_day));
-        markdown.push(')');
-    }
-    recorded_chunk(
+        let day = display_value(source_day);
+        strings(
+            locale,
+            "journal.window.content.observation.observed",
+            [("content", content.as_str()), ("day", day.as_str())],
+        )
+    } else {
+        format!("- {content}")
+    };
+    recorded_chunk_for_locale(
         markdown,
         record
             .get("observed_at")
             .and_then(Value::as_i64)
             .unwrap_or(0),
         record,
+        locale,
     )
 }

@@ -1,0 +1,16 @@
+{
+  "description": "Document analysis section heading: Overview.",
+  "context": "Document analysis section heading: Overview.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4f666eac2d01089b7876f51960f76c711b22ea19f5e62e9de56f2ac45b960e4c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

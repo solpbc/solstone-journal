@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for session review entries.",
+  "context": "Search result chip label for session review entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c7ac0387f25520c96b2e2af1170276d29e3030fdd90cbe27b288fc699dfa3e9b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

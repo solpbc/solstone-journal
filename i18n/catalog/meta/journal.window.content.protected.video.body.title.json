@@ -1,0 +1,29 @@
+{
+  "description": "Protected-video pause description with window title.",
+  "context": "Protected-video pause description with window title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "service",
+      "type": "string"
+    },
+    {
+      "name": "title",
+      "type": "string"
+    },
+    {
+      "name": "duration",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2b52b35725843d95f0bca1fc19620773c85494de55cb9e7e3bd4b656ff4aa74c",
+  "max_length": 375,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

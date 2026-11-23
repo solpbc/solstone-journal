@@ -1,0 +1,25 @@
+{
+  "description": "Heading for a planned event chunk.",
+  "context": "Heading for a planned event chunk.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "title",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d0d50071ea8cd1af5f04d0824b4c3435de4f867fecb88b0dc6099534cf9580ce",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

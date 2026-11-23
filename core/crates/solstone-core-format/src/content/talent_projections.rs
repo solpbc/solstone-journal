@@ -10,7 +10,8 @@ use crate::agent_memory::{Coordinate, Origin, SourceKey, validate_coordinate, va
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ContentResolution, parse_records_for_family, produce_chunks_by_shape, resolve_content_shape,
+    ContentResolution, parse_records_for_family, produce_chunks_by_shape_for_locale,
+    resolve_content_shape,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +36,21 @@ pub fn iter_talent_text_projections(
     talents_dir: &Path,
     talents_dir_rel: &str,
     stem_filter: Option<&dyn Fn(&str) -> bool>,
+) -> io::Result<Vec<TalentTextProjection>> {
+    iter_talent_text_projections_for_locale(
+        talents_dir,
+        talents_dir_rel,
+        stem_filter,
+        solstone_core_window_catalog::ENGLISH,
+    )
+}
+
+/// Return one rendered text projection per talent-output key in `locale`.
+pub fn iter_talent_text_projections_for_locale(
+    talents_dir: &Path,
+    talents_dir_rel: &str,
+    stem_filter: Option<&dyn Fn(&str) -> bool>,
+    locale: &str,
 ) -> io::Result<Vec<TalentTextProjection>> {
     if !talents_dir.is_dir() {
         return Ok(Vec::new());
@@ -67,7 +83,8 @@ pub fn iter_talent_text_projections(
         {
             let text = fs::read_to_string(&json_path)?;
             let records = parse_records_for_family(family, &text);
-            let produced = produce_chunks_by_shape(family, Some(&classifier_rel), &records);
+            let produced =
+                produce_chunks_by_shape_for_locale(family, Some(&classifier_rel), &records, locale);
             let text = produced
                 .chunks
                 .into_iter()

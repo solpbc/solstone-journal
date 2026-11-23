@@ -1,0 +1,16 @@
+{
+  "description": "Hidden flag line in an activity search entry.",
+  "context": "Hidden flag line in an activity search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cf9b7a47bebe42264d714eef50f51851f2e84373a14bdff15c1695df7208894c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

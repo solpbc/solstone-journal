@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for audio transcript entries.",
+  "context": "Search result chip label for audio transcript entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5f4f2cf085b1d74116d721eb1e3ef2fda2af6da91426bd1501c16f99f9bc838",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

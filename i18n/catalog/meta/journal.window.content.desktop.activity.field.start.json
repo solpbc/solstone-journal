@@ -1,0 +1,21 @@
+{
+  "description": "Start millisecond field in a desktop activity block.",
+  "context": "Start millisecond field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8b8a1f659db2b1cf674c02efacd9f34e6d24a4969c0da17605ea0fd7edbe1e47",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

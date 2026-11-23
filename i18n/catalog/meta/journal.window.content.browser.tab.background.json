@@ -1,0 +1,16 @@
+{
+  "description": "Browser attention state: background tab.",
+  "context": "Browser attention state: background tab.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4777fbfec39541298e995ade364c075c91637f070e23a6d7fc373fa30c43ab50",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Fallback entity name when an entity record omits name.",
+  "context": "Fallback entity name when an entity record omits name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6688afaab71622e92bc6401fa666085b1f8445b8befd5854ed60f4f1d368295f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

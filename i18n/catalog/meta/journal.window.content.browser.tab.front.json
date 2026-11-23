@@ -1,0 +1,16 @@
+{
+  "description": "Browser attention state: front tab.",
+  "context": "Browser attention state: front tab.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fcbe9ec8b035fea83a30c2fdbc9356d3affe3b95b636c0d3a6bdffc0d5438728",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

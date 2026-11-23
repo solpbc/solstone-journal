@@ -11,6 +11,7 @@ pub trait PlaceFormatter {
 
 pub enum FormatterView<'a> {
     Stored,
+    Localized(&'a str),
     LiteralMarkdown,
     BodyLine,
     CalendarNote {
@@ -71,34 +72,29 @@ pub fn format_file(
         )),
         (FileFormat::Place, FormatterView::Places(formatter)) => formatter.render(text),
         (FileFormat::Content(family), FormatterView::Stored) => {
-            super::produce_content_chunks(family, rel, text)
+            super::produce_content_chunks(family, rel, text, solstone_core_window_catalog::ENGLISH)
+        }
+        (FileFormat::Content(family), FormatterView::Localized(locale)) => {
+            super::produce_content_chunks(family, rel, text, locale)
         }
         (FileFormat::Raw(family), FormatterView::Stored) => {
             let records = super::parse_jsonl_objects(text);
             super::produce_raw_percept_chunks_by_shape(family, Some(rel), &records)
         }
+        (FileFormat::Raw(family), FormatterView::Localized(locale)) => {
+            let records = super::parse_jsonl_objects(text);
+            super::produce_raw_percept_chunks_by_shape_for_locale(
+                family,
+                Some(rel),
+                &records,
+                locale,
+            )
+        }
         (FileFormat::PhotoDescription, FormatterView::Stored) => {
-            let mut produced = literal(String::new());
-            produced.chunks = super::parse_jsonl_objects(text)
-                .into_iter()
-                .filter_map(|record| {
-                    let text = record.get("text")?.as_str()?;
-                    let content = match record
-                        .get("detections")
-                        .and_then(crate::objects::objects_line)
-                    {
-                        Some(line) => format!("{text}\n\n{line}"),
-                        None => text.to_owned(),
-                    };
-                    Some(IndexChunk {
-                        content,
-                        occurrence_time_ms: None,
-                        source: Some(record),
-                        group_offset_ms: None,
-                    })
-                })
-                .collect();
-            produced
+            format_photo_description(text, solstone_core_window_catalog::ENGLISH)
+        }
+        (FileFormat::PhotoDescription, FormatterView::Localized(locale)) => {
+            format_photo_description(text, locale)
         }
         _ => {
             let mut produced = literal(String::new());
@@ -107,6 +103,30 @@ pub fn format_file(
             produced
         }
     }
+}
+
+fn format_photo_description(text: &str, locale: &str) -> ProducedChunks {
+    let mut produced = literal(String::new());
+    produced.chunks = super::parse_jsonl_objects(text)
+        .into_iter()
+        .filter_map(|record| {
+            let text = record.get("text")?.as_str()?;
+            let content = match record
+                .get("detections")
+                .and_then(|detections| crate::objects::objects_line_for_locale(detections, locale))
+            {
+                Some(line) => format!("{text}\n\n{line}"),
+                None => text.to_owned(),
+            };
+            Some(IndexChunk {
+                content,
+                occurrence_time_ms: None,
+                source: Some(record),
+                group_offset_ms: None,
+            })
+        })
+        .collect();
+    produced
 }
 
 #[cfg(test)]

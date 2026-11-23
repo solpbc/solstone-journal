@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for note transcript entries.",
+  "context": "Search result chip label for note transcript entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba3a5e6b1141f04c67de6eab08919f1332fdba05d4e8a507e2e7949f01dc6931",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

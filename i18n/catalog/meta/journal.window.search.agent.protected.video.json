@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for protected-video entries.",
+  "context": "Search result chip label for protected-video entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "88b95f90938b4d11844d8e92302f50117c220390de75f7dd3d4cf0ae29f83b67",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Source attribution naming the recording source.",
+  "context": "Source attribution naming the recording source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "99ee902a09405160da3afe609af28700d48dd966bfe8c671640c46ae7e54e9a1",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

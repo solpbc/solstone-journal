@@ -1,0 +1,21 @@
+{
+  "description": "Browser context line prefix.",
+  "context": "Browser context line prefix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "details",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5ac03f50d96d99c9c54b948b638398d41b337100fd6855450e5e4b5e9729f7fa",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

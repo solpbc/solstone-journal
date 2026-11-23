@@ -1,0 +1,21 @@
+{
+  "description": "Page location segment for a legacy structured highlight.",
+  "context": "Page location segment for a legacy structured highlight.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "page",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "85a2fae8ff6e1307cbae12f118dc3a211a4e41bd966986ea353830463dfd9c01",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

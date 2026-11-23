@@ -1,0 +1,25 @@
+{
+  "description": "Short browser tab age duration in days and hours.",
+  "context": "Short browser tab age duration in days and hours.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "hours",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "335bbc1523e467248a660e611fd47d5639268725bc85ab39da7d1c8aa3a41ae4",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

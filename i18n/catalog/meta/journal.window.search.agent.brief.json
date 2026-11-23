@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for brief talent entries.",
+  "context": "Search result chip label for brief talent entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf602c1ae10f5efc7892b0ae95a9c8c57532aae57132cf61e699b1d8ec0f0b5f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

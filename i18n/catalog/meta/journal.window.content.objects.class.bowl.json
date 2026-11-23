@@ -1,0 +1,16 @@
+{
+  "description": "Detected object class name: bowl.",
+  "context": "Detected object class name: bowl.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "85ced3d3a5b4940817aa8a1c25d5274b018ccc2db7ca5ba418a8a21021d0ab39",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

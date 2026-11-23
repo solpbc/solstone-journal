@@ -1,0 +1,16 @@
+{
+  "description": "Detected object class name: car.",
+  "context": "Detected object class name: car.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "39d87f7fea9fd691bb4116f4a41813bda8b4068223203219542687ccd9b7506b",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

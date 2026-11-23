@@ -7,13 +7,22 @@ use std::iter::Peekable;
 use std::str::Chars;
 
 use serde_json::{Map, Value, json};
+use solstone_core_window_catalog::{ENGLISH, screen_category_label, strings, text};
 
-use super::{JsonObject, ProducedChunks, ScreenTalentRawScreen, json_truthy, recorded_chunk};
+use super::{
+    JsonObject, ProducedChunks, ScreenTalentRawScreen, json_truthy, recorded_chunk,
+    recorded_chunk_for_locale,
+};
 use crate::segment::{is_date_key, segment_parse};
 
 const TMUX_PROJECTION_GUIDE: &str = "## Tmux change encoding\n\nEach Tmux change advances visible pane state scoped by session, window id, and pane id. `snapshot` sets the complete pane to `lines` joined with newline characters. `splice` replaces `delete_count` lines at zero-based `start_line` with `lines`. `unchanged` preserves the prior pane; `disappeared` removes it. Geometry and active state apply to this change. Links preserve visible labels and targets as data.";
 
+#[allow(dead_code)]
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(rel, records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(rel: &str, records: &[JsonObject], locale: &str) -> ProducedChunks {
     let mut skipped = 0usize;
     let mut frames = Vec::new();
     for (index, record) in records.iter().enumerate() {
@@ -35,7 +44,16 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let (base_timestamp, base_hour, base_minute, base_second) = base_time(rel);
     let chunks = frames
         .into_iter()
-        .map(|frame| render_frame(base_timestamp, base_hour, base_minute, base_second, frame))
+        .map(|frame| {
+            render_frame(
+                base_timestamp,
+                base_hour,
+                base_minute,
+                base_second,
+                frame,
+                locale,
+            )
+        })
         .collect();
 
     ProducedChunks {
@@ -86,7 +104,14 @@ pub(super) fn render_for_screen_talent(rel: &str, records: &[JsonObject]) -> Scr
         .enumerate()
         .map(|(chunk_index, (_, frame))| {
             let Some(tmux) = canonical_tmux(frame) else {
-                return render_frame(base_timestamp, base_hour, base_minute, base_second, frame);
+                return render_frame(
+                    base_timestamp,
+                    base_hour,
+                    base_minute,
+                    base_second,
+                    frame,
+                    ENGLISH,
+                );
             };
             tmux_chunk_indices.push(chunk_index);
             let offset_ms = timestamp_millis(frame);
@@ -184,16 +209,24 @@ fn render_frame(
     base_minute: i64,
     base_second: i64,
     frame: &JsonObject,
+    locale: &str,
 ) -> crate::content::IndexChunk {
     let offset_ms = timestamp_millis(frame);
     let heading = timestamp_heading(base_hour, base_minute, base_second, offset_ms);
     let mut lines = vec![heading, String::new()];
     if let Some(analysis) = frame.get("analysis").and_then(Value::as_object) {
-        let category = analysis
-            .get("primary")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown");
-        lines.push(format!("**Category:** {category}"));
+        let category = match analysis.get("primary").and_then(Value::as_str) {
+            Some(primary) if locale != ENGLISH => {
+                screen_category_label(locale, primary).unwrap_or_else(|| primary.to_owned())
+            }
+            Some(primary) => primary.to_owned(),
+            None => text(locale, "journal.window.content.raw.screen.unknown"),
+        };
+        lines.push(strings(
+            locale,
+            "journal.window.content.raw.screen.category",
+            [("category", category.as_str())],
+        ));
         lines.push(String::new());
         if let Some(description) = analysis
             .get("visual_description")
@@ -206,7 +239,7 @@ fn render_frame(
     }
     if let Some(objects) = frame
         .get("detections")
-        .and_then(crate::objects::objects_line)
+        .and_then(|detections| crate::objects::objects_line_for_locale(detections, locale))
     {
         lines.push(objects);
         lines.push(String::new());
@@ -224,16 +257,17 @@ fn render_frame(
             } else {
                 value
             };
-            let formatted = format_category(category, value);
+            let formatted = format_category(category, value, locale);
             if !formatted.is_empty() {
                 lines.push(formatted);
             }
         }
     }
-    recorded_chunk(
+    recorded_chunk_for_locale(
         lines.join("\n"),
         base_timestamp.saturating_add(offset_ms),
         frame,
+        locale,
     )
 }
 
@@ -623,40 +657,51 @@ fn parse_screen_filename(filename: &str) -> (&str, &str) {
     }
 }
 
-fn format_category(category: &str, content: &Value) -> String {
+fn format_category(category: &str, content: &Value, locale: &str) -> String {
     if category == "meeting"
         && let Some(content) = content.as_object()
     {
-        return format_meeting(content);
+        return format_meeting(content, locale);
     }
+    let heading = if locale == ENGLISH {
+        python_title(category)
+    } else {
+        screen_category_label(locale, category).unwrap_or_else(|| python_title(category))
+    };
     match content {
         Value::String(content) => {
-            format!("**{}:**\n\n{}\n", python_title(category), content.trim())
+            format!("**{heading}:**\n\n{}\n", content.trim())
         }
         Value::Object(content) => format!(
-            "**{}:**\n\n```json\n{}\n```\n",
-            python_title(category),
+            "**{heading}:**\n\n```json\n{}\n```\n",
             serde_json::to_string_pretty(content).unwrap_or_default()
         ),
         _ => String::new(),
     }
 }
 
-fn format_meeting(content: &Map<String, Value>) -> String {
+fn format_meeting(content: &Map<String, Value>, locale: &str) -> String {
+    let unknown = text(locale, "journal.window.content.raw.screen.unknown");
+    let unknown_title = text(locale, "journal.window.content.raw.screen.unknown.title");
+    let platform = content
+        .get("platform")
+        .and_then(Value::as_str)
+        .unwrap_or(unknown.as_str());
     let mut lines = vec![
-        format!(
-            "**Meeting** ({})",
-            content
-                .get("platform")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown")
+        strings(
+            locale,
+            "journal.window.content.raw.screen.meeting",
+            [("platform", platform)],
         ),
         String::new(),
     ];
     if let Some(participants) = content.get("participants").and_then(Value::as_array)
         && !participants.is_empty()
     {
-        lines.push("**Participants:**".to_string());
+        lines.push(text(
+            locale,
+            "journal.window.content.raw.screen.participants",
+        ));
         for participant in participants {
             let Some(participant) = participant.as_object() else {
                 continue;
@@ -664,11 +709,11 @@ fn format_meeting(content: &Map<String, Value>) -> String {
             let name = participant
                 .get("name")
                 .and_then(Value::as_str)
-                .unwrap_or("Unknown");
+                .unwrap_or(unknown_title.as_str());
             let status = participant
                 .get("status")
                 .and_then(Value::as_str)
-                .unwrap_or("unknown");
+                .unwrap_or(unknown.as_str());
             let video = participant
                 .get("video")
                 .is_some_and(|value| json_truthy(Some(value)));
@@ -691,10 +736,15 @@ fn format_meeting(content: &Map<String, Value>) -> String {
             .get("formatted_text")
             .and_then(Value::as_str)
             .unwrap_or("");
-        let presenter = presenter
-            .map(|value| format!(" by {value}"))
-            .unwrap_or_default();
-        lines.push(format!("**Screen Share{presenter}:**"));
+        let share_heading = match presenter {
+            Some(presenter) => strings(
+                locale,
+                "journal.window.content.raw.screen.share.by",
+                [("presenter", presenter)],
+            ),
+            None => text(locale, "journal.window.content.raw.screen.share"),
+        };
+        lines.push(share_heading);
         if !description.is_empty() {
             lines.push(format!("*{description}*"));
         }

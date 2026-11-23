@@ -1,0 +1,16 @@
+{
+  "description": "Meeting participants heading in raw screen frames.",
+  "context": "Meeting participants heading in raw screen frames.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "15ae1bc47105911970e95169ed3269ffb7aa3b1a40d801d2e1182f037c075a69",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

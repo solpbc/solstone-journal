@@ -1,0 +1,21 @@
+{
+  "description": "Search display prefix for a possible-name suggestion.",
+  "context": "Search display prefix for a possible-name suggestion.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0fcbe525347a6c72f310f947b9c7292cfd34e5d303704d3095a600495a31c559",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Terminal session field in a desktop activity block.",
+  "context": "Terminal session field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9f2338533dcf44aee907656b0caf4c721022420cd86223fe1990683ec1590b2e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Detected object class name: tv.",
+  "context": "Detected object class name: tv.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e563bad0fb695850549a256ea1c736e2658abea91b4178e262419bd979fa486",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

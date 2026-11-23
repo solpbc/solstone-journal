@@ -2,17 +2,24 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
-use super::{JsonObject, ProducedChunks, clean_value, recorded_chunk};
+use super::{JsonObject, ProducedChunks, clean_value, recorded_chunk_for_locale};
 
+#[cfg(test)]
 const ABSENT_TEXT: &str = "Not specified in this document";
 
+#[allow(dead_code)]
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(records: &[JsonObject], locale: &str) -> ProducedChunks {
     let chunks = records
         .first()
         .and_then(|document| {
-            let content = render_document(document);
-            (!content.is_empty()).then(|| recorded_chunk(content, 0, document))
+            let content = render_document(document, locale);
+            (!content.is_empty()).then(|| recorded_chunk_for_locale(content, 0, document, locale))
         })
         .into_iter()
         .collect();
@@ -26,42 +33,76 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     }
 }
 
-fn render_document(document: &JsonObject) -> String {
+fn render_document(document: &JsonObject, locale: &str) -> String {
     let mut lines = Vec::new();
     append_section(
         &mut lines,
-        "Overview",
+        &text(locale, "journal.window.content.document.section.overview"),
         clean_value(document.get("overview")),
+        locale,
     );
-    append_section(&mut lines, "Parties and Roles", parties(document));
-    append_section(&mut lines, "Key Provisions", key_provisions(document));
-    append_section(&mut lines, "Assets and Property", assets(document));
-    append_section(&mut lines, "Conditions and Triggers", conditions(document));
-    append_section(&mut lines, "Important Dates", important_dates(document));
-    append_section(&mut lines, "Summary", clean_value(document.get("summary")));
+    append_section(
+        &mut lines,
+        &text(locale, "journal.window.content.document.section.parties"),
+        parties(document, locale),
+        locale,
+    );
+    append_section(
+        &mut lines,
+        &text(locale, "journal.window.content.document.section.provisions"),
+        key_provisions(document, locale),
+        locale,
+    );
+    append_section(
+        &mut lines,
+        &text(locale, "journal.window.content.document.section.assets"),
+        assets(document, locale),
+        locale,
+    );
+    append_section(
+        &mut lines,
+        &text(locale, "journal.window.content.document.section.conditions"),
+        conditions(document, locale),
+        locale,
+    );
+    append_section(
+        &mut lines,
+        &text(locale, "journal.window.content.document.section.dates"),
+        important_dates(document),
+        locale,
+    );
+    append_section(
+        &mut lines,
+        &text(locale, "journal.window.content.document.section.summary"),
+        clean_value(document.get("summary")),
+        locale,
+    );
     lines.join("\n").trim().to_string()
 }
 
-fn append_section(lines: &mut Vec<String>, heading: &str, body: String) {
+fn append_section(lines: &mut Vec<String>, heading: &str, body: String, locale: &str) {
     if !lines.is_empty() {
         lines.push(String::new());
     }
     lines.push(format!("## {heading}"));
     lines.push(String::new());
     if body.is_empty() {
-        lines.push(ABSENT_TEXT.to_string());
+        lines.push(text(locale, "journal.window.content.document.absent"));
     } else {
         lines.push(body);
     }
 }
 
-fn append_item_detail(lines: &mut Vec<String>, label: &str, value: &str) {
+fn append_item_detail(lines: &mut Vec<String>, message_id: &str, value: &str, locale: &str) {
     if !value.is_empty() {
-        lines.push(format!("  {label}: {value}"));
+        lines.push(format!(
+            "  {}",
+            strings(locale, message_id, [("value", value)])
+        ));
     }
 }
 
-fn parties(document: &JsonObject) -> String {
+fn parties(document: &JsonObject, locale: &str) -> String {
     let mut lines = Vec::new();
     let Some(Value::Array(parties)) = document.get("parties") else {
         return String::new();
@@ -90,7 +131,7 @@ fn parties(document: &JsonObject) -> String {
         }
 
         let mut label = if name.is_empty() {
-            "Unnamed party".to_string()
+            text(locale, "journal.window.content.document.party.unnamed")
         } else {
             name
         };
@@ -111,7 +152,7 @@ fn parties(document: &JsonObject) -> String {
     lines.join("\n")
 }
 
-fn key_provisions(document: &JsonObject) -> String {
+fn key_provisions(document: &JsonObject, locale: &str) -> String {
     let mut lines = Vec::new();
     let Some(Value::Array(provisions)) = document.get("key_provisions") else {
         return String::new();
@@ -137,12 +178,17 @@ fn key_provisions(document: &JsonObject) -> String {
             format!("**{provision_type}:** ")
         };
         lines.push(format!("- {prefix}{text}").trim_end().to_string());
-        append_item_detail(&mut lines, "Applies to", &applies_to);
+        append_item_detail(
+            &mut lines,
+            "journal.window.content.document.detail.applies",
+            &applies_to,
+            locale,
+        );
     }
     lines.join("\n")
 }
 
-fn assets(document: &JsonObject) -> String {
+fn assets(document: &JsonObject, locale: &str) -> String {
     let mut lines = Vec::new();
     let Some(Value::Array(assets)) = document.get("assets") else {
         return String::new();
@@ -163,7 +209,7 @@ fn assets(document: &JsonObject) -> String {
         }
 
         let mut label = if name.is_empty() {
-            "Unnamed asset".to_string()
+            text(locale, "journal.window.content.document.asset.unnamed")
         } else {
             format!("**{name}**")
         };
@@ -178,7 +224,7 @@ fn assets(document: &JsonObject) -> String {
     lines.join("\n")
 }
 
-fn conditions(document: &JsonObject) -> String {
+fn conditions(document: &JsonObject, locale: &str) -> String {
     let mut lines = Vec::new();
     let Some(Value::Array(conditions)) = document.get("conditions") else {
         return String::new();
@@ -204,7 +250,12 @@ fn conditions(document: &JsonObject) -> String {
             format!("- **{trigger}:** {effect}").trim_end().to_string()
         };
         lines.push(line);
-        append_item_detail(&mut lines, "Timing", &timing);
+        append_item_detail(
+            &mut lines,
+            "journal.window.content.document.detail.timing",
+            &timing,
+            locale,
+        );
     }
     lines.join("\n")
 }

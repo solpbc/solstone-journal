@@ -1,0 +1,16 @@
+{
+  "description": "Detected object class name: cup.",
+  "context": "Detected object class name: cup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce97a2c08ffac5a3ce8faf9a7bbb4737c8c41543b8455f71a46999c764852d75",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

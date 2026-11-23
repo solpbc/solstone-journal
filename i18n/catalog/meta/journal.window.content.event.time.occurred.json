@@ -1,0 +1,21 @@
+{
+  "description": "Start time line for an occurred event.",
+  "context": "Start time line for an occurred event.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "521f4e39b3a90f278f2d1afd474c60166c22058606d0dc3e23fc9ba1befdddd9",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

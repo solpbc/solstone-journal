@@ -1,0 +1,16 @@
+{
+  "description": "Detected object class name: truck.",
+  "context": "Detected object class name: truck.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "05d13a96d8e9081f2b96e976d98317b0f070d04402a9c1c1b2e4c165410a84f9",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

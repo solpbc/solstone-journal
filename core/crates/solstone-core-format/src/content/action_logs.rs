@@ -2,34 +2,61 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
 use super::{
-    JsonObject, ProducedChunks, display_or_default, display_value, recorded_chunk, titleize,
+    JsonObject, ProducedChunks, display_value, recorded_chunk_for_locale, titleize,
     truncate_string, truthy_display,
 };
 
+#[allow(dead_code)]
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(rel, records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(rel: &str, records: &[JsonObject], locale: &str) -> ProducedChunks {
     let mut chunks = Vec::new();
+    let unknown = text(locale, "journal.window.content.action.unknown");
     for entry in records {
         let Some(action) = truthy_display(entry, "action") else {
             continue;
         };
-        let actor = display_or_default(entry, "actor", "unknown");
+        let actor = truthy_display(entry, "actor").unwrap_or_else(|| unknown.clone());
         let action_display = titleize(&action);
-        let mut lines = vec![format!("### {action_display} by {actor}"), String::new()];
+        let mut lines = vec![
+            strings(
+                locale,
+                "journal.window.content.action.heading",
+                [
+                    ("action", action_display.as_str()),
+                    ("actor", actor.as_str()),
+                ],
+            ),
+            String::new(),
+        ];
 
-        let source = display_or_default(entry, "source", "unknown");
-        let mut meta_parts = vec![format!("**Source:** {source}")];
+        let source = truthy_display(entry, "source").unwrap_or_else(|| unknown.clone());
+        let mut meta_parts = vec![strings(
+            locale,
+            "journal.window.content.action.source",
+            [("source", source.as_str())],
+        )];
         if let Some(timestamp) = entry.get("timestamp").and_then(Value::as_str)
             && let Some(time) = iso_time(timestamp)
         {
-            meta_parts.push(format!("**Time:** {time}"));
+            meta_parts.push(strings(
+                locale,
+                "journal.window.content.action.time",
+                [("time", time)],
+            ));
         }
         lines.push(meta_parts.join(" | "));
 
         if let Some(use_id) = truthy_display(entry, "use_id") {
-            lines.push(format!(
-                "**Talent:** [{use_id}](/app/thinking/#runs/run/{use_id})"
+            lines.push(strings(
+                locale,
+                "journal.window.content.action.talent",
+                [("id", use_id.as_str())],
             ));
         }
 
@@ -38,7 +65,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         if let Some(Value::Object(params)) = entry.get("params")
             && !params.is_empty()
         {
-            lines.push("**Parameters:**".to_string());
+            lines.push(text(locale, "journal.window.content.action.parameters"));
             for (key, value) in params {
                 let rendered = match value {
                     Value::String(value) => truncate_string(value, 100),
@@ -55,7 +82,12 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
             .and_then(|value| solstone_core_time::parse_rfc3339(value).ok())
             .map(|value| value.timestamp().as_millisecond())
             .unwrap_or(0);
-        chunks.push(recorded_chunk(lines.join("\n"), occurrence, entry));
+        chunks.push(recorded_chunk_for_locale(
+            lines.join("\n"),
+            occurrence,
+            entry,
+            locale,
+        ));
     }
     ProducedChunks {
         chunks,

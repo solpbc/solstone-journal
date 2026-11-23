@@ -1,0 +1,16 @@
+{
+  "description": "Detected object class name: laptop.",
+  "context": "Detected object class name: laptop.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ecad9c155e031eeda9a1675b2f9a87478df6f57faf8b38c0ecf56ac9d19d62a3",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Mentioned participation field in an activity search entry.",
+  "context": "Mentioned participation field in an activity search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1d9593281a7cc46ee9aa8775f7b4f79ed72895be12b590b6fce7e1ceeb3006b1",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

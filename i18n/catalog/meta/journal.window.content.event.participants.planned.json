@@ -1,0 +1,21 @@
+{
+  "description": "Expected participants line for a planned event.",
+  "context": "Expected participants line for a planned event.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "640dd12bead6c629477e02d78feef3775e1aea548abb0e325a3cea19f3a1c081",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

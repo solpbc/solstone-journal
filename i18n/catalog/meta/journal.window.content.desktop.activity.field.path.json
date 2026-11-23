@@ -1,0 +1,21 @@
+{
+  "description": "Path field in a desktop activity block.",
+  "context": "Path field in a desktop activity block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8a92da0e9bba042cc0e083503f84c172629a4b0affa67c239712f062636c4b80",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

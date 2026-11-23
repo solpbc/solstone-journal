@@ -1,0 +1,16 @@
+{
+  "description": "Default event type label when an event record omits type.",
+  "context": "Default event type label when an event record omits type.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b670b3d8518dfdfeaa8aa0a2a7298494a601b6e044be3372d74fd66dccc36cc2",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

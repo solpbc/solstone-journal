@@ -2,8 +2,9 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
-use super::{JsonObject, ProducedChunks, recorded_chunk};
+use super::{JsonObject, ProducedChunks, recorded_chunk_for_locale};
 
 fn clean_url(raw: &str) -> Option<String> {
     let (scheme, rest) = raw.split_once("://")?;
@@ -91,7 +92,12 @@ fn wrap_in_fence(lines: &[String]) -> String {
     format!("{fence}\n{body}\n{fence}")
 }
 
+#[allow(dead_code)]
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
+    render_for_locale(rel, records, ENGLISH)
+}
+
+pub(super) fn render_for_locale(rel: &str, records: &[JsonObject], locale: &str) -> ProducedChunks {
     let mut chunks = Vec::new();
     let mut unsupported_version = false;
 
@@ -247,107 +253,117 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         }
 
         let mut lines = Vec::new();
-        lines.push("desktop activity".to_string());
-        lines.push(format!(
-            "kind: {}",
-            serde_json::to_string(kind).expect("json string")
+        let field = |id: &str, value: &str| strings(locale, id, [("value", value)]);
+        lines.push(text(
+            locale,
+            "journal.window.content.desktop.activity.heading",
         ));
-        lines.push(format!(
-            "method: {}",
-            serde_json::to_string(method).expect("json string")
+        lines.push(field(
+            "journal.window.content.desktop.activity.field.kind",
+            &serde_json::to_string(kind).expect("json string"),
         ));
-        lines.push(format!("start_ms: {ts}"));
-        lines.push(format!("end_ms: {end_ts}"));
+        lines.push(field(
+            "journal.window.content.desktop.activity.field.method",
+            &serde_json::to_string(method).expect("json string"),
+        ));
+        lines.push(field(
+            "journal.window.content.desktop.activity.field.start",
+            &ts.to_string(),
+        ));
+        lines.push(field(
+            "journal.window.content.desktop.activity.field.end",
+            &end_ts.to_string(),
+        ));
         let parts: Vec<&str> = rel.split('/').collect();
         if parts.len() == 4 && parts.iter().all(|p| !p.is_empty()) {
-            lines.push(format!(
-                "stream: {}",
-                serde_json::to_string(parts[1]).expect("json string")
+            lines.push(field(
+                "journal.window.content.desktop.activity.field.stream",
+                &serde_json::to_string(parts[1]).expect("json string"),
             ));
         }
-        lines.push(format!(
-            "path: {}",
-            serde_json::to_string(rel).expect("json string")
+        lines.push(field(
+            "journal.window.content.desktop.activity.field.path",
+            &serde_json::to_string(rel).expect("json string"),
         ));
 
         match kind {
             "foreground" => {
                 if let Some(app) = app {
-                    lines.push(format!(
-                        "app: {}",
-                        serde_json::to_string(app).expect("json string")
+                    lines.push(field(
+                        "journal.window.content.desktop.activity.field.app",
+                        &serde_json::to_string(app).expect("json string"),
                     ));
                 }
                 if let Some(app_id) = app_id {
-                    lines.push(format!(
-                        "app_id: {}",
-                        serde_json::to_string(app_id).expect("json string")
+                    lines.push(field(
+                        "journal.window.content.desktop.activity.field.app.id",
+                        &serde_json::to_string(app_id).expect("json string"),
                     ));
                 }
                 if let Some(title) = title {
-                    lines.push(format!(
-                        "title: {}",
-                        serde_json::to_string(title).expect("json string")
+                    lines.push(field(
+                        "journal.window.content.desktop.activity.field.title",
+                        &serde_json::to_string(title).expect("json string"),
                     ));
                 }
                 if let Some(url) = &url {
-                    lines.push(format!(
-                        "url: {}",
-                        serde_json::to_string(url).expect("json string")
+                    lines.push(field(
+                        "journal.window.content.desktop.activity.field.url",
+                        &serde_json::to_string(url).expect("json string"),
                     ));
                 }
             }
             "activity" => {
                 if let Some(state) = state {
-                    lines.push(format!(
-                        "state: {}",
-                        serde_json::to_string(state).expect("json string")
+                    lines.push(field(
+                        "journal.window.content.desktop.activity.field.state",
+                        &serde_json::to_string(state).expect("json string"),
                     ));
                 }
             }
             "terminal" => {
                 if let Some(pane_title) = pane_title {
-                    lines.push(format!(
-                        "pane_title: {}",
-                        serde_json::to_string(pane_title).expect("json string")
+                    lines.push(field(
+                        "journal.window.content.desktop.activity.field.pane.title",
+                        &serde_json::to_string(pane_title).expect("json string"),
                     ));
                 }
                 if let Some(cwd) = cwd {
-                    lines.push(format!(
-                        "cwd: {}",
-                        serde_json::to_string(cwd).expect("json string")
+                    lines.push(field(
+                        "journal.window.content.desktop.activity.field.cwd",
+                        &serde_json::to_string(cwd).expect("json string"),
                     ));
                 }
                 if let Some(exe) = exe {
-                    lines.push(format!(
-                        "exe: {}",
-                        serde_json::to_string(exe).expect("json string")
+                    lines.push(field(
+                        "journal.window.content.desktop.activity.field.exe",
+                        &serde_json::to_string(exe).expect("json string"),
                     ));
                 }
                 if let Some(session) = session {
-                    lines.push(format!(
-                        "session: {}",
-                        serde_json::to_string(session).expect("json string")
+                    lines.push(field(
+                        "journal.window.content.desktop.activity.field.session",
+                        &serde_json::to_string(session).expect("json string"),
                     ));
                 }
                 if let Some(window) = window {
-                    lines.push(format!(
-                        "window: {}",
-                        serde_json::to_string(window).expect("json string")
+                    lines.push(field(
+                        "journal.window.content.desktop.activity.field.window",
+                        &serde_json::to_string(window).expect("json string"),
                     ));
                 }
             }
             "availability" => {
                 if let Some(capability) = capability {
-                    lines.push(format!(
-                        "capability: {}",
-                        serde_json::to_string(capability).expect("json string")
+                    lines.push(field(
+                        "journal.window.content.desktop.activity.field.capability",
+                        &serde_json::to_string(capability).expect("json string"),
                     ));
                 }
                 if let Some(status) = status {
-                    lines.push(format!(
-                        "status: {}",
-                        serde_json::to_string(status).expect("json string")
+                    lines.push(field(
+                        "journal.window.content.desktop.activity.field.status",
+                        &serde_json::to_string(status).expect("json string"),
                     ));
                 }
             }
@@ -415,7 +431,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
             _ => {}
         }
 
-        chunks.push(recorded_chunk(content, ts, &source));
+        chunks.push(recorded_chunk_for_locale(content, ts, &source, locale));
     }
 
     let mut warnings = Vec::new();

@@ -1,0 +1,29 @@
+{
+  "description": "Protected-video pause description with app name.",
+  "context": "Protected-video pause description with app name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "service",
+      "type": "string"
+    },
+    {
+      "name": "app",
+      "type": "string"
+    },
+    {
+      "name": "duration",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "12a9fe05206a02af01653333807721ffedbfc5ac263570b47321ee31c86dfc6e",
+  "max_length": 345,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for sense entries.",
+  "context": "Search result chip label for sense entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f66a902f8d2356f62a52a2d0cf32d4dc7059b8ed2def08a722417aabaeea6ff8",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

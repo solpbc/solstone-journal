@@ -1,0 +1,16 @@
+{
+  "description": "Search result chip label for desktop activity entries.",
+  "context": "Search result chip label for desktop activity entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "904a75187655bb56b861230985dbc890cd38f5313c75509417bb09126008e276",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

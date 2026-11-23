@@ -1,0 +1,16 @@
+{
+  "description": "Fallback workout name when a Strava workout has no name or type.",
+  "context": "Fallback workout name when a Strava workout has no name or type.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f87e72d290949eb949e2c5b6ff29110bf349fda68ea46d322c8771796ba2aba",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Tags line in a facet entity chunk.",
+  "context": "Tags line in a facet entity chunk.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "items",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "473b0ae548c5cd694e2fb3ed2f1e6d87ad0f79f1d829ba635c597b6ab73c65e0",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

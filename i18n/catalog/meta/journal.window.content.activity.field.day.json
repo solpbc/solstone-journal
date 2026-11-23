@@ -1,0 +1,21 @@
+{
+  "description": "Day field in an activity search entry.",
+  "context": "Day field in an activity search entry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2409e81a587a46e378be58290863419171332638a1990e20d0c5c51e4701c7f9",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

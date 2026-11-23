@@ -21527,3 +21527,409 @@ journal.setup.cleanup.legacy.log = legacy log alias cleanup failed: { $error }
 journal.setup.cleanup.retired.support = retired support portal state cleanup failed: { $error }
 
 journal.setup.identity.program.folder = Reinstalling or uninstalling removes this program folder. Choose a journal location outside it. If your journal is already there, quit the journal app. If setup completed, run `solstone journal service stop`, then `solstone journal service uninstall` and wait for it to succeed. Move the whole journal folder outside the program folder before reinstalling or uninstalling, then select its new location with `solstone journal setup --accept-existing-journal --journal "D:\journal"`, replacing D:\journal with its new location.
+
+journal.window.content.objects.line = **Objects:** { $summary }
+
+journal.window.content.objects.count = { $name } ×{ $count }
+
+journal.window.content.objects.class.person = person
+
+journal.window.content.objects.class.car = car
+
+journal.window.content.objects.class.bird = bird
+
+journal.window.content.objects.class.tie = tie
+
+journal.window.content.objects.class.bottle = bottle
+
+journal.window.content.objects.class.cup = cup
+
+journal.window.content.objects.class.truck = truck
+
+journal.window.content.objects.class.bowl = bowl
+
+journal.window.content.objects.class.laptop = laptop
+
+journal.window.content.objects.class.tv = tv
+
+journal.window.content.objects.class.cell.phone = cell phone
+
+journal.window.content.event.type.default = Event
+
+journal.window.content.event.heading.occurred = ### { $kind }: { $title }
+
+journal.window.content.event.heading.planned = ### Planned { $kind }: { $title }
+
+journal.window.content.event.time.occurred = **Time Occurred:** { $start }
+
+journal.window.content.event.time.occurred.range = **Time Occurred:** { $start } - { $end }
+
+journal.window.content.event.time.scheduled = **Time Scheduled:** { $start }
+
+journal.window.content.event.time.scheduled.range = **Time Scheduled:** { $start } - { $end }
+
+journal.window.content.event.participants.occurred = **Participants:** { $names }
+
+journal.window.content.event.participants.planned = **Expected Participants:** { $names }
+
+journal.window.content.event.created = **Created on:** { $date }
+
+journal.window.content.action.unknown = unknown
+
+journal.window.content.action.heading = ### { $action } by { $actor }
+
+journal.window.content.action.source = **Source:** { $source }
+
+journal.window.content.action.time = **Time:** { $time }
+
+journal.window.content.action.talent = **Talent:** [{ $id }](/app/thinking/#runs/run/{ $id })
+
+journal.window.content.action.parameters = **Parameters:**
+
+journal.window.content.observation.observed = - { $content } (observed: { $day })
+
+journal.window.content.entity.type.unknown = Unknown
+
+journal.window.content.entity.name.unnamed = Unnamed
+
+journal.window.content.entity.description.none = *(No description available)*
+
+journal.window.content.entity.tags = **Tags:** { $items }
+
+journal.window.content.entity.aka = **Also known as:** { $items }
+
+journal.window.content.activity.untitled = Untitled activity
+
+journal.window.content.activity.field.activity = - Activity: { $value }
+
+journal.window.content.activity.field.facet = - Facet: { $value }
+
+journal.window.content.activity.field.day = - Day: { $value }
+
+journal.window.content.activity.field.time = - Time: { $value }
+
+journal.window.content.activity.field.level = - Last engaged segment level: { $value }
+
+journal.window.content.activity.field.description = - Description: { $value }
+
+journal.window.content.activity.field.details = - Details: { $value }
+
+journal.window.content.activity.field.kind = - Kind: { $value }
+
+journal.window.content.activity.role.attendee = - Attendees: { $names }
+
+journal.window.content.activity.role.heard = - In conversation: { $names }
+
+journal.window.content.activity.role.mentioned = - Mentioned: { $names }
+
+journal.window.content.activity.role.visible = - On screen: { $names }
+
+journal.window.content.activity.role.other = - Participation: { $names }
+
+journal.window.content.activity.topics = Topics: { $topics }
+
+journal.window.content.activity.hidden = - Hidden: yes
+
+journal.window.content.activity.saved.relation = Saved relation: { $value }
+
+journal.window.content.activity.omitted = Not everything saved with this activity fit in this entry. The full activity record has all of it.
+
+journal.window.content.document.absent = Not specified in this document
+
+journal.window.content.document.section.overview = Overview
+
+journal.window.content.document.section.parties = Parties and Roles
+
+journal.window.content.document.section.provisions = Key Provisions
+
+journal.window.content.document.section.assets = Assets and Property
+
+journal.window.content.document.section.conditions = Conditions and Triggers
+
+journal.window.content.document.section.dates = Important Dates
+
+journal.window.content.document.section.summary = Summary
+
+journal.window.content.document.party.unnamed = Unnamed party
+
+journal.window.content.document.asset.unnamed = Unnamed asset
+
+journal.window.content.document.detail.applies = Applies to: { $value }
+
+journal.window.content.document.detail.timing = Timing: { $value }
+
+journal.window.content.screen.entities.heading = ## Entities
+
+journal.window.content.screen.entities.none = Not specified
+
+journal.window.content.screen.entity.default = Entity
+
+journal.window.content.possible.name = possible name: { $name }
+
+journal.window.content.protected.video.heading = ## Protected video: { $service }
+
+journal.window.content.protected.video.minutes = {
+    $quantity ->
+        [one] 1 minute
+       *[other] { $quantity } minutes
+}
+
+journal.window.content.protected.video.body = A { $service } window was on screen for about { $duration } while intake (screen and audio) was paused.
+
+journal.window.content.protected.video.body.app = A { $service } window was on screen in { $app } for about { $duration } while intake (screen and audio) was paused.
+
+journal.window.content.protected.video.body.title = A { $service } window was on screen, titled "{ $title }", for about { $duration } while intake (screen and audio) was paused.
+
+journal.window.content.protected.video.body.app.title = A { $service } window was on screen in { $app }, titled "{ $title }", for about { $duration } while intake (screen and audio) was paused.
+
+journal.window.content.browser.page.default = Browser Page
+
+journal.window.content.browser.tab.front.focused = front tab, window focused
+
+journal.window.content.browser.tab.front.unfocused = front tab, window not focused
+
+journal.window.content.browser.tab.front = front tab
+
+journal.window.content.browser.tab.background = background tab
+
+journal.window.content.browser.media.playing.muted = media playing, muted
+
+journal.window.content.browser.media.playing = media playing
+
+journal.window.content.browser.app.paused = solstone app paused
+
+journal.window.content.browser.tab.age = tab open at least { $duration }
+
+journal.window.content.browser.language = language { $lang }
+
+journal.window.content.browser.context = context: { $details }
+
+journal.window.content.browser.duration.s = { $seconds }s
+
+journal.window.content.browser.duration.m = { $minutes }m
+
+journal.window.content.browser.duration.h = { $hours }h
+
+journal.window.content.browser.duration.hm = { $hours }h { $minutes }m
+
+journal.window.content.browser.duration.d = { $days }d
+
+journal.window.content.browser.duration.dh = { $days }d { $hours }h
+
+journal.window.content.desktop.activity.heading = desktop activity
+
+journal.window.content.desktop.activity.field.kind = kind: { $value }
+
+journal.window.content.desktop.activity.field.method = method: { $value }
+
+journal.window.content.desktop.activity.field.start = start_ms: { $value }
+
+journal.window.content.desktop.activity.field.end = end_ms: { $value }
+
+journal.window.content.desktop.activity.field.stream = stream: { $value }
+
+journal.window.content.desktop.activity.field.path = path: { $value }
+
+journal.window.content.desktop.activity.field.app = app: { $value }
+
+journal.window.content.desktop.activity.field.app.id = app_id: { $value }
+
+journal.window.content.desktop.activity.field.title = title: { $value }
+
+journal.window.content.desktop.activity.field.url = url: { $value }
+
+journal.window.content.desktop.activity.field.state = state: { $value }
+
+journal.window.content.desktop.activity.field.pane.title = pane_title: { $value }
+
+journal.window.content.desktop.activity.field.cwd = cwd: { $value }
+
+journal.window.content.desktop.activity.field.exe = exe: { $value }
+
+journal.window.content.desktop.activity.field.session = session: { $value }
+
+journal.window.content.desktop.activity.field.window = window: { $value }
+
+journal.window.content.desktop.activity.field.capability = capability: { $value }
+
+journal.window.content.desktop.activity.field.status = status: { $value }
+
+journal.window.content.body.kind.default = experience
+
+journal.window.content.body.heading = ## { $source } { $kind }: { $label }
+
+journal.window.content.body.span = { $start } to { $end }
+
+journal.window.content.body.attribution.from = as { $source } recorded it, from { $by }
+
+journal.window.content.body.attribution = as { $source } recorded it
+
+journal.window.content.body.attribution.values = { $attribution }: { $values }
+
+journal.window.content.workout.name.default = workout
+
+journal.window.content.workout.heading = ## Strava workout: { $name }
+
+journal.window.content.workout.started = started { $time }
+
+journal.window.content.workout.elapsed = { $duration } elapsed
+
+journal.window.content.workout.moving = { $duration } moving
+
+journal.window.content.workout.distance = { $km } km
+
+journal.window.content.workout.elevation = elevation gain { $m } m
+
+journal.window.content.workout.hr.avg.max = heart rate average { $avg } bpm, max { $max } bpm
+
+journal.window.content.workout.hr.avg = heart rate average { $avg } bpm
+
+journal.window.content.workout.hr.max = heart rate max { $max } bpm
+
+journal.window.content.workout.power.avg.weighted = power average { $avg } W, weighted { $weighted } W
+
+journal.window.content.workout.power.avg = power average { $avg } W
+
+journal.window.content.workout.power.weighted = power weighted { $weighted } W
+
+journal.window.content.workout.calories = { $kcal } kcal
+
+journal.window.content.workout.recorded = as Strava recorded it: { $details }
+
+journal.window.content.workout.flag.commute = commute
+
+journal.window.content.workout.flag.manual = entered by hand
+
+journal.window.content.workout.more = more from Strava:
+
+journal.window.content.workout.duration.m = { $minutes } min
+
+journal.window.content.workout.duration.h = { $hours } h
+
+journal.window.content.workout.duration.hm = { $hours } h { $minutes } min
+
+journal.window.content.chat.speaker.you = You
+
+journal.window.content.chat.speaker.assistant = Assistant
+
+journal.window.content.chat.speaker.human = Human
+
+journal.window.content.chat.speaker.unknown = Unknown
+
+journal.window.content.chat.turn = **{ $speaker }:** { $text }
+
+journal.window.content.import.event.untitled = Untitled event
+
+journal.window.content.import.duration.min = { $minutes } min
+
+journal.window.content.import.location = Location: { $location }
+
+journal.window.content.import.attendees = Attendees: { $attendees }
+
+journal.window.content.import.note.untitled = Untitled note
+
+journal.window.content.import.tags = Tags: { $tags }
+
+journal.window.content.import.links = Links: { $links }
+
+journal.window.content.import.book.unknown = Unknown book
+
+journal.window.content.import.book.by = ## { $book } by { $author }
+
+journal.window.content.import.page = Page { $page }
+
+journal.window.content.import.loc = Location { $location }
+
+journal.window.content.import.note.line = Note: { $content }
+
+journal.window.content.raw.screen.category = **Category:** { $category }
+
+journal.window.content.raw.screen.unknown = unknown
+
+journal.window.content.raw.screen.unknown.title = Unknown
+
+journal.window.content.raw.screen.meeting = **Meeting** ({ $platform })
+
+journal.window.content.raw.screen.participants = **Participants:**
+
+journal.window.content.raw.screen.share = **Screen Share:**
+
+journal.window.content.raw.screen.share.by = **Screen Share by { $presenter }:**
+
+journal.window.search.agent.action = action
+
+journal.window.search.agent.activity = activity
+
+journal.window.search.agent.audio = audio
+
+journal.window.search.agent.audio.transcript = audio transcript
+
+journal.window.search.agent.body = body
+
+journal.window.search.agent.brief = brief
+
+journal.window.search.agent.browser = browser
+
+journal.window.search.agent.calendar = calendar
+
+journal.window.search.agent.conversation.transcript = conversation transcript
+
+journal.window.search.agent.describe = describe
+
+journal.window.search.agent.desktop.activity = desktop activity
+
+journal.window.search.agent.document.transcript = document transcript
+
+journal.window.search.agent.documents = documents
+
+journal.window.search.agent.entity.attached = entity:attached
+
+journal.window.search.agent.entity.detected = entity:detected
+
+journal.window.search.agent.event = event
+
+journal.window.search.agent.event.transcript = event transcript
+
+journal.window.search.agent.flow = flow
+
+journal.window.search.agent.granola = granola
+
+journal.window.search.agent.image.transcript = image transcript
+
+journal.window.search.agent.import = import
+
+journal.window.search.agent.imported = imported
+
+journal.window.search.agent.location = location
+
+journal.window.search.agent.memory = memory
+
+journal.window.search.agent.morning.briefing = morning briefing
+
+journal.window.search.agent.note.transcript = note transcript
+
+journal.window.search.agent.objects = objects
+
+journal.window.search.agent.observation = observation
+
+journal.window.search.agent.possible.names = possible names
+
+journal.window.search.agent.protected.video = protected video
+
+journal.window.search.agent.pulse = pulse
+
+journal.window.search.agent.reflection = reflection
+
+journal.window.search.agent.screen = screen
+
+journal.window.search.agent.screen.text = screen text
+
+journal.window.search.agent.screenshot.transcript = screenshot transcript
+
+journal.window.search.agent.sense = sense
+
+journal.window.search.agent.session.review = session review
+
+journal.window.search.agent.story = story
+
+journal.window.search.agent.topics = topics

@@ -1,0 +1,21 @@
+{
+  "description": "Meeting platform heading in raw screen frames.",
+  "context": "Meeting platform heading in raw screen frames.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "platform",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "63f19a5e14caf092477177e8cd594f671c9516612cac0f2444cc0f16f1b402b8",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
