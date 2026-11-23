@@ -1,0 +1,30 @@
+{
+  "description": "Model call count phrase in a PDF document extraction summary.",
+  "context": "Model call count phrase in a PDF document extraction summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9b83901cb1dcd3b0def0284e55d85733ea903db7a6bb500c133b54af1d3bebbc",
+  "max_length": 222,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

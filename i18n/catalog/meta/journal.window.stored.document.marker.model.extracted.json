@@ -1,0 +1,16 @@
+{
+  "description": "Marker introducing model-extracted page text without a preserved page image path.",
+  "context": "Marker introducing model-extracted page text without a preserved page image path.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "253e8e70f2ba272a3bd7debac5941f22777957e78a459a965c8e63ffe8243514",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

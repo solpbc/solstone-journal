@@ -1,0 +1,16 @@
+{
+  "description": "Wednesday abbreviation in calendar recurrence descriptions.",
+  "context": "Wednesday abbreviation in calendar recurrence descriptions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d8220c9bb2293ead4d98c3f5074add9ab8ff75c5f991b4d1e11753d485d639c1",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

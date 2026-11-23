@@ -532,9 +532,8 @@ fn prepare_segment_localized(
                     .into_iter()
                     .map(|chunk| chunk.content)
                     .collect::<String>();
-                    let note_display = if path.file_name().is_some_and(|name| {
-                        name == solstone_core_format::obsidian::NOTE_TRANSCRIPT_FILE
-                    }) {
+                    let display = if solstone_core_format::stored_markdown::has_named_receipt(&path)
+                    {
                         solstone_core_format::stored_markdown::project_file(
                             root,
                             &path,
@@ -545,7 +544,7 @@ fn prepare_segment_localized(
                     } else {
                         None
                     };
-                    chunks.push(json!({"type":"markdown","time":time,"timestamp":timestamp,"markdown":note_display.as_deref().unwrap_or(markdown.trim()),"source_ref":{"filename":path.file_name().and_then(|name| name.to_str()).unwrap_or_default()}}));
+                    chunks.push(json!({"type":"markdown","time":time,"timestamp":timestamp,"markdown":display.as_deref().unwrap_or(markdown.trim()),"source_ref":{"filename":path.file_name().and_then(|name| name.to_str()).unwrap_or_default()}}));
                     markdown_added = true;
                 }
                 Ok(_) => {}
@@ -879,10 +878,10 @@ fn imported_image_entry(
     ]
     .into_iter()
     .find(|candidate| candidate.is_file());
-    let parsed_transcript = transcript_path
-        .as_deref()
-        .and_then(|path| fs::read_to_string(path).ok())
-        .map(|text| parse_imported_image_transcript(&text, context.root));
+    let parsed_transcript = transcript_path.as_deref().and_then(|path| {
+        let text = fs::read_to_string(path).ok()?;
+        Some(parse_imported_image_transcript(&text, context.root, path))
+    });
 
     let caption = meta
         .as_ref()
@@ -990,7 +989,11 @@ struct ParsedImageTranscript {
     description_state: &'static str,
 }
 
-fn parse_imported_image_transcript(text: &str, journal_root: &Path) -> ParsedImageTranscript {
+fn parse_imported_image_transcript(
+    text: &str,
+    journal_root: &Path,
+    transcript_path: &Path,
+) -> ParsedImageTranscript {
     let mut caption_lines = Vec::new();
     let mut in_caption = false;
     let mut model_lines = Vec::new();
@@ -1032,10 +1035,20 @@ fn parse_imported_image_transcript(text: &str, journal_root: &Path) -> ParsedIma
         (!joined.is_empty()).then_some(joined)
     };
     let model_text = model_lines.join("\n").trim().to_owned();
-    let is_unavailable = model_text.is_empty()
-        || model_text.starts_with("unavailable —")
-        || model_text.starts_with("unavailable -")
-        || model_text == "unavailable";
+    let is_unavailable =
+        match solstone_core_format::stored_markdown::imported_image_description_is_unavailable(
+            journal_root,
+            transcript_path,
+            text,
+        ) {
+            Some(unavailable) => unavailable || model_text.is_empty(),
+            None => {
+                model_text.is_empty()
+                    || model_text.starts_with("unavailable —")
+                    || model_text.starts_with("unavailable -")
+                    || model_text == "unavailable"
+            }
+        };
     let (description, description_state) = if is_unavailable {
         (
             None,

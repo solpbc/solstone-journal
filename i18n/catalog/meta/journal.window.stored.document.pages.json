@@ -1,0 +1,21 @@
+{
+  "description": "Page count line in an imported PDF document transcript header.",
+  "context": "Page count line in an imported PDF document transcript header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3cb40d9fa431f7f1b36e7bed586086d7dd423ec730d225f19805e3ee175c0f00",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

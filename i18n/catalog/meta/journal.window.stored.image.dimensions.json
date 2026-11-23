@@ -1,0 +1,25 @@
+{
+  "description": "Image dimensions line in an imported image or screenshot transcript header.",
+  "context": "Image dimensions line in an imported image or screenshot transcript header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "width",
+      "type": "string"
+    },
+    {
+      "name": "height",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b881c4b419eb06b59e92eb515b8417889775d6bc9f5448c7a873a095f29279ea",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

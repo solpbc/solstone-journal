@@ -91,6 +91,7 @@ pub fn render(source: RegistrySource, plan: ImportPlan, import_id: &str) -> Rend
             calendar: false,
             contents,
             units: segment.entries.len() as u64,
+            display_receipt: None,
         });
     }
 

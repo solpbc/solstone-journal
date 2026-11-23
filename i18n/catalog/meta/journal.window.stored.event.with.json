@@ -1,0 +1,21 @@
+{
+  "description": "Attendees line in an imported calendar event transcript.",
+  "context": "Attendees line in an imported calendar event transcript.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "names",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a7d2691a08f0d83fc0142b619b07ff2a7fe729f905e4119cf1636844ed30b8b7",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

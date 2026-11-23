@@ -897,6 +897,7 @@ fn evernote_rendered(plan: &evernote::Plan) -> save::RenderedImport {
                 contents: file.contents.clone(),
                 units: file.units,
                 calendar: false,
+                display_receipt: None,
             })
             .collect(),
         items: plan

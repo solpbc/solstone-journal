@@ -174,6 +174,8 @@ pub struct SegmentFile {
     /// A calendar note file beside the segment's transcript. It is queued for
     /// search alone: it asks for no processing and marks no day as changed.
     pub calendar: bool,
+    /// Optional verified display receipt JSON for segment Markdown transcripts.
+    pub display_receipt: Option<Vec<u8>>,
 }
 
 /// An import rendered from its source and ready to write.
@@ -413,7 +415,11 @@ pub fn write_rendered_with(
         }
 
         let path = segment_dir.join(&file.name);
-        if let Err(error) = write_segment_private(&path, file.contents.as_bytes()) {
+        if let Err(error) = write_segment_private(
+            &path,
+            file.contents.as_bytes(),
+            file.display_receipt.as_deref(),
+        ) {
             return WriteOutcome {
                 created,
                 calendar_files,
@@ -595,7 +601,11 @@ fn prune_calendar_files(
     Ok(pruned)
 }
 
-fn write_segment_private(path: &Path, contents: &[u8]) -> Result<(), SaveError> {
+fn write_segment_private(
+    path: &Path,
+    contents: &[u8],
+    display_receipt: Option<&[u8]>,
+) -> Result<(), SaveError> {
     let directory = path.parent().expect("rendered segment output has a parent");
     let map_error = |error: std::io::Error| SaveError {
         path: path.to_path_buf(),
@@ -608,7 +618,19 @@ fn write_segment_private(path: &Path, contents: &[u8]) -> Result<(), SaveError> 
     )
     .map_err(map_error)?;
     let _commit = claims.commit(directory).map_err(map_error)?;
-    write_private(path, contents)
+    if solstone_core_format::stored_markdown::has_named_receipt(path) {
+        let _ = solstone_core_format::stored_markdown::remove_display_receipt(path);
+    }
+    write_private(path, contents)?;
+    if let Some(receipt) = display_receipt {
+        let receipt_path = solstone_core_format::stored_markdown::display_receipt_path(path);
+        if receipt_path.parent().is_none_or(|parent| {
+            solstone_core_journal_io::create_directory_with_mode(parent, 0o700).is_ok()
+        }) {
+            let _ = write_private(&receipt_path, receipt);
+        }
+    }
+    Ok(())
 }
 
 fn write_private(path: &Path, contents: &[u8]) -> Result<(), SaveError> {
@@ -665,10 +687,10 @@ mod tests {
             .join("import.ics")
             .join("120000_0");
         let output = segment.join("calendar.md");
-        super::write_segment_private(&output, b"first").unwrap();
-        super::write_segment_private(&output, b"second").unwrap();
+        super::write_segment_private(&output, b"first", None).unwrap();
+        super::write_segment_private(&output, b"second", None).unwrap();
         std::fs::write(segment.join("tombstone.json"), b"{}").unwrap();
-        assert!(super::write_segment_private(&output, b"refused").is_err());
+        assert!(super::write_segment_private(&output, b"refused", None).is_err());
         assert_eq!(std::fs::read(output).unwrap(), b"second");
     }
     use super::*;
@@ -723,6 +745,7 @@ mod tests {
                     calendar: false,
                     contents: "event a\n".to_owned(),
                     units: 1,
+                    display_receipt: None,
                 },
                 SegmentFile {
                     day: "20260804".to_owned(),
@@ -731,6 +754,7 @@ mod tests {
                     calendar: false,
                     contents: "event b\n".to_owned(),
                     units: 2,
+                    display_receipt: None,
                 },
                 SegmentFile {
                     day: "20260804".to_owned(),
@@ -739,6 +763,7 @@ mod tests {
                     calendar: false,
                     contents: "event c\n".to_owned(),
                     units: 3,
+                    display_receipt: None,
                 },
             ],
             items: vec![
@@ -866,6 +891,7 @@ mod tests {
                 calendar: false,
                 contents: "events\n".to_owned(),
                 units: 1,
+                display_receipt: None,
             }],
             items: vec![],
             entries: 1,
@@ -888,6 +914,7 @@ mod tests {
                 calendar: false,
                 contents: "events\n".to_owned(),
                 units: 1,
+                display_receipt: None,
             }],
             items: vec![],
             entries: 1,

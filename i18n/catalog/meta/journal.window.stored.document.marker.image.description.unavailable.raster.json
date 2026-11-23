@@ -1,0 +1,25 @@
+{
+  "description": "Marker noting an unavailable PDF page image description with a preserved page image path.",
+  "context": "Marker noting an unavailable PDF page image description with a preserved page image path.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "267b125ce3bd8f1942bbff64bf4c3ca03953f46f5c81c32a7f336b964e3d3b39",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

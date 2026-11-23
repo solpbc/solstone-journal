@@ -1,0 +1,21 @@
+{
+  "description": "Marker noting an unavailable PDF page image description when page images are not retained.",
+  "context": "Marker noting an unavailable PDF page image description when page images are not retained.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "91382b8b782c1bf7f778637e06b0a5cbed89dbd3bf83768ec7ebd520277784fe",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

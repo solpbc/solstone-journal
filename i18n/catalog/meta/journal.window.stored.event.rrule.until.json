@@ -1,0 +1,25 @@
+{
+  "description": "Calendar recurrence end-date suffix.",
+  "context": "Calendar recurrence end-date suffix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "base",
+      "type": "string"
+    },
+    {
+      "name": "until",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9dcca6a986c78e48c3a09a5b1725198415531e95cb966f22458dd3243a2880bc",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

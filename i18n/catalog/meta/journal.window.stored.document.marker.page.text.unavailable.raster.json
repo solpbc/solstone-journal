@@ -1,0 +1,25 @@
+{
+  "description": "Marker noting unavailable PDF page text with a preserved page image path.",
+  "context": "Marker noting unavailable PDF page text with a preserved page image path.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "44e8475fa92c44e4b2e586abab70e076d3d890006e8aeb9a28234056faf494d7",
+  "max_length": 222,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

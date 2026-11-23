@@ -1,0 +1,21 @@
+{
+  "description": "Unavailable image description line inside a model-derived block.",
+  "context": "Unavailable image description line inside a model-derived block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8bb8ff63ef78c42013d0909545c4993c7c64628dfec29f865cf41e6ddb4addc6",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

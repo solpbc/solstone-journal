@@ -1,0 +1,21 @@
+{
+  "description": "Marker noting unavailable PDF page text when page images are not retained.",
+  "context": "Marker noting unavailable PDF page text when page images are not retained.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "40558d5a0415fad20d5e5729c75b352c3a624fbcd9019e8060acffac5fabd095",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Multi-day span label in an imported calendar event preview.",
+  "context": "Multi-day span label in an imported calendar event preview.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e3f0cd9f1286b554b5e536d7b9c7dcde27527d1e5798bf71099c4ad9cac17529",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

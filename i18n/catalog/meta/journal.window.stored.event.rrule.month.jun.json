@@ -1,0 +1,16 @@
+{
+  "description": "June abbreviation in calendar recurrence descriptions.",
+  "context": "June abbreviation in calendar recurrence descriptions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "25805d41cabe06fe5acdf1e73e58b4e50afb98e7b271f0ca544af08be990bdde",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

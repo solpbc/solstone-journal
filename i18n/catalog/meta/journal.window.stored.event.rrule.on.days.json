@@ -1,0 +1,25 @@
+{
+  "description": "Calendar recurrence weekday suffix.",
+  "context": "Calendar recurrence weekday suffix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "base",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b0366b475c271197d2bacdc3f7c4773b26712647d360f74de2354d24cd9a9ff4",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

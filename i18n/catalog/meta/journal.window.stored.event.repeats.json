@@ -1,0 +1,21 @@
+{
+  "description": "Recurrence line in an imported calendar event transcript.",
+  "context": "Recurrence line in an imported calendar event transcript.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "rule",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dcad63bde81a5005019fa86a985da5592931f076db1cb5a40dfbc93df67ae65f",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

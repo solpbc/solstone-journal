@@ -1,0 +1,16 @@
+{
+  "description": "Heading for extraction worker warnings in an imported PDF document transcript.",
+  "context": "Heading for extraction worker warnings in an imported PDF document transcript.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5316808b57182e06dd52aea43b7065656d767319c44a6b847b047fee7783b3ec",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

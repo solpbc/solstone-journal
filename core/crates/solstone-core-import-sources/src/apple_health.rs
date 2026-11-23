@@ -1544,6 +1544,7 @@ impl Plan {
                 units: decision.units,
                 contents,
                 calendar: false,
+                display_receipt: None,
             });
         }
         if decision.publish {

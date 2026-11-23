@@ -4,6 +4,7 @@
 //! Source-English Markdown with presentation identities for the words supplied by its writer.
 
 pub mod body_day;
+pub mod imported;
 pub mod location_day;
 pub mod week;
 
@@ -13,7 +14,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, JournalRoot, atomic_replace, media::MediaDirectory,
+    AtomicWriteOptions, JournalRoot, atomic_replace, create_directory_with_mode,
+    media::MediaDirectory,
 };
 const ENGLISH: &str = solstone_core_cli_copy::ENGLISH;
 pub const MAX_RECEIPT: usize = 1 << 20;
@@ -92,6 +94,9 @@ pub enum Message<T = String> {
     BodyDay {
         copy: body_day::Copy<T>,
     },
+    Imported {
+        copy: Box<imported::Copy<T>>,
+    },
     WeekMemories {
         count: usize,
     },
@@ -159,6 +164,9 @@ impl<T> Message<T> {
             },
             Self::BodyDay { copy } => Message::BodyDay {
                 copy: copy.map_text(f)?,
+            },
+            Self::Imported { copy } => Message::Imported {
+                copy: Box::new(copy.map_text(f)?),
             },
             Self::WeekMemories { count } => Message::WeekMemories { count: *count },
             Self::WeekEmpty => Message::WeekEmpty,
@@ -292,6 +300,7 @@ impl Message {
         match self {
             Self::LocationDay { copy } => copy.render(locale),
             Self::BodyDay { copy } => copy.render(locale),
+            Self::Imported { copy } => copy.render(locale),
             Self::WeekMemories { count } => solstone_core_window_catalog::render(
                 locale,
                 "journal.window.home.week.intro.memories",
@@ -722,6 +731,11 @@ impl Document {
             copy,
         });
     }
+    pub fn push_imported(&mut self, copy: imported::Copy) {
+        self.push_message(Message::Imported {
+            copy: Box::new(copy),
+        });
+    }
     pub(crate) fn render_from(&self, start: usize, locale: &str) -> String {
         let mut out = String::with_capacity(self.text.len() - start);
         let mut end = start;
@@ -752,6 +766,25 @@ impl Document {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
                 result => result,
             }
+        }
+    }
+
+    /// Save a display receipt with private permissions (`0o700` dir, `0o600` file),
+    /// creating the receipt parent directory if needed.
+    pub fn save_display_receipt_private(&self, path: &Path) -> std::io::Result<()> {
+        let receipt_path = display_receipt_path(path);
+        if let Some(bytes) = self.display_receipt_bytes()? {
+            if let Some(parent) = receipt_path.parent() {
+                create_directory_with_mode(parent, 0o700).map_err(std::io::Error::other)?;
+            }
+            atomic_replace(
+                &receipt_path,
+                &bytes,
+                AtomicWriteOptions { mode: Some(0o600) },
+            )
+            .map_err(std::io::Error::other)
+        } else {
+            remove_display_receipt(path)
         }
     }
 
@@ -961,17 +994,69 @@ impl Receipt<std::ops::Range<usize>> {
 pub const NOTE_RECEIPT_DIR: &str = "talents";
 pub const NOTE_RECEIPT_FILE: &str = "note_transcript.md.display";
 
-/// Device uploads accept flat file names. Keep a live note’s presentation metadata
+pub const SEGMENT_TRANSCRIPT_FILES: &[&str] = &[
+    crate::obsidian::NOTE_TRANSCRIPT_FILE,
+    "document_transcript.md",
+    "event_transcript.md",
+    "image_transcript.md",
+    "screenshot_transcript.md",
+];
+
+fn segment_transcript_name(source: &Path) -> Option<&str> {
+    let name = source.file_name()?.to_str()?;
+    SEGMENT_TRANSCRIPT_FILES.contains(&name).then_some(name)
+}
+
+/// Remove an existing display receipt before replacing its source document.
+pub fn remove_display_receipt(source: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(display_receipt_path(source)) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
+}
+
+/// When an imported image or screenshot transcript has a verified display receipt,
+/// report whether the writer recorded an unavailable model description without
+/// relying on English prefix sniffing.
+#[must_use]
+pub fn imported_image_description_is_unavailable(
+    root: &Path,
+    path: &Path,
+    source: &str,
+) -> Option<bool> {
+    let retained = directory(root, path)?;
+    let (disk_source, receipt) =
+        read_document(root, retained, path, source.len().checked_add(65536)?, None)?;
+    if disk_source != source || !receipt.valid(&disk_source) {
+        return None;
+    }
+    let has_header = receipt.spans.iter().any(|span| {
+        matches!(
+            &span.copy,
+            Message::Imported { copy }
+                if matches!(copy.as_ref(), imported::Copy::ImageDescriptionHeader)
+        )
+    });
+    if !has_header {
+        return None;
+    }
+    Some(receipt.spans.iter().any(|span| {
+        matches!(
+            &span.copy,
+            Message::Imported { copy }
+                if matches!(copy.as_ref(), imported::Copy::ImageDescriptionUnavailable { .. })
+        )
+    }))
+}
+
+/// Device uploads accept flat file names. Keep segment transcript presentation metadata
 /// in a journal-controlled directory rather than accepting an uploaded companion.
 pub fn display_receipt_path(source: &Path) -> std::path::PathBuf {
     let sibling = source.with_extension("md.display");
-    if source
-        .file_name()
-        .is_some_and(|name| name == crate::obsidian::NOTE_TRANSCRIPT_FILE)
-    {
+    if let Some(name) = segment_transcript_name(source) {
         source
             .with_file_name(NOTE_RECEIPT_DIR)
-            .join(NOTE_RECEIPT_FILE)
+            .join(format!("{name}.display"))
     } else {
         sibling
     }
@@ -1079,11 +1164,8 @@ pub fn is_display_document(path: &Path) -> bool {
     has_named_receipt(path) || path.extension().is_some_and(|extension| extension == "md")
 }
 
-fn has_named_receipt(path: &Path) -> bool {
-    if path
-        .file_name()
-        .is_some_and(|name| name == crate::obsidian::NOTE_TRANSCRIPT_FILE)
-    {
+pub fn has_named_receipt(path: &Path) -> bool {
+    if segment_transcript_name(path).is_some() {
         return true;
     }
     path.parent()
@@ -1556,5 +1638,130 @@ mod tests {
             clock.render_at("en-XA", Some("080000_60"))
         )));
         assert!(shown.ends_with(r"- \#\# 00\:12 · terminal"));
+    }
+
+    #[test]
+    fn imported_transcript_receipts_live_under_talents_and_verify_exact_bytes() {
+        use imported::{Copy, EventRecurrence, RasterNote, RecurrenceFrequency, WeekdayToken};
+
+        let root = tempfile::tempdir().unwrap();
+        let locale = solstone_core_window_catalog::packaged_locale(Some("en-XA"));
+
+        // 1. PDF document transcript: singular count + kept/stripped rasters
+        let mut pdf = Document::plain("# Plan\n\n".into());
+        pdf.push_imported(Copy::DocumentType);
+        pdf.push_str("\n");
+        pdf.push_imported(Copy::DocumentExtraction {
+            engine: Some("pdfium".into()),
+            text_layer: 0,
+            model_extracted: 1,
+            unavailable: 0,
+            pages: 1,
+            image_described: 0,
+            model_calls: 1,
+        });
+        pdf.push_str("\n\n---\n\n");
+        pdf.push_imported(Copy::DocumentPageHeading { page: 1 });
+        pdf.push_str("\n\n");
+        pdf.push_imported(Copy::DocumentModelExtracted {
+            page: 1,
+            keep_raster: false,
+        });
+        pdf.push_str("\n> Body text\n");
+        assert!(pdf.contains("of 1 page; 0 image-described; 1 model call"));
+        let pdf_path = root
+            .path()
+            .join("chronicle/20260401/import.document/090000_300/document_transcript.md");
+        std::fs::create_dir_all(pdf_path.parent().unwrap()).unwrap();
+        std::fs::write(&pdf_path, pdf.as_bytes()).unwrap();
+        pdf.save_display_receipt_private(&pdf_path).unwrap();
+        assert_eq!(
+            display_receipt_path(&pdf_path),
+            pdf_path
+                .parent()
+                .unwrap()
+                .join("talents/document_transcript.md.display")
+        );
+        assert!(index_stamp(root.path(), &pdf_path, &pdf).is_some());
+        if locale != ENGLISH {
+            let projected = project_file(root.path(), &pdf_path, pdf.trim(), locale, None).unwrap();
+            assert_ne!(projected, pdf.trim());
+            assert!(projected.contains("> Body text"));
+        }
+
+        // 2. Imported image transcript: receipt distinguishes generated vs unavailable
+        let mut img_ok = Document::plain("# Photo\n\n".into());
+        img_ok.push_imported(Copy::ImageType);
+        img_ok.push_str("\n\n---\n\n");
+        img_ok.push_imported(Copy::ImageDescriptionHeader);
+        img_ok.push_str("\n> unavailable — printed sign in photo\n");
+        let img_path = root
+            .path()
+            .join("chronicle/20260401/import.image/090500_300/image_transcript.md");
+        std::fs::create_dir_all(img_path.parent().unwrap()).unwrap();
+        std::fs::write(&img_path, img_ok.as_bytes()).unwrap();
+        img_ok.save_display_receipt_private(&img_path).unwrap();
+        assert_eq!(
+            imported_image_description_is_unavailable(root.path(), &img_path, &img_ok),
+            Some(false)
+        );
+
+        let mut img_unavail = Document::plain("# Photo\n\n".into());
+        img_unavail.push_imported(Copy::ImageType);
+        img_unavail.push_str("\n\n---\n\n");
+        img_unavail.push_imported(Copy::ImageDescriptionHeader);
+        img_unavail.push_str("\n");
+        img_unavail.push_imported(Copy::ImageDescriptionUnavailable {
+            reason: "no engine".into(),
+        });
+        img_unavail.push_str("\n");
+        std::fs::write(&img_path, img_unavail.as_bytes()).unwrap();
+        img_unavail.save_display_receipt_private(&img_path).unwrap();
+        assert_eq!(
+            imported_image_description_is_unavailable(root.path(), &img_path, &img_unavail),
+            Some(true)
+        );
+
+        // 3. ICS calendar event transcript: singular repeat count + RasterNote check
+        let mut ics = Document::plain("## Dentist\n".into());
+        ics.push_imported(Copy::EventAllDay {
+            date: "2026-04-01".into(),
+            days: 1,
+        });
+        ics.push_str("\n");
+        ics.push_imported(Copy::EventRepeats {
+            recurrence: EventRecurrence {
+                frequency: RecurrenceFrequency::Weekly,
+                interval: 1,
+                by_day: vec![WeekdayToken::Mon],
+                by_month_day: None,
+                by_month: Vec::new(),
+                count: Some(1),
+                until: Some("2026-05-01".into()),
+            },
+        });
+        ics.push_str("\n");
+        assert!(ics.contains("Repeats: Weekly on Mon, 1 time, until 2026-05-01"));
+        let ics_path = root
+            .path()
+            .join("chronicle/20260401/import.ics/091000_300/event_transcript.md");
+        std::fs::create_dir_all(ics_path.parent().unwrap()).unwrap();
+        std::fs::write(&ics_path, ics.as_bytes()).unwrap();
+        ics.save_display_receipt_private(&ics_path).unwrap();
+        assert!(index_stamp(root.path(), &ics_path, &ics).is_some());
+        if locale != ENGLISH {
+            let projected = project_file(root.path(), &ics_path, ics.trim(), locale, None).unwrap();
+            assert_ne!(projected, ics.trim());
+            assert!(projected.contains("## Dentist"));
+        }
+
+        // Verify DocumentPageTextUnavailable with RasterNote variants round-trips.
+        let mut unavail = Document::default();
+        unavail.push_imported(Copy::DocumentPageTextUnavailable {
+            reason: "timeout".into(),
+            raster: RasterNote::Preserved { page: 2 },
+        });
+        assert!(unavail.contains("pages/page-0002.png"));
+        assert!(unavail.display_receipt_bytes().unwrap().is_some());
     }
 }

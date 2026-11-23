@@ -1,0 +1,16 @@
+{
+  "description": "December abbreviation in calendar recurrence descriptions.",
+  "context": "December abbreviation in calendar recurrence descriptions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "779107cbfa74c4418cb28b617878b15febf74a9ecba6cbe2ea925974c5ecd18e",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

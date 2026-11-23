@@ -6207,6 +6207,7 @@ dependencies = [
  "solstone-core-callosum",
  "solstone-core-convey-http",
  "solstone-core-facets",
+ "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-import",
  "solstone-core-import-sources",

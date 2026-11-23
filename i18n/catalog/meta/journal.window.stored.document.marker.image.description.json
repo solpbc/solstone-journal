@@ -1,0 +1,16 @@
+{
+  "description": "Marker introducing a model-generated page image description without a preserved image path.",
+  "context": "Marker introducing a model-generated page image description without a preserved image path.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d4fb9fc57b10e9e07e8e29461aeceaec2187f884c1872816c88c93a10d78d6c8",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

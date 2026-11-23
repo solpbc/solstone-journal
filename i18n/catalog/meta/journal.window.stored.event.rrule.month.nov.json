@@ -1,0 +1,16 @@
+{
+  "description": "November abbreviation in calendar recurrence descriptions.",
+  "context": "November abbreviation in calendar recurrence descriptions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce309d091338f0c3a567ccacb4b7adf89dbcb702c6fe52e16ada5af4eb2a2516",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

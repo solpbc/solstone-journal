@@ -1,0 +1,25 @@
+{
+  "description": "Date and timestamp source line in an imported PDF document transcript header.",
+  "context": "Date and timestamp source line in an imported PDF document transcript header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dbe299f53710a680f76de6400f11a9961608ca96ce326b2a9e7dd457368012ae",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Thursday abbreviation in calendar recurrence descriptions.",
+  "context": "Thursday abbreviation in calendar recurrence descriptions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e05c3fc717605a4b57e8adad68009796e87e7985157d23a1bbd4bd6c977721af",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

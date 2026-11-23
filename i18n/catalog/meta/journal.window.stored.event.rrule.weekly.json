@@ -1,0 +1,16 @@
+{
+  "description": "Weekly calendar recurrence frequency.",
+  "context": "Weekly calendar recurrence frequency.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "930d4a416208a4d4c0f9ef895cde03dbbb52c305752d3fec134373f5af0b0829",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

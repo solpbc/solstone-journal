@@ -1498,6 +1498,7 @@ impl Run<'_, '_> {
                 units,
                 contents,
                 calendar: false,
+                display_receipt: None,
             }],
             items: Vec::new(),
             summary: String::new(),

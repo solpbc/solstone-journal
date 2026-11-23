@@ -1,0 +1,21 @@
+{
+  "description": "Marker introducing a model-generated page image description with a preserved image path.",
+  "context": "Marker introducing a model-generated page image description with a preserved image path.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6a570a4d78566879a6af64c8c2abc680f4db0876d56c6ffa78831241f89c7783",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

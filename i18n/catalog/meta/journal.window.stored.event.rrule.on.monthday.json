@@ -1,0 +1,25 @@
+{
+  "description": "Calendar recurrence day-of-month suffix.",
+  "context": "Calendar recurrence day-of-month suffix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "base",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "50fed1615ec6d5ceaa57a29a01c1b69d562bcd02784b87e93c5d312ff31854cd",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

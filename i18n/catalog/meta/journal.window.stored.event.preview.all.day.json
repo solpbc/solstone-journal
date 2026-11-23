@@ -1,0 +1,16 @@
+{
+  "description": "All-day label in an imported calendar event preview.",
+  "context": "All-day label in an imported calendar event preview.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1684ed450e906f54c75042fb1f6cd92d0a6a70f2bc2d9045df5800bf2cade36f",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

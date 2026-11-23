@@ -1,0 +1,16 @@
+{
+  "description": "Saturday abbreviation in calendar recurrence descriptions.",
+  "context": "Saturday abbreviation in calendar recurrence descriptions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "004cb04b8697c4809e6d3b958f2859903fc180783adb0f24f8c493c0dc032a2d",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

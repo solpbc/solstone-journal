@@ -1,0 +1,30 @@
+{
+  "description": "Total page count phrase in a PDF document extraction summary.",
+  "context": "Total page count phrase in a PDF document extraction summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "8b920069c9cba273090fca251dabd90bead30fe7833e8ce3c94cdc295beeceb6",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

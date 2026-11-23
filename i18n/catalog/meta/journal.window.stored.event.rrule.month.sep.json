@@ -1,0 +1,16 @@
+{
+  "description": "September abbreviation in calendar recurrence descriptions.",
+  "context": "September abbreviation in calendar recurrence descriptions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "96e66bfc698ee33b2d518bf9e5d9763ad1a4633ff6e0f117386b60754d754e9f",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

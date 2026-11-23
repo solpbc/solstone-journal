@@ -63,19 +63,6 @@ const DIRECTORY_MODE: u32 = 0o700;
 const DOCUMENT_SEGMENT_PROBE_LIMIT: u32 = 60;
 const REMOVING_SEGMENT_PREFIX: &str = ".removing_";
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-const MARKER_MODEL_EXTRACTED: &str =
-    "> [model-extracted from page image — may contain errors; original: pages/page-{NNNN}.png]";
-const MARKER_IMAGE_DESCRIPTION: &str =
-    "> [image description — model-generated; original: pages/page-{NNNN}.png]";
-const MARKER_PAGE_TEXT_UNAVAILABLE_WITH_RASTER: &str =
-    "> [page text unavailable — {reason}; page image preserved at pages/page-{NNNN}.png]";
-const MARKER_IMAGE_DESCRIPTION_UNAVAILABLE_WITH_RASTER: &str =
-    "> [image description unavailable — {reason}; page image preserved at pages/page-{NNNN}.png]";
-const MARKER_PAGE_TEXT_UNAVAILABLE_NO_RASTER: &str =
-    "> [page text unavailable — {reason}; no page image could be produced]";
-const MARKER_IMAGE_DESCRIPTION_UNAVAILABLE_NO_RASTER: &str =
-    "> [image description unavailable — {reason}; no page image could be produced]";
 const DESCRIBE_PROMPT: &str = "Describe this image in detail. Include any visible text, people, objects, setting, and notable context. Return a concise natural-language description.";
 
 /// A parsed successful `sol-pdf/1` response.
@@ -2169,7 +2156,7 @@ fn merge_warnings(first: &[String], second: &[String]) -> Vec<String> {
         .collect()
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct RenderStats {
     pub text_layer_pages: u64,
     pub model_extracted_pages: u64,
@@ -2179,16 +2166,178 @@ pub struct RenderStats {
     pub model_calls: u64,
 }
 
+enum RenderedPageImage {
+    Described(String),
+    Unavailable { reason: String, has_raster: bool },
+}
+
+enum RenderedPageBody {
+    TextLayer {
+        text: String,
+        image: Option<RenderedPageImage>,
+    },
+    ModelExtracted(String),
+    Unavailable {
+        reason: String,
+        has_raster: bool,
+    },
+}
+
+struct RenderedPage {
+    index: usize,
+    body: RenderedPageBody,
+}
+
+struct DocumentTranscriptModel {
+    title: String,
+    engine: Option<String>,
+    page_count: usize,
+    date: String,
+    timestamp_source: String,
+    stats: RenderStats,
+    warnings: Vec<String>,
+    pages: Vec<RenderedPage>,
+}
+
+impl DocumentTranscriptModel {
+    fn build_document(
+        &self,
+        keep_rasters: bool,
+    ) -> solstone_core_format::stored_markdown::Document {
+        use solstone_core_format::stored_markdown::{
+            Document,
+            imported::{Copy, RasterNote},
+        };
+
+        let mut doc = Document::plain(format!("# {}\n\n", self.title));
+        doc.push_imported(Copy::DocumentType);
+        doc.push_str("\n");
+        doc.push_imported(Copy::DocumentPages {
+            count: self.page_count,
+        });
+        doc.push_str("\n");
+        doc.push_imported(Copy::DocumentDate {
+            date: self.date.clone(),
+            source: self.timestamp_source.clone(),
+        });
+        doc.push_str("\n");
+        doc.push_imported(Copy::DocumentExtraction {
+            engine: self.engine.clone(),
+            text_layer: self.stats.text_layer_pages,
+            model_extracted: self.stats.model_extracted_pages,
+            unavailable: self.stats.unavailable_pages,
+            pages: self.page_count,
+            image_described: self.stats.image_described_pages,
+            model_calls: self.stats.model_calls,
+        });
+        if !self.warnings.is_empty() {
+            doc.push_str("\n\n");
+            doc.push_imported(Copy::DocumentWorkerWarnings);
+            for warning in &self.warnings {
+                doc.push_str(&format!("\n- {warning}"));
+            }
+        }
+        doc.push_str("\n\n---\n\n");
+
+        for (pos, page) in self.pages.iter().enumerate() {
+            if pos > 0 {
+                doc.push_str("\n\n");
+            }
+            doc.push_imported(Copy::DocumentPageHeading { page: page.index });
+            doc.push_str("\n\n");
+            match &page.body {
+                RenderedPageBody::TextLayer { text, image } => {
+                    doc.push_str(text);
+                    if !text.ends_with('\n') {
+                        doc.push_str("\n");
+                    }
+                    if let Some(image) = image {
+                        doc.push_str("\n");
+                        match image {
+                            RenderedPageImage::Described(description) => {
+                                doc.push_imported(Copy::DocumentImageDescription {
+                                    page: page.index,
+                                    keep_raster: keep_rasters,
+                                });
+                                push_quoted_lines(&mut doc, description);
+                            }
+                            RenderedPageImage::Unavailable { reason, has_raster } => {
+                                let raster = if *has_raster {
+                                    if keep_rasters {
+                                        RasterNote::Preserved { page: page.index }
+                                    } else {
+                                        RasterNote::Stripped
+                                    }
+                                } else {
+                                    RasterNote::NoneProduced
+                                };
+                                doc.push_imported(Copy::DocumentImageDescriptionUnavailable {
+                                    reason: reason.clone(),
+                                    raster,
+                                });
+                            }
+                        }
+                    }
+                }
+                RenderedPageBody::ModelExtracted(text) => {
+                    doc.push_imported(Copy::DocumentModelExtracted {
+                        page: page.index,
+                        keep_raster: keep_rasters,
+                    });
+                    push_quoted_lines(&mut doc, text);
+                }
+                RenderedPageBody::Unavailable { reason, has_raster } => {
+                    let raster = if *has_raster {
+                        if keep_rasters {
+                            RasterNote::Preserved { page: page.index }
+                        } else {
+                            RasterNote::Stripped
+                        }
+                    } else {
+                        RasterNote::NoneProduced
+                    };
+                    doc.push_imported(Copy::DocumentPageTextUnavailable {
+                        reason: reason.clone(),
+                        raster,
+                    });
+                }
+            }
+            let trimmed_len = doc.trim_end_matches('\n').len();
+            doc.truncate(trimmed_len);
+        }
+        doc.push_str("\n");
+        doc
+    }
+}
+
+fn push_quoted_lines(doc: &mut solstone_core_format::stored_markdown::Document, text: &str) {
+    for line in text.split('\n') {
+        if line.is_empty() {
+            doc.push_str("\n>");
+        } else {
+            doc.push_str(&format!("\n> {line}"));
+        }
+    }
+}
+
 pub struct PreparedDocument {
     pub transcript: String,
     pub rasters: std::collections::BTreeMap<usize, PathBuf>,
     pub warnings: Vec<String>,
     pub stats: RenderStats,
+    doc_model: DocumentTranscriptModel,
 }
 
 impl PreparedDocument {
     pub fn extraction_complete(&self) -> bool {
         self.stats.unavailable_pages == 0 && self.stats.unavailable_descriptions == 0
+    }
+
+    fn build_document(
+        &self,
+        keep_rasters: bool,
+    ) -> solstone_core_format::stored_markdown::Document {
+        self.doc_model.build_document(keep_rasters)
     }
 }
 
@@ -2210,7 +2359,7 @@ fn render_document(
     let mut stats = RenderStats::default();
     let mut pages = input.payload.pages.clone();
     pages.sort_by_key(|page| page.index);
-    let sections = pages
+    let rendered_pages = pages
         .iter()
         .map(|page| render_page(page, input.rasters, input.render_errors, &mut stats, model))
         .collect::<Vec<_>>();
@@ -2218,20 +2367,25 @@ fn render_document(
         .source
         .file_stem()
         .unwrap_or_default()
-        .to_string_lossy();
-    let header = render_header(
-        &title,
-        input.payload,
-        &day_for(input.claim_timestamp, input.zone),
-        input.timestamp.source,
-        &stats,
-        input.warnings,
-    );
+        .to_string_lossy()
+        .into_owned();
+    let doc_model = DocumentTranscriptModel {
+        title,
+        engine: (!input.payload.engine.is_empty()).then(|| input.payload.engine.clone()),
+        page_count: input.payload.page_count,
+        date: day_for(input.claim_timestamp, input.zone),
+        timestamp_source: input.timestamp.source.to_owned(),
+        stats: stats.clone(),
+        warnings: input.warnings.to_vec(),
+        pages: rendered_pages,
+    };
+    let transcript = doc_model.build_document(true).into_text();
     PreparedDocument {
-        transcript: format!("{header}\n\n{}\n", sections.join("\n\n")),
+        transcript,
         rasters: input.rasters.clone(),
         warnings: input.warnings.to_vec(),
         stats,
+        doc_model,
     }
 }
 
@@ -2241,20 +2395,14 @@ fn render_page(
     render_errors: &std::collections::BTreeMap<usize, String>,
     stats: &mut RenderStats,
     model: &dyn DocumentModelClient,
-) -> String {
-    let mut section = format!("## Page {}\n\n", page.index);
+) -> RenderedPage {
     let raster = rasters.get(&page.index);
     if page.error.is_none()
         && page.chars >= PAGE_TEXT_MIN_CHARS
         && let Some(text) = page.text.as_deref()
     {
         stats.text_layer_pages += 1;
-        section.push_str(text);
-        if !text.ends_with('\n') {
-            section.push('\n');
-        }
-        if page.image_area_fraction >= PAGE_IMAGE_DESCRIBE_MIN {
-            section.push('\n');
+        let image = if page.image_area_fraction >= PAGE_IMAGE_DESCRIBE_MIN {
             if let Some(raster) = raster {
                 match generate_for_page(
                     DESCRIBE_PROMPT,
@@ -2264,52 +2412,51 @@ fn render_page(
                     stats,
                     model,
                 ) {
-                    Ok(text) => {
+                    Ok(description) => {
                         stats.image_described_pages += 1;
-                        section.push_str(&model_block(
-                            &marker(MARKER_IMAGE_DESCRIPTION, page.index, None),
-                            &text,
-                        ));
+                        Some(RenderedPageImage::Described(description))
                     }
                     Err(reason) => {
                         stats.unavailable_descriptions += 1;
-                        section.push_str(&marker(
-                            MARKER_IMAGE_DESCRIPTION_UNAVAILABLE_WITH_RASTER,
-                            page.index,
-                            Some(&reason),
-                        ));
+                        Some(RenderedPageImage::Unavailable {
+                            reason: collapse_line(&reason),
+                            has_raster: true,
+                        })
                     }
                 }
             } else {
                 stats.unavailable_descriptions += 1;
-                section.push_str(&marker(
-                    MARKER_IMAGE_DESCRIPTION_UNAVAILABLE_NO_RASTER,
-                    page.index,
-                    Some(&page_failure_reason(page, render_errors)),
-                ));
+                Some(RenderedPageImage::Unavailable {
+                    reason: page_failure_reason(page, render_errors),
+                    has_raster: false,
+                })
             }
-            section.push('\n');
-        }
-        return section.trim_end_matches('\n').to_owned();
+        } else {
+            None
+        };
+        return RenderedPage {
+            index: page.index,
+            body: RenderedPageBody::TextLayer {
+                text: text.to_owned(),
+                image,
+            },
+        };
     }
     if page.error.is_none() && page.chars >= PAGE_TEXT_MIN_CHARS {
         stats.unavailable_pages += 1;
-        section.push_str(&marker(
-            if raster.is_some() {
-                MARKER_PAGE_TEXT_UNAVAILABLE_WITH_RASTER
-            } else {
-                MARKER_PAGE_TEXT_UNAVAILABLE_NO_RASTER
+        return RenderedPage {
+            index: page.index,
+            body: RenderedPageBody::Unavailable {
+                reason: format!("page {}: text layer missing", page.index),
+                has_raster: raster.is_some(),
             },
-            page.index,
-            Some(&format!("page {}: text layer missing", page.index)),
-        ));
-        return section.trim_end_matches('\n').to_owned();
+        };
     }
     if page.error.is_none()
         && page.chars < PAGE_TEXT_MIN_CHARS
         && let Some(raster) = raster
     {
-        match generate_for_page(
+        return match generate_for_page(
             reading_prompt(),
             raster,
             "import.document.vision",
@@ -2319,30 +2466,31 @@ fn render_page(
         ) {
             Ok(text) => {
                 stats.model_extracted_pages += 1;
-                section.push_str(&model_block(
-                    &marker(MARKER_MODEL_EXTRACTED, page.index, None),
-                    &text,
-                ));
+                RenderedPage {
+                    index: page.index,
+                    body: RenderedPageBody::ModelExtracted(text),
+                }
             }
             Err(reason) => {
                 stats.unavailable_pages += 1;
-                section.push_str(&marker(
-                    MARKER_PAGE_TEXT_UNAVAILABLE_WITH_RASTER,
-                    page.index,
-                    Some(&reason),
-                ));
+                RenderedPage {
+                    index: page.index,
+                    body: RenderedPageBody::Unavailable {
+                        reason: collapse_line(&reason),
+                        has_raster: true,
+                    },
+                }
             }
-        }
-        section.push('\n');
-        return section.trim_end_matches('\n').to_owned();
+        };
     }
     stats.unavailable_pages += 1;
-    section.push_str(&marker(
-        MARKER_PAGE_TEXT_UNAVAILABLE_NO_RASTER,
-        page.index,
-        Some(&page_failure_reason(page, render_errors)),
-    ));
-    section.trim_end_matches('\n').to_owned()
+    RenderedPage {
+        index: page.index,
+        body: RenderedPageBody::Unavailable {
+            reason: page_failure_reason(page, render_errors),
+            has_raster: false,
+        },
+    }
 }
 
 /// Measured on the bundled model (1.5 times the largest reply, rounded up to 256):
@@ -2422,26 +2570,6 @@ fn reading_prompt() -> &'static str {
         .map_or(source, |(_, prompt)| prompt)
 }
 
-fn marker(template: &str, index: usize, reason: Option<&str>) -> String {
-    let indexed = template.replace("{NNNN}", &format!("{index:04}"));
-    reason.map_or(indexed.clone(), |reason| {
-        indexed.replace("{reason}", &collapse_line(reason))
-    })
-}
-
-fn model_block(marker: &str, text: &str) -> String {
-    std::iter::once(marker.to_owned())
-        .chain(text.split('\n').map(|line| {
-            if line.is_empty() {
-                ">".to_owned()
-            } else {
-                format!("> {line}")
-            }
-        }))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 fn page_failure_reason(
     page: &PdfPage,
     render_errors: &std::collections::BTreeMap<usize, String>,
@@ -2452,45 +2580,6 @@ fn page_failure_reason(
             .or_else(|| render_errors.get(&page.index).map(String::as_str))
             .unwrap_or(&format!("page {}: page image missing", page.index)),
     )
-}
-
-fn render_header(
-    title: &str,
-    payload: &PdfPayload,
-    date: &str,
-    timestamp_source: &str,
-    stats: &RenderStats,
-    warnings: &[String],
-) -> String {
-    let mut lines = vec![
-        format!("# {title}"),
-        String::new(),
-        "**Type:** Document".to_owned(),
-        format!("**Pages:** {}", payload.page_count),
-        format!("**Date:** {date} ({timestamp_source})"),
-        format!(
-            "**Extraction:** {} — {} text-layer, {} model-extracted, {} unavailable of {} pages; {} image-described; {} model calls",
-            if payload.engine.is_empty() {
-                "unknown"
-            } else {
-                &payload.engine
-            },
-            stats.text_layer_pages,
-            stats.model_extracted_pages,
-            stats.unavailable_pages,
-            payload.page_count,
-            stats.image_described_pages,
-            stats.model_calls
-        ),
-    ];
-    if !warnings.is_empty() {
-        lines.push(String::new());
-        lines.push("**Worker warnings:**".to_owned());
-        lines.extend(warnings.iter().map(|warning| format!("- {warning}")));
-    }
-    lines.push(String::new());
-    lines.push("---".to_owned());
-    lines.join("\n")
 }
 
 #[derive(Debug)]
@@ -2597,32 +2686,10 @@ fn install_artifacts(
         )
         .map_err(|error| ArtifactInstallError::Write(error.to_string()))?;
     }
-    if !keep_rasters {
-        let extracted = prepared
-            .transcript
-            .lines()
-            .map(|line| {
-                if (line.starts_with("> [model-extracted from page image")
-                    || line.starts_with("> [image description — model-generated"))
-                    && let Some((marker, _)) = line.split_once("; original: pages/")
-                {
-                    return format!("{marker}]");
-                }
-                if (line.starts_with("> [page text unavailable — ")
-                    || line.starts_with("> [image description unavailable — "))
-                    && let Some((marker, _)) = line.split_once("; page image preserved at pages/")
-                {
-                    return format!("{marker}]");
-                }
-                line.to_owned()
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        write_document_transcript(&transcript, &extracted)
-    } else {
-        write_document_transcript(&transcript, &prepared.transcript)
-    }
-    .map_err(ArtifactInstallError::Write)?;
+    let doc = prepared.build_document(keep_rasters);
+    let _ = solstone_core_format::stored_markdown::remove_display_receipt(&transcript);
+    write_document_transcript(&transcript, &doc).map_err(ArtifactInstallError::Write)?;
+    let _ = doc.save_display_receipt_private(&transcript);
     Ok(transcript.display().to_string())
 }
 

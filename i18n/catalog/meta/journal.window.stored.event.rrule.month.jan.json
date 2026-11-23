@@ -1,0 +1,16 @@
+{
+  "description": "January abbreviation in calendar recurrence descriptions.",
+  "context": "January abbreviation in calendar recurrence descriptions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3fde7e360adf8bf1f852fcd1183d5ad01752e3147b26524ae184ba6b663ead5",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

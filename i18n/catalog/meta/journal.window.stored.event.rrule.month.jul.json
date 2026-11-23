@@ -1,0 +1,16 @@
+{
+  "description": "July abbreviation in calendar recurrence descriptions.",
+  "context": "July abbreviation in calendar recurrence descriptions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d3b623384bf0ecba0ecc24322014f81b7c8e47f25892a60826cfbcea04be6f98",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

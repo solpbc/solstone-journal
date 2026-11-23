@@ -1,0 +1,25 @@
+{
+  "description": "Timed calendar event date line with minute duration.",
+  "context": "Timed calendar event date line with minute duration.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "when",
+      "type": "string"
+    },
+    {
+      "name": "minutes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7ce65c7a4cc4a8cfef824c028b9d20be5112265592c10455e857ff6c211b548a",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

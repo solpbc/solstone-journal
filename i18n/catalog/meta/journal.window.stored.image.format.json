@@ -1,0 +1,21 @@
+{
+  "description": "Image format line in an imported image or screenshot transcript header.",
+  "context": "Image format line in an imported image or screenshot transcript header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "format",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "afb2219a54d777b2a96b14826b8b47a5a0a551bc814a7acbd8bdc7b9ff43c5e3",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "description": "Extraction summary line in an imported PDF document transcript header.",
+  "context": "Extraction summary line in an imported PDF document transcript header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "engine",
+      "type": "string"
+    },
+    {
+      "name": "text_layer",
+      "type": "string"
+    },
+    {
+      "name": "model_extracted",
+      "type": "string"
+    },
+    {
+      "name": "unavailable",
+      "type": "string"
+    },
+    {
+      "name": "pages",
+      "type": "string"
+    },
+    {
+      "name": "image_described",
+      "type": "string"
+    },
+    {
+      "name": "model_calls",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "58b961453a4406d0b813aca535416271e544a4850bd5185a6d80d7ddb7026c1c",
+  "max_length": 582,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

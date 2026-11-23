@@ -1,0 +1,16 @@
+{
+  "description": "Daily calendar recurrence frequency.",
+  "context": "Daily calendar recurrence frequency.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ad90af1eab230be87cdaf149b85c8c5806588ebc86a0443fa1eed9b45aaf6ff",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Marker introducing model-extracted page text with a preserved page image path.",
+  "context": "Marker introducing model-extracted page text with a preserved page image path.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "53e94ebacb1a29d473150817a66a4cbc0c88a5029e652b0d9145bfe6aaf4658b",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

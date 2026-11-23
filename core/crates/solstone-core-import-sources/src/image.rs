@@ -1041,7 +1041,7 @@ pub fn install_image_at(
         &claimed.day[4..6],
         &claimed.day[6..8]
     );
-    let transcript = render_image_markdown(
+    let transcript = render_image_document(
         &prepared.title,
         prepared.format_name,
         prepared.image.width(),
@@ -1097,6 +1097,7 @@ pub fn install_image_at(
     } else {
         write_image_meta(&claimed.directory, prepared)?;
     }
+    let _ = solstone_core_format::stored_markdown::remove_display_receipt(&transcript_path);
     write_text(
         &transcript_path,
         &transcript,
@@ -1108,6 +1109,7 @@ pub fn install_image_at(
         path: transcript_path.clone(),
         detail: error.to_string(),
     })?;
+    let _ = transcript.save_display_receipt_private(&transcript_path);
 
     drop(commit);
     let days_affected = vec![claimed.day.clone()];
@@ -1413,6 +1415,7 @@ fn interpret_generate(response: Result<GenerateResponse, ClientError>) -> Descri
     }
 }
 
+#[cfg(test)]
 fn render_image_markdown(
     title: &str,
     format: &str,
@@ -1422,47 +1425,85 @@ fn render_image_markdown(
     caption: Option<&str>,
     description: &DescriptionOutcome,
 ) -> String {
-    let mut lines = vec![
-        format!("# {title}"),
-        String::new(),
-        "**Type:** Image".to_owned(),
-        format!("**Format:** {format}"),
-        format!("**Dimensions:** {width}×{height}"),
-        format!("**Date:** {date}"),
-        String::new(),
-        "---".to_owned(),
-        String::new(),
-    ];
-    if let Some(caption) = caption.map(str::trim).filter(|value| !value.is_empty()) {
-        lines.push("**Caption:**".to_owned());
-        lines.push(caption.to_owned());
-        lines.push(String::new());
-        lines.push("---".to_owned());
-        lines.push(String::new());
-    }
-    lines.push(render_model_block(description));
-    format!("{}\n", lines.join("\n").trim_end())
+    render_image_document(title, format, width, height, date, caption, description).into_text()
 }
 
-fn render_model_block(description: &DescriptionOutcome) -> String {
-    let text = match description {
-        DescriptionOutcome::Generated(text) => text.to_owned(),
-        DescriptionOutcome::Unavailable { reason } => format!("unavailable — {reason}"),
-    };
-    let mut lines = vec![format!(
-        "{MODEL_DERIVED_LINE_PREFIX} [image description — model-derived]"
-    )];
-    lines.extend(text.split('\n').map(|line| {
-        if line.is_empty() {
-            MODEL_DERIVED_LINE_PREFIX.to_string()
-        } else {
-            format!(
-                "{MODEL_DERIVED_LINE_PREFIX} {}",
-                solstone_core_format::markdown::literal_text(line)
-            )
+fn render_image_document(
+    title: &str,
+    format: &str,
+    width: u32,
+    height: u32,
+    date: &str,
+    caption: Option<&str>,
+    description: &DescriptionOutcome,
+) -> solstone_core_format::stored_markdown::Document {
+    use solstone_core_format::stored_markdown::{Document, imported::Copy};
+
+    let mut doc = Document::plain(format!("# {title}\n\n"));
+    doc.push_imported(Copy::ImageType);
+    doc.push_str("\n");
+    doc.push_imported(Copy::ImageFormat {
+        format: format.to_owned(),
+    });
+    doc.push_str("\n");
+    doc.push_imported(Copy::ImageDimensions { width, height });
+    doc.push_str("\n");
+    doc.push_imported(Copy::ImageDate {
+        date: date.to_owned(),
+    });
+    doc.push_str("\n\n---\n\n");
+    if let Some(caption) = caption.map(str::trim).filter(|value| !value.is_empty()) {
+        doc.push_imported(Copy::ImageCaption);
+        doc.push_str("\n");
+        doc.push_str(caption);
+        doc.push_str("\n\n---\n\n");
+    }
+    push_model_block(&mut doc, description);
+    let trimmed_len = doc.trim_end().len();
+    doc.truncate(trimmed_len);
+    doc.push_str("\n");
+    doc
+}
+
+fn push_model_block(
+    doc: &mut solstone_core_format::stored_markdown::Document,
+    description: &DescriptionOutcome,
+) {
+    use solstone_core_format::stored_markdown::imported::Copy;
+
+    doc.push_imported(Copy::ImageDescriptionHeader);
+    match description {
+        DescriptionOutcome::Generated(text) => {
+            for line in text.split('\n') {
+                if line.is_empty() {
+                    doc.push_str(&format!("\n{MODEL_DERIVED_LINE_PREFIX}"));
+                } else {
+                    doc.push_str(&format!(
+                        "\n{MODEL_DERIVED_LINE_PREFIX} {}",
+                        solstone_core_format::markdown::literal_text(line)
+                    ));
+                }
+            }
         }
-    }));
-    lines.join("\n")
+        DescriptionOutcome::Unavailable { reason } => {
+            let mut lines = reason.split('\n');
+            let first = lines.next().unwrap_or("");
+            doc.push_str("\n");
+            doc.push_imported(Copy::ImageDescriptionUnavailable {
+                reason: solstone_core_format::markdown::literal_text(first),
+            });
+            for line in lines {
+                if line.is_empty() {
+                    doc.push_str(&format!("\n{MODEL_DERIVED_LINE_PREFIX}"));
+                } else {
+                    doc.push_str(&format!(
+                        "\n{MODEL_DERIVED_LINE_PREFIX} {}",
+                        solstone_core_format::markdown::literal_text(line)
+                    ));
+                }
+            }
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

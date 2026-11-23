@@ -1,0 +1,21 @@
+{
+  "description": "Multi-year calendar recurrence interval.",
+  "context": "Multi-year calendar recurrence interval.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "interval",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "03db43d79eb2d751d235fe1d336ffc109d1409b9fd2e4e3208a387bd3767ce20",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

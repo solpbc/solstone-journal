@@ -45,6 +45,8 @@ pub struct CalendarEntry {
     pub location: Option<String>,
     pub attendees: Vec<CalendarAttendee>,
     pub recurrence: Option<String>,
+    pub(crate) recurrence_structured:
+        Option<solstone_core_format::stored_markdown::imported::EventRecurrence>,
 }
 
 /// Failure while reading or decoding calendar source material.
@@ -268,20 +270,23 @@ pub(crate) fn render_with_line_cap(
     let mut files = Vec::with_capacity(windows.len());
     let mut items = Vec::new();
     for window in &windows {
-        let mut contents = window
-            .items
-            .iter()
-            .map(|(_, (entry, _))| event_markdown(entry, zone))
-            .collect::<Vec<_>>()
-            .join("\n\n");
-        contents.push('\n');
+        let mut doc = solstone_core_format::stored_markdown::Document::default();
+        for (idx, (_, (entry, _))) in window.items.iter().enumerate() {
+            if idx > 0 {
+                doc.push_str("\n\n");
+            }
+            push_event_markdown(&mut doc, entry, zone);
+        }
+        doc.push_str("\n");
+        let display_receipt = doc.display_receipt_bytes().ok().flatten();
         files.push(SegmentFile {
             day: window.day.clone(),
             segment: window.segment_key.clone(),
             name: TRANSCRIPT_FILE.to_owned(),
             calendar: false,
-            contents,
+            contents: doc.into_text(),
             units: window.items.len() as u64,
+            display_receipt,
         });
         let records = match notes.as_mut() {
             Some(notes) => crate::ics_notes::one_per_identity(
@@ -301,6 +306,7 @@ pub(crate) fn render_with_line_cap(
                 calendar: true,
                 contents: String::from_utf8(bytes).expect("calendar notes are UTF-8"),
                 units: 0,
+                display_receipt: None,
             });
         }
         for (_, (entry, _)) in &window.items {
@@ -331,8 +337,14 @@ pub(crate) fn render_with_line_cap(
     })
 }
 
-fn event_markdown(entry: &CalendarEntry, zone: &TimeZone) -> String {
-    let mut lines = vec![format!("## {}", entry.title)];
+fn push_event_markdown(
+    doc: &mut solstone_core_format::stored_markdown::Document,
+    entry: &CalendarEntry,
+    zone: &TimeZone,
+) {
+    use solstone_core_format::stored_markdown::imported::Copy;
+
+    doc.push_str(&format!("## {}", entry.title));
     if let Some(days) = all_day_span(entry) {
         let start = entry
             .ts
@@ -340,37 +352,48 @@ fn event_markdown(entry: &CalendarEntry, zone: &TimeZone) -> String {
             .unwrap_or_default()
             .get(..10)
             .unwrap_or_default();
-        lines.push(if days == 1 {
-            format!("**{start}** (all day)")
-        } else {
-            format!("**{start}** ({days} days)")
+        doc.push_str("\n");
+        doc.push_imported(Copy::EventAllDay {
+            date: start.to_owned(),
+            days,
         });
     } else if let Some(start) = entry.ts.as_deref().and_then(|ts| wall_time(ts, zone)) {
         let mut when = start.strftime("%Y-%m-%d %I:%M %p").to_string();
         if let Some(end) = entry.end_ts.as_deref().and_then(|ts| wall_time(ts, zone)) {
             when.push_str(&format!(" – {}", end.strftime("%I:%M %p")));
         }
-        let mut line = format!("**{when}**");
+        doc.push_str("\n");
         if let Some(minutes) = entry.duration_minutes {
-            line.push_str(&format!(" ({minutes} min)"));
+            doc.push_imported(Copy::EventTimedDuration { when, minutes });
+        } else {
+            doc.push_str(&format!("**{when}**"));
         }
-        lines.push(line);
     }
-    if let Some(recurrence) = &entry.recurrence {
-        lines.push(format!("Repeats: {recurrence}"));
+    if let Some(recurrence) = &entry.recurrence_structured {
+        doc.push_str("\n");
+        doc.push_imported(Copy::EventRepeats {
+            recurrence: recurrence.clone(),
+        });
+    } else if let Some(recurrence) = &entry.recurrence {
+        doc.push_str(&format!("\nRepeats: {recurrence}"));
     }
     if let Some(location) = &entry.location {
-        lines.push(format!("Where: {location}"));
+        doc.push_str("\n");
+        doc.push_imported(Copy::EventWhere {
+            location: location.clone(),
+        });
     }
     let names = attendee_names(entry);
     if !names.is_empty() {
-        lines.push(format!("With: {}", names.join(", ")));
+        doc.push_str("\n");
+        doc.push_imported(Copy::EventWith {
+            names: names.join(", "),
+        });
     }
     if !entry.content.is_empty() {
-        lines.push(String::new());
-        lines.push(entry.content.clone());
+        doc.push_str("\n\n");
+        doc.push_str(&entry.content);
     }
-    lines.join("\n")
 }
 
 fn event_item(
@@ -414,11 +437,12 @@ fn event_item(
     if let Some(recurrence) = &entry.recurrence {
         meta.insert("recurrence".to_owned(), json!(recurrence));
     }
+    let all_day_days = all_day_span(entry);
     let description = entry.content.trim();
     let preview = if description.is_empty() {
         let mut parts = Vec::new();
-        parts.extend(time_range);
-        parts.extend(all_day_span(entry).map(|days| match days {
+        parts.extend(time_range.clone());
+        parts.extend(all_day_days.map(|days| match days {
             1 => "all day".to_owned(),
             days => format!("{days} days"),
         }));
@@ -431,7 +455,7 @@ fn event_item(
     } else {
         description.to_owned()
     };
-    json!({
+    let mut item = json!({
         "id": format!("event-{index}"),
         "title": entry.title,
         "date": day,
@@ -439,7 +463,23 @@ fn event_item(
         "preview": preview.chars().take(200).collect::<String>(),
         "meta": meta,
         "segments": [{ "day": day, "key": segment, "stream": stream }],
-    })
+    });
+    if all_day_days.is_some() || entry.recurrence_structured.is_some() {
+        let mut display = Map::new();
+        if let Some(days) = all_day_days {
+            display.insert("all_day_days".to_owned(), json!(days));
+        }
+        if let Some(recurrence) = &entry.recurrence_structured
+            && let Ok(value) = serde_json::to_value(recurrence)
+        {
+            display.insert("recurrence".to_owned(), value);
+        }
+        if description.is_empty() {
+            display.insert("preview_from_meta".to_owned(), json!(true));
+        }
+        item["display"] = Value::Object(display);
+    }
+    item
 }
 
 fn attendee_names(entry: &CalendarEntry) -> Vec<String> {
@@ -585,6 +625,12 @@ fn parse_event(event: &Event, zone: &TimeZone) -> Option<CalendarEntry> {
         }
     }
 
+    let recurrence_structured = event
+        .property_value("RRULE")
+        .and_then(parse_rrule_structured);
+    let recurrence = recurrence_structured
+        .as_ref()
+        .map(|rule| rule.render(solstone_core_window_catalog::ENGLISH));
     Some(CalendarEntry {
         title: nonempty(event.property_value("SUMMARY"))
             .unwrap_or("Untitled event")
@@ -602,7 +648,8 @@ fn parse_event(event: &Event, zone: &TimeZone) -> Option<CalendarEntry> {
             .and_then(|(start, end)| duration_minutes(start, end, zone)),
         location: nonempty(event.property_value("LOCATION")).map(str::to_owned),
         attendees,
-        recurrence: event.property_value("RRULE").and_then(describe_rrule),
+        recurrence,
+        recurrence_structured,
     })
 }
 
@@ -765,79 +812,93 @@ fn push_attendee(
     }
 }
 
-pub(crate) fn describe_rrule(value: &str) -> Option<String> {
+pub(crate) fn parse_rrule_structured(
+    value: &str,
+) -> Option<solstone_core_format::stored_markdown::imported::EventRecurrence> {
+    use solstone_core_format::stored_markdown::imported::{
+        EventRecurrence, MonthToken, RecurrenceFrequency, WeekdayToken,
+    };
+
     let fields = value
         .split(';')
         .filter_map(|part| part.split_once('='))
         .collect::<std::collections::HashMap<_, _>>();
-    let frequency = fields.get("FREQ")?;
-    let (plural, adjective) = match *frequency {
-        "DAILY" => ("days", "Daily"),
-        "WEEKLY" => ("weeks", "Weekly"),
-        "MONTHLY" => ("months", "Monthly"),
-        "YEARLY" => ("years", "Yearly"),
+    let frequency = match *fields.get("FREQ")? {
+        "DAILY" => RecurrenceFrequency::Daily,
+        "WEEKLY" => RecurrenceFrequency::Weekly,
+        "MONTHLY" => RecurrenceFrequency::Monthly,
+        "YEARLY" => RecurrenceFrequency::Yearly,
         _ => return None,
     };
     let interval = fields
         .get("INTERVAL")
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(1);
-    let mut description = if interval == 1 {
-        adjective.to_owned()
-    } else {
-        format!("Every {interval} {plural}")
-    };
-    if let Some(days) = fields.get("BYDAY") {
-        let names = days
-            .split(',')
-            .map(|day| {
-                match day.trim_matches(|character: char| {
-                    character.is_ascii_digit() || character == '+' || character == '-'
-                }) {
-                    "MO" => "Mon",
-                    "TU" => "Tue",
-                    "WE" => "Wed",
-                    "TH" => "Thu",
-                    "FR" => "Fri",
-                    "SA" => "Sat",
-                    "SU" => "Sun",
-                    other => other,
-                }
-            })
-            .collect::<Vec<_>>();
-        description.push_str(&format!(" on {}", names.join(", ")));
-    }
-    if let Some(days) = fields.get("BYMONTHDAY") {
-        description.push_str(&format!(" on day {days}"));
-    }
-    if let Some(months) = fields.get("BYMONTH") {
-        let names = months
-            .split(',')
-            .map(|month| match month {
-                "1" => "Jan",
-                "2" => "Feb",
-                "3" => "Mar",
-                "4" => "Apr",
-                "5" => "May",
-                "6" => "Jun",
-                "7" => "Jul",
-                "8" => "Aug",
-                "9" => "Sep",
-                "10" => "Oct",
-                "11" => "Nov",
-                "12" => "Dec",
-                other => other,
-            })
-            .collect::<Vec<_>>();
-        description.push_str(&format!(" in {}", names.join(", ")));
-    }
-    if let Some(count) = fields.get("COUNT") {
-        description.push_str(&format!(", {count} times"));
-    }
-    if let Some(until) = fields.get("UNTIL").and_then(|until| parse_until(until)) {
-        description.push_str(&format!(", until {}", until.strftime("%Y-%m-%d")));
-    }
-    Some(description)
+    let by_day = fields
+        .get("BYDAY")
+        .map(|days| {
+            days.split(',')
+                .map(|day| {
+                    match day.trim_matches(|character: char| {
+                        character.is_ascii_digit() || character == '+' || character == '-'
+                    }) {
+                        "MO" => WeekdayToken::Mon,
+                        "TU" => WeekdayToken::Tue,
+                        "WE" => WeekdayToken::Wed,
+                        "TH" => WeekdayToken::Thu,
+                        "FR" => WeekdayToken::Fri,
+                        "SA" => WeekdayToken::Sat,
+                        "SU" => WeekdayToken::Sun,
+                        other => WeekdayToken::Other(other.to_owned()),
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let by_month_day = fields.get("BYMONTHDAY").map(|days| (*days).to_owned());
+    let by_month = fields
+        .get("BYMONTH")
+        .map(|months| {
+            months
+                .split(',')
+                .map(|month| match month {
+                    "1" => MonthToken::Jan,
+                    "2" => MonthToken::Feb,
+                    "3" => MonthToken::Mar,
+                    "4" => MonthToken::Apr,
+                    "5" => MonthToken::May,
+                    "6" => MonthToken::Jun,
+                    "7" => MonthToken::Jul,
+                    "8" => MonthToken::Aug,
+                    "9" => MonthToken::Sep,
+                    "10" => MonthToken::Oct,
+                    "11" => MonthToken::Nov,
+                    "12" => MonthToken::Dec,
+                    other => MonthToken::Other(other.to_owned()),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let count = fields
+        .get("COUNT")
+        .and_then(|count| count.parse::<u64>().ok());
+    let until = fields
+        .get("UNTIL")
+        .and_then(|until| parse_until(until))
+        .map(|until| until.strftime("%Y-%m-%d").to_string());
+    Some(EventRecurrence {
+        frequency,
+        interval,
+        by_day,
+        by_month_day,
+        by_month,
+        count,
+        until,
+    })
+}
+
+pub(crate) fn describe_rrule(value: &str) -> Option<String> {
+    parse_rrule_structured(value).map(|rule| rule.render(solstone_core_window_catalog::ENGLISH))
 }
 
 fn parse_until(value: &str) -> Option<Date> {

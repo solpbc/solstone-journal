@@ -1,0 +1,16 @@
+{
+  "description": "Type line in an imported PDF document transcript header.",
+  "context": "Type line in an imported PDF document transcript header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "054119943916fad46bb79f2694ce21fc4681386ccb1ef2f2a5d05845203cb07e",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

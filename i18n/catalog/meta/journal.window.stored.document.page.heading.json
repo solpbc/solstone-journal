@@ -1,0 +1,21 @@
+{
+  "description": "Page section heading in an imported PDF document transcript.",
+  "context": "Page section heading in an imported PDF document transcript.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "page",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e1463776233ea3e5065c6a8cc9ae3ddb7df334f394320ad107bbb298f7034d6d",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

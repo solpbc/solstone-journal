@@ -494,6 +494,10 @@ pub(crate) async fn list(
         .into_iter()
         .skip((page - 1) * per_page)
         .take(per_page)
+        .map(|mut item| {
+            project_manifest_item(&mut item, locale);
+            item
+        })
         .collect();
     json_response(
         StatusCode::OK,
@@ -501,15 +505,77 @@ pub(crate) async fn list(
     )
 }
 
+fn project_manifest_item(item: &mut Value, locale: &str) {
+    let Some(obj) = item.as_object_mut() else {
+        return;
+    };
+    let display = obj.remove("display");
+    let locale = solstone_core_convey_http::window_catalog::packaged_locale(Some(locale));
+    if locale == ENGLISH {
+        return;
+    }
+    let Some(Value::Object(display)) = display else {
+        return;
+    };
+    use solstone_core_format::stored_markdown::imported::{
+        EventRecurrence, render_event_preview_days,
+    };
+    let localized_recurrence = display
+        .get("recurrence")
+        .and_then(|value| serde_json::from_value::<EventRecurrence>(value.clone()).ok())
+        .map(|rule| rule.render(locale));
+    if let Some(ref recurrence) = localized_recurrence
+        && let Some(meta) = obj.get_mut("meta").and_then(Value::as_object_mut)
+    {
+        meta.insert("recurrence".to_owned(), json!(recurrence));
+    }
+    let preview_from_meta = display
+        .get("preview_from_meta")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let all_day_days = display.get("all_day_days").and_then(Value::as_i64);
+    if preview_from_meta && (all_day_days.is_some() || localized_recurrence.is_some()) {
+        let mut parts = Vec::new();
+        if let Some(meta) = obj.get("meta").and_then(Value::as_object) {
+            if let Some(range) = meta.get("time_range").and_then(Value::as_str) {
+                parts.push(range.to_owned());
+            }
+            if let Some(days) = all_day_days {
+                parts.push(render_event_preview_days(locale, days));
+            }
+            if let Some(location) = meta.get("location").and_then(Value::as_str) {
+                parts.push(location.to_owned());
+            }
+            if let Some(names) = meta.get("attendee_names").and_then(Value::as_array) {
+                let joined = names
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if !joined.is_empty() {
+                    parts.push(joined);
+                }
+            }
+        }
+        if let Some(recurrence) = localized_recurrence {
+            parts.push(recurrence);
+        }
+        let preview: String = parts.join(" · ").chars().take(200).collect();
+        obj.insert("preview".to_owned(), json!(preview));
+    }
+}
+
 pub(crate) async fn detail(
     State(state): State<AppState>,
     AxumPath((timestamp, item_id)): AxumPath<(String, String)>,
+    selected_locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
+    let locale = selected_locale.map_or(ENGLISH, |Extension(locale)| locale.0);
     let (directory, items) = match content_manifest(&state.root, &timestamp) {
         Ok(value) => value,
         Err(response) => return *response,
     };
-    let Some(item) = items
+    let Some(mut item) = items
         .into_iter()
         .find(|item| item.get("id").and_then(Value::as_str) == Some(item_id.as_str()))
     else {
@@ -519,7 +585,7 @@ pub(crate) async fn detail(
         Ok(value) => value,
         Err(error) => return metadata_read_error(error),
     };
-    let content = match read_item_content(&state.root, &source_type, &item) {
+    let content = match read_item_content(&state.root, &source_type, &item, locale) {
         Ok(content) => content,
         Err(detail) => {
             return error(
@@ -531,6 +597,7 @@ pub(crate) async fn detail(
             );
         }
     };
+    project_manifest_item(&mut item, locale);
     json_response(StatusCode::OK, json!({"item": item, "content": content}))
 }
 
@@ -616,6 +683,7 @@ fn read_item_content(
     root: &Path,
     source_type: &str,
     item: &Value,
+    locale: &str,
 ) -> Result<Vec<Value>, std::io::Error> {
     let mut content = Vec::new();
     for segment in item
@@ -640,12 +708,12 @@ fn read_item_content(
                 "invalid import segment",
             ));
         }
-        let directory = root
+        let logical_dir = root
             .join("chronicle")
             .join(day)
             .join(&stream_name)
             .join(key);
-        let directory = contained_file(root, &directory)?;
+        let directory = contained_file(root, &logical_dir)?;
         if !directory.exists() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -672,7 +740,16 @@ fn read_item_content(
                 .ends_with("_transcript.md")
             {
                 let path = contained_file(root, &entry.path())?;
-                content.push(json!({"type": "markdown", "content": fs::read_to_string(path)?}));
+                let logical_path = logical_dir.join(entry.file_name());
+                let raw = fs::read_to_string(&path)?;
+                let projected = solstone_core_format::stored_markdown::project_file(
+                    root,
+                    &logical_path,
+                    raw.trim(),
+                    locale,
+                    None,
+                );
+                content.push(json!({"type": "markdown", "content": projected.unwrap_or(raw)}));
             }
         }
     }
@@ -728,7 +805,7 @@ mod tests {
         }
         let item = json!({"segments":[{"day":"20260101","key":"090000_300"}]});
         assert_eq!(
-            read_item_content(&root, "chatgpt", &item).unwrap(),
+            read_item_content(&root, "chatgpt", &item, ENGLISH).unwrap(),
             vec![
                 json!({"speaker":"You","text":"inside transcript"}),
                 json!({"type":"markdown","content":"inside markdown"})
@@ -749,7 +826,7 @@ mod tests {
             // POSIX symlink fixture; Windows' lexical/canonical cases remain above.
             fs::remove_file(&transcript).unwrap();
             std::os::unix::fs::symlink(&outside, &transcript).unwrap();
-            assert!(read_item_content(&root, "chatgpt", &item).is_err());
+            assert!(read_item_content(&root, "chatgpt", &item, ENGLISH).is_err());
             assert!(
                 fs::read_to_string(&outside)
                     .unwrap()
@@ -855,6 +932,7 @@ mod tests {
             detail(
                 State(state.clone()),
                 AxumPath(("20260101_120000".into(), "deleted".into())),
+                None,
             )
             .await,
         )
@@ -1065,5 +1143,80 @@ mod tests {
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         fs::write(&path, "{\"id\":\"a\"}\n\n{\"id\":\"c\"}\n").unwrap();
         assert_eq!(read_jsonl(&path).unwrap().len(), 2, "blank lines are fine");
+    }
+
+    #[test]
+    fn imported_markdown_and_ics_manifest_display_project_for_non_english_locale() {
+        use solstone_core_format::stored_markdown::{
+            Document,
+            imported::{Copy, EventRecurrence, RecurrenceFrequency, WeekdayToken},
+        };
+
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        let seg = root.join("chronicle/20260401/import.document/090000_300");
+        fs::create_dir_all(&seg).unwrap();
+        let mut doc = Document::plain("# Report\n\n".into());
+        doc.push_imported(Copy::DocumentType);
+        doc.push_str("\n");
+        doc.push_imported(Copy::DocumentPages { count: 1 });
+        doc.push_str("\n\n---\n\n");
+        doc.push_imported(Copy::DocumentPageHeading { page: 1 });
+        doc.push_str("\n\nHello owner.\n");
+        let transcript_path = seg.join("document_transcript.md");
+        fs::write(&transcript_path, doc.as_bytes()).unwrap();
+        doc.save_display_receipt_private(&transcript_path).unwrap();
+
+        let item =
+            json!({"segments":[{"day":"20260401","key":"090000_300","stream":"import.document"}]});
+        let locale = solstone_core_convey_http::window_catalog::packaged_locale(Some("en-XA"));
+        let english = read_item_content(root, "document", &item, ENGLISH).unwrap();
+        let localized = read_item_content(root, "document", &item, locale).unwrap();
+        assert_eq!(english[0]["content"].as_str().unwrap(), &*doc);
+        if locale == ENGLISH {
+            assert_eq!(localized[0]["content"], english[0]["content"]);
+        } else {
+            assert_ne!(localized[0]["content"], english[0]["content"]);
+            assert!(
+                localized[0]["content"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Hello owner.")
+            );
+        }
+
+        let recurrence: EventRecurrence = EventRecurrence {
+            frequency: RecurrenceFrequency::Weekly,
+            interval: 1,
+            by_day: vec![WeekdayToken::Mon],
+            by_month_day: None,
+            by_month: Vec::new(),
+            count: Some(1),
+            until: None,
+        };
+        let mut manifest_item = json!({
+            "id": "event-0",
+            "title": "Standup",
+            "date": "20260401",
+            "type": "event",
+            "preview": "all day · Weekly on Mon, 1 time",
+            "meta": { "recurrence": "Weekly on Mon, 1 time" },
+            "display": {
+                "all_day_days": 1,
+                "recurrence": recurrence,
+                "preview_from_meta": true
+            }
+        });
+        let mut en_item = manifest_item.clone();
+        project_manifest_item(&mut en_item, ENGLISH);
+        assert!(en_item.get("display").is_none());
+        assert_eq!(en_item["preview"], "all day · Weekly on Mon, 1 time");
+
+        project_manifest_item(&mut manifest_item, locale);
+        assert!(manifest_item.get("display").is_none());
+        if locale != ENGLISH {
+            assert_ne!(manifest_item["meta"]["recurrence"], "Weekly on Mon, 1 time");
+            assert_ne!(manifest_item["preview"], "all day · Weekly on Mon, 1 time");
+        }
     }
 }

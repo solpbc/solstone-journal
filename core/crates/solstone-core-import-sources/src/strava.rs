@@ -2139,6 +2139,7 @@ pub fn apply(placement: &Placement, creating_import_id: &str) -> RenderedImport 
                     calendar: false,
                     contents: json_str,
                     units: 1,
+                    display_receipt: None,
                 });
             }
             TileAction::Updated {
@@ -2167,6 +2168,7 @@ pub fn apply(placement: &Placement, creating_import_id: &str) -> RenderedImport 
                     calendar: false,
                     contents: json_str,
                     units: 1,
+                    display_receipt: None,
                 });
             }
             TileAction::Unchanged { .. }

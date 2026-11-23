@@ -1,0 +1,21 @@
+{
+  "description": "Multi-week calendar recurrence interval.",
+  "context": "Multi-week calendar recurrence interval.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "interval",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bb04e4b02814da05ddc8624b46810884dad8567c4800ae3d9f35f217d2698e02",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

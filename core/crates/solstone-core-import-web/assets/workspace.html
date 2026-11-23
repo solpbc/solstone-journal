@@ -5634,6 +5634,7 @@ function renderContentItems(items) {
       note: window.JournalI18n.render('journal.window.import.content.type.note'),
       audio: window.JournalI18n.render('journal.window.import.content.type.audio'),
       pdf: window.JournalI18n.render('journal.window.import.content.type.pdf'),
+      document: window.JournalI18n.render('journal.window.import.content.type.document'),
       image: window.JournalI18n.render('journal.window.import.content.type.image'),
     }[item.type] || item.type;
     const date = item.date ? window.JournalFormat.day(item.date) : '';

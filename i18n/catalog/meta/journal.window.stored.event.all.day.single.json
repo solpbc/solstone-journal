@@ -1,0 +1,21 @@
+{
+  "description": "Single-day all-day event date line in an imported calendar transcript.",
+  "context": "Single-day all-day event date line in an imported calendar transcript.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "12b5b5b6583277833c57e66e1413740baacc8d95d72b918fe5ae8fb7332f76f8",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

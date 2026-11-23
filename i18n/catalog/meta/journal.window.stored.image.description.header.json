@@ -1,0 +1,16 @@
+{
+  "description": "Marker introducing a model-derived image description block.",
+  "context": "Marker introducing a model-derived image description block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "38fc6eaad925d3835b23069372f9d73e74cbed29dcbdcf32df96828d61d14f9f",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

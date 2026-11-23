@@ -1,0 +1,21 @@
+{
+  "description": "Date line in an imported image or screenshot transcript header.",
+  "context": "Date line in an imported image or screenshot transcript header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6b81e00d3ab94ea37a0dd6da65f4a4500ed7283e65ed6fc0735dfd91bf1bd440",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

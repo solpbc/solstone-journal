@@ -1,0 +1,16 @@
+{
+  "description": "Monday abbreviation in calendar recurrence descriptions.",
+  "context": "Monday abbreviation in calendar recurrence descriptions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "41f33152a1097a0ef4686189aa9e205fe2d9b85f7d2baf2979168b2d372f63d1",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

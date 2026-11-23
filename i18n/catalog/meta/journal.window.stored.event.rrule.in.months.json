@@ -1,0 +1,25 @@
+{
+  "description": "Calendar recurrence month suffix.",
+  "context": "Calendar recurrence month suffix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "base",
+      "type": "string"
+    },
+    {
+      "name": "months",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "680102772913350b43aeb54f2a9bae81201e9bf06bb990c852f66daf771ac1e0",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

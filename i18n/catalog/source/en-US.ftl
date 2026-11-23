@@ -21933,3 +21933,152 @@ journal.window.search.agent.session.review = session review
 journal.window.search.agent.story = story
 
 journal.window.search.agent.topics = topics
+
+journal.window.import.content.type.document = document
+
+journal.window.stored.document.type = **Type:** Document
+
+journal.window.stored.document.pages = **Pages:** { $count }
+
+journal.window.stored.document.date = **Date:** { $date } ({ $source })
+
+journal.window.stored.document.engine.unknown = unknown
+
+journal.window.stored.document.pages.count = { $quantity ->
+    [one] 1 page
+   *[other] { $count } pages
+}
+
+journal.window.stored.document.calls.count = { $quantity ->
+    [one] 1 model call
+   *[other] { $count } model calls
+}
+
+journal.window.stored.document.extraction = **Extraction:** { $engine } — { $text_layer } text-layer, { $model_extracted } model-extracted, { $unavailable } unavailable of { $pages }; { $image_described } image-described; { $model_calls }
+
+journal.window.stored.document.worker.warnings = **Worker warnings:**
+
+journal.window.stored.document.page.heading = ## Page { $page }
+
+journal.window.stored.document.marker.model.extracted.raster = > [model-extracted from page image — may contain errors; original: { $path }]
+
+journal.window.stored.document.marker.model.extracted = > [model-extracted from page image — may contain errors]
+
+journal.window.stored.document.marker.image.description.raster = > [image description — model-generated; original: { $path }]
+
+journal.window.stored.document.marker.image.description = > [image description — model-generated]
+
+journal.window.stored.document.marker.page.text.unavailable.raster = > [page text unavailable — { $reason }; page image preserved at { $path }]
+
+journal.window.stored.document.marker.page.text.unavailable.stripped = > [page text unavailable — { $reason }]
+
+journal.window.stored.document.marker.page.text.unavailable.no.raster = > [page text unavailable — { $reason }; no page image could be produced]
+
+journal.window.stored.document.marker.image.description.unavailable.raster = > [image description unavailable — { $reason }; page image preserved at { $path }]
+
+journal.window.stored.document.marker.image.description.unavailable.stripped = > [image description unavailable — { $reason }]
+
+journal.window.stored.document.marker.image.description.unavailable.no.raster = > [image description unavailable — { $reason }; no page image could be produced]
+
+journal.window.stored.image.type = **Type:** Image
+
+journal.window.stored.image.format = **Format:** { $format }
+
+journal.window.stored.image.dimensions = **Dimensions:** { $width }×{ $height }
+
+journal.window.stored.image.date = **Date:** { $date }
+
+journal.window.stored.image.caption = **Caption:**
+
+journal.window.stored.image.description.header = > [image description — model-derived]
+
+journal.window.stored.image.description.unavailable = > unavailable — { $reason }
+
+journal.window.stored.event.all.day.single = **{ $date }** (all day)
+
+journal.window.stored.event.all.day.multi = { $quantity ->
+    [one] **{ $date }** ({ $days } day)
+   *[other] **{ $date }** ({ $days } days)
+}
+
+journal.window.stored.event.timed.duration = **{ $when }** ({ $minutes } min)
+
+journal.window.stored.event.preview.all.day = all day
+
+journal.window.stored.event.preview.days = { $quantity ->
+    [one] { $days } day
+   *[other] { $days } days
+}
+
+journal.window.stored.event.repeats = Repeats: { $rule }
+
+journal.window.stored.event.where = Where: { $location }
+
+journal.window.stored.event.with = With: { $names }
+
+journal.window.stored.event.rrule.daily = Daily
+
+journal.window.stored.event.rrule.weekly = Weekly
+
+journal.window.stored.event.rrule.monthly = Monthly
+
+journal.window.stored.event.rrule.yearly = Yearly
+
+journal.window.stored.event.rrule.every.days = Every { $interval } days
+
+journal.window.stored.event.rrule.every.weeks = Every { $interval } weeks
+
+journal.window.stored.event.rrule.every.months = Every { $interval } months
+
+journal.window.stored.event.rrule.every.years = Every { $interval } years
+
+journal.window.stored.event.rrule.on.days = { $base } on { $days }
+
+journal.window.stored.event.rrule.on.monthday = { $base } on day { $days }
+
+journal.window.stored.event.rrule.in.months = { $base } in { $months }
+
+journal.window.stored.event.rrule.count = { $quantity ->
+    [one] { $base }, 1 time
+   *[other] { $base }, { $count } times
+}
+
+journal.window.stored.event.rrule.until = { $base }, until { $until }
+
+journal.window.stored.event.rrule.weekday.mon = Mon
+
+journal.window.stored.event.rrule.weekday.tue = Tue
+
+journal.window.stored.event.rrule.weekday.wed = Wed
+
+journal.window.stored.event.rrule.weekday.thu = Thu
+
+journal.window.stored.event.rrule.weekday.fri = Fri
+
+journal.window.stored.event.rrule.weekday.sat = Sat
+
+journal.window.stored.event.rrule.weekday.sun = Sun
+
+journal.window.stored.event.rrule.month.jan = Jan
+
+journal.window.stored.event.rrule.month.feb = Feb
+
+journal.window.stored.event.rrule.month.mar = Mar
+
+journal.window.stored.event.rrule.month.apr = Apr
+
+journal.window.stored.event.rrule.month.may = May
+
+journal.window.stored.event.rrule.month.jun = Jun
+
+journal.window.stored.event.rrule.month.jul = Jul
+
+journal.window.stored.event.rrule.month.aug = Aug
+
+journal.window.stored.event.rrule.month.sep = Sep
+
+journal.window.stored.event.rrule.month.oct = Oct
+
+journal.window.stored.event.rrule.month.nov = Nov
+
+journal.window.stored.event.rrule.month.dec = Dec

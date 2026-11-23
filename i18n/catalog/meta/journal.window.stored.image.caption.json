@@ -1,0 +1,16 @@
+{
+  "description": "Caption heading in an imported image or screenshot transcript.",
+  "context": "Caption heading in an imported image or screenshot transcript.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f19c0286982058457f80bde1f935712490a639a0f818f9da585375d85888d8af",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

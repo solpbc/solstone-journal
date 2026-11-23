@@ -1,0 +1,16 @@
+{
+  "description": "Type line in an imported image or screenshot transcript header.",
+  "context": "Type line in an imported image or screenshot transcript header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ebd5a4fe0d85a2af665c0d46a8e7581a3f4153d1a6af03adeb929a62d2fa2b71",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

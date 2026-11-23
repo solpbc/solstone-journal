@@ -1,0 +1,21 @@
+{
+  "description": "Marker noting unavailable PDF page text when no page image could be produced.",
+  "context": "Marker noting unavailable PDF page text when no page image could be produced.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "066c81201f379e725961ba20f590d5d0f9a1486dc6618a23cc20149ab943c079",
+  "max_length": 216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
