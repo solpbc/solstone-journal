@@ -20163,3 +20163,198 @@ fn fetch_size_returns_thumbnails_for_single_and_batched_photos_and_screenshots()
         Err(McpProbeError::InvalidInput)
     );
 }
+
+#[test]
+fn get_week_note_and_photo_summaries_carry_source_and_note_first_line_titles() {
+    use crate::memory::{AppendResult, AuthenticatedMemorySource, append_connection_memory};
+
+    let journal = fixture();
+    let root = journal.path();
+    let day = "20260309";
+
+    fs::create_dir_all(root.join("streams")).unwrap();
+    fs::write(
+        root.join("streams/obsidian.json"),
+        json!({
+            "name": "obsidian",
+            "kind": "observer",
+            "host": null,
+            "platform": null,
+            "created_at": 1,
+            "last_day": null,
+            "last_segment": null,
+            "seq": 1,
+            "cid": "sha256:obsidian-test",
+            "source": "obsidian"
+        })
+        .to_string(),
+    )
+    .unwrap();
+    for (idx, stream) in ["import.obsidian", "import.text", "import.image"]
+        .into_iter()
+        .enumerate()
+    {
+        fs::write(
+            root.join(format!("streams/{stream}.json")),
+            json!({
+                "name": stream,
+                "kind": "import",
+                "host": null,
+                "platform": null,
+                "created_at": (idx as u64) + 2,
+                "last_day": null,
+                "last_segment": null,
+                "seq": 1
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    // Obsidian note without a markdown heading: should take its first line and source "Obsidian".
+    let obsidian_plain = root.join(format!("chronicle/{day}/obsidian/203000_480"));
+    fs::create_dir_all(&obsidian_plain).unwrap();
+    fs::write(
+        obsidian_plain.join("note_transcript.md"),
+        "The book. Saturday night. The columns ruled:\n\nEntry one.\n",
+    )
+    .unwrap();
+
+    // Imported Obsidian note with a heading: should keep its heading and source "Obsidian".
+    let obsidian_headed = root.join(format!("chronicle/{day}/import.obsidian/180000_0"));
+    fs::create_dir_all(&obsidian_headed).unwrap();
+    fs::write(
+        obsidian_headed.join("note_transcript.md"),
+        "# Ledger notes\n\nSecond line.\n",
+    )
+    .unwrap();
+
+    // Agent-memory note: plain text, should take its first line and source "your agent".
+    let mem_source =
+        solstone_core_format::agent_memory::SourceKey::from_verified_id("bearer:memory-writer");
+    let AppendResult::Stored(_) = append_connection_memory(
+        root,
+        AuthenticatedMemorySource {
+            verified_id: "bearer:memory-writer",
+            creation_label: "memory writer",
+            source: &mem_source,
+        },
+        "Keep both figures with their source.\nSecond detail line.",
+        "week-note-summary-op",
+        "2026-03-09T15:00:00Z".parse::<jiff::Timestamp>().unwrap(),
+    )
+    .unwrap() else {
+        panic!("agent memory fixture must store");
+    };
+
+    // Imported text note with a heading: source "imported file".
+    let imported_note = root.join(format!("chronicle/{day}/import.text/130500_300"));
+    fs::create_dir_all(&imported_note).unwrap();
+    fs::write(
+        imported_note.join("note_transcript.md"),
+        "# Travel list\n\nBoots and coat.\n",
+    )
+    .unwrap();
+
+    // Imported photo: source "imported file", keeps heading and photo fields.
+    let imported_photo = root.join(format!("chronicle/{day}/import.image/080000_0"));
+    fs::create_dir_all(&imported_photo).unwrap();
+    fs::write(
+        imported_photo.join("image_transcript.md"),
+        "# Morning porch\n\n> [image description — model-derived]\n> Quiet steps in frost\\.\n",
+    )
+    .unwrap();
+
+    // Streamless note import summary: carries no `source` anywhere.
+    let summary_dir = root.join("imports/20260309_100000");
+    fs::create_dir_all(&summary_dir).unwrap();
+    fs::write(
+        summary_dir.join("manifest.json"),
+        json!({"import_id": "20260309_100000", "source_type": "obsidian"}).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        summary_dir.join("summary.md"),
+        "# Obsidian import summary\n\nstreamlessnoteimportmarker\n",
+    )
+    .unwrap();
+
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+
+    // Also attach a day to the streamless import summary row in the index to verify
+    // `get_week` omits `source` when no stream stands behind an item.
+    let index = solstone_core_indexer_store::db::open_index(root).unwrap();
+    index
+        .execute(
+            "UPDATE chunks SET day = ?1 WHERE path = 'imports/20260309_100000/summary.md'",
+            params![day],
+        )
+        .unwrap();
+    drop(index);
+
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec![
+                    "facets".into(),
+                    "transcripts".into(),
+                    "notes".into(),
+                    "photos".into(),
+                ],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+
+    for args in [
+        json!({"week": "2026-03-08", "include": ["notes", "photos"]}),
+        json!({"day_from": "2026-03-08", "day_to": "2026-03-14", "include": ["notes", "photos"]}),
+    ] {
+        let week = probe(&journal, "get_week", args.clone()).unwrap();
+        let day_row = week["days"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["day"] == day)
+            .unwrap();
+
+        let notes = &day_row["summary"]["notes"];
+        assert_eq!(notes["count"], 5, "{args}: {notes}");
+        let note_items = notes["items"].as_array().unwrap();
+        let find_note = |title: &str| {
+            note_items
+                .iter()
+                .find(|item| item["title"] == title)
+                .unwrap_or_else(|| panic!("missing note titled {title:?} in {note_items:?}"))
+        };
+        assert_eq!(
+            find_note("The book. Saturday night. The columns ruled:")["source"],
+            "Obsidian"
+        );
+        assert_eq!(find_note("Ledger notes")["source"], "Obsidian");
+        assert_eq!(
+            find_note("Keep both figures with their source.")["source"],
+            "your agent"
+        );
+        assert_eq!(find_note("Travel list")["source"], "imported file");
+        assert!(
+            find_note("Obsidian import summary").get("source").is_none(),
+            "streamless summary must omit source: {note_items:?}"
+        );
+        assert!(
+            note_items.iter().all(|item| !item["title"]
+                .as_str()
+                .unwrap()
+                .starts_with("journal entry from")),
+            "no note should fall back to generic day title: {note_items:?}"
+        );
+
+        let photos = &day_row["summary"]["photos"];
+        assert_eq!(photos["count"], 1, "{args}: {photos}");
+        let photo_item = &photos["items"][0];
+        assert_eq!(photo_item["title"], "Morning porch");
+        assert_eq!(photo_item["source"], "imported file");
+        assert_eq!(photo_item["description"], "Quiet steps in frost.");
+    }
+}

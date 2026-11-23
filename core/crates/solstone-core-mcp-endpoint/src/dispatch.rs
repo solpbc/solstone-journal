@@ -1142,7 +1142,7 @@ pub(crate) fn week_kind_summaries_range(
         let mut items = Vec::with_capacity(total.min(limit));
         for (row, _) in entries.iter().take(limit) {
             let mut item = json!({"title": row["title"]});
-            for field in ["reference", "link"] {
+            for field in ["source", "reference", "link"] {
                 if let Some(value) = row.get(field) {
                     item[field] = value.clone();
                 }
@@ -2483,7 +2483,12 @@ fn search(
                     value["title"] = json!(crate::tools::activities::activity_title(record));
                 }
             } else if imported || category == AdmittedCategory::Notes {
-                if let Some(title) = material_title(&served_text) {
+                let title = if category == AdmittedCategory::Notes {
+                    note_title(&served_text)
+                } else {
+                    material_title(&served_text)
+                };
+                if let Some(title) = title {
                     value["title"] = json!(title);
                 }
                 if let Some(preview) = preview {
@@ -2710,8 +2715,21 @@ fn search(
 /// Prefer a heading from the material itself, whenever one exists.
 fn material_title(text: &str) -> Option<String> {
     let line = text.lines().find(|line| !line.trim().is_empty())?.trim();
-    let heading = line.trim_start_matches('#').strip_prefix(' ')?;
-    Some(heading.chars().take(160).collect())
+    let heading = line.trim_start_matches('#').strip_prefix(' ')?.trim();
+    (!heading.is_empty()).then(|| heading.chars().take(160).collect())
+}
+
+/// Prefer a heading for a note; fall back to its first non-empty line when the
+/// note has no heading (Obsidian notes and agent-memory notes).
+fn note_title(text: &str) -> Option<String> {
+    if let Some(heading) = material_title(text) {
+        return Some(heading);
+    }
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.chars().all(|ch| ch == '#'))?;
+    Some(line.chars().take(160).collect())
 }
 
 /// The index keeps an import header and its content in separate chunks.
