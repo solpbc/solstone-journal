@@ -207,7 +207,8 @@ pub fn run_mcp_probe(
     .map_err(|error| match error {
         DispatchError::InvalidInput
         | DispatchError::Tool(
-            ToolError::ActivityDayArguments
+            ToolError::UseGetTranscript
+            | ToolError::ActivityDayArguments
             | ToolError::TranscriptTimeArguments
             | ToolError::WeekRangeArguments,
         ) => McpProbeError::InvalidInput,
@@ -502,8 +503,12 @@ fn fetch_target_missing_kind(
         return None;
     };
     // An activity's name follows the facets category whatever it names, so
-    // the refusal says nothing of whether the activity is there.
-    if crate::names::parse_activity(&fetch.reference).is_some() {
+    // the refusal says nothing of whether the activity is there. A segment
+    // name has the same three-part slash syntax; leave it for `fetch` to
+    // direct to `get_transcript` instead of reporting a missing facets grant.
+    if crate::names::parse_activity(&fetch.reference).is_some()
+        && !crate::names::is_segment_name_shape(&fetch.reference)
+    {
         return (!snapshot.categories.contains(&AdmittedCategory::Facets))
             .then_some(AdmittedCategory::Facets);
     }
@@ -589,6 +594,7 @@ fn owner_error_reason(error: DispatchError) -> Reason {
         DispatchError::Tool(ToolError::AuditUnavailable) => Reason::AuditUnavailable,
         DispatchError::Tool(
             ToolError::InvalidInput
+            | ToolError::UseGetTranscript
             | ToolError::SourceArguments
             | ToolError::ActivityDayArguments
             | ToolError::TranscriptTimeArguments
@@ -3091,17 +3097,37 @@ fn fetch(
 ) -> Result<Prepared, DispatchError> {
     // An activity's name: read as this connection's own list shows it now.
     if crate::names::is_name(&request.reference) {
-        let address = crate::names::parse_activity(&request.reference)
-            .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
-        return fetch_activity(journal_root, principal, snapshot, &address);
+        let Some(address) = crate::names::parse_activity(&request.reference) else {
+            return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+        };
+        return match fetch_activity(journal_root, principal, snapshot, &address) {
+            Err(DispatchError::Tool(ToolError::ReferenceNotFound))
+                if crate::names::is_segment_name_shape(&request.reference) =>
+            {
+                Err(DispatchError::Tool(ToolError::UseGetTranscript))
+            }
+            result => result,
+        };
     }
-    let target = codec()
-        .resolve_entry_or_activity(
-            &request.reference,
-            principal.connection,
-            snapshot.generation,
-        )
-        .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
+    let target = match codec().resolve_entry_or_activity(
+        &request.reference,
+        principal.connection,
+        snapshot.generation,
+    ) {
+        Ok(target) => target,
+        Err(_)
+            if codec()
+                .resolve_segment_or_span(
+                    &request.reference,
+                    principal.connection,
+                    snapshot.generation,
+                )
+                .is_ok() =>
+        {
+            return Err(DispatchError::Tool(ToolError::UseGetTranscript));
+        }
+        Err(_) => return Err(DispatchError::Tool(ToolError::ReferenceNotFound)),
+    };
     match target {
         ReferenceTarget::Entry(entry) => {
             let is_screen_text =

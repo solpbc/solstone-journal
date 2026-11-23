@@ -20358,3 +20358,288 @@ fn get_week_note_and_photo_summaries_carry_source_and_note_first_line_titles() {
         assert_eq!(photo_item["description"], "Quiet steps in frost.");
     }
 }
+
+#[test]
+fn fetch_refuses_list_transcripts_references_and_names_get_transcript() {
+    use crate::dispatch::{DispatchError, DispatchPrincipal, dispatch_authenticated_tool_call};
+    use crate::jsonrpc::ToolName;
+    use crate::references::{ReferenceTarget, SegmentReference};
+    use crate::tools::ToolError;
+
+    let journal = fixture();
+    let root = journal.path();
+    let day = "20260315";
+
+    let audio = root.join(format!("chronicle/{day}/phone/090000_300"));
+    let photo = root.join(format!("chronicle/{day}/import.image/100000_0"));
+    let doc = root.join(format!("chronicle/{day}/import.document/110000_0"));
+    let note = root.join(format!("chronicle/{day}/import.text/120000_0"));
+    let body = root.join(format!("chronicle/{day}/import.oura/000000_86400"));
+    for dir in [&audio, &photo, &doc, &note, &body] {
+        fs::create_dir_all(dir).unwrap();
+    }
+    fs::write(
+        audio.join("audio.jsonl"),
+        "{\"schema\":\"solstone.transcribe.v1\",\"kind\":\"header\"}\n\
+         {\"kind\":\"statement\",\"start_ms\":1000,\"end_ms\":2000,\"text\":\"morning check\"}\n",
+    )
+    .unwrap();
+    fs::write(
+        photo.join("image_transcript.md"),
+        "# Yard gate\n\n> [image description — model-derived]\n> Wooden gate\\.\n",
+    )
+    .unwrap();
+    fs::write(
+        doc.join("document_transcript.md"),
+        "# Lease notice\n\n## Page 1\n\nSigned copy.\n",
+    )
+    .unwrap();
+    fs::write(
+        note.join("note_transcript.md"),
+        "# Errands\n\nPick up ink.\n",
+    )
+    .unwrap();
+    fs::write(
+        body.join("body.jsonl"),
+        "{\"schema\":\"solstone.body.v1\",\"kind\":\"sleep\",\"day\":\"20260315\",\"source\":\"oura\",\"duration_min\":420}\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("streams")).unwrap();
+    fs::write(
+        root.join("streams/import.oura.json"),
+        json!({
+            "name": "import.oura",
+            "kind": "import",
+            "host": null,
+            "platform": null,
+            "created_at": 1,
+            "last_day": null,
+            "last_segment": null,
+            "seq": 1
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+
+    let grant = |words: &[&str]| {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: words.iter().map(|word| (*word).to_owned()).collect(),
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+    };
+    grant(&[
+        "facets",
+        "transcripts",
+        "photos",
+        "documents",
+        "notes",
+        "body",
+    ]);
+
+    let listed = probe(&journal, "list_transcripts", json!({"day": day})).unwrap();
+    let rows = listed["transcripts"].as_array().unwrap();
+    let ref_for_title = |title: &str| -> String {
+        rows.iter()
+            .find(|row| row["title"] == title)
+            .unwrap_or_else(|| panic!("missing row titled {title:?} in {rows:?}"))["reference"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let photo_ref = ref_for_title("Photo — 20260315");
+    let doc_ref = ref_for_title("Document — 20260315");
+    let note_ref = ref_for_title("Note — 20260315");
+    let day_span = listed["span_reference"].as_str().unwrap().to_owned();
+    let body_source_label = listed["other_sources"][0]
+        .as_str()
+        .unwrap_or_else(|| panic!("expected body other_source in {listed}"));
+    let body_listed = probe(
+        &journal,
+        "list_transcripts",
+        json!({"day": day, "source": body_source_label}),
+    )
+    .unwrap();
+    let body_span = body_listed["span_reference"]
+        .as_str()
+        .unwrap_or_else(|| panic!("expected body span_reference in {body_listed}"))
+        .to_owned();
+
+    let PermissionDecision::Snapshot(snapshot) = evaluate_connection_read(root, CONNECTION) else {
+        panic!("expected snapshot");
+    };
+    let sealed_segment = crate::dispatch::codec()
+        .mint(
+            CONNECTION,
+            snapshot.generation,
+            ReferenceTarget::Segment(SegmentReference {
+                day: day.to_owned(),
+                stream: "phone".to_owned(),
+                segment: "090000_300".to_owned(),
+                version: 1,
+                source_index: None,
+                byte_offset: None,
+                statement_ordinal: None,
+                message: None,
+            }),
+        )
+        .unwrap();
+    let foreign_segment = crate::dispatch::codec()
+        .mint(
+            "bearer:other-connection",
+            snapshot.generation,
+            ReferenceTarget::Segment(SegmentReference {
+                day: day.to_owned(),
+                stream: "phone".to_owned(),
+                segment: "090000_300".to_owned(),
+                version: 1,
+                source_index: None,
+                byte_offset: None,
+                statement_ordinal: None,
+                message: None,
+            }),
+        )
+        .unwrap();
+    let nonexistent_segment_name = format!("{day}/235900_60/aaaaaa");
+    let missing_activity_name = format!("{day}/work/act_missing");
+
+    let call_fetch = |args: Value| {
+        dispatch_authenticated_tool_call(
+            root,
+            DispatchPrincipal {
+                connection: CONNECTION,
+                agent_identity: CONNECTION,
+            },
+            ToolName::Fetch,
+            Some(&args),
+            jiff::Timestamp::now(),
+        )
+    };
+
+    // Single fetch refuses every list_transcripts reference shape with UseGetTranscript.
+    for reference in [
+        &photo_ref,
+        &doc_ref,
+        &note_ref,
+        &day_span,
+        &body_span,
+        &sealed_segment,
+        &nonexistent_segment_name,
+    ] {
+        let err = call_fetch(json!({"reference": reference}))
+            .err()
+            .expect("expected error");
+        assert!(
+            matches!(err, DispatchError::Tool(ToolError::UseGetTranscript)),
+            "expected UseGetTranscript for {reference}, got {err:?}"
+        );
+        assert_eq!(ToolError::UseGetTranscript.reason(), "invalid_tool_input");
+        assert!(
+            ToolError::UseGetTranscript
+                .agent_message()
+                .contains("get_transcript")
+        );
+    }
+
+    // Foreign sealed tokens and ordinary missing activity names stay ReferenceNotFound.
+    for reference in [&foreign_segment, &missing_activity_name] {
+        let err = call_fetch(json!({"reference": reference}))
+            .err()
+            .expect("expected error");
+        assert!(
+            matches!(err, DispatchError::Tool(ToolError::ReferenceNotFound)),
+            "expected ReferenceNotFound for {reference}, got {err:?}"
+        );
+    }
+
+    // Batched fetch carries the same per-item error naming get_transcript.
+    let batch = probe(
+        &journal,
+        "fetch",
+        json!({
+            "references": [
+                &photo_ref,
+                &doc_ref,
+                &note_ref,
+                &day_span,
+                &body_span,
+                &sealed_segment,
+                &nonexistent_segment_name,
+                &foreign_segment,
+                &missing_activity_name,
+            ]
+        }),
+    )
+    .unwrap();
+    let items = batch["items"].as_array().unwrap();
+    assert_eq!(items.len(), 9);
+    for (idx, item) in items.iter().enumerate().take(7) {
+        assert_eq!(item["index"], idx);
+        assert_eq!(item["error"]["code"], "invalid_tool_input", "{item}");
+        assert!(
+            item["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("get_transcript"),
+            "{item}"
+        );
+    }
+    for idx in [7, 8] {
+        assert_eq!(items[idx]["error"]["code"], "not_found", "{}", items[idx]);
+    }
+
+    // Without the facets grant, segment names still direct to get_transcript
+    // instead of reporting a missing facets permission, while activity names still deny facets.
+    grant(&["transcripts", "photos", "documents", "notes", "body"]);
+    let err = call_fetch(json!({"reference": &photo_ref}))
+        .err()
+        .expect("expected error");
+    assert!(
+        matches!(err, DispatchError::Tool(ToolError::UseGetTranscript)),
+        "expected UseGetTranscript without facets, got {err:?}"
+    );
+    let act_err = call_fetch(json!({"reference": &missing_activity_name}))
+        .err()
+        .expect("expected error");
+    assert!(
+        matches!(act_err, DispatchError::KindDenied(AdmittedCategory::Facets)),
+        "activity name without facets should still deny facets, got {act_err:?}"
+    );
+    let no_facets_batch = probe(
+        &journal,
+        "fetch",
+        json!({"references": [&photo_ref, &missing_activity_name]}),
+    )
+    .unwrap();
+    assert_eq!(
+        no_facets_batch["items"][0]["error"]["code"],
+        "invalid_tool_input"
+    );
+    assert!(
+        no_facets_batch["items"][0]["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("get_transcript")
+    );
+    assert_eq!(
+        no_facets_batch["items"][1]["error"]["code"],
+        "permission_denied"
+    );
+
+    // Passing the same non-speech list_transcripts reference to get_transcript reads it.
+    let read = probe(&journal, "get_transcript", json!({"reference": &photo_ref})).unwrap();
+    assert!(
+        read["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|line| line.as_str().unwrap().contains("Wooden gate")),
+        "{read}"
+    );
+}

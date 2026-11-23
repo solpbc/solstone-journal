@@ -1216,11 +1216,6 @@ fn a_name_an_agent_makes_up_reads_nothing_a_list_wouldnt_show() {
             "an id the file doesn't hold",
         ),
         (
-            "fetch",
-            format!("{DAY}/090000_300/{code}"),
-            "a segment's name",
-        ),
-        (
             "get_activity_sources",
             format!("{DAY}/work/meeting_2"),
             "a hidden activity",
@@ -1290,6 +1285,21 @@ fn a_name_an_agent_makes_up_reads_nothing_a_list_wouldnt_show() {
                 Err(DispatchError::Tool(ToolError::ReferenceNotFound))
             ),
             "{tool} of {what} ({name}): {result:?}"
+        );
+    }
+    // A segment-shaped name passed to fetch directs to get_transcript without
+    // checking whether the segment exists.
+    for name in [
+        format!("{DAY}/090000_300/{code}"),
+        format!("{DAY}/090000_300/aaaaaa"),
+    ] {
+        let result = read(root, "fetch", &name);
+        assert!(
+            matches!(
+                result,
+                Err(DispatchError::Tool(ToolError::UseGetTranscript))
+            ),
+            "fetch of segment name ({name}): {result:?}"
         );
     }
     // The same activity with facets taken away is refused for the permission,

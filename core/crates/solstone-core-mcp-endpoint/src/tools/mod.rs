@@ -90,6 +90,7 @@ pub(crate) enum ToolError {
     FileUnreadable,
     AuditUnavailable,
     ReferenceNotFound,
+    UseGetTranscript,
     SourceArguments,
     ActivityDayArguments,
     TranscriptTimeArguments,
@@ -109,7 +110,8 @@ impl ToolError {
             Self::FileUnreadable => "file_unreadable",
             Self::AuditUnavailable => "audit_unavailable",
             Self::ReferenceNotFound => "not_found",
-            Self::SourceArguments
+            Self::UseGetTranscript
+            | Self::SourceArguments
             | Self::ActivityDayArguments
             | Self::TranscriptTimeArguments
             | Self::WeekRangeArguments => "invalid_tool_input",
@@ -133,6 +135,9 @@ impl ToolError {
             }
             Self::ReferenceNotFound => {
                 "the reference or cursor did not resolve to anything this connection may read; pass one unchanged from a fresh result"
+            }
+            Self::UseGetTranscript => {
+                "this reference is a segment or span from list_transcripts; pass it to get_transcript instead of fetch"
             }
             Self::SourceArguments => {
                 "source needs a day and can't be combined with facet, and entry_kind needs a body source"

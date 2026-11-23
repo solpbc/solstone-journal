@@ -105,6 +105,25 @@ pub(crate) fn segment_name(
     ))
 }
 
+/// Whether a name has the syntax of a segment reference
+/// (`<day>/<segment key>/<source code>`). Nothing here checks the journal.
+pub(crate) fn is_segment_name_shape(value: &str) -> bool {
+    let mut parts = value.split('/');
+    let (Some(day), Some(key), Some(code), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return false;
+    };
+    is_day_key(day)
+        && is_name_part(key)
+        && solstone_core_format::segment::segment_key(key).is_some_and(|prefix| {
+            key.strip_prefix(&prefix)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('_'))
+        })
+        && code.len() == CODE_CHARS
+        && code.bytes().all(|byte| CODE_ALPHABET.contains(&byte))
+}
+
 /// The segment a name asks for, found among the day's segments as the journal
 /// lists them. Two sources sharing the code is refused, never settled by
 /// picking one.
@@ -396,6 +415,33 @@ mod tests {
             format!("{name}/audio.jsonl"),
         ] {
             assert!(resolve_segment(root, &value).is_none(), "{value}");
+        }
+    }
+
+    #[test]
+    fn segment_name_shape_distinguishes_segment_and_activity_syntax() {
+        for valid in [
+            "20261109/090000_300/abcdef",
+            "20261109/130500_0/a23456",
+            "20261109/000000_86400/zzzzz7",
+            "20261109/090000_300_2/abcdef",
+        ] {
+            assert!(is_segment_name_shape(valid), "{valid}");
+        }
+        for invalid in [
+            "20261109/work/act_01",
+            "20261109/work/abcdef",
+            "20261109/090000_300/abcde",
+            "20261109/090000_300/abcdefg",
+            "20261109/090000_300/abcde0",
+            "20261109/090000_300/abcde1",
+            "20261109/090000_300/ABCDEF",
+            "20261109/foo-090000_300/abcdef",
+            "notaday/090000_300/abcdef",
+            "20261109/090000_300/abcdef/extra",
+            "person@work",
+        ] {
+            assert!(!is_segment_name_shape(invalid), "{invalid}");
         }
     }
 }
