@@ -2334,6 +2334,172 @@ async function runTests(manifestDir) {
     assert.ok(env.nextPending('/init/api/state'));
     assert.strictEqual(env.allRequests.some(r => r.url === '/init/api/recovery/retry'), false);
   }
+  // Loading init.html's real head scripts must include the window catalog before api.js and
+  // error-handler.js so an API error on decide-later finalize surfaces the server error rather
+  // than throwing TypeError on undefined window.JournalI18n.
+  {
+    const scriptSources = [];
+    const scriptTagPattern = /<script\s+[^>]*src="([^"]+)"[^>]*>\s*<\/script>/g;
+    let tagMatch;
+    while ((tagMatch = scriptTagPattern.exec(markup)) !== null) {
+      scriptSources.push(tagMatch[1]);
+    }
+    assert.ok(scriptSources.includes('/static/api.js'));
+    assert.ok(scriptSources.includes('/static/error-handler.js'));
+
+    const domListeners = {};
+    const windowListeners = {};
+    const doc = {
+      title: '',
+      readyState: 'loading',
+      activeElement: null,
+      documentElement: { lang: 'en' },
+      body: new Element('', {}, 'body', null),
+      querySelectorAll(sel) { return root.querySelectorAll(sel); },
+      querySelector(sel) { return root.querySelector(sel); },
+      getElementById(id) { return root.querySelector('#' + id); },
+      createElement(tag) { return new Element('', {}, tag, doc); },
+      addEventListener(name, fn) { (domListeners[name] ||= []).push(fn); }
+    };
+    const root = parseHTML(markup, doc);
+    doc.body = root.querySelector('body') || doc.body;
+
+    let finalizeCalls = 0;
+    const makeResponse = (status, body, headers = {}) => {
+      const bodyText = typeof body === 'string' ? body : JSON.stringify(body);
+      return {
+        ok: status >= 200 && status < 300,
+        status,
+        statusText: status === 200 ? 'OK' : 'Internal Server Error',
+        url: 'http://127.0.0.1:42791/init/api/action',
+        redirected: false,
+        headers: new globalThis.Headers(headers),
+        body: null,
+        async text() { return bodyText; },
+        async json() { return JSON.parse(bodyText); }
+      };
+    };
+
+    const loggedErrors = [];
+    const sandbox = {
+      document: doc,
+      location: {
+        href: 'http://127.0.0.1:42791/init',
+        origin: 'http://127.0.0.1:42791',
+        pathname: '/init',
+        hash: '',
+        assign(u) { this.href = u; },
+        reload() {}
+      },
+      navigator: { userAgent: '' },
+      addEventListener(name, fn) { (windowListeners[name] ||= []).push(fn); },
+      removeEventListener() {},
+      Headers: globalThis.Headers,
+      URL: globalThis.URL,
+      AbortController: globalThis.AbortController,
+      DOMException: globalThis.DOMException,
+      setTimeout() { return 1; },
+      clearTimeout() {},
+      setInterval() { return 1; },
+      clearInterval() {},
+      console: {
+        log() {},
+        info() {},
+        warn() {},
+        debug() {},
+        error(...args) { loggedErrors.push(args); }
+      },
+      async fetch(url, opts = {}) {
+        if (url === '/init/api/state') {
+          return makeResponse(200, {
+            ...defaultState(),
+            mark: { state: 'locked', proposal_id: 'mark-1', render: makeMark() },
+            thinking: { choice: null, saved: false, capability: 'ok', download_bytes: null },
+            downloads: { speech: { state: 'complete' }, thinking: { state: 'idle' } },
+            remaining_required_steps: ['thinking']
+          });
+        }
+        if (url === '/init/api/local-capability') {
+          return makeResponse(200, { overall: 'ok', checks: [] });
+        }
+        if (url === '/init/api/action') {
+          const body = JSON.parse(opts.body);
+          if (body.action === 'save_thinking') {
+            assert.strictEqual(body.choice, 'later');
+            return makeResponse(200, {
+              ...defaultState(),
+              mark: { state: 'locked', proposal_id: 'mark-1', render: makeMark() },
+              thinking: { choice: 'later', saved: true, capability: 'ok', download_bytes: null },
+              downloads: { speech: { state: 'complete' }, thinking: { state: 'idle' } },
+              remaining_required_steps: []
+            });
+          }
+          if (body.action === 'finalize') {
+            finalizeCalls += 1;
+            if (finalizeCalls === 1) {
+              return makeResponse(500, {
+                reason_code: 'convey_operation_failed',
+                error: 'Setup was saved, but secure network access did not start.',
+                detail: 'the paired-device door did not start'
+              });
+            }
+            return makeResponse(500, '');
+          }
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      }
+    };
+    sandbox.window = sandbox;
+    sandbox.self = sandbox;
+    sandbox.top = sandbox;
+    const context = vm.createContext(sandbox);
+
+    const resolveStaticScript = (src) => {
+      assert.ok(src.startsWith('/static/'), `unexpected init.html script src: ${src}`);
+      if (src === '/static/journal-catalog.js') {
+        return path.resolve(manifestDir, '../../../i18n/generated/window/classic/journal-window/api.js');
+      }
+      return path.resolve(manifestDir, '../solstone-core-convey-shell/assets/static', src.slice('/static/'.length));
+    };
+
+    for (const src of scriptSources) {
+      const filePath = resolveStaticScript(src);
+      vm.runInContext(fs.readFileSync(filePath, 'utf8'), context, { filename: src });
+    }
+    vm.runInContext(scriptCode, context, { filename: '/init' });
+
+    const flush = async () => {
+      for (let i = 0; i < 10; i += 1) await settle();
+    };
+
+    doc.readyState = 'interactive';
+    for (const fn of domListeners['DOMContentLoaded'] || []) fn();
+    await flush();
+
+    doc.getElementById('thinking-change').click();
+    doc.querySelector('input[value="later"]').click();
+    doc.getElementById('thinking-continue').click();
+    await flush();
+
+    const thinkingError = doc.getElementById('thinking-error');
+    assert.strictEqual(thinkingError.hidden, false);
+    assert.strictEqual(thinkingError.textContent, 'the paired-device door did not start');
+
+    // Empty-body HTTP 500 exercises JournalI18n fallback formatting inside api.js.
+    doc.getElementById('thinking-continue').click();
+    await flush();
+    assert.strictEqual(finalizeCalls, 2);
+    assert.strictEqual(thinkingError.hidden, false);
+    assert.ok(thinkingError.textContent.includes('500'), `expected HTTP 500 fallback, got: ${thinkingError.textContent}`);
+    assert.strictEqual(thinkingError.textContent.includes('render'), false);
+
+    // error-handler.js on /init also uses the window catalog when capturing JS errors.
+    sandbox.logError(new Error('setup boom'), { kind: 'test' });
+    assert.ok(Array.isArray(sandbox.convey?.pendingDiagnostics) && sandbox.convey.pendingDiagnostics.length >= 1);
+    const lastDiagnostic = sandbox.convey.pendingDiagnostics.at(-1);
+    assert.strictEqual(typeof lastDiagnostic.summary, 'string');
+    assert.ok(lastDiagnostic.summary.length > 0);
+  }
   console.log(`DOM ASSERTIONS: ${passedCases}/${executedCases} passed`);
 }
 

@@ -394,3 +394,110 @@ fn no_shell_script_calls_render_markdown() {
         .collect();
     assert!(callers.is_empty(), "{callers:?}");
 }
+
+/// Any standalone HTML page that loads shared scripts using `JournalI18n` or
+/// `CONVEY_COPY` (such as `api.js` or `error-handler.js`) must load
+/// `/static/journal-catalog.js` and `/static/convey_copy.js` first, in that
+/// order, so error handling and shared UI formatting never dereference an
+/// undefined catalog.
+#[test]
+fn every_standalone_page_loads_the_window_catalog_before_scripts_that_use_it() {
+    const BUNDLE: &str = "/static/journal-catalog.js";
+    const RUNTIME: &str = "/static/convey_copy.js";
+    let script_tag = Regex::new(r#"(?i)<script\b[^>]*\bsrc=(?:"([^"]+)"|'([^']+)')"#).unwrap();
+
+    let uses_catalog =
+        |source: &str| source.contains("JournalI18n") || source.contains("CONVEY_COPY");
+
+    let mut violations = Vec::new();
+    let mut checked_pages = 0usize;
+    for asset in INVENTORY {
+        if !asset.content_type.starts_with("text/html")
+            || asset.path.starts_with("/static/tests/")
+            || (asset.path.starts_with("/app/") && asset.path.ends_with("/workspace"))
+        {
+            continue;
+        }
+        checked_pages += 1;
+        let html = source_of(asset.path);
+        let mut saw_bundle = false;
+        let mut saw_runtime = false;
+        for capture in script_tag.captures_iter(html) {
+            let raw_src = capture
+                .get(1)
+                .or_else(|| capture.get(2))
+                .map(|m| m.as_str())
+                .unwrap_or_default();
+            let Some(script_path) = resolve_reference(asset.path, raw_src) else {
+                continue;
+            };
+            if script_path == BUNDLE {
+                saw_bundle = true;
+                continue;
+            }
+            if script_path == RUNTIME {
+                if !saw_bundle {
+                    violations.push(format!("{} loads {RUNTIME} before {BUNDLE}", asset.path));
+                }
+                saw_runtime = true;
+                continue;
+            }
+            let Some(record) = assets::record(&script_path) else {
+                violations.push(format!(
+                    "{} references unknown script {script_path}",
+                    asset.path
+                ));
+                continue;
+            };
+            if uses_catalog(source_of(record.path)) && !(saw_bundle && saw_runtime) {
+                violations.push(format!(
+                    "{} loads {} before {BUNDLE} and {RUNTIME}",
+                    asset.path, record.path
+                ));
+            }
+        }
+        if uses_catalog(html) && !(saw_bundle && saw_runtime) {
+            violations.push(format!(
+                "{} uses the window catalog inline without loading {BUNDLE} and {RUNTIME}",
+                asset.path
+            ));
+        }
+    }
+
+    // The shell boot bundle must preserve the same ordering after concatenation.
+    let mut boot_saw_bundle = false;
+    let mut boot_saw_runtime = false;
+    for (bundle, file) in assets::shell_bundle_segments() {
+        if *bundle != "/static/shell.js" {
+            continue;
+        }
+        if *file == BUNDLE {
+            boot_saw_bundle = true;
+            continue;
+        }
+        if *file == RUNTIME {
+            if !boot_saw_bundle {
+                violations.push(format!(
+                    "/static/shell.js bundles {RUNTIME} before {BUNDLE}"
+                ));
+            }
+            boot_saw_runtime = true;
+            continue;
+        }
+        if uses_catalog(source_of(file)) && !(boot_saw_bundle && boot_saw_runtime) {
+            violations.push(format!(
+                "/static/shell.js bundles {file} before {BUNDLE} and {RUNTIME}"
+            ));
+        }
+    }
+
+    assert!(
+        checked_pages >= 2,
+        "expected at least /init and /static/shell.html, found {checked_pages}"
+    );
+    assert!(
+        violations.is_empty(),
+        "window catalog script-order violations:\n{}",
+        violations.join("\n")
+    );
+}

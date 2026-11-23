@@ -58,6 +58,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on the settings page on an iphone, choosing any section but facets or support from the section menu now leaves focus on the menu. before, focus was dropped as the menu closed.
 - on an iphone, choosing from a menu now leaves focus on that menu in more places: in settings, the pronouns, transcription backend and parakeet.cpp device menus; the level menu in health's service logs; the source menu in import; the "call it" menu on a map place; and the type menu when you edit an entity. before, focus was dropped as the menu closed.
 - on an iphone, when a priority change on the settings page can't be saved, its menu no longer opens again by itself.
+- during first-run setup, if your journal returned an error, the setup page could show a script error instead of the actual message. it now shows the error message.
 
 ### Removed
 
