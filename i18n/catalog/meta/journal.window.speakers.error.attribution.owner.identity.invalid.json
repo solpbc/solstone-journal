@@ -1,0 +1,16 @@
+{
+  "description": "Speaker attribution refusal when configured owner identity needs attention.",
+  "context": "Journal window. Speaker attribution refusal when configured owner identity needs attention.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc1a358af33e26812e77062986091ab22eaa089fa5108a247c1071a975ede0b6",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

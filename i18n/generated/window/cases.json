@@ -234315,6 +234315,234 @@
     {
       "bundle": "journal-window",
       "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.cli.owner.candidate.guidance\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e6f776e65722e63616e6469646174652e67756964616e6365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e6f776e65722e63616e6469646174652e67756964616e6365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.cli.owner.candidate.guidance",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e6f776e65722e63616e6469646174652e67756964616e6365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Confirm this candidate if it is your voice.",
+      "message_id": "journal.window.speakers.cli.owner.candidate.guidance",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.cli.owner.candidate.guidance\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e6f776e65722e63616e6469646174652e67756964616e6365",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "similarity",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "source_intervals",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "target_intervals",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.cli.suggest.candidate.pair\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e63616e6469646174652e70616972",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e63616e6469646174652e70616972_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.cli.suggest.candidate.pair",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e63616e6469646174652e70616972",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "similarity": "sample",
+        "source_intervals": "sample",
+        "target_intervals": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Speaker candidate pair: similarity ⁨sample⁩ (⁨sample⁩ vs ⁨sample⁩ intervals)",
+      "message_id": "journal.window.speakers.cli.suggest.candidate.pair",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.cli.suggest.candidate.pair\", [[\"similarity\", \"sample\"], [\"source_intervals\", \"sample\"], [\"target_intervals\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e63616e6469646174652e70616972",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.cli.suggest.empty\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e656d707479",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e656d707479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.cli.suggest.empty",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e656d707479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "No speaker curation suggestions found.",
+      "message_id": "journal.window.speakers.cli.suggest.empty",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.cli.suggest.empty\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e656d707479",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "entity_id",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "meetings",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "meetings_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "days",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.cli.suggest.import.linkable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e696d706f72742e6c696e6b61626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e696d706f72742e6c696e6b61626c65_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.cli.suggest.import.linkable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e696d706f72742e6c696e6b61626c65",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "days": "sample",
+        "entity_id": "sample",
+        "meetings": "sample",
+        "meetings_quantity": 0,
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Import linkable: ⁨sample⁩ (⁨sample⁩) — mentioned in ⁨sample⁩ meetings\n  Days: ⁨sample⁩",
+      "message_id": "journal.window.speakers.cli.suggest.import.linkable",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.cli.suggest.import.linkable\", [[\"days\", \"sample\"], [\"entity_id\", \"sample\"], [\"meetings\", \"sample\"], [\"meetings_quantity\", 0], [\"name\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e696d706f72742e6c696e6b61626c65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "segment_key",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "medium",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.cli.suggest.low.confidence\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e6c6f772e636f6e666964656e6365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e6c6f772e636f6e666964656e6365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.cli.suggest.low.confidence",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e6c6f772e636f6e666964656e6365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "day": "sample",
+        "medium": "sample",
+        "segment_key": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Low confidence review: ⁨sample⁩/⁨sample⁩ — ⁨sample⁩ of ⁨sample⁩ labels are medium/unresolved",
+      "message_id": "journal.window.speakers.cli.suggest.low.confidence",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.cli.suggest.low.confidence\", [[\"day\", \"sample\"], [\"medium\", \"sample\"], [\"segment_key\", \"sample\"], [\"total\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e6c6f772e636f6e666964656e6365",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
         "arguments": [
           {
             "name": "confidence",
@@ -238624,6 +238852,66 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.invalid.embeddings\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e696e76616c69642e656d62656464696e6773",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e696e76616c69642e656d62656464696e6773_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.invalid.embeddings",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e696e76616c69642e656d62656464696e6773",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "some voice samples were skipped because they weren't usable.",
+      "message_id": "journal.window.speakers.discovery.invalid.embeddings",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.invalid.embeddings\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e696e76616c69642e656d62656464696e6773",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.labels.busy\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6c6162656c732e62757379",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6c6162656c732e62757379_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.labels.busy",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6c6162656c732e62757379",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "speaker labels couldn't be updated because another update is running.",
+      "message_id": "journal.window.speakers.discovery.labels.busy",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.labels.busy\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6c6162656c732e62757379",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.speakers.discovery.not.ran\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6e6f742e72616e",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6e6f742e72616e_plural",
         "gettext_unsigned_quantity": null,
@@ -238644,6 +238932,66 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.not.ran\", [])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6e6f742e72616e",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.owner.identity.invalid\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e6964656e746974792e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e6964656e746974792e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.owner.identity.invalid",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e6964656e746974792e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "the search for new voices couldn't start because your configured owner identity needs attention.",
+      "message_id": "journal.window.speakers.discovery.owner.identity.invalid",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.owner.identity.invalid\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e6964656e746974792e696e76616c6964",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.owner.voice.unavailable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e766f6963652e756e617661696c61626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e766f6963652e756e617661696c61626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.owner.voice.unavailable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e766f6963652e756e617661696c61626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your voice needs to be set up before the search for new voices can start.",
+      "message_id": "journal.window.speakers.discovery.owner.voice.unavailable",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.owner.voice.unavailable\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e766f6963652e756e617661696c61626c65",
       "target": "classic"
     },
     {
@@ -238830,6 +239178,366 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.voice.changed\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6368616e676564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6368616e676564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.voice.changed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6368616e676564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that voice has changed since this page loaded. try refreshing the page.",
+      "message_id": "journal.window.speakers.discovery.voice.changed",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.voice.changed\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6368616e676564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.voice.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.voice.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that voice couldn't be found. try refreshing the page.",
+      "message_id": "journal.window.speakers.discovery.voice.not.found",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.voice.not.found\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6e6f742e666f756e64",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.voice.owner.unavailable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6f776e65722e756e617661696c61626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6f776e65722e756e617661696c61626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.voice.owner.unavailable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6f776e65722e756e617661696c61626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your own voice needs to be set up first, so it isn't named as someone else.",
+      "message_id": "journal.window.speakers.discovery.voice.owner.unavailable",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.voice.owner.unavailable\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6f776e65722e756e617661696c61626c65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.voice.principal\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e7072696e636970616c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e7072696e636970616c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.voice.principal",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e7072696e636970616c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your own voice is set up separately, not here.",
+      "message_id": "journal.window.speakers.discovery.voice.principal",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.voice.principal\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e7072696e636970616c",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.voiceprint.busy\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963657072696e742e62757379",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963657072696e742e62757379_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.voiceprint.busy",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963657072696e742e62757379",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that voice couldn't be updated because another update is running.",
+      "message_id": "journal.window.speakers.discovery.voiceprint.busy",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.voiceprint.busy\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963657072696e742e62757379",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.attribution.owner.identity.invalid\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e6f776e65722e6964656e746974792e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e6f776e65722e6964656e746974792e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.attribution.owner.identity.invalid",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e6f776e65722e6964656e746974792e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker attribution couldn't be changed because your configured owner identity needs attention.",
+      "message_id": "journal.window.speakers.error.attribution.owner.identity.invalid",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.attribution.owner.identity.invalid\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e6f776e65722e6964656e746974792e696e76616c6964",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.attribution.state.invalid\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e73746174652e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e73746174652e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.attribution.state.invalid",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e73746174652e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker attribution couldn't be changed.",
+      "message_id": "journal.window.speakers.error.attribution.state.invalid",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.attribution.state.invalid\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e73746174652e696e76616c6964",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.change.conflict\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e636f6e666c696374",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e636f6e666c696374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.change.conflict",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e636f6e666c696374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker change can't run right now.",
+      "message_id": "journal.window.speakers.error.change.conflict",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.change.conflict\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e636f6e666c696374",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.change.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.change.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker change couldn't be found.",
+      "message_id": "journal.window.speakers.error.change.not.found",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.change.not.found\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6e6f742e666f756e64",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.change.one.way\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6f6e652e776179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6f6e652e776179_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.change.one.way",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6f6e652e776179",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "naming a voice can't be undone.",
+      "message_id": "journal.window.speakers.error.change.one.way",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.change.one.way\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6f6e652e776179",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.change.recoverable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265636f76657261626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265636f76657261626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.change.recoverable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265636f76657261626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker change didn't finish. try again in a moment.",
+      "message_id": "journal.window.speakers.error.change.recoverable",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.change.recoverable\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265636f76657261626c65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.change.repair.required\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265706169722e7265717569726564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265706169722e7265717569726564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.change.repair.required",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265706169722e7265717569726564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker change stopped partway and can't finish yet.",
+      "message_id": "journal.window.speakers.error.change.repair.required",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.change.repair.required\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265706169722e7265717569726564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.speakers.error.configured.owner.identity.is.not.admitted\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e636f6e666967757265642e6f776e65722e6964656e746974792e69732e6e6f742e61646d6974746564",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e636f6e666967757265642e6f776e65722e6964656e746974792e69732e6e6f742e61646d6974746564_plural",
         "gettext_unsigned_quantity": null,
@@ -238880,6 +239588,36 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.embedding.too.similar.to.owner.voice.cannot.save\", [])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e656d62656464696e672e746f6f2e73696d696c61722e746f2e6f776e65722e766f6963652e63616e6e6f742e73617665",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.files.busy\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e66696c65732e62757379",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e66696c65732e62757379_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.files.busy",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e66696c65732e62757379",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "speaker files are busy. try again in a moment.",
+      "message_id": "journal.window.speakers.error.files.busy",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.files.busy\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e66696c65732e62757379",
       "target": "classic"
     },
     {
@@ -239100,6 +239838,96 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.owner.confirm.identity.invalid\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e6964656e746974792e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e6964656e746974792e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.owner.confirm.identity.invalid",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e6964656e746974792e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that owner voice couldn't be confirmed because your configured owner identity needs attention.",
+      "message_id": "journal.window.speakers.error.owner.confirm.identity.invalid",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.owner.confirm.identity.invalid\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e6964656e746974792e696e76616c6964",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.owner.confirm.review.required\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e7265766965772e7265717569726564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e7265766965772e7265717569726564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.owner.confirm.review.required",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e7265766965772e7265717569726564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Confirm this candidate in the Speakers browser page.",
+      "message_id": "journal.window.speakers.error.owner.confirm.review.required",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.owner.confirm.review.required\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e7265766965772e7265717569726564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.sentence.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e73656e74656e63652e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e73656e74656e63652e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.sentence.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e73656e74656e63652e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that sentence couldn't be found.",
+      "message_id": "journal.window.speakers.error.sentence.not.found",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.sentence.not.found\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e73656e74656e63652e6e6f742e666f756e64",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.speakers.error.speaker.quality.couldn.t.be.loaded.because.your.configured.owner.identity\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e737065616b65722e7175616c6974792e636f756c646e2e742e62652e6c6f616465642e626563617573652e796f75722e636f6e666967757265642e6f776e65722e6964656e74697479",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e737065616b65722e7175616c6974792e636f756c646e2e742e62652e6c6f616465642e626563617573652e796f75722e636f6e666967757265642e6f776e65722e6964656e74697479_plural",
         "gettext_unsigned_quantity": null,
@@ -239120,6 +239948,96 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.speaker.quality.couldn.t.be.loaded.because.your.configured.owner.identity\", [])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e737065616b65722e7175616c6974792e636f756c646e2e742e62652e6c6f616465642e626563617573652e796f75722e636f6e666967757265642e6f776e65722e6964656e74697479",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.status.owner.identity.invalid\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7374617475732e6f776e65722e6964656e746974792e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7374617475732e6f776e65722e6964656e746974792e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.status.owner.identity.invalid",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7374617475732e6f776e65722e6964656e746974792e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "speaker status couldn't be loaded because your configured owner identity needs attention.",
+      "message_id": "journal.window.speakers.error.status.owner.identity.invalid",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.status.owner.identity.invalid\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7374617475732e6f776e65722e6964656e746974792e696e76616c6964",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.task.conflict\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e636f6e666c696374",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e636f6e666c696374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.task.conflict",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e636f6e666c696374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker task is already running with different options.",
+      "message_id": "journal.window.speakers.error.task.conflict",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.task.conflict\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e636f6e666c696374",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.task.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.task.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker task couldn't be found.",
+      "message_id": "journal.window.speakers.error.task.not.found",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.task.not.found\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e6e6f742e666f756e64",
       "target": "classic"
     },
     {
@@ -239330,6 +240248,66 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.voice.sentence.id.must.be.an.integer\", [])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e766f6963652e73656e74656e63652e69642e6d7573742e62652e616e2e696e7465676572",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.wipe.busy\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e62757379",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e62757379_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.wipe.busy",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e62757379",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your journal is busy with recordings right now; try again in a moment.",
+      "message_id": "journal.window.speakers.error.wipe.busy",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.wipe.busy\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e62757379",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.wipe.held\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e68656c64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e68656c64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.wipe.held",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e68656c64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your voices couldn't be wiped right now, so nothing was wiped.",
+      "message_id": "journal.window.speakers.error.wipe.held",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.wipe.held\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e68656c64",
       "target": "classic"
     },
     {
@@ -239946,6 +240924,66 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.media.error.file.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e66696c652e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e66696c652e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.media.error.file.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e66696c652e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that file isn't available.",
+      "message_id": "journal.window.speakers.media.error.file.not.found",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.media.error.file.not.found\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e66696c652e6e6f742e666f756e64",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.media.error.invalid.path\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e696e76616c69642e70617468",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e696e76616c69642e70617468_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.media.error.invalid.path",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e696e76616c69642e70617468",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that path couldn't be used.",
+      "message_id": "journal.window.speakers.media.error.invalid.path",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.media.error.invalid.path\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e696e76616c69642e70617468",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.speakers.notice.couldn.t.load.voice.samples\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6e6f746963652e636f756c646e2e742e6c6f61642e766f6963652e73616d706c6573",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6e6f746963652e636f756c646e2e742e6c6f61642e766f6963652e73616d706c6573_plural",
         "gettext_unsigned_quantity": null,
@@ -240064,6 +241102,626 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.cooldown.until.day\", [[\"retry_day\", \"sample\"]])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e636f6f6c646f776e2e756e74696c2e646179",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.entity.store.unreadable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e656e746974792e73746f72652e756e7265616461626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e656e746974792e73746f72652e756e7265616461626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.entity.store.unreadable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e656e746974792e73746f72652e756e7265616461626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "the journal's entities can't be read: ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.entity.store.unreadable",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.entity.store.unreadable\", [[\"detail\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e656e746974792e73746f72652e756e7265616461626c65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.file.unreadable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e66696c652e756e7265616461626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e66696c652e756e7265616461626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.file.unreadable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e66696c652e756e7265616461626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "the segment's owner line labels can't be read: ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.file.unreadable",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.file.unreadable\", [[\"detail\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e66696c652e756e7265616461626c65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "sentence_id",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "audio_source",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "stored",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.line.id.mismatch\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e69642e6d69736d61746368",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e69642e6d69736d61746368_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.line.id.mismatch",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e69642e6d69736d61746368",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "audio_source": "sample",
+        "sentence_id": "sample",
+        "stored": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "line ⁨sample⁩ of ⁨sample⁩ is stored with sentence id ⁨sample⁩, not its line number",
+      "message_id": "journal.window.speakers.owner.line.labels.error.line.id.mismatch",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.line.id.mismatch\", [[\"audio_source\", \"sample\"], [\"sentence_id\", \"sample\"], [\"stored\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e69642e6d69736d61746368",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "sentence_id",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "audio_source",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.line.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.line.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "audio_source": "sample",
+        "sentence_id": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "line ⁨sample⁩ isn't a line of ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.line.not.found",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.line.not.found\", [[\"audio_source\", \"sample\"], [\"sentence_id\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e6e6f742e666f756e64",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.lock\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c6f636b",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c6f636b_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.lock",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c6f636b",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "owner line labels are busy: ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.lock",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.lock\", [[\"detail\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c6f636b",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.merge.recovery.pending\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6d657267652e7265636f766572792e70656e64696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6d657267652e7265636f766572792e70656e64696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.merge.recovery.pending",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6d657267652e7265636f766572792e70656e64696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "an interrupted entity merge is waiting to be recovered",
+      "message_id": "journal.window.speakers.owner.line.labels.error.merge.recovery.pending",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.merge.recovery.pending\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6d657267652e7265636f766572792e70656e64696e67",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.no.lines\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f2e6c696e6573",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f2e6c696e6573_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.no.lines",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f2e6c696e6573",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "no lines were named",
+      "message_id": "journal.window.speakers.owner.line.labels.error.no.lines",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.no.lines\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f2e6c696e6573",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "id",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.not.a.person\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f742e612e706572736f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f742e612e706572736f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.not.a.person",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f742e612e706572736f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "id": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ isn't a person",
+      "message_id": "journal.window.speakers.owner.line.labels.error.not.a.person",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.not.a.person\", [[\"id\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f742e612e706572736f6e",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.owner.not.admitted\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6f776e65722e6e6f742e61646d6974746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6f776e65722e6e6f742e61646d6974746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.owner.not.admitted",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6f776e65722e6e6f742e61646d6974746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "the journal's owner identity isn't settled",
+      "message_id": "journal.window.speakers.owner.line.labels.error.owner.not.admitted",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.owner.not.admitted\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6f776e65722e6e6f742e61646d6974746564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "id",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.person.hidden\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e68696464656e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e68696464656e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.person.hidden",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e68696464656e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "id": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "person ⁨sample⁩ is hidden",
+      "message_id": "journal.window.speakers.owner.line.labels.error.person.hidden",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.person.hidden\", [[\"id\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e68696464656e",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "id",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "successor",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.person.merged\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6d6572676564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6d6572676564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.person.merged",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6d6572676564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "id": "sample",
+        "successor": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ was merged into ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.person.merged",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.person.merged\", [[\"id\", \"sample\"], [\"successor\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6d6572676564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "id",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.person.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.person.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "id": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "person ⁨sample⁩ wasn't found",
+      "message_id": "journal.window.speakers.owner.line.labels.error.person.not.found",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.person.not.found\", [[\"id\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6e6f742e666f756e64",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.segment.unavailable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7365676d656e742e756e617661696c61626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7365676d656e742e756e617661696c61626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.segment.unavailable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7365676d656e742e756e617661696c61626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "the segment can't take owner line labels: ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.segment.unavailable",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.segment.unavailable\", [[\"detail\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7365676d656e742e756e617661696c61626c65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "labelled",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "transcript_page",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.source.unsupported\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e736f757263652e756e737570706f72746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e736f757263652e756e737570706f72746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.source.unsupported",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e736f757263652e756e737570706f72746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "labelled": "sample",
+        "transcript_page": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "the segment's transcript views don't agree on one audio source (labels: ⁨sample⁩, transcript page: ⁨sample⁩)",
+      "message_id": "journal.window.speakers.owner.line.labels.error.source.unsupported",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.source.unsupported\", [[\"labelled\", \"sample\"], [\"transcript_page\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e736f757263652e756e737570706f72746564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.write\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7772697465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7772697465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.write",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7772697465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "owner line labels couldn't be written: ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.write",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.write\", [[\"detail\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7772697465",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "requested",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "labelled",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.wrong.source\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e77726f6e672e736f75726365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e77726f6e672e736f75726365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.wrong.source",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e77726f6e672e736f75726365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "labelled": "sample",
+        "requested": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "lines of ⁨sample⁩ can't be labelled; the segment's labelled source is ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.wrong.source",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.wrong.source\", [[\"labelled\", \"sample\"], [\"requested\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e77726f6e672e736f75726365",
       "target": "classic"
     },
     {
@@ -246624,6 +248282,126 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.window.state.text.you.identified\", [])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e77696e646f772e73746174652e746578742e796f752e6964656e746966696564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.wipe.error.not.utf8\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e6e6f742e75746638",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e6e6f742e75746638_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.wipe.error.not.utf8",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e6e6f742e75746638",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "a name in your journal can't be read: ⁨sample⁩",
+      "message_id": "journal.window.speakers.wipe.error.not.utf8",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.wipe.error.not.utf8\", [[\"path\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e6e6f742e75746638",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.wipe.error.path\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e70617468",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e70617468_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.wipe.error.path",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e70617468",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "artifact path failed: ⁨sample⁩",
+      "message_id": "journal.window.speakers.wipe.error.path",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.wipe.error.path\", [[\"error\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e70617468",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "source",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.wipe.error.read\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e72656164",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e72656164_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.wipe.error.read",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e72656164",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "path": "sample",
+        "source": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "artifact directory read failed at ⁨sample⁩: ⁨sample⁩",
+      "message_id": "journal.window.speakers.wipe.error.read",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.wipe.error.read\", [[\"path\", \"sample\"], [\"source\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e72656164",
       "target": "classic"
     },
     {
@@ -533363,6 +535141,234 @@
     {
       "bundle": "journal-window",
       "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.cli.owner.candidate.guidance\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e6f776e65722e63616e6469646174652e67756964616e6365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e6f776e65722e63616e6469646174652e67756964616e6365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.cli.owner.candidate.guidance",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e6f776e65722e63616e6469646174652e67756964616e6365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Confirm this candidate if it is your voice.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Confirm this candidate if it is your voice.",
+      "message_id": "journal.window.speakers.cli.owner.candidate.guidance",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.cli.owner.candidate.guidance\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e6f776e65722e63616e6469646174652e67756964616e6365",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "similarity",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "source_intervals",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "target_intervals",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.cli.suggest.candidate.pair\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e63616e6469646174652e70616972",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e63616e6469646174652e70616972_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.cli.suggest.candidate.pair",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e63616e6469646174652e70616972",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Speaker candidate pair: similarity ⁨sample⁩ (⁨sample⁩ vs ⁨sample⁩ intervals)",
+      "folder": null,
+      "inputs": {
+        "similarity": "sample",
+        "source_intervals": "sample",
+        "target_intervals": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Speaker candidate pair: similarity ⁨sample⁩ (⁨sample⁩ vs ⁨sample⁩ intervals)",
+      "message_id": "journal.window.speakers.cli.suggest.candidate.pair",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.cli.suggest.candidate.pair\", &[(\"similarity\", Value::String(\"sample\")), (\"source_intervals\", Value::String(\"sample\")), (\"target_intervals\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e63616e6469646174652e70616972",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.cli.suggest.empty\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e656d707479",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e656d707479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.cli.suggest.empty",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e656d707479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "No speaker curation suggestions found.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "No speaker curation suggestions found.",
+      "message_id": "journal.window.speakers.cli.suggest.empty",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.cli.suggest.empty\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e656d707479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "entity_id",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "meetings",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "meetings_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "days",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.cli.suggest.import.linkable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e696d706f72742e6c696e6b61626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e696d706f72742e6c696e6b61626c65_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.cli.suggest.import.linkable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e696d706f72742e6c696e6b61626c65",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Import linkable: ⁨sample⁩ (⁨sample⁩) — mentioned in ⁨sample⁩ meetings\n  Days: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "days": "sample",
+        "entity_id": "sample",
+        "meetings": "sample",
+        "meetings_quantity": 0,
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Import linkable: ⁨sample⁩ (⁨sample⁩) — mentioned in ⁨sample⁩ meetings\n  Days: ⁨sample⁩",
+      "message_id": "journal.window.speakers.cli.suggest.import.linkable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.cli.suggest.import.linkable\", &[(\"days\", Value::String(\"sample\")), (\"entity_id\", Value::String(\"sample\")), (\"meetings\", Value::String(\"sample\")), (\"meetings_quantity\", Value::Cardinal(0)), (\"name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e696d706f72742e6c696e6b61626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "segment_key",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "medium",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.cli.suggest.low.confidence\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e6c6f772e636f6e666964656e6365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e6c6f772e636f6e666964656e6365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.cli.suggest.low.confidence",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e6c6f772e636f6e666964656e6365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Low confidence review: ⁨sample⁩/⁨sample⁩ — ⁨sample⁩ of ⁨sample⁩ labels are medium/unresolved",
+      "folder": null,
+      "inputs": {
+        "day": "sample",
+        "medium": "sample",
+        "segment_key": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Low confidence review: ⁨sample⁩/⁨sample⁩ — ⁨sample⁩ of ⁨sample⁩ labels are medium/unresolved",
+      "message_id": "journal.window.speakers.cli.suggest.low.confidence",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.cli.suggest.low.confidence\", &[(\"day\", Value::String(\"sample\")), (\"medium\", Value::String(\"sample\")), (\"segment_key\", Value::String(\"sample\")), (\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636c692e737567676573742e6c6f772e636f6e666964656e6365",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
         "arguments": [
           {
             "name": "confidence",
@@ -537672,6 +539678,66 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.invalid.embeddings\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e696e76616c69642e656d62656464696e6773",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e696e76616c69642e656d62656464696e6773_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.invalid.embeddings",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e696e76616c69642e656d62656464696e6773",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "some voice samples were skipped because they weren't usable.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "some voice samples were skipped because they weren't usable.",
+      "message_id": "journal.window.speakers.discovery.invalid.embeddings",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.invalid.embeddings\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e696e76616c69642e656d62656464696e6773",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.labels.busy\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6c6162656c732e62757379",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6c6162656c732e62757379_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.labels.busy",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6c6162656c732e62757379",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "speaker labels couldn't be updated because another update is running.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "speaker labels couldn't be updated because another update is running.",
+      "message_id": "journal.window.speakers.discovery.labels.busy",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.labels.busy\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6c6162656c732e62757379",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.speakers.discovery.not.ran\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6e6f742e72616e",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6e6f742e72616e_plural",
         "gettext_unsigned_quantity": null,
@@ -537692,6 +539758,66 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.not.ran\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6e6f742e72616e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.owner.identity.invalid\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e6964656e746974792e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e6964656e746974792e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.owner.identity.invalid",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e6964656e746974792e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the search for new voices couldn't start because your configured owner identity needs attention.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "the search for new voices couldn't start because your configured owner identity needs attention.",
+      "message_id": "journal.window.speakers.discovery.owner.identity.invalid",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.owner.identity.invalid\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e6964656e746974792e696e76616c6964",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.owner.voice.unavailable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e766f6963652e756e617661696c61626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e766f6963652e756e617661696c61626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.owner.voice.unavailable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e766f6963652e756e617661696c61626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your voice needs to be set up before the search for new voices can start.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your voice needs to be set up before the search for new voices can start.",
+      "message_id": "journal.window.speakers.discovery.owner.voice.unavailable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.owner.voice.unavailable\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e6f776e65722e766f6963652e756e617661696c61626c65",
       "target": "rust"
     },
     {
@@ -537878,6 +540004,366 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.voice.changed\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6368616e676564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6368616e676564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.voice.changed",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6368616e676564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that voice has changed since this page loaded. try refreshing the page.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that voice has changed since this page loaded. try refreshing the page.",
+      "message_id": "journal.window.speakers.discovery.voice.changed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.voice.changed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6368616e676564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.voice.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.voice.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that voice couldn't be found. try refreshing the page.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that voice couldn't be found. try refreshing the page.",
+      "message_id": "journal.window.speakers.discovery.voice.not.found",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.voice.not.found\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6e6f742e666f756e64",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.voice.owner.unavailable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6f776e65722e756e617661696c61626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6f776e65722e756e617661696c61626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.voice.owner.unavailable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6f776e65722e756e617661696c61626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your own voice needs to be set up first, so it isn't named as someone else.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your own voice needs to be set up first, so it isn't named as someone else.",
+      "message_id": "journal.window.speakers.discovery.voice.owner.unavailable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.voice.owner.unavailable\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e6f776e65722e756e617661696c61626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.voice.principal\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e7072696e636970616c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e7072696e636970616c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.voice.principal",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e7072696e636970616c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your own voice is set up separately, not here.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your own voice is set up separately, not here.",
+      "message_id": "journal.window.speakers.discovery.voice.principal",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.voice.principal\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963652e7072696e636970616c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.discovery.voiceprint.busy\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963657072696e742e62757379",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963657072696e742e62757379_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.discovery.voiceprint.busy",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963657072696e742e62757379",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that voice couldn't be updated because another update is running.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that voice couldn't be updated because another update is running.",
+      "message_id": "journal.window.speakers.discovery.voiceprint.busy",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.discovery.voiceprint.busy\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e766f6963657072696e742e62757379",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.attribution.owner.identity.invalid\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e6f776e65722e6964656e746974792e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e6f776e65722e6964656e746974792e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.attribution.owner.identity.invalid",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e6f776e65722e6964656e746974792e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that speaker attribution couldn't be changed because your configured owner identity needs attention.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker attribution couldn't be changed because your configured owner identity needs attention.",
+      "message_id": "journal.window.speakers.error.attribution.owner.identity.invalid",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.attribution.owner.identity.invalid\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e6f776e65722e6964656e746974792e696e76616c6964",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.attribution.state.invalid\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e73746174652e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e73746174652e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.attribution.state.invalid",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e73746174652e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that speaker attribution couldn't be changed.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker attribution couldn't be changed.",
+      "message_id": "journal.window.speakers.error.attribution.state.invalid",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.attribution.state.invalid\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6174747269627574696f6e2e73746174652e696e76616c6964",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.change.conflict\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e636f6e666c696374",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e636f6e666c696374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.change.conflict",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e636f6e666c696374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that speaker change can't run right now.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker change can't run right now.",
+      "message_id": "journal.window.speakers.error.change.conflict",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.change.conflict\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e636f6e666c696374",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.change.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.change.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that speaker change couldn't be found.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker change couldn't be found.",
+      "message_id": "journal.window.speakers.error.change.not.found",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.change.not.found\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6e6f742e666f756e64",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.change.one.way\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6f6e652e776179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6f6e652e776179_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.change.one.way",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6f6e652e776179",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "naming a voice can't be undone.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "naming a voice can't be undone.",
+      "message_id": "journal.window.speakers.error.change.one.way",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.change.one.way\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e6f6e652e776179",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.change.recoverable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265636f76657261626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265636f76657261626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.change.recoverable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265636f76657261626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that speaker change didn't finish. try again in a moment.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker change didn't finish. try again in a moment.",
+      "message_id": "journal.window.speakers.error.change.recoverable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.change.recoverable\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265636f76657261626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.change.repair.required\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265706169722e7265717569726564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265706169722e7265717569726564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.change.repair.required",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265706169722e7265717569726564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that speaker change stopped partway and can't finish yet.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker change stopped partway and can't finish yet.",
+      "message_id": "journal.window.speakers.error.change.repair.required",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.change.repair.required\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6368616e67652e7265706169722e7265717569726564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.speakers.error.configured.owner.identity.is.not.admitted\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e636f6e666967757265642e6f776e65722e6964656e746974792e69732e6e6f742e61646d6974746564",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e636f6e666967757265642e6f776e65722e6964656e746974792e69732e6e6f742e61646d6974746564_plural",
         "gettext_unsigned_quantity": null,
@@ -537928,6 +540414,36 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.embedding.too.similar.to.owner.voice.cannot.save\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e656d62656464696e672e746f6f2e73696d696c61722e746f2e6f776e65722e766f6963652e63616e6e6f742e73617665",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.files.busy\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e66696c65732e62757379",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e66696c65732e62757379_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.files.busy",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e66696c65732e62757379",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "speaker files are busy. try again in a moment.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "speaker files are busy. try again in a moment.",
+      "message_id": "journal.window.speakers.error.files.busy",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.files.busy\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e66696c65732e62757379",
       "target": "rust"
     },
     {
@@ -538148,6 +540664,96 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.owner.confirm.identity.invalid\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e6964656e746974792e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e6964656e746974792e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.owner.confirm.identity.invalid",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e6964656e746974792e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that owner voice couldn't be confirmed because your configured owner identity needs attention.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that owner voice couldn't be confirmed because your configured owner identity needs attention.",
+      "message_id": "journal.window.speakers.error.owner.confirm.identity.invalid",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.owner.confirm.identity.invalid\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e6964656e746974792e696e76616c6964",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.owner.confirm.review.required\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e7265766965772e7265717569726564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e7265766965772e7265717569726564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.owner.confirm.review.required",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e7265766965772e7265717569726564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Confirm this candidate in the Speakers browser page.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Confirm this candidate in the Speakers browser page.",
+      "message_id": "journal.window.speakers.error.owner.confirm.review.required",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.owner.confirm.review.required\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e6f776e65722e636f6e6669726d2e7265766965772e7265717569726564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.sentence.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e73656e74656e63652e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e73656e74656e63652e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.sentence.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e73656e74656e63652e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that sentence couldn't be found.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that sentence couldn't be found.",
+      "message_id": "journal.window.speakers.error.sentence.not.found",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.sentence.not.found\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e73656e74656e63652e6e6f742e666f756e64",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.speakers.error.speaker.quality.couldn.t.be.loaded.because.your.configured.owner.identity\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e737065616b65722e7175616c6974792e636f756c646e2e742e62652e6c6f616465642e626563617573652e796f75722e636f6e666967757265642e6f776e65722e6964656e74697479",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e737065616b65722e7175616c6974792e636f756c646e2e742e62652e6c6f616465642e626563617573652e796f75722e636f6e666967757265642e6f776e65722e6964656e74697479_plural",
         "gettext_unsigned_quantity": null,
@@ -538168,6 +540774,96 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.speaker.quality.couldn.t.be.loaded.because.your.configured.owner.identity\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e737065616b65722e7175616c6974792e636f756c646e2e742e62652e6c6f616465642e626563617573652e796f75722e636f6e666967757265642e6f776e65722e6964656e74697479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.status.owner.identity.invalid\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7374617475732e6f776e65722e6964656e746974792e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7374617475732e6f776e65722e6964656e746974792e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.status.owner.identity.invalid",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7374617475732e6f776e65722e6964656e746974792e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "speaker status couldn't be loaded because your configured owner identity needs attention.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "speaker status couldn't be loaded because your configured owner identity needs attention.",
+      "message_id": "journal.window.speakers.error.status.owner.identity.invalid",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.status.owner.identity.invalid\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7374617475732e6f776e65722e6964656e746974792e696e76616c6964",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.task.conflict\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e636f6e666c696374",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e636f6e666c696374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.task.conflict",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e636f6e666c696374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that speaker task is already running with different options.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker task is already running with different options.",
+      "message_id": "journal.window.speakers.error.task.conflict",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.task.conflict\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e636f6e666c696374",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.task.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.task.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that speaker task couldn't be found.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that speaker task couldn't be found.",
+      "message_id": "journal.window.speakers.error.task.not.found",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.task.not.found\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e7461736b2e6e6f742e666f756e64",
       "target": "rust"
     },
     {
@@ -538378,6 +541074,66 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.voice.sentence.id.must.be.an.integer\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e766f6963652e73656e74656e63652e69642e6d7573742e62652e616e2e696e7465676572",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.wipe.busy\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e62757379",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e62757379_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.wipe.busy",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e62757379",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your journal is busy with recordings right now; try again in a moment.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your journal is busy with recordings right now; try again in a moment.",
+      "message_id": "journal.window.speakers.error.wipe.busy",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.wipe.busy\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e62757379",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.error.wipe.held\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e68656c64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e68656c64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.error.wipe.held",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e68656c64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your voices couldn't be wiped right now, so nothing was wiped.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your voices couldn't be wiped right now, so nothing was wiped.",
+      "message_id": "journal.window.speakers.error.wipe.held",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.error.wipe.held\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6572726f722e776970652e68656c64",
       "target": "rust"
     },
     {
@@ -538994,6 +541750,66 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.media.error.file.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e66696c652e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e66696c652e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.media.error.file.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e66696c652e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that file isn't available.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that file isn't available.",
+      "message_id": "journal.window.speakers.media.error.file.not.found",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.media.error.file.not.found\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e66696c652e6e6f742e666f756e64",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.media.error.invalid.path\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e696e76616c69642e70617468",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e696e76616c69642e70617468_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.media.error.invalid.path",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e696e76616c69642e70617468",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "that path couldn't be used.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "that path couldn't be used.",
+      "message_id": "journal.window.speakers.media.error.invalid.path",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.media.error.invalid.path\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6d656469612e6572726f722e696e76616c69642e70617468",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.speakers.notice.couldn.t.load.voice.samples\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6e6f746963652e636f756c646e2e742e6c6f61642e766f6963652e73616d706c6573",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6e6f746963652e636f756c646e2e742e6c6f61642e766f6963652e73616d706c6573_plural",
         "gettext_unsigned_quantity": null,
@@ -539112,6 +541928,626 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.cooldown.until.day\", &[(\"retry_day\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e636f6f6c646f776e2e756e74696c2e646179",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.entity.store.unreadable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e656e746974792e73746f72652e756e7265616461626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e656e746974792e73746f72652e756e7265616461626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.entity.store.unreadable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e656e746974792e73746f72652e756e7265616461626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the journal's entities can't be read: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "the journal's entities can't be read: ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.entity.store.unreadable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.entity.store.unreadable\", &[(\"detail\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e656e746974792e73746f72652e756e7265616461626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.file.unreadable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e66696c652e756e7265616461626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e66696c652e756e7265616461626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.file.unreadable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e66696c652e756e7265616461626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the segment's owner line labels can't be read: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "the segment's owner line labels can't be read: ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.file.unreadable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.file.unreadable\", &[(\"detail\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e66696c652e756e7265616461626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "sentence_id",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "audio_source",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "stored",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.line.id.mismatch\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e69642e6d69736d61746368",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e69642e6d69736d61746368_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.line.id.mismatch",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e69642e6d69736d61746368",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "line ⁨sample⁩ of ⁨sample⁩ is stored with sentence id ⁨sample⁩, not its line number",
+      "folder": null,
+      "inputs": {
+        "audio_source": "sample",
+        "sentence_id": "sample",
+        "stored": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "line ⁨sample⁩ of ⁨sample⁩ is stored with sentence id ⁨sample⁩, not its line number",
+      "message_id": "journal.window.speakers.owner.line.labels.error.line.id.mismatch",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.line.id.mismatch\", &[(\"audio_source\", Value::String(\"sample\")), (\"sentence_id\", Value::String(\"sample\")), (\"stored\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e69642e6d69736d61746368",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "sentence_id",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "audio_source",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.line.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.line.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "line ⁨sample⁩ isn't a line of ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "audio_source": "sample",
+        "sentence_id": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "line ⁨sample⁩ isn't a line of ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.line.not.found",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.line.not.found\", &[(\"audio_source\", Value::String(\"sample\")), (\"sentence_id\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c696e652e6e6f742e666f756e64",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.lock\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c6f636b",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c6f636b_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.lock",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c6f636b",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "owner line labels are busy: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "owner line labels are busy: ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.lock",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.lock\", &[(\"detail\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6c6f636b",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.merge.recovery.pending\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6d657267652e7265636f766572792e70656e64696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6d657267652e7265636f766572792e70656e64696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.merge.recovery.pending",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6d657267652e7265636f766572792e70656e64696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "an interrupted entity merge is waiting to be recovered",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "an interrupted entity merge is waiting to be recovered",
+      "message_id": "journal.window.speakers.owner.line.labels.error.merge.recovery.pending",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.merge.recovery.pending\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6d657267652e7265636f766572792e70656e64696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.no.lines\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f2e6c696e6573",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f2e6c696e6573_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.no.lines",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f2e6c696e6573",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "no lines were named",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "no lines were named",
+      "message_id": "journal.window.speakers.owner.line.labels.error.no.lines",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.no.lines\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f2e6c696e6573",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "id",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.not.a.person\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f742e612e706572736f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f742e612e706572736f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.not.a.person",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f742e612e706572736f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ isn't a person",
+      "folder": null,
+      "inputs": {
+        "id": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ isn't a person",
+      "message_id": "journal.window.speakers.owner.line.labels.error.not.a.person",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.not.a.person\", &[(\"id\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6e6f742e612e706572736f6e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.owner.not.admitted\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6f776e65722e6e6f742e61646d6974746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6f776e65722e6e6f742e61646d6974746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.owner.not.admitted",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6f776e65722e6e6f742e61646d6974746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the journal's owner identity isn't settled",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "the journal's owner identity isn't settled",
+      "message_id": "journal.window.speakers.owner.line.labels.error.owner.not.admitted",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.owner.not.admitted\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e6f776e65722e6e6f742e61646d6974746564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "id",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.person.hidden\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e68696464656e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e68696464656e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.person.hidden",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e68696464656e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "person ⁨sample⁩ is hidden",
+      "folder": null,
+      "inputs": {
+        "id": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "person ⁨sample⁩ is hidden",
+      "message_id": "journal.window.speakers.owner.line.labels.error.person.hidden",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.person.hidden\", &[(\"id\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e68696464656e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "id",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "successor",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.person.merged\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6d6572676564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6d6572676564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.person.merged",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6d6572676564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ was merged into ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "id": "sample",
+        "successor": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ was merged into ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.person.merged",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.person.merged\", &[(\"id\", Value::String(\"sample\")), (\"successor\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6d6572676564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "id",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.person.not.found\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.person.not.found",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "person ⁨sample⁩ wasn't found",
+      "folder": null,
+      "inputs": {
+        "id": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "person ⁨sample⁩ wasn't found",
+      "message_id": "journal.window.speakers.owner.line.labels.error.person.not.found",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.person.not.found\", &[(\"id\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e706572736f6e2e6e6f742e666f756e64",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.segment.unavailable\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7365676d656e742e756e617661696c61626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7365676d656e742e756e617661696c61626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.segment.unavailable",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7365676d656e742e756e617661696c61626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the segment can't take owner line labels: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "the segment can't take owner line labels: ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.segment.unavailable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.segment.unavailable\", &[(\"detail\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7365676d656e742e756e617661696c61626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "labelled",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "transcript_page",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.source.unsupported\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e736f757263652e756e737570706f72746564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e736f757263652e756e737570706f72746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.source.unsupported",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e736f757263652e756e737570706f72746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the segment's transcript views don't agree on one audio source (labels: ⁨sample⁩, transcript page: ⁨sample⁩)",
+      "folder": null,
+      "inputs": {
+        "labelled": "sample",
+        "transcript_page": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "the segment's transcript views don't agree on one audio source (labels: ⁨sample⁩, transcript page: ⁨sample⁩)",
+      "message_id": "journal.window.speakers.owner.line.labels.error.source.unsupported",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.source.unsupported\", &[(\"labelled\", Value::String(\"sample\")), (\"transcript_page\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e736f757263652e756e737570706f72746564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.write\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7772697465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7772697465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.write",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7772697465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "owner line labels couldn't be written: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "owner line labels couldn't be written: ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.write",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.write\", &[(\"detail\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e7772697465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "requested",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "labelled",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.owner.line.labels.error.wrong.source\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e77726f6e672e736f75726365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e77726f6e672e736f75726365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.owner.line.labels.error.wrong.source",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e77726f6e672e736f75726365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "lines of ⁨sample⁩ can't be labelled; the segment's labelled source is ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "labelled": "sample",
+        "requested": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "lines of ⁨sample⁩ can't be labelled; the segment's labelled source is ⁨sample⁩",
+      "message_id": "journal.window.speakers.owner.line.labels.error.wrong.source",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.line.labels.error.wrong.source\", &[(\"labelled\", Value::String(\"sample\")), (\"requested\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e6c696e652e6c6162656c732e6572726f722e77726f6e672e736f75726365",
       "target": "rust"
     },
     {
@@ -545672,6 +549108,126 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.window.state.text.you.identified\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e77696e646f772e73746174652e746578742e796f752e6964656e746966696564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.wipe.error.not.utf8\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e6e6f742e75746638",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e6e6f742e75746638_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.wipe.error.not.utf8",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e6e6f742e75746638",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "a name in your journal can't be read: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "a name in your journal can't be read: ⁨sample⁩",
+      "message_id": "journal.window.speakers.wipe.error.not.utf8",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.wipe.error.not.utf8\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e6e6f742e75746638",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.wipe.error.path\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e70617468",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e70617468_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.wipe.error.path",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e70617468",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "artifact path failed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "artifact path failed: ⁨sample⁩",
+      "message_id": "journal.window.speakers.wipe.error.path",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.wipe.error.path\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e70617468",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "source",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.speakers.wipe.error.read\u0004m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e72656164",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e72656164_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.speakers.wipe.error.read",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e72656164",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "artifact directory read failed at ⁨sample⁩: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample",
+        "source": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "artifact directory read failed at ⁨sample⁩: ⁨sample⁩",
+      "message_id": "journal.window.speakers.wipe.error.read",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.speakers.wipe.error.read\", &[(\"path\", Value::String(\"sample\")), (\"source\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e737065616b6572732e776970652e6572726f722e72656164",
       "target": "rust"
     },
     {

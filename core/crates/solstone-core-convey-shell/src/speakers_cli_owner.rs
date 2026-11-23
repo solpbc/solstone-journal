@@ -12,39 +12,47 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use jiff::Timestamp;
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
 use crate::speakers_source::is_safe_source_component;
+use crate::window_catalog;
 use solstone_core_speaker_resolve::segment_catalog::{
     SegmentLookup, decode_required_stream_layout_value, lookup_segment,
 };
 
-pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
-    let body = match body(request).await {
+pub async fn tag(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    let body = match body(locale, request).await {
         Ok(body) => body,
         Err(response) => return response,
     };
     let Some(day) = body.get("day").and_then(Value::as_str) else {
-        return required("day");
+        return required(locale, "day");
     };
     let Some(stream) = body.get("stream").and_then(Value::as_str) else {
-        return required("stream");
+        return required(locale, "stream");
     };
     let Some(segment_key) = body.get("segment_key").and_then(Value::as_str) else {
-        return required("segment_key");
+        return required(locale, "segment_key");
     };
     let Some(sentence_id) = body.get("sentence_id").and_then(Value::as_i64) else {
-        return required("sentence_id");
+        return required(locale, "sentence_id");
     };
     let Some(source) = body.get("source").and_then(Value::as_str) else {
-        return required("source");
+        return required(locale, "source");
     };
     if !is_safe_source_component(source) {
         return err(
+            locale,
             "invalid_request_value",
-            "source name is invalid.",
+            "journal.window.speakers.attribution.attribution.response.source.name.is.invalid",
             "use one file name, without a path",
             StatusCode::BAD_REQUEST,
         );
@@ -53,8 +61,9 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
         solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
         solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
             return err(
+                locale,
                 "speaker_owner_identity_invalid",
-                "that speaker attribution couldn't be changed because your configured owner identity needs attention.",
+                "journal.window.speakers.error.attribution.owner.identity.invalid",
                 "configured owner identity is not admitted",
                 StatusCode::CONFLICT,
             );
@@ -64,8 +73,9 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
         Ok(layout) => layout,
         Err(_) => {
             return err(
+                locale,
                 "invalid_segment_or_stream",
-                "that segment or stream couldn't be used.",
+                "journal.window.speakers.attribution.attribution.response.that.segment.or.stream.couldn.t",
                 "Invalid segment key or stream",
                 StatusCode::BAD_REQUEST,
             );
@@ -75,21 +85,25 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
         SegmentLookup::Present(path) => path,
         SegmentLookup::MalformedLayout => {
             return err(
+                locale,
                 "invalid_segment_or_stream",
-                "that segment or stream couldn't be used.",
+                "journal.window.speakers.attribution.attribution.response.that.segment.or.stream.couldn.t",
                 "Invalid segment key or stream",
                 StatusCode::BAD_REQUEST,
             );
         }
         SegmentLookup::Absent => {
             return err(
+                locale,
                 "speaker_review_unavailable",
-                "that speaker review couldn't be loaded.",
+                "journal.window.speakers.error.that.speaker.review.couldn.t.be.loaded",
                 "No speaker labels found",
                 StatusCode::NOT_FOUND,
             );
         }
-        SegmentLookup::Failed(error) => return speaker_write_error(error.to_string(), true),
+        SegmentLookup::Failed(error) => {
+            return speaker_write_error(locale, error.to_string(), true);
+        }
     };
     let labels = match std::fs::read(segment.join("talents/speaker_labels.json"))
         .ok()
@@ -99,8 +113,9 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
         Some(labels) => labels,
         None => {
             return err(
+                locale,
                 "speaker_review_unavailable",
-                "that speaker review couldn't be loaded.",
+                "journal.window.speakers.error.that.speaker.review.couldn.t.be.loaded",
                 "No speaker labels found",
                 StatusCode::NOT_FOUND,
             );
@@ -120,8 +135,9 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
         .is_some()
     {
         return err(
+            locale,
             "speaker_attribution_state_invalid",
-            "that speaker attribution couldn't be changed.",
+            "journal.window.speakers.error.attribution.state.invalid",
             "Pick a sentence without a speaker.",
             StatusCode::BAD_REQUEST,
         );
@@ -134,12 +150,13 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
                 .into_iter()
                 .find_map(|(id, values)| (id == sentence_id).then_some(values)),
             Ok(None) => None,
-            Err(error) => return speaker_write_error(error.to_string(), false),
+            Err(error) => return speaker_write_error(locale, error.to_string(), false),
         };
     let Some(embedding) = embedding else {
         return err(
+            locale,
             "speaker_sentence_missing",
-            "that sentence couldn't be found.",
+            "journal.window.speakers.error.sentence.not.found",
             "Pick a different sentence with an embedding.",
             StatusCode::NOT_FOUND,
         );
@@ -152,7 +169,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
         metadata,
         &encoder(),
     ) {
-        return speaker_write_error(error.to_string(), false);
+        return speaker_write_error(locale, error.to_string(), false);
     }
     let old_method = current.and_then(|label| {
         label
@@ -167,7 +184,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
     if let Err(error) =
         solstone_core_speaker_id::labels::patch_labels(&segment, &[(sentence_id, patch)], true)
     {
-        return speaker_write_error(error.to_string(), true);
+        return speaker_write_error(locale, error.to_string(), true);
     }
     let mut correction = Map::new();
     correction.insert("sentence_id".to_owned(), json!(sentence_id));
@@ -184,7 +201,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
     if let Err(error) =
         solstone_core_speaker_id::corrections::append_correction(&segment, correction)
     {
-        return speaker_write_error(error.to_string(), true);
+        return speaker_write_error(locale, error.to_string(), true);
     }
     Json(json!({"success":true,"status":"assigned","speaker":speaker,"stream_layout":layout_name(layout)})).into_response()
 }
@@ -204,21 +221,27 @@ fn encoder() -> solstone_core_entity::EncoderIdentity {
     }
 }
 
-pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+pub async fn confirm(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     if matches!(
         solstone_core_speaker_resolve::owner_admission::admitted_owner_id(&root.0),
         solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid
     ) {
         return err(
+            locale,
             "speaker_owner_identity_invalid",
-            "that owner voice couldn't be confirmed because your configured owner identity needs attention.",
+            "journal.window.speakers.error.owner.confirm.identity.invalid",
             "configured owner identity is not admitted",
             StatusCode::CONFLICT,
         );
     }
     err(
+        locale,
         "review_required",
-        "Confirm this candidate in the Speakers browser page.",
+        "journal.window.speakers.error.owner.confirm.review.required",
         "Native confirm-owner does not save a centroid. Open the browser to review the candidate.",
         StatusCode::BAD_REQUEST,
     )
@@ -226,8 +249,13 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
 
 /// The CLI reject records the same rejection, cooldown and remembered voice
 /// as the browser's "no, try again".
-pub async fn reject(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
-    let body = match body(request).await {
+pub async fn reject(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    let body = match body(locale, request).await {
         Ok(val) => val,
         Err(resp) => return resp,
     };
@@ -237,83 +265,99 @@ pub async fn reject(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
             solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid
         ) {
             return crate::speakers_owner_write::owner_voice_error(
-                crate::window_catalog::ENGLISH,
+                locale,
                 solstone_core_speaker_resolve::owner_voice::OwnerVoiceError::IdentityInvalid,
             );
         }
         return err(
+            locale,
             "missing_required_field",
-            "a required field is missing.",
+            "journal.window.speakers.attribution.attribution.response.a.required.field.is.missing",
             "version is required",
             StatusCode::BAD_REQUEST,
         );
     };
     match solstone_core_speaker_resolve::owner_voice::reject_owner_candidate(&root.0, version) {
         Ok(value) => Json(value).into_response(),
-        Err(error) => {
-            crate::speakers_owner_write::owner_voice_error(crate::window_catalog::ENGLISH, error)
-        }
+        Err(error) => crate::speakers_owner_write::owner_voice_error(locale, error),
     }
 }
 
-async fn body(request: Request) -> Result<Value, Response> {
+async fn body(locale: &str, request: Request) -> Result<Value, Response> {
     let bytes = to_bytes(request.into_body(), usize::MAX)
         .await
         .map_err(|_| {
             err(
+                locale,
                 "missing_request_body",
-                "that request had no data in it.",
+                "journal.window.speakers.attribution.attribution.response.that.request.had.no.data.in",
                 "Unable to read request body",
                 StatusCode::BAD_REQUEST,
             )
         })?;
     if bytes.is_empty() {
         return Err(err(
+            locale,
             "missing_request_body",
-            "that request had no data in it.",
+            "journal.window.speakers.attribution.attribution.response.that.request.had.no.data.in",
             "no request body",
             StatusCode::BAD_REQUEST,
         ));
     }
     serde_json::from_slice(&bytes).map_err(|_| {
         err(
+            locale,
             "invalid_json_request",
-            "that JSON request couldn't be read.",
+            "journal.window.speakers.attribution.attribution.response.that.json.request.couldn.t.be",
             "request body must be a JSON object",
             StatusCode::BAD_REQUEST,
         )
     })
 }
 
-fn required(field: &str) -> Response {
+fn required(locale: &str, field: &str) -> Response {
     err(
+        locale,
         "missing_required_field",
-        "a required field is missing.",
+        "journal.window.speakers.attribution.attribution.response.a.required.field.is.missing",
         &format!("{field} is required"),
         StatusCode::BAD_REQUEST,
     )
 }
-fn err(code: &str, message: &str, detail: &str, status: StatusCode) -> Response {
-    error_envelope(code, message, detail, status).into_response()
+fn err(locale: &str, code: &str, message_id: &str, detail: &str, status: StatusCode) -> Response {
+    error_envelope(
+        code,
+        window_catalog::text(locale, message_id),
+        detail,
+        status,
+    )
+    .into_response()
 }
-fn speaker_write_error(detail: String, labels: bool) -> Response {
-    let (code, message) = if labels {
+fn speaker_write_error(locale: &str, detail: String, labels: bool) -> Response {
+    let (code, message_id) = if labels {
         (
             "speaker_labels_busy",
-            "those speaker attributions couldn't be updated right now because they were busy. try again in a moment.",
+            "journal.window.speakers.attribution.attribution.response.those.speaker.attributions.couldn.t.be",
         )
     } else {
         (
             "speaker_voiceprint_busy",
-            "that voice couldn't be updated right now because it was busy. try again in a moment.",
+            "journal.window.speakers.attribution.attribution.response.that.voice.couldn.t.be.updated",
         )
     };
     if detail.contains("busy") || detail.contains("lock") {
-        err(code, message, &detail, StatusCode::SERVICE_UNAVAILABLE)
+        err(
+            locale,
+            code,
+            message_id,
+            &detail,
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
     } else {
         err(
+            locale,
             "speaker_command_failed",
-            "that speaker command didn't finish.",
+            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
             &detail,
             StatusCode::BAD_REQUEST,
         )

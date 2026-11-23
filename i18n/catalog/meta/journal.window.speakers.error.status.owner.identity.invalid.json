@@ -1,0 +1,16 @@
+{
+  "description": "Speaker status error when configured owner identity needs attention.",
+  "context": "Journal window. Speaker status error when configured owner identity needs attention.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7ceaa24874909689f0b7ce5f754bd79a8599fa9440a03953dfc477211199f567",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

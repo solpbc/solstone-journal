@@ -218,6 +218,134 @@ impl OwnerLineLabelError {
             Self::Write(_) => "owner_line_unsaved",
         }
     }
+
+    /// Render this refusal for owner display in `locale`.
+    #[must_use]
+    pub fn render_in(&self, locale: &str) -> String {
+        use solstone_core_window_catalog::{Value, render};
+        match self {
+            Self::SegmentUnavailable(detail) => render(
+                locale,
+                "journal.window.speakers.owner.line.labels.error.segment.unavailable",
+                &[("detail", Value::String(detail.as_str()))],
+            ),
+            Self::SourceUnsupported {
+                labelled,
+                transcript_page,
+            } => {
+                let labelled = format!("{labelled:?}");
+                let transcript_page = format!("{transcript_page:?}");
+                render(
+                    locale,
+                    "journal.window.speakers.owner.line.labels.error.source.unsupported",
+                    &[
+                        ("labelled", Value::String(labelled.as_str())),
+                        ("transcript_page", Value::String(transcript_page.as_str())),
+                    ],
+                )
+            }
+            Self::WrongSource {
+                requested,
+                labelled,
+            } => render(
+                locale,
+                "journal.window.speakers.owner.line.labels.error.wrong.source",
+                &[
+                    ("requested", Value::String(requested.as_str())),
+                    ("labelled", Value::String(labelled.as_str())),
+                ],
+            ),
+            Self::NoLines => render(
+                locale,
+                "journal.window.speakers.owner.line.labels.error.no.lines",
+                &[],
+            ),
+            Self::LineNotFound {
+                audio_source,
+                sentence_id,
+            } => {
+                let sentence_id = sentence_id.to_string();
+                render(
+                    locale,
+                    "journal.window.speakers.owner.line.labels.error.line.not.found",
+                    &[
+                        ("sentence_id", Value::String(sentence_id.as_str())),
+                        ("audio_source", Value::String(audio_source.as_str())),
+                    ],
+                )
+            }
+            Self::LineIdMismatch {
+                audio_source,
+                sentence_id,
+                stored,
+            } => {
+                let sentence_id = sentence_id.to_string();
+                let stored = format!("{stored:?}");
+                render(
+                    locale,
+                    "journal.window.speakers.owner.line.labels.error.line.id.mismatch",
+                    &[
+                        ("sentence_id", Value::String(sentence_id.as_str())),
+                        ("audio_source", Value::String(audio_source.as_str())),
+                        ("stored", Value::String(stored.as_str())),
+                    ],
+                )
+            }
+            Self::PersonNotFound(id) => render(
+                locale,
+                "journal.window.speakers.owner.line.labels.error.person.not.found",
+                &[("id", Value::String(id.as_str()))],
+            ),
+            Self::PersonHidden(id) => render(
+                locale,
+                "journal.window.speakers.owner.line.labels.error.person.hidden",
+                &[("id", Value::String(id.as_str()))],
+            ),
+            Self::PersonMerged { id, successor } => render(
+                locale,
+                "journal.window.speakers.owner.line.labels.error.person.merged",
+                &[
+                    ("id", Value::String(id.as_str())),
+                    ("successor", Value::String(successor.as_str())),
+                ],
+            ),
+            Self::NotAPerson(id) => render(
+                locale,
+                "journal.window.speakers.owner.line.labels.error.not.a.person",
+                &[("id", Value::String(id.as_str()))],
+            ),
+            Self::OwnerNotAdmitted => render(
+                locale,
+                "journal.window.speakers.owner.line.labels.error.owner.not.admitted",
+                &[],
+            ),
+            Self::EntityStoreUnreadable(detail) => render(
+                locale,
+                "journal.window.speakers.owner.line.labels.error.entity.store.unreadable",
+                &[("detail", Value::String(detail.as_str()))],
+            ),
+            Self::FileUnreadable(detail) => render(
+                locale,
+                "journal.window.speakers.owner.line.labels.error.file.unreadable",
+                &[("detail", Value::String(detail.as_str()))],
+            ),
+            Self::MergeRecoveryPending => render(
+                locale,
+                "journal.window.speakers.owner.line.labels.error.merge.recovery.pending",
+                &[],
+            ),
+            Self::Lock(detail) => render(
+                locale,
+                "journal.window.speakers.owner.line.labels.error.lock",
+                &[("detail", Value::String(detail.as_str()))],
+            ),
+            Self::Write(detail) => render(
+                locale,
+                "journal.window.speakers.owner.line.labels.error.write",
+                &[("detail", Value::String(detail.as_str()))],
+            ),
+        }
+    }
 }
 
 type Checkpoint<'a> = &'a dyn Fn() -> Result<(), String>;

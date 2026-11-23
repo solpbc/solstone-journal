@@ -1,0 +1,16 @@
+{
+  "description": "Speaker discovery degraded issue message when some voice samples were unusable.",
+  "context": "Journal window. Speaker discovery degraded issue message when some voice samples were unusable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d6a95fc4e4a4b9fa02bf460ca773d8efa5f91da24314d8c96a8d7a693c09d866",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Speaker discovery conflict when a voice changed after the page loaded.",
+  "context": "Journal window. Speaker discovery conflict when a voice changed after the page loaded.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "38746e41de1c44b364647ce3cace681a1c6aaa1da01186e3992983de47c5c9d1",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

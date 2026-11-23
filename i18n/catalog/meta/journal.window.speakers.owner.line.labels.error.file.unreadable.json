@@ -1,0 +1,21 @@
+{
+  "description": "Owner line label refusal when owner line labels file cannot be read.",
+  "context": "Journal window. Owner line label refusal when owner line labels file cannot be read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c9e7f5b47ef48c0db39ca2e48a93a05f93e63e86e0a93311077a32c3aae5712e",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

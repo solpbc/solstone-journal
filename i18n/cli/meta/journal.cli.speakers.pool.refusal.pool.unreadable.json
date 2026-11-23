@@ -1,0 +1,16 @@
+{
+  "description": "Speaker pool catch-up refusal when voice list cannot be read.",
+  "context": "Journal CLI. Speaker pool catch-up refusal when voice list cannot be read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e3935aa991317204976e89065231460a093c545d40cf1ab4185a13ed570ad5d",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

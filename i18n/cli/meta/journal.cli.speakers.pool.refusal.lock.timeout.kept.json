@@ -1,0 +1,16 @@
+{
+  "description": "Speaker pool catch-up refusal when voice list lock times out after partial progress was saved.",
+  "context": "Journal CLI. Speaker pool catch-up refusal when voice list lock times out after partial progress was saved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c4140aa05c1b4fd63347ebe82bbb22c13f3c26df4255690da5c724360540f9c0",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

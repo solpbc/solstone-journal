@@ -1,0 +1,16 @@
+{
+  "description": "Speaker discovery degraded issue message when owner voice is not set up.",
+  "context": "Journal window. Speaker discovery degraded issue message when owner voice is not set up.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2fa6c7542961cc088f03a18bc05eae6cae59eaa1e5c456c71ff80c900ba6e9b",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

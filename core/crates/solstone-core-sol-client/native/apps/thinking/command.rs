@@ -71,26 +71,27 @@ pub fn confidential_enable(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(value) => value,
         Err(error) => return stderr(error, 1),
     };
-    let response = match post_confidential_action(ctx, "/app/thinking/api/confidential/enable") {
-        Ok(response) => response,
-        Err(error) => {
-            // A turn-on is already open: show its link so it can be finished.
-            if error.reason_code() == Some("service_busy") {
-                let mut out = String::new();
-                if let Ok(state) = get_confidential_state(ctx) {
-                    maybe_echo_portal(locale, &mut out, state.get("confidential_operation"));
+    let response =
+        match post_confidential_action_for(locale, ctx, "/app/thinking/api/confidential/enable") {
+            Ok(response) => response,
+            Err(error) => {
+                // A turn-on is already open: show its link so it can be finished.
+                if error.reason_code() == Some("service_busy") {
+                    let mut out = String::new();
+                    if let Ok(state) = get_confidential_state_for(locale, ctx) {
+                        maybe_echo_portal(locale, &mut out, state.get("confidential_operation"));
+                    }
+                    if !out.is_empty() {
+                        return thinking_error_preserving_stdout(locale, out, error);
+                    }
                 }
-                if !out.is_empty() {
-                    return thinking_error_preserving_stdout(locale, out, error);
-                }
+                return thinking_error_preserving_stdout(locale, String::new(), error);
             }
-            return thinking_error_preserving_stdout(locale, String::new(), error);
-        }
-    };
+        };
     let mut out = String::new();
     maybe_echo_portal(locale, &mut out, response.get("operation"));
     let (state, phase, outcome) =
-        match poll_confidential_until_terminal(ctx, wait_seconds, poll_interval) {
+        match poll_confidential_until_terminal(locale, ctx, wait_seconds, poll_interval) {
             Ok(result) => result,
             Err(error) => return thinking_error_preserving_stdout(locale, out, error),
         };
@@ -306,7 +307,7 @@ pub fn providers_show(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error, 1),
     };
-    let response = match get_providers(ctx) {
+    let response = match get_providers_for(locale, ctx) {
         Ok(response) => response,
         Err(error) => return thinking_error_preserving_stdout(locale, String::new(), error),
     };
@@ -520,7 +521,12 @@ fn request_model_query(ctx: CommandContext<'_>, method: HttpMethod, route: &str)
 }
 
 fn get_providers(ctx: CommandContext<'_>) -> Result<Value, ClientError> {
-    request_json(
+    get_providers_for(ENGLISH, ctx)
+}
+
+fn get_providers_for(locale: &str, ctx: CommandContext<'_>) -> Result<Value, ClientError> {
+    request_json_for(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/thinking/api/providers",
@@ -534,7 +540,11 @@ fn get_keys(ctx: CommandContext<'_>) -> Result<Value, ClientError> {
 }
 
 fn get_confidential_state(ctx: CommandContext<'_>) -> Result<Value, ClientError> {
-    let response = get_providers(ctx)?;
+    get_confidential_state_for(ENGLISH, ctx)
+}
+
+fn get_confidential_state_for(locale: &str, ctx: CommandContext<'_>) -> Result<Value, ClientError> {
+    let response = get_providers_for(locale, ctx)?;
     Ok(response
         .get("active_lane")
         .cloned()
@@ -542,7 +552,15 @@ fn get_confidential_state(ctx: CommandContext<'_>) -> Result<Value, ClientError>
 }
 
 fn post_confidential_action(ctx: CommandContext<'_>, route: &str) -> Result<Value, ClientError> {
-    request_json(ctx, HttpMethod::Post, route, vec![], None).map_err(action_error)
+    post_confidential_action_for(ENGLISH, ctx, route)
+}
+
+fn post_confidential_action_for(
+    locale: &str,
+    ctx: CommandContext<'_>,
+    route: &str,
+) -> Result<Value, ClientError> {
+    request_json_for(locale, ctx, HttpMethod::Post, route, vec![], None).map_err(action_error)
 }
 
 fn action_error(error: ClientError) -> ClientError {
@@ -618,6 +636,7 @@ fn poll_confidential_recheck_until_complete(
 }
 
 fn poll_confidential_until_terminal(
+    locale: &str,
     ctx: CommandContext<'_>,
     wait_seconds: f64,
     poll_interval: f64,
@@ -625,7 +644,7 @@ fn poll_confidential_until_terminal(
     let deadline = monotonic_seconds(ctx) + wait_seconds.max(0.0);
     let interval = poll_interval.max(0.0);
     loop {
-        let state = get_confidential_state(ctx)?;
+        let state = get_confidential_state_for(locale, ctx)?;
         let Some(operation) = state
             .get("confidential_operation")
             .and_then(Value::as_object)
@@ -802,12 +821,23 @@ fn request_json(
     params: Vec<QueryParam>,
     json: Option<Value>,
 ) -> Result<Value, ClientError> {
+    request_json_for(ENGLISH, ctx, method, path, params, json)
+}
+
+fn request_json_for(
+    locale: &str,
+    ctx: CommandContext<'_>,
+    method: HttpMethod,
+    path: &str,
+    params: Vec<QueryParam>,
+    json: Option<Value>,
+) -> Result<Value, ClientError> {
     let response = ctx.transport.request(ApiRequest {
         method,
         path: path.to_string(),
         params,
         json,
-        headers: vec![],
+        headers: crate::transport::locale_headers(locale),
         policy: TimeoutPolicy::Api,
     })?;
     decode_response(&response)

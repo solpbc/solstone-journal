@@ -1,0 +1,21 @@
+{
+  "description": "Owner line label refusal when person entity is not found.",
+  "context": "Journal window. Owner line label refusal when person entity is not found.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dd396b8adea6556006490401d823149e47e845fe5fd160ba0ec362ecd70740ea",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

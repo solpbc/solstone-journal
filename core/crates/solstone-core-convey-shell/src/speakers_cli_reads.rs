@@ -14,6 +14,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use solstone_core_journal_io::SegmentLayout;
@@ -26,6 +27,7 @@ use crate::speakers_calendar::{
 use crate::speakers_quality::{label_has_ineligible_speaker, quality_tier_for_label};
 use crate::speakers_review::is_admissible_speaker_entity;
 use crate::speakers_source::is_safe_source_component;
+use crate::window_catalog;
 use solstone_core_speaker_resolve::segment_catalog::{
     CatalogedSegment, SegmentLookup, catalog_journal, decode_stream_layout, lookup_segment,
 };
@@ -42,13 +44,16 @@ pub struct StreamLayoutQuery {
 
 pub async fn segments(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     RoutePath(day): RoutePath<String>,
     Query(query): Query<LimitQuery>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     if !is_day(&day) {
         return err(
+            locale,
             "invalid_day",
-            "that day couldn't be used.",
+            "journal.window.speakers.error.that.day.couldn.t.be.used",
             "Invalid day format",
             StatusCode::BAD_REQUEST,
         );
@@ -63,8 +68,9 @@ pub async fn segments(
         Ok(value) if value > 0 => value,
         _ => {
             return err(
+                locale,
                 "invalid_request_value",
-                "one of those values couldn't be used.",
+                "journal.window.speakers.error.one.of.those.values.couldn.t.be.used",
                 "limit must be a positive integer",
                 StatusCode::BAD_REQUEST,
             );
@@ -75,8 +81,9 @@ pub async fn segments(
             Ok(segments) => segments,
             Err(error) => {
                 return err(
+                    locale,
                     "speaker_command_failed",
-                    "that speaker command didn't finish.",
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                     &error.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 );
@@ -96,21 +103,25 @@ pub async fn segments(
 
 pub async fn review(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     RoutePath((day, stream, segment_key, source)): RoutePath<(String, String, String, String)>,
     Query(query): Query<StreamLayoutQuery>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     if !is_day(&day) {
         return err(
+            locale,
             "invalid_day",
-            "that day couldn't be used.",
+            "journal.window.speakers.error.that.day.couldn.t.be.used",
             "Invalid day format",
             StatusCode::BAD_REQUEST,
         );
     }
     if !is_safe_source_component(&source) {
         return err(
+            locale,
             "invalid_request_value",
-            "source name is invalid.",
+            "journal.window.speakers.attribution.attribution.response.source.name.is.invalid",
             "use one file name, without a path",
             StatusCode::BAD_REQUEST,
         );
@@ -127,24 +138,27 @@ pub async fn review(
             SegmentLookup::Present(path) => path,
             SegmentLookup::Absent => {
                 return err(
+                    locale,
                     "speaker_review_unavailable",
-                    "that speaker review couldn't be loaded.",
+                    "journal.window.speakers.error.that.speaker.review.couldn.t.be.loaded",
                     "No transcript found",
                     StatusCode::NOT_FOUND,
                 );
             }
             SegmentLookup::MalformedLayout => {
                 return err(
+                    locale,
                     "invalid_segment_or_stream",
-                    "that segment or stream couldn't be used.",
+                    "journal.window.speakers.attribution.attribution.response.that.segment.or.stream.couldn.t",
                     "Invalid segment key or stream",
                     StatusCode::BAD_REQUEST,
                 );
             }
             SegmentLookup::Failed(error) => {
                 return err(
+                    locale,
                     "speaker_command_failed",
-                    "that speaker command didn't finish.",
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                     &error.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 );
@@ -153,16 +167,22 @@ pub async fn review(
         let transcript = segment.join(format!("{source}.jsonl"));
         let Ok(raw) = fs::read_to_string(transcript) else {
             return err(
+                locale,
                 "speaker_review_unavailable",
-                "that speaker review couldn't be loaded.",
+                "journal.window.speakers.error.that.speaker.review.couldn.t.be.loaded",
                 "No transcript found",
                 StatusCode::NOT_FOUND,
             );
         };
         let embedded = match embedded_sentence_ids(&segment.join(format!("{source}.npz"))) {
             Ok(embedded) => embedded,
-            Err(error) => return err("speaker_command_failed", "that speaker command didn't finish.",
-                &error.to_string(), StatusCode::INTERNAL_SERVER_ERROR),
+            Err(error) => return err(
+                locale,
+                "speaker_command_failed",
+                "journal.window.speakers.error.that.speaker.command.didn.t.finish",
+                &error.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
         };
         let labels = labels_by_sentence(&segment);
         let admitted_speaker_ids = journal_entities(&root.0)
@@ -208,15 +228,20 @@ pub async fn review(
     .await
 }
 
-pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+pub async fn status(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     spawn_blocking_response(OwnerReadRole::SpeakersStatus, move || {
         let owner_id = match solstone_core_speaker_resolve::owner_admission::admitted_owner_id(&root.0)
         {
             solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
             solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
                 return err(
+                    locale,
                     "speaker_owner_identity_invalid",
-                    "speaker status couldn't be loaded because your configured owner identity needs attention.",
+                    "journal.window.speakers.error.status.owner.identity.invalid",
                     "configured owner identity is not admitted",
                     StatusCode::CONFLICT,
                 );
@@ -233,19 +258,21 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
             Ok(segments) => segments,
             Err(error) => {
                 return err(
+                    locale,
                     "speaker_command_failed",
-                    "that speaker command didn't finish.",
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                     &error.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 );
             }
         };
-        let owner = match owner_section(&root.0, &voiceprint, &owner_id) {
+        let owner = match owner_section(locale, &root.0, &voiceprint, &owner_id) {
             Ok(owner) => owner,
             Err(detail) => {
                 return err(
+                    locale,
                     "speaker_command_failed",
-                    "that speaker command didn't finish.",
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                     &detail,
                     StatusCode::INTERNAL_SERVER_ERROR,
                 );
@@ -255,8 +282,9 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
             Ok(speakers) => speakers,
             Err(detail) => {
                 return err(
+                    locale,
                     "speaker_command_failed",
-                    "that speaker command didn't finish.",
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                     &detail.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 );
@@ -279,8 +307,10 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
 
 pub async fn suggest(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     Query(query): Query<LimitQuery>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     let limit = match query
         .limit
         .as_deref()
@@ -291,8 +321,9 @@ pub async fn suggest(
         Ok(value) => value,
         _ => {
             return err(
+                locale,
                 "invalid_request_value",
-                "one of those values couldn't be used.",
+                "journal.window.speakers.error.one.of.those.values.couldn.t.be.used",
                 "limit must be an integer",
                 StatusCode::BAD_REQUEST,
             );
@@ -303,8 +334,9 @@ pub async fn suggest(
             Ok(segments) => segments,
             Err(error) => {
                 return err(
+                    locale,
                     "speaker_command_failed",
-                    "that speaker command didn't finish.",
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                     &error.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 );
@@ -316,7 +348,7 @@ pub async fn suggest(
         suggestions.extend(low_confidence_suggestions(&segments));
         suggestions.sort_by_key(suggestion_sort_key);
         let items = suggestions.into_iter().take(limit).collect::<Vec<_>>();
-        Json(json!({"status":"ok","items":items,"issues":[],"markdown":format_suggestions(&items)}))
+        Json(json!({"status":"ok","items":items,"issues":[],"markdown":format_suggestions(locale, &items)}))
             .into_response()
     })
     .await
@@ -341,8 +373,14 @@ pub async fn dismissals(Extension(root): Extension<Arc<JournalRoot>>) -> Respons
     .await
 }
 
-fn err(code: &str, message: &str, detail: &str, status: StatusCode) -> Response {
-    error_envelope(code, message, detail, status).into_response()
+fn err(locale: &str, code: &str, message_id: &str, detail: &str, status: StatusCode) -> Response {
+    error_envelope(
+        code,
+        window_catalog::text(locale, message_id),
+        detail,
+        status,
+    )
+    .into_response()
 }
 
 fn labels_by_sentence(segment: &Path) -> BTreeMap<i64, Value> {
@@ -423,6 +461,7 @@ fn embeddings_section(segments: &[CatalogedSegment]) -> Value {
 }
 
 fn owner_section(
+    locale: &str,
     root: &Path,
     voiceprint: &BTreeMap<String, Value>,
     owner_id: &str,
@@ -451,7 +490,10 @@ fn owner_section(
         result.insert("next_step".to_owned(), json!("confirm_candidate"));
         result.insert(
             "guidance".to_owned(),
-            json!("Confirm this candidate if it is your voice."),
+            json!(window_catalog::text(
+                locale,
+                "journal.window.speakers.cli.owner.candidate.guidance",
+            )),
         );
     } else if status_text == "low_quality" {
         for (key, default) in [
@@ -827,55 +869,118 @@ fn suggestion_sort_key(value: &Value) -> String {
         .to_owned()
 }
 
-fn format_suggestions(items: &[Value]) -> String {
+fn format_suggestions(locale: &str, items: &[Value]) -> String {
     if items.is_empty() {
-        return "No speaker curation suggestions found.".to_owned();
+        return window_catalog::text(locale, "journal.window.speakers.cli.suggest.empty");
     }
     items
         .iter()
         .filter_map(|item| match item.get("type").and_then(Value::as_str) {
-            Some("import_linkable") => Some(format!(
-                "Import linkable: {} ({}) — mentioned in {} meetings\n  Days: {}",
-                item.get("name").and_then(Value::as_str).unwrap_or_default(),
-                item.get("entity_id")
+            Some("import_linkable") => {
+                let name = item.get("name").and_then(Value::as_str).unwrap_or_default();
+                let entity_id = item
+                    .get("entity_id")
                     .and_then(Value::as_str)
-                    .unwrap_or_default(),
-                item.get("meetings_mentioned")
+                    .unwrap_or_default();
+                let meetings = item
+                    .get("meetings_mentioned")
                     .and_then(Value::as_u64)
-                    .unwrap_or(0),
-                item.get("meeting_days")
+                    .unwrap_or(0);
+                let meetings_display = meetings.to_string();
+                let days = item
+                    .get("meeting_days")
                     .and_then(Value::as_array)
                     .into_iter()
                     .flatten()
                     .filter_map(Value::as_str)
                     .collect::<Vec<_>>()
-                    .join(", ")
-            )),
-            Some("speaker_candidate_pair") => Some(format!(
-                "Speaker candidate pair: similarity {:.2} ({} vs {} intervals)",
-                item.get("similarity")
-                    .and_then(Value::as_f64)
-                    .unwrap_or(0.0),
-                item.get("source_intervals")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0),
-                item.get("target_intervals")
+                    .join(", ");
+                Some(window_catalog::render(
+                    locale,
+                    "journal.window.speakers.cli.suggest.import.linkable",
+                    &[
+                        ("name", window_catalog::CopyValue::String(name)),
+                        ("entity_id", window_catalog::CopyValue::String(entity_id)),
+                        (
+                            "meetings",
+                            window_catalog::CopyValue::String(meetings_display.as_str()),
+                        ),
+                        (
+                            "meetings_quantity",
+                            window_catalog::CopyValue::Cardinal(
+                                i64::try_from(meetings).unwrap_or(i64::MAX),
+                            ),
+                        ),
+                        ("days", window_catalog::CopyValue::String(days.as_str())),
+                    ],
+                ))
+            }
+            Some("speaker_candidate_pair") => {
+                let similarity = format!(
+                    "{:.2}",
+                    item.get("similarity")
+                        .and_then(Value::as_f64)
+                        .unwrap_or(0.0)
+                );
+                let source_intervals = item
+                    .get("source_intervals")
                     .and_then(Value::as_u64)
                     .unwrap_or(0)
-            )),
-            Some("low_confidence_review") => Some(format!(
-                "Low confidence review: {}/{} — {} of {} labels are medium/unresolved",
-                item.get("day").and_then(Value::as_str).unwrap_or_default(),
-                item.get("segment_key")
+                    .to_string();
+                let target_intervals = item
+                    .get("target_intervals")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0)
+                    .to_string();
+                Some(window_catalog::render(
+                    locale,
+                    "journal.window.speakers.cli.suggest.candidate.pair",
+                    &[
+                        (
+                            "similarity",
+                            window_catalog::CopyValue::String(similarity.as_str()),
+                        ),
+                        (
+                            "source_intervals",
+                            window_catalog::CopyValue::String(source_intervals.as_str()),
+                        ),
+                        (
+                            "target_intervals",
+                            window_catalog::CopyValue::String(target_intervals.as_str()),
+                        ),
+                    ],
+                ))
+            }
+            Some("low_confidence_review") => {
+                let day = item.get("day").and_then(Value::as_str).unwrap_or_default();
+                let segment_key = item
+                    .get("segment_key")
                     .and_then(Value::as_str)
-                    .unwrap_or_default(),
-                item.get("medium_or_null_count")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0),
-                item.get("total_labels")
+                    .unwrap_or_default();
+                let medium = item
+                    .get("medium_or_null_count")
                     .and_then(Value::as_u64)
                     .unwrap_or(0)
-            )),
+                    .to_string();
+                let total = item
+                    .get("total_labels")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0)
+                    .to_string();
+                Some(window_catalog::render(
+                    locale,
+                    "journal.window.speakers.cli.suggest.low.confidence",
+                    &[
+                        ("day", window_catalog::CopyValue::String(day)),
+                        (
+                            "segment_key",
+                            window_catalog::CopyValue::String(segment_key),
+                        ),
+                        ("medium", window_catalog::CopyValue::String(medium.as_str())),
+                        ("total", window_catalog::CopyValue::String(total.as_str())),
+                    ],
+                ))
+            }
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -1099,5 +1204,57 @@ mod tests {
         assert!(active_speaker_label(Some(&json!({"speaker":"tool"})), &admitted,).is_none());
         assert!(active_speaker_label(Some(&json!({"speaker":"person"})), &admitted,).is_some());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn format_suggestions_renders_english_and_singular_meeting_count() {
+        let english = crate::window_catalog::ENGLISH;
+        assert_eq!(
+            super::format_suggestions(english, &[]),
+            "No speaker curation suggestions found."
+        );
+        let rendered = super::format_suggestions(
+            english,
+            &[
+                json!({
+                    "type": "import_linkable",
+                    "name": "Ada",
+                    "entity_id": "ada",
+                    "meetings_mentioned": 1,
+                    "meeting_days": ["20260808"],
+                }),
+                json!({
+                    "type": "import_linkable",
+                    "name": "Bo",
+                    "entity_id": "bo",
+                    "meetings_mentioned": 2,
+                    "meeting_days": ["20260808", "20260809"],
+                }),
+                json!({
+                    "type": "speaker_candidate_pair",
+                    "similarity": 0.91,
+                    "source_intervals": 3,
+                    "target_intervals": 4,
+                }),
+                json!({
+                    "type": "low_confidence_review",
+                    "day": "20260808",
+                    "segment_key": "120000_1",
+                    "medium_or_null_count": 12,
+                    "total_labels": 20,
+                }),
+            ],
+        );
+        assert_eq!(
+            rendered,
+            concat!(
+                "Import linkable: Ada (ada) — mentioned in 1 meeting\n",
+                "  Days: 20260808\n",
+                "Import linkable: Bo (bo) — mentioned in 2 meetings\n",
+                "  Days: 20260808, 20260809\n",
+                "Speaker candidate pair: similarity 0.91 (3 vs 4 intervals)\n",
+                "Low confidence review: 20260808/120000_1 — 12 of 20 labels are medium/unresolved",
+            )
+        );
     }
 }

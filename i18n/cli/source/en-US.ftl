@@ -12067,3 +12067,55 @@ journal.cli.oauth.oura.callback.rejected = Oura authorization rejected.
 journal.cli.oauth.oura.callback.declined = Oura wasn't connected. you can close this tab.
 
 journal.cli.oauth.oura.callback.allowed = you allowed it at Oura. you can close this tab; the terminal says when it's connected.
+
+journal.cli.speakers.pool.refusal.progress.unreadable = voice list catch-up refused: catch-up progress file could not be read; check that your journal's awareness folder can be read
+
+journal.cli.speakers.pool.refusal.progress.write.failed = voice list catch-up refused: catch-up progress file could not be written
+
+journal.cli.speakers.pool.refusal.progress.write.failed.kept = voice list catch-up refused: catch-up progress file could not be written; what was added is kept
+
+journal.cli.speakers.pool.refusal.progress.invalid = voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json from your journal restarts the catch-up safely
+
+journal.cli.speakers.pool.refusal.days.unreadable = voice list catch-up refused: journal days could not be listed
+
+journal.cli.speakers.pool.refusal.format.unsupported = voice list catch-up refused: the voice list is in a format this version can't add to
+
+journal.cli.speakers.pool.refusal.pool.unreadable = voice list catch-up refused: voice list could not be read
+
+journal.cli.speakers.pool.refusal.pool.write.failed = voice list catch-up refused: voice list could not be written
+
+journal.cli.speakers.pool.refusal.pool.write.failed.kept = voice list catch-up refused: voice list could not be written; what was added is kept
+
+journal.cli.speakers.pool.refusal.lock.timeout = voice list catch-up refused: voice list lock timed out
+
+journal.cli.speakers.pool.refusal.lock.timeout.kept = voice list catch-up refused: voice list lock timed out; what was added is kept
+
+journal.cli.speakers.pool.error.lock = candidate pool lock failed: { $error }
+
+journal.cli.speakers.pool.error.read = candidate pool read failed: { $error }
+
+journal.cli.speakers.pool.error.write = candidate pool write failed: { $error }
+
+journal.cli.speakers.pool.error.centroid.width = candidate pool centroid width mismatch
+
+journal.cli.speakers.owner.voice.error.identity.invalid = configured owner identity is not admitted
+
+journal.cli.speakers.owner.voice.error.no.candidate = No candidate available
+
+journal.cli.speakers.owner.voice.error.stale.candidate = Candidate version mismatch or stale generation
+
+journal.cli.speakers.owner.voice.error.no.saved.voice = No owner voice is saved
+
+journal.cli.speakers.backfill.error.journal.root = journal root admission failed: { $error }
+
+journal.cli.speakers.backfill.error.ledger = ledger operation failed: { $error }
+
+journal.cli.speakers.backfill.error.invalid.flags = invalid backfill flags: { $detail }
+
+journal.cli.speakers.backfill.error.flags.mismatch = immutable backfill flags mismatch for operation { $operation_id }: expected commit={ $expected_commit } reattribute={ $expected_reattribute } accumulation={ $expected_accumulation }, got commit={ $got_commit } reattribute={ $got_reattribute } accumulation={ $got_accumulation }
+
+journal.cli.speakers.backfill.error.not.found = backfill operation not found: { $id }
+
+journal.cli.speakers.backfill.error.lock = backfill execution lock failed: { $error }
+
+journal.cli.speakers.backfill.error.scan = backfill scan failed: { $error }

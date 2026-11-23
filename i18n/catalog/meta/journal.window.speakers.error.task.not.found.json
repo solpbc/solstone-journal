@@ -1,0 +1,16 @@
+{
+  "description": "Speaker maintenance error when task operation id is not found.",
+  "context": "Journal window. Speaker maintenance error when task operation id is not found.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6ade05bc00d885ffc044517c9657c55bcf56d4ac1d9ccecaa1766bc0a36dd0e",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

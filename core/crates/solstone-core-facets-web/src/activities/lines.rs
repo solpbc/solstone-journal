@@ -123,7 +123,12 @@ pub(super) fn store_refused(error: &OwnerLineLabelError) -> Response {
         OwnerLineLabelError::Write(_) => StatusCode::INTERNAL_SERVER_ERROR,
         _ => StatusCode::CONFLICT,
     };
-    refused(error.reason_code(), error.to_string().into(), status)
+    let owned = error.clone();
+    refused(
+        error.reason_code(),
+        http::Detail::localized(move |locale| owned.render_in(locale)),
+        status,
+    )
 }
 
 fn owner_only() -> Response {

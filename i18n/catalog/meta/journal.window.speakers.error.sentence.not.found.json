@@ -1,0 +1,16 @@
+{
+  "description": "Speaker tag error when sentence embedding is not found.",
+  "context": "Journal window. Speaker tag error when sentence embedding is not found.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "95eb76a9c6eadee3d72886a984c53ecd671f272fa6d752a50ab5cd62a7b5386e",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

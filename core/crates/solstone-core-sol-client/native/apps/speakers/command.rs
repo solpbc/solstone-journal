@@ -28,6 +28,7 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/speakers/api/status",
@@ -87,6 +88,7 @@ pub fn bootstrap(ctx: CommandContext<'_>) -> CommandOutput {
         );
     }
     let stats = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/bootstrap",
@@ -167,6 +169,7 @@ pub fn resolve_names(ctx: CommandContext<'_>) -> CommandOutput {
         );
     }
     let stats = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/resolve-names",
@@ -232,6 +235,7 @@ pub fn attribute_segment(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let json_output = parsed.flag("--json");
     let wrap = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/attribute-segment",
@@ -354,6 +358,7 @@ pub fn correct(ctx: CommandContext<'_>) -> CommandOutput {
         Err(err) => return err,
     };
     let result = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/correct-attribution",
@@ -510,6 +515,7 @@ pub fn propagate_correction(ctx: CommandContext<'_>) -> CommandOutput {
         );
     }
     let result = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/propagate-correction",
@@ -576,6 +582,7 @@ pub fn backfill(ctx: CommandContext<'_>) -> CommandOutput {
         body["operation_id"] = json!(id);
     }
     let stats = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/backfill",
@@ -623,6 +630,7 @@ pub fn backfill_status(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let json_output = parsed.flag("--json");
     let stats = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("/app/speakers/api/backfill/operations/{operation_id}"),
@@ -658,6 +666,7 @@ pub fn backfill_resume(ctx: CommandContext<'_>) -> CommandOutput {
     let out = String::new();
     let start = monotonic_seconds(ctx);
     let _ = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         &format!("/app/speakers/api/backfill/operations/{operation_id}/resume"),
@@ -690,6 +699,7 @@ fn follow_backfill(
     let locale = ctx.human_locale();
     loop {
         let stats = match request_json(
+            locale,
             ctx,
             HttpMethod::Get,
             &format!("/app/speakers/api/backfill/operations/{operation_id}"),
@@ -821,6 +831,7 @@ pub fn repair(ctx: CommandContext<'_>) -> CommandOutput {
         body["operation_id"] = json!(id);
     }
     let stats = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/repair",
@@ -877,6 +888,7 @@ pub fn repair_status(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let json_output = parsed.flag("--json");
     let stats = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("/app/speakers/api/repair/operations/{operation_id}"),
@@ -917,6 +929,7 @@ pub fn repair_resume(ctx: CommandContext<'_>) -> CommandOutput {
     let json_output = parsed.flag("--json");
     let out = String::new();
     let stats = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         &format!("/app/speakers/api/repair/operations/{operation_id}/resume"),
@@ -1013,6 +1026,7 @@ fn follow_repair_start(
     loop {
         sleep(ctx, REPAIR_POLL_INTERVAL);
         let status = match request_json(
+            locale,
             ctx,
             HttpMethod::Get,
             &format!("/app/speakers/api/repair/operations/{operation_id}"),
@@ -1261,6 +1275,7 @@ pub fn backfill_last_seen(ctx: CommandContext<'_>) -> CommandOutput {
         );
     }
     let stats = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/backfill-last-seen",
@@ -1326,6 +1341,7 @@ pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
         );
     }
     let report = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/wipe",
@@ -1361,6 +1377,7 @@ pub fn discover(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let json_output = parsed.flag("--json");
     let result = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/discovery/scan",
@@ -1463,6 +1480,7 @@ pub fn presence(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     };
     let result = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("/app/speakers/api/discovery/cluster/{cluster_id}/presence"),
@@ -1542,6 +1560,7 @@ pub fn identify(ctx: CommandContext<'_>) -> CommandOutput {
         Value::Array(reviewed_ids.into_iter().map(Value::String).collect())
     };
     let result = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/discovery/identify-cli",
@@ -1584,6 +1603,7 @@ pub fn identify_undo(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     };
     match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/discovery/identify/undo",
@@ -1619,6 +1639,7 @@ pub fn identify_operation(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     };
     match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("/app/speakers/api/discovery/identify/operations/{operation_id}"),
@@ -1657,6 +1678,7 @@ pub fn dismiss_cluster(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     };
     match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/discovery/dismiss",
@@ -1703,6 +1725,7 @@ pub fn merge_names(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     };
     match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/merge-names",
@@ -1739,6 +1762,7 @@ pub fn link_import(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     };
     match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/link-import",
@@ -1780,6 +1804,7 @@ pub fn seed_from_imports(ctx: CommandContext<'_>) -> CommandOutput {
         );
     }
     let stats = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/seed-from-imports",
@@ -1835,6 +1860,7 @@ fn suggest_output(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let limit = parsed.value("--limit").unwrap_or("5");
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/speakers/api/suggest",
@@ -1872,6 +1898,7 @@ pub fn build_from_tags(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let result = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/owner/build-from-tags",
@@ -1905,6 +1932,7 @@ pub fn rebuild_owner(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let result = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/owner/rebuild",
@@ -1979,6 +2007,7 @@ pub fn tag_owner(ctx: CommandContext<'_>) -> CommandOutput {
         Err(err) => return err,
     };
     let result = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/owner/tag-cli",
@@ -2070,6 +2099,7 @@ pub fn sentences(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     };
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("/app/speakers/api/review-cli/{day}/{stream}/{segment}/{source}"),
@@ -2141,6 +2171,7 @@ pub fn day_segments(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let limit = parsed.value("--limit").unwrap_or("20");
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("/app/speakers/api/segments-cli/{day}"),
@@ -2418,7 +2449,7 @@ fn canonical_flag<'a>(token: &str, flags: &'a [FlagSpec]) -> Option<(&'a str, bo
 
 fn request_pretty_get(ctx: CommandContext<'_>, path: &str) -> CommandOutput {
     let locale = solstone_core_cli_copy::ENGLISH;
-    match request_json(ctx, HttpMethod::Get, path, vec![], None) {
+    match request_json(locale, ctx, HttpMethod::Get, path, vec![], None) {
         Ok(value) => crate::agent_output::literal_output(stdout_json(&value)),
         Err(error) => speaker_error(locale, error),
     }
@@ -2427,13 +2458,14 @@ fn request_pretty_get(ctx: CommandContext<'_>, path: &str) -> CommandOutput {
 fn post_json(ctx: CommandContext<'_>, path: &str, body: Value) -> CommandOutput {
     let locale = solstone_core_cli_copy::ENGLISH;
     let json = if body.is_null() { None } else { Some(body) };
-    match request_json(ctx, HttpMethod::Post, path, vec![], json) {
+    match request_json(locale, ctx, HttpMethod::Post, path, vec![], json) {
         Ok(value) => crate::agent_output::literal_output(stdout_json(&value)),
         Err(error) => speaker_error(locale, error),
     }
 }
 
 fn request_json(
+    locale: &str,
     ctx: CommandContext<'_>,
     method: HttpMethod,
     path: &str,
@@ -2446,7 +2478,7 @@ fn request_json(
         params,
         json,
         policy: TimeoutPolicy::Api,
-        headers: Vec::new(),
+        headers: crate::transport::locale_headers(locale),
     })?;
     decode_response(&response)
 }

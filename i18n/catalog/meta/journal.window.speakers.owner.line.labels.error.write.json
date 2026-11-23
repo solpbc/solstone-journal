@@ -1,0 +1,21 @@
+{
+  "description": "Owner line label error when writing labels fails.",
+  "context": "Journal window. Owner line label error when writing labels fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "046f65a44cbba1d61eccab5abb1261c45b5aeb51730b209ce6abc32ed2c17e06",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

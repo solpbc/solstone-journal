@@ -1,0 +1,16 @@
+{
+  "description": "Speaker wipe refusal when wipe is held.",
+  "context": "Journal window. Speaker wipe refusal when wipe is held.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d7115c71fff1eef45da1e77573370b726bc284abfd5952cbc9bb85548b199d53",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

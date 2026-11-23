@@ -65,6 +65,36 @@ pub enum ArtifactWipeError {
     NotUtf8 { path: String },
 }
 
+impl ArtifactWipeError {
+    #[must_use]
+    pub fn render_window(&self, locale: &str) -> String {
+        use solstone_core_window_catalog::strings;
+        match self {
+            Self::Path(error) => {
+                let error = error.to_string();
+                strings(
+                    locale,
+                    "journal.window.speakers.wipe.error.path",
+                    [("error", error.as_str())],
+                )
+            }
+            Self::Read { path, source } => {
+                let source = source.to_string();
+                strings(
+                    locale,
+                    "journal.window.speakers.wipe.error.read",
+                    [("path", path.as_str()), ("source", source.as_str())],
+                )
+            }
+            Self::NotUtf8 { path } => strings(
+                locale,
+                "journal.window.speakers.wipe.error.not.utf8",
+                [("path", path.as_str())],
+            ),
+        }
+    }
+}
+
 /// Report what a wipe would take, moving nothing.
 pub fn dry_run(journal_root: &Path) -> Result<WipeReport, ArtifactWipeError> {
     let paths = wipe_paths(journal_root)?;

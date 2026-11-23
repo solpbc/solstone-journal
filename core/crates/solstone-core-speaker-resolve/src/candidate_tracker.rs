@@ -109,6 +109,35 @@ pub enum CandidateTrackerError {
     Cancelled(String),
 }
 
+impl CandidateTrackerError {
+    #[must_use]
+    pub fn render_cli(&self, locale: &str) -> String {
+        match self {
+            Self::Lock(error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.speakers.pool.error.lock",
+                [("error", error)],
+            ),
+            Self::Read(error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.speakers.pool.error.read",
+                [("error", error)],
+            ),
+            Self::Write(error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.speakers.pool.error.write",
+                [("error", error)],
+            ),
+            Self::CentroidWidth => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.speakers.pool.error.centroid.width",
+                &[],
+            ),
+            Self::Cancelled(detail) => detail.clone(),
+        }
+    }
+}
+
 /// Outcome of confirming a named pool voice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum VoiceConfirm {
@@ -1070,10 +1099,90 @@ fn centroid(rows: &[Vec<f32>]) -> Option<Vec<f32>> {
     (norm > 0.0).then(|| sum.into_iter().map(|x| x / norm).collect())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpeakerPoolRefusal {
+    ProgressUnreadable,
+    ProgressWriteFailed,
+    ProgressWriteFailedKept,
+    ProgressInvalid,
+    JournalDaysUnreadable,
+    PoolFormatUnsupported,
+    PoolUnreadable,
+    PoolWriteFailed,
+    PoolWriteFailedKept,
+    PoolLockTimeout,
+    PoolLockTimeoutKept,
+}
+
+impl SpeakerPoolRefusal {
+    #[must_use]
+    pub const fn message_id(self) -> &'static str {
+        match self {
+            Self::ProgressUnreadable => "journal.cli.speakers.pool.refusal.progress.unreadable",
+            Self::ProgressWriteFailed => "journal.cli.speakers.pool.refusal.progress.write.failed",
+            Self::ProgressWriteFailedKept => {
+                "journal.cli.speakers.pool.refusal.progress.write.failed.kept"
+            }
+            Self::ProgressInvalid => "journal.cli.speakers.pool.refusal.progress.invalid",
+            Self::JournalDaysUnreadable => "journal.cli.speakers.pool.refusal.days.unreadable",
+            Self::PoolFormatUnsupported => "journal.cli.speakers.pool.refusal.format.unsupported",
+            Self::PoolUnreadable => "journal.cli.speakers.pool.refusal.pool.unreadable",
+            Self::PoolWriteFailed => "journal.cli.speakers.pool.refusal.pool.write.failed",
+            Self::PoolWriteFailedKept => "journal.cli.speakers.pool.refusal.pool.write.failed.kept",
+            Self::PoolLockTimeout => "journal.cli.speakers.pool.refusal.lock.timeout",
+            Self::PoolLockTimeoutKept => "journal.cli.speakers.pool.refusal.lock.timeout.kept",
+        }
+    }
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ProgressUnreadable => {
+                "voice list catch-up refused: catch-up progress file could not be read; check that your journal's awareness folder can be read"
+            }
+            Self::ProgressWriteFailed => {
+                "voice list catch-up refused: catch-up progress file could not be written"
+            }
+            Self::ProgressWriteFailedKept => {
+                "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+            }
+            Self::ProgressInvalid => {
+                "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json from your journal restarts the catch-up safely"
+            }
+            Self::JournalDaysUnreadable => {
+                "voice list catch-up refused: journal days could not be listed"
+            }
+            Self::PoolFormatUnsupported => {
+                "voice list catch-up refused: the voice list is in a format this version can't add to"
+            }
+            Self::PoolUnreadable => "voice list catch-up refused: voice list could not be read",
+            Self::PoolWriteFailed => "voice list catch-up refused: voice list could not be written",
+            Self::PoolWriteFailedKept => {
+                "voice list catch-up refused: voice list could not be written; what was added is kept"
+            }
+            Self::PoolLockTimeout => "voice list catch-up refused: voice list lock timed out",
+            Self::PoolLockTimeoutKept => {
+                "voice list catch-up refused: voice list lock timed out; what was added is kept"
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn render_in(self, locale: &str) -> String {
+        solstone_core_cli_copy::render_for(locale, self.message_id(), &[])
+    }
+}
+
+impl std::fmt::Display for SpeakerPoolRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum SpeakerPoolCatchUp {
     Done(Value),
-    Refuse(&'static str),
+    Refuse(SpeakerPoolRefusal),
 }
 
 #[cfg(test)]
@@ -1764,11 +1873,11 @@ fn require_listable_segments(
     Ok(segments)
 }
 
-fn state_write_refusal(fed_count: usize) -> &'static str {
+fn state_write_refusal(fed_count: usize) -> SpeakerPoolRefusal {
     if fed_count > 0 {
-        "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+        SpeakerPoolRefusal::ProgressWriteFailedKept
     } else {
-        "voice list catch-up refused: catch-up progress file could not be written"
+        SpeakerPoolRefusal::ProgressWriteFailed
     }
 }
 
@@ -1815,7 +1924,7 @@ where
         let bytes = match fs::read(&state_path) {
             Ok(b) => b,
             Err(_) => {
-                let msg = "voice list catch-up refused: catch-up progress file could not be read; check that your journal's awareness folder can be read";
+                let msg = SpeakerPoolRefusal::ProgressUnreadable;
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
             }
@@ -1823,7 +1932,7 @@ where
         let val: Value = match serde_json::from_slice(&bytes) {
             Ok(v) => v,
             Err(_) => {
-                let msg = "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json from your journal restarts the catch-up safely";
+                let msg = SpeakerPoolRefusal::ProgressInvalid;
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
             }
@@ -1831,7 +1940,7 @@ where
         match BackfillState::from_json(&val) {
             Ok(s) => s,
             Err(_) => {
-                let msg = "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json from your journal restarts the catch-up safely";
+                let msg = SpeakerPoolRefusal::ProgressInvalid;
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
             }
@@ -1864,8 +1973,7 @@ where
                 return SpeakerPoolCatchUp::Done(Value::Object(map));
             }
             Err(_) => {
-                let msg =
-                    "voice list catch-up refused: catch-up progress file could not be written";
+                let msg = SpeakerPoolRefusal::ProgressWriteFailed;
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
             }
@@ -1928,13 +2036,13 @@ where
             return SpeakerPoolCatchUp::Done(Value::Object(map));
         }
         Err(_) => {
-            let msg = "voice list catch-up refused: journal days could not be listed";
+            let msg = SpeakerPoolRefusal::JournalDaysUnreadable;
             log::warn!("{msg}");
             return SpeakerPoolCatchUp::Refuse(msg);
         }
     };
     if !chronicle_meta.is_dir() {
-        let msg = "voice list catch-up refused: journal days could not be listed";
+        let msg = SpeakerPoolRefusal::JournalDaysUnreadable;
         log::warn!("{msg}");
         return SpeakerPoolCatchUp::Refuse(msg);
     }
@@ -1942,7 +2050,7 @@ where
     let read_dir = match fs::read_dir(&chronicle_path) {
         Ok(rd) => rd,
         Err(_) => {
-            let msg = "voice list catch-up refused: journal days could not be listed";
+            let msg = SpeakerPoolRefusal::JournalDaysUnreadable;
             log::warn!("{msg}");
             return SpeakerPoolCatchUp::Refuse(msg);
         }
@@ -1952,7 +2060,7 @@ where
         let entry = match entry {
             Ok(e) => e,
             Err(_) => {
-                let msg = "voice list catch-up refused: journal days could not be listed";
+                let msg = SpeakerPoolRefusal::JournalDaysUnreadable;
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
             }
@@ -2000,7 +2108,7 @@ where
             return SpeakerPoolCatchUp::Done(Value::Object(map));
         }
         Err(_) => {
-            let msg = "voice list catch-up refused: catch-up progress file could not be written";
+            let msg = SpeakerPoolRefusal::ProgressWriteFailed;
             log::warn!("{msg}");
             return SpeakerPoolCatchUp::Refuse(msg);
         }
@@ -2012,7 +2120,7 @@ where
         state.complete = true;
         state.cursor = None;
         if write_backfill_state(journal, &state, checkpoint).is_err() {
-            let msg = "voice list catch-up refused: catch-up progress file could not be written";
+            let msg = SpeakerPoolRefusal::ProgressWriteFailed;
             log::warn!("{msg}");
             return SpeakerPoolCatchUp::Refuse(msg);
         }
@@ -2042,12 +2150,12 @@ where
         let _pool_lock = match hold_lock(&pool_path, LockOptions::default()) {
             Ok(g) => g,
             Err(LockError::Timeout(_)) => {
-                let msg = "voice list catch-up refused: voice list lock timed out";
+                let msg = SpeakerPoolRefusal::PoolLockTimeout;
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
             }
             Err(_) => {
-                let msg = "voice list catch-up refused: voice list could not be read";
+                let msg = SpeakerPoolRefusal::PoolUnreadable;
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
             }
@@ -2061,13 +2169,13 @@ where
                 if let Some(first) = candidates_snapshot.first()
                     && first.centroid.len() != 256
                 {
-                    let msg = "voice list catch-up refused: the voice list is in a format this version can't add to";
+                    let msg = SpeakerPoolRefusal::PoolFormatUnsupported;
                     log::warn!("{msg}");
                     return SpeakerPoolCatchUp::Refuse(msg);
                 }
             }
             Err(_) => {
-                let msg = "voice list catch-up refused: voice list could not be read";
+                let msg = SpeakerPoolRefusal::PoolUnreadable;
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
             }
@@ -2279,9 +2387,9 @@ where
                         }
                         if write_backfill_state(journal, &state, checkpoint).is_err() {
                             let msg = if fed_count > 0 {
-                                "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                                SpeakerPoolRefusal::ProgressWriteFailedKept
                             } else {
-                                "voice list catch-up refused: catch-up progress file could not be written"
+                                SpeakerPoolRefusal::ProgressWriteFailed
                             };
                             log::warn!("{msg}");
                             return SpeakerPoolCatchUp::Refuse(msg);
@@ -2295,49 +2403,49 @@ where
                         break 'day_retries;
                     }
 
-                    let (m1_jsonl, m1_npz) = match (
-                        fs::metadata(&jsonl_path),
-                        fs::metadata(&npz_path),
-                    ) {
-                        (Ok(j), Ok(n)) => (j, n),
-                        (Err(e), _) | (_, Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
-                            handled_in_this_run.insert(pos.clone());
-                            if let Some(RetryEntry::Day(cur_d)) = state.retry.iter_mut().find(
+                    let (m1_jsonl, m1_npz) =
+                        match (fs::metadata(&jsonl_path), fs::metadata(&npz_path)) {
+                            (Ok(j), Ok(n)) => (j, n),
+                            (Err(e), _) | (_, Err(e))
+                                if e.kind() == std::io::ErrorKind::NotFound =>
+                            {
+                                handled_in_this_run.insert(pos.clone());
+                                if let Some(RetryEntry::Day(cur_d)) = state.retry.iter_mut().find(
                                 |r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day),
                             ) {
                                 cur_d.finished_through = Some(pos.clone());
                             }
-                            if write_backfill_state(journal, &state, checkpoint).is_err() {
-                                let msg = state_write_refusal(fed_count);
-                                log::warn!("{msg}");
-                                return SpeakerPoolCatchUp::Refuse(msg);
+                                if write_backfill_state(journal, &state, checkpoint).is_err() {
+                                    let msg = state_write_refusal(fed_count);
+                                    log::warn!("{msg}");
+                                    return SpeakerPoolCatchUp::Refuse(msg);
+                                }
+                                continue;
                             }
-                            continue;
-                        }
-                        _ => {
-                            state.retry.push(RetryEntry::Source(SourceRetryEntry {
-                                position: pos.clone(),
-                                tries: 1,
-                                tried_at: run_now,
-                            }));
-                            handled_in_this_run.insert(pos.clone());
-                            if let Some(RetryEntry::Day(cur_d)) = state.retry.iter_mut().find(
+                            _ => {
+                                state.retry.push(RetryEntry::Source(SourceRetryEntry {
+                                    position: pos.clone(),
+                                    tries: 1,
+                                    tried_at: run_now,
+                                }));
+                                handled_in_this_run.insert(pos.clone());
+                                if let Some(RetryEntry::Day(cur_d)) = state.retry.iter_mut().find(
                                 |r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day),
                             ) {
                                 cur_d.finished_through = Some(pos.clone());
                             }
-                            if write_backfill_state(journal, &state, checkpoint).is_err() {
-                                let msg = if fed_count > 0 {
-                                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
-                                } else {
-                                    "voice list catch-up refused: catch-up progress file could not be written"
-                                };
-                                log::warn!("{msg}");
-                                return SpeakerPoolCatchUp::Refuse(msg);
+                                if write_backfill_state(journal, &state, checkpoint).is_err() {
+                                    let msg = if fed_count > 0 {
+                                        SpeakerPoolRefusal::ProgressWriteFailedKept
+                                    } else {
+                                        SpeakerPoolRefusal::ProgressWriteFailed
+                                    };
+                                    log::warn!("{msg}");
+                                    return SpeakerPoolCatchUp::Refuse(msg);
+                                }
+                                continue;
                             }
-                            continue;
-                        }
-                    };
+                        };
 
                     let mtime_jsonl = m1_jsonl
                         .modified()
@@ -2366,9 +2474,9 @@ where
                         }
                         if write_backfill_state(journal, &state, checkpoint).is_err() {
                             let msg = if fed_count > 0 {
-                                "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                                SpeakerPoolRefusal::ProgressWriteFailedKept
                             } else {
-                                "voice list catch-up refused: catch-up progress file could not be written"
+                                SpeakerPoolRefusal::ProgressWriteFailed
                             };
                             log::warn!("{msg}");
                             return SpeakerPoolCatchUp::Refuse(msg);
@@ -2418,9 +2526,9 @@ where
                         }
                         if write_backfill_state(journal, &state, checkpoint).is_err() {
                             let msg = if fed_count > 0 {
-                                "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                                SpeakerPoolRefusal::ProgressWriteFailedKept
                             } else {
-                                "voice list catch-up refused: catch-up progress file could not be written"
+                                SpeakerPoolRefusal::ProgressWriteFailed
                             };
                             log::warn!("{msg}");
                             return SpeakerPoolCatchUp::Refuse(msg);
@@ -2468,18 +2576,18 @@ where
                                 }
                                 Err(CandidateTrackerError::Lock(LockError::Timeout(_))) => {
                                     let msg = if fed_count > 0 {
-                                        "voice list catch-up refused: voice list lock timed out; what was added is kept"
+                                        SpeakerPoolRefusal::PoolLockTimeoutKept
                                     } else {
-                                        "voice list catch-up refused: voice list lock timed out"
+                                        SpeakerPoolRefusal::PoolLockTimeout
                                     };
                                     log::warn!("{msg}");
                                     return SpeakerPoolCatchUp::Refuse(msg);
                                 }
                                 Err(_) => {
                                     let msg = if fed_count > 0 {
-                                        "voice list catch-up refused: voice list could not be written; what was added is kept"
+                                        SpeakerPoolRefusal::PoolWriteFailedKept
                                     } else {
-                                        "voice list catch-up refused: voice list could not be written"
+                                        SpeakerPoolRefusal::PoolWriteFailed
                                     };
                                     log::warn!("{msg}");
                                     return SpeakerPoolCatchUp::Refuse(msg);
@@ -2512,9 +2620,9 @@ where
 
                     if write_backfill_state(journal, &state, checkpoint).is_err() {
                         let msg = if fed_count > 0 {
-                            "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                            SpeakerPoolRefusal::ProgressWriteFailedKept
                         } else {
-                            "voice list catch-up refused: catch-up progress file could not be written"
+                            SpeakerPoolRefusal::ProgressWriteFailed
                         };
                         log::warn!("{msg}");
                         return SpeakerPoolCatchUp::Refuse(msg);
@@ -2527,9 +2635,9 @@ where
                         .retain(|r| !matches!(r, RetryEntry::Day(cur_d) if cur_d.day == d.day));
                     if write_backfill_state(journal, &state, checkpoint).is_err() {
                         let msg = if fed_count > 0 {
-                            "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                            SpeakerPoolRefusal::ProgressWriteFailedKept
                         } else {
-                            "voice list catch-up refused: catch-up progress file could not be written"
+                            SpeakerPoolRefusal::ProgressWriteFailed
                         };
                         log::warn!("{msg}");
                         return SpeakerPoolCatchUp::Refuse(msg);
@@ -2657,9 +2765,9 @@ where
             handled_in_this_run.insert(pos.clone());
             if write_backfill_state(journal, &state, checkpoint).is_err() {
                 let msg = if fed_count > 0 {
-                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                    SpeakerPoolRefusal::ProgressWriteFailedKept
                 } else {
-                    "voice list catch-up refused: catch-up progress file could not be written"
+                    SpeakerPoolRefusal::ProgressWriteFailed
                 };
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
@@ -2708,9 +2816,9 @@ where
             }
             if write_backfill_state(journal, &state, checkpoint).is_err() {
                 let msg = if fed_count > 0 {
-                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                    SpeakerPoolRefusal::ProgressWriteFailedKept
                 } else {
-                    "voice list catch-up refused: catch-up progress file could not be written"
+                    SpeakerPoolRefusal::ProgressWriteFailed
                 };
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
@@ -2768,9 +2876,9 @@ where
             }
             if write_backfill_state(journal, &state, checkpoint).is_err() {
                 let msg = if fed_count > 0 {
-                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                    SpeakerPoolRefusal::ProgressWriteFailedKept
                 } else {
-                    "voice list catch-up refused: catch-up progress file could not be written"
+                    SpeakerPoolRefusal::ProgressWriteFailed
                 };
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
@@ -2816,18 +2924,18 @@ where
                     }
                     Err(CandidateTrackerError::Lock(LockError::Timeout(_))) => {
                         let msg = if fed_count > 0 {
-                            "voice list catch-up refused: voice list lock timed out; what was added is kept"
+                            SpeakerPoolRefusal::PoolLockTimeoutKept
                         } else {
-                            "voice list catch-up refused: voice list lock timed out"
+                            SpeakerPoolRefusal::PoolLockTimeout
                         };
                         log::warn!("{msg}");
                         return SpeakerPoolCatchUp::Refuse(msg);
                     }
                     Err(_) => {
                         let msg = if fed_count > 0 {
-                            "voice list catch-up refused: voice list could not be written; what was added is kept"
+                            SpeakerPoolRefusal::PoolWriteFailedKept
                         } else {
-                            "voice list catch-up refused: voice list could not be written"
+                            SpeakerPoolRefusal::PoolWriteFailed
                         };
                         log::warn!("{msg}");
                         return SpeakerPoolCatchUp::Refuse(msg);
@@ -2867,9 +2975,9 @@ where
 
         if write_backfill_state(journal, &state, checkpoint).is_err() {
             let msg = if fed_count > 0 {
-                "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                SpeakerPoolRefusal::ProgressWriteFailedKept
             } else {
-                "voice list catch-up refused: catch-up progress file could not be written"
+                SpeakerPoolRefusal::ProgressWriteFailed
             };
             log::warn!("{msg}");
             return SpeakerPoolCatchUp::Refuse(msg);
@@ -2925,9 +3033,9 @@ where
             handled_in_this_run.insert(pos.clone());
             if write_backfill_state(journal, &state, checkpoint).is_err() {
                 let msg = if fed_count > 0 {
-                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                    SpeakerPoolRefusal::ProgressWriteFailedKept
                 } else {
-                    "voice list catch-up refused: catch-up progress file could not be written"
+                    SpeakerPoolRefusal::ProgressWriteFailed
                 };
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
@@ -2963,9 +3071,9 @@ where
                 handled_in_this_run.insert(pos.clone());
                 if write_backfill_state(journal, &state, checkpoint).is_err() {
                     let msg = if fed_count > 0 {
-                        "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                        SpeakerPoolRefusal::ProgressWriteFailedKept
                     } else {
-                        "voice list catch-up refused: catch-up progress file could not be written"
+                        SpeakerPoolRefusal::ProgressWriteFailed
                     };
                     log::warn!("{msg}");
                     return SpeakerPoolCatchUp::Refuse(msg);
@@ -2995,9 +3103,9 @@ where
             handled_in_this_run.insert(pos.clone());
             if write_backfill_state(journal, &state, checkpoint).is_err() {
                 let msg = if fed_count > 0 {
-                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                    SpeakerPoolRefusal::ProgressWriteFailedKept
                 } else {
-                    "voice list catch-up refused: catch-up progress file could not be written"
+                    SpeakerPoolRefusal::ProgressWriteFailed
                 };
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
@@ -3041,9 +3149,9 @@ where
             handled_in_this_run.insert(pos.clone());
             if write_backfill_state(journal, &state, checkpoint).is_err() {
                 let msg = if fed_count > 0 {
-                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                    SpeakerPoolRefusal::ProgressWriteFailedKept
                 } else {
-                    "voice list catch-up refused: catch-up progress file could not be written"
+                    SpeakerPoolRefusal::ProgressWriteFailed
                 };
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
@@ -3087,18 +3195,18 @@ where
                     }
                     Err(CandidateTrackerError::Lock(LockError::Timeout(_))) => {
                         let msg = if fed_count > 0 {
-                            "voice list catch-up refused: voice list lock timed out; what was added is kept"
+                            SpeakerPoolRefusal::PoolLockTimeoutKept
                         } else {
-                            "voice list catch-up refused: voice list lock timed out"
+                            SpeakerPoolRefusal::PoolLockTimeout
                         };
                         log::warn!("{msg}");
                         return SpeakerPoolCatchUp::Refuse(msg);
                     }
                     Err(_) => {
                         let msg = if fed_count > 0 {
-                            "voice list catch-up refused: voice list could not be written; what was added is kept"
+                            SpeakerPoolRefusal::PoolWriteFailedKept
                         } else {
-                            "voice list catch-up refused: voice list could not be written"
+                            SpeakerPoolRefusal::PoolWriteFailed
                         };
                         log::warn!("{msg}");
                         return SpeakerPoolCatchUp::Refuse(msg);
@@ -3122,9 +3230,9 @@ where
 
         if write_backfill_state(journal, &state, checkpoint).is_err() {
             let msg = if fed_count > 0 {
-                "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                SpeakerPoolRefusal::ProgressWriteFailedKept
             } else {
-                "voice list catch-up refused: catch-up progress file could not be written"
+                SpeakerPoolRefusal::ProgressWriteFailed
             };
             log::warn!("{msg}");
             return SpeakerPoolCatchUp::Refuse(msg);
@@ -5841,7 +5949,7 @@ mod tests {
         let res = backfill_speaker_pool(&journal);
         assert_eq!(
             res,
-            SpeakerPoolCatchUp::Refuse("voice list catch-up refused: voice list could not be read")
+            SpeakerPoolCatchUp::Refuse(SpeakerPoolRefusal::PoolUnreadable)
         );
 
         let _ = fs::remove_dir_all(journal);
@@ -5874,9 +5982,7 @@ mod tests {
         let res = backfill_speaker_pool(&journal);
         assert_eq!(
             res,
-            SpeakerPoolCatchUp::Refuse(
-                "voice list catch-up refused: the voice list is in a format this version can't add to"
-            )
+            SpeakerPoolCatchUp::Refuse(SpeakerPoolRefusal::PoolFormatUnsupported)
         );
 
         // A finished catch-up reads nothing it would act on: the same pool no
@@ -5948,9 +6054,7 @@ mod tests {
         let res = backfill_speaker_pool(&journal);
         assert_eq!(
             res,
-            SpeakerPoolCatchUp::Refuse(
-                "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json from your journal restarts the catch-up safely"
-            )
+            SpeakerPoolCatchUp::Refuse(SpeakerPoolRefusal::ProgressInvalid)
         );
         assert!(
             !journal
@@ -5975,9 +6079,7 @@ mod tests {
         let res = backfill_speaker_pool(&journal);
         assert_eq!(
             res,
-            SpeakerPoolCatchUp::Refuse(
-                "voice list catch-up refused: journal days could not be listed"
-            )
+            SpeakerPoolCatchUp::Refuse(SpeakerPoolRefusal::JournalDaysUnreadable)
         );
         assert!(
             !journal
@@ -6089,9 +6191,7 @@ mod tests {
         let res = backfill_speaker_pool(&journal);
         assert_eq!(
             res,
-            SpeakerPoolCatchUp::Refuse(
-                "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
-            )
+            SpeakerPoolCatchUp::Refuse(SpeakerPoolRefusal::ProgressWriteFailedKept)
         );
 
         // Next run with no fault
@@ -6190,9 +6290,7 @@ mod tests {
         let res = backfill_speaker_pool(&journal);
         assert_eq!(
             res,
-            SpeakerPoolCatchUp::Refuse(
-                "voice list catch-up refused: voice list lock timed out; what was added is kept"
-            )
+            SpeakerPoolCatchUp::Refuse(SpeakerPoolRefusal::PoolLockTimeoutKept)
         );
 
         drop(_bf_guard);
@@ -6372,5 +6470,33 @@ mod tests {
         assert!(matches!(error, CandidateTrackerError::Cancelled(_)));
         assert_eq!(fs::read(&pool).unwrap_or_default(), before);
         let _ = fs::remove_dir_all(&journal);
+    }
+
+    #[test]
+    fn speaker_pool_refusals_and_errors_render_identically_in_english() {
+        let refusals = [
+            SpeakerPoolRefusal::ProgressUnreadable,
+            SpeakerPoolRefusal::ProgressWriteFailed,
+            SpeakerPoolRefusal::ProgressWriteFailedKept,
+            SpeakerPoolRefusal::ProgressInvalid,
+            SpeakerPoolRefusal::JournalDaysUnreadable,
+            SpeakerPoolRefusal::PoolFormatUnsupported,
+            SpeakerPoolRefusal::PoolUnreadable,
+            SpeakerPoolRefusal::PoolWriteFailed,
+            SpeakerPoolRefusal::PoolWriteFailedKept,
+            SpeakerPoolRefusal::PoolLockTimeout,
+            SpeakerPoolRefusal::PoolLockTimeoutKept,
+        ];
+        for refusal in refusals {
+            assert_eq!(
+                refusal.render_in(solstone_core_cli_copy::ENGLISH),
+                refusal.as_str()
+            );
+        }
+        let width_error = CandidateTrackerError::CentroidWidth;
+        assert_eq!(
+            width_error.render_cli(solstone_core_cli_copy::ENGLISH),
+            width_error.to_string()
+        );
     }
 }

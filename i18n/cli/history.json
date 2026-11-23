@@ -97740,6 +97740,440 @@
       "selector": null
     },
     {
+      "id": "journal.cli.speakers.backfill.error.flags.mismatch",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e666c6167732e6d69736d61746368",
+      "namespace": "journal.cli.speakers.backfill.error.flags",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "operation_id",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "expected_commit",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "expected_reattribute",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "expected_accumulation",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "got_commit",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "got_reattribute",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "got_accumulation",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.backfill.error.invalid.flags",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e696e76616c69642e666c616773",
+      "namespace": "journal.cli.speakers.backfill.error.invalid",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.backfill.error.journal.root",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6a6f75726e616c2e726f6f74",
+      "namespace": "journal.cli.speakers.backfill.error.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.backfill.error.ledger",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6c6564676572",
+      "namespace": "journal.cli.speakers.backfill.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.backfill.error.lock",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6c6f636b",
+      "namespace": "journal.cli.speakers.backfill.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.backfill.error.not.found",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6e6f742e666f756e64",
+      "namespace": "journal.cli.speakers.backfill.error.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "id",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.backfill.error.scan",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e7363616e",
+      "namespace": "journal.cli.speakers.backfill.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.owner.voice.error.identity.invalid",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6964656e746974792e696e76616c6964",
+      "namespace": "journal.cli.speakers.owner.voice.error.identity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.owner.voice.error.no.candidate",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6e6f2e63616e646964617465",
+      "namespace": "journal.cli.speakers.owner.voice.error.no",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.owner.voice.error.no.saved.voice",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6e6f2e73617665642e766f696365",
+      "namespace": "journal.cli.speakers.owner.voice.error.no.saved",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.owner.voice.error.stale.candidate",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e7374616c652e63616e646964617465",
+      "namespace": "journal.cli.speakers.owner.voice.error.stale",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.error.centroid.width",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e63656e74726f69642e7769647468",
+      "namespace": "journal.cli.speakers.pool.error.centroid",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.error.lock",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e6c6f636b",
+      "namespace": "journal.cli.speakers.pool.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.error.read",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e72656164",
+      "namespace": "journal.cli.speakers.pool.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.error.write",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e7772697465",
+      "namespace": "journal.cli.speakers.pool.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.refusal.days.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e646179732e756e7265616461626c65",
+      "namespace": "journal.cli.speakers.pool.refusal.days",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.refusal.format.unsupported",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e666f726d61742e756e737570706f72746564",
+      "namespace": "journal.cli.speakers.pool.refusal.format",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.refusal.lock.timeout",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e6c6f636b2e74696d656f7574",
+      "namespace": "journal.cli.speakers.pool.refusal.lock",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.refusal.lock.timeout.kept",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e6c6f636b2e74696d656f75742e6b657074",
+      "namespace": "journal.cli.speakers.pool.refusal.lock.timeout",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.refusal.pool.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e756e7265616461626c65",
+      "namespace": "journal.cli.speakers.pool.refusal.pool",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.refusal.pool.write.failed",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e77726974652e6661696c6564",
+      "namespace": "journal.cli.speakers.pool.refusal.pool.write",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.refusal.pool.write.failed.kept",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e77726974652e6661696c65642e6b657074",
+      "namespace": "journal.cli.speakers.pool.refusal.pool.write.failed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.refusal.progress.invalid",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e696e76616c6964",
+      "namespace": "journal.cli.speakers.pool.refusal.progress",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.refusal.progress.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e756e7265616461626c65",
+      "namespace": "journal.cli.speakers.pool.refusal.progress",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.refusal.progress.write.failed",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e77726974652e6661696c6564",
+      "namespace": "journal.cli.speakers.pool.refusal.progress.write",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.speakers.pool.refusal.progress.write.failed.kept",
+      "resource": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e77726974652e6661696c65642e6b657074",
+      "namespace": "journal.cli.speakers.pool.refusal.progress.write.failed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.cli.stats.arguments",
       "resource": "m6a6f75726e616c2e636c692e73746174732e617267756d656e7473",
       "namespace": "journal.cli.stats",

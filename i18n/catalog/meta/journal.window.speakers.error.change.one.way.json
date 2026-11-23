@@ -1,0 +1,16 @@
+{
+  "description": "Speaker identify error when attempting to undo a one-way voice naming.",
+  "context": "Journal window. Speaker identify error when attempting to undo a one-way voice naming.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a16dbdc93fac26c09870483654ac56341e1392ccf7b20d337882feb5759a53a3",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

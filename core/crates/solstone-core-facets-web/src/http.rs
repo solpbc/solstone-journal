@@ -13,10 +13,13 @@ use solstone_core_convey_http::{
     window_catalog::{ENGLISH, strings, text},
 };
 
+use std::sync::Arc;
+
 #[derive(Clone)]
 pub(crate) enum Detail {
     Raw(String),
     Catalog(&'static str, Option<(&'static str, String)>),
+    Localized(Arc<dyn Fn(&str) -> String + Send + Sync>),
 }
 
 impl From<String> for Detail {
@@ -34,11 +37,16 @@ impl Detail {
         Self::Catalog(id, Some((name, value)))
     }
 
+    pub(crate) fn localized(render: impl Fn(&str) -> String + Send + Sync + 'static) -> Self {
+        Self::Localized(Arc::new(render))
+    }
+
     fn render(&self, locale: &str) -> String {
         match self {
             Self::Raw(value) => value.clone(),
             Self::Catalog(id, None) => text(locale, id),
             Self::Catalog(id, Some((name, value))) => strings(locale, id, [(*name, value)]),
+            Self::Localized(render) => render(locale),
         }
     }
 }

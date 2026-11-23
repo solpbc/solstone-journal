@@ -1,0 +1,21 @@
+{
+  "description": "Speaker candidate pool lock failure.",
+  "context": "Journal CLI. Speaker candidate pool lock failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ae5e71a462e2a18f2cf2add72b2b1f9d7693275ad01da0a2160f87221068ce5f",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

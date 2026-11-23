@@ -1,0 +1,16 @@
+{
+  "description": "Speaker pool catch-up refusal when progress file cannot be written after partial progress was saved.",
+  "context": "Journal CLI. Speaker pool catch-up refusal when progress file cannot be written after partial progress was saved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "214d8879515ba99845609392e37265502df6ff16d7ec9287847ddeb6a866fea1",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Owner line label refusal when an interrupted entity merge awaits recovery.",
+  "context": "Journal window. Owner line label refusal when an interrupted entity merge awaits recovery.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "48eb6d42622b654c9b80302fe5f6b6e35458eca1d0f53d5e440fd5d0d73cf1ee",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

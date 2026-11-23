@@ -1,0 +1,16 @@
+{
+  "description": "Owner voice error when no owner voice is saved.",
+  "context": "Journal CLI. Owner voice error when no owner voice is saved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d0a3c8840ce9df1787c1ea5e6018d43e42fc855954eac3f9d478157f97056e94",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

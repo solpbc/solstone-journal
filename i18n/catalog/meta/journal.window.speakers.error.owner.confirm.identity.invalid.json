@@ -1,0 +1,16 @@
+{
+  "description": "Owner voice confirmation refusal when configured owner identity needs attention.",
+  "context": "Journal window. Owner voice confirmation refusal when configured owner identity needs attention.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbca3fefebb8667f0b409978fe51b1f80d9d2346e93fc9a9c84b9785569163d9",
+  "max_length": 134,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

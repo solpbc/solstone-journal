@@ -12,20 +12,25 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use jiff::Timestamp;
 use serde_json::{Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 
 use crate::JournalRoot;
+use crate::window_catalog;
 
 pub async fn merge_names(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
-    let body = match json_body(request).await {
+    let locale = window_catalog::response_locale(locale);
+    let body = match json_body(locale, request).await {
         Ok(body) => body,
         Err(response) => return response,
     };
     let Some(alias) = body.get("alias").and_then(Value::as_str) else {
         return err(
+            locale,
             "missing_required_field",
             "alias is required",
             StatusCode::BAD_REQUEST,
@@ -33,6 +38,7 @@ pub async fn merge_names(
     };
     let Some(canonical) = body.get("canonical").and_then(Value::as_str) else {
         return err(
+            locale,
             "missing_required_field",
             "canonical is required",
             StatusCode::BAD_REQUEST,
@@ -44,22 +50,32 @@ pub async fn merge_names(
             ambiguity_id,
             candidates,
         }) => err_value(
+            locale,
             "speaker_command_failed",
             json!({"field":field,"ambiguity_id":ambiguity_id,"candidates":format!("{candidates:?}")}),
             StatusCode::BAD_REQUEST,
         ),
         Ok(solstone_core_speaker_resolve::bootstrap::MergeNamesOutcome::AliasNotFound) => {
-            err("speaker_not_found", "alias", StatusCode::NOT_FOUND)
+            err(locale, "speaker_not_found", "alias", StatusCode::NOT_FOUND)
         }
-        Ok(solstone_core_speaker_resolve::bootstrap::MergeNamesOutcome::CanonicalNotFound) => {
-            err("speaker_not_found", "canonical", StatusCode::NOT_FOUND)
-        }
+        Ok(solstone_core_speaker_resolve::bootstrap::MergeNamesOutcome::CanonicalNotFound) => err(
+            locale,
+            "speaker_not_found",
+            "canonical",
+            StatusCode::NOT_FOUND,
+        ),
         Ok(solstone_core_speaker_resolve::bootstrap::MergeNamesOutcome::SameEntity {
             entity_id,
-        }) => err("invalid_request_value", &entity_id, StatusCode::BAD_REQUEST),
+        }) => err(
+            locale,
+            "invalid_request_value",
+            &entity_id,
+            StatusCode::BAD_REQUEST,
+        ),
         Ok(solstone_core_speaker_resolve::bootstrap::MergeNamesOutcome::PrincipalEntity {
             entity_id,
         }) => err(
+            locale,
             "principal_entity_protected",
             &entity_id,
             StatusCode::BAD_REQUEST,
@@ -80,7 +96,7 @@ pub async fn merge_names(
                     Ok(preview) => {
                         Json(json!({"status": "preview", "preview": preview})).into_response()
                     }
-                    Err(error) => merge_error(error),
+                    Err(error) => merge_error(locale, error),
                 };
             }
             let encoder = encoder();
@@ -112,10 +128,11 @@ pub async fn merge_names(
                         "errors": counts.pointer("/segments/errors").cloned().unwrap_or_else(|| json!([])),
                     })).into_response()
                 }
-                Err(error) => merge_error(error),
+                Err(error) => merge_error(locale, error),
             }
         }
         Err(error) => err(
+            locale,
             "speaker_command_failed",
             &error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -125,9 +142,11 @@ pub async fn merge_names(
 
 pub async fn link_import(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
-    let body = match json_body(request).await {
+    let locale = window_catalog::response_locale(locale);
+    let body = match json_body(locale, request).await {
         Ok(body) => body,
         Err(response) => return response,
     };
@@ -137,6 +156,7 @@ pub async fn link_import(
         .filter(|value| !value.is_empty())
     else {
         return err(
+            locale,
             "missing_required_field",
             "name is required",
             StatusCode::BAD_REQUEST,
@@ -148,6 +168,7 @@ pub async fn link_import(
         .filter(|value| !value.is_empty())
     else {
         return err(
+            locale,
             "missing_required_field",
             "entity_id is required",
             StatusCode::BAD_REQUEST,
@@ -157,6 +178,7 @@ pub async fn link_import(
         Ok(entities) => entities,
         Err(error) => {
             return err(
+                locale,
                 "entity_operation_failed",
                 &error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -164,7 +186,7 @@ pub async fn link_import(
         }
     };
     let Some(target) = entities.iter().find(|entity| entity.id == entity_id) else {
-        return err("entity_not_found", entity_id, StatusCode::NOT_FOUND);
+        return err(locale, "entity_not_found", entity_id, StatusCode::NOT_FOUND);
     };
     let candidates = entities
         .iter()
@@ -204,7 +226,7 @@ pub async fn link_import(
         solstone_core_entity_matching::EntityNameMatchOutcome::Matched { .. }
             | solstone_core_entity_matching::EntityNameMatchOutcome::Ambiguous { .. }
     ) {
-        return err("entity_alias_conflict", name, StatusCode::CONFLICT);
+        return err(locale, "entity_alias_conflict", name, StatusCode::CONFLICT);
     }
     let mut identity = target.value.clone();
     let object = identity
@@ -236,6 +258,7 @@ pub async fn link_import(
             }
             Err(error) => {
                 return err(
+                    locale,
                     "entity_operation_failed",
                     &error.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -246,11 +269,12 @@ pub async fn link_import(
     Json(json!({"linked":true,"entity_id":entity_id,"name_added":name,"already_present":already_present})).into_response()
 }
 
-async fn json_body(request: Request) -> Result<Value, Response> {
+async fn json_body(locale: &str, request: Request) -> Result<Value, Response> {
     let bytes = to_bytes(request.into_body(), usize::MAX)
         .await
         .map_err(|_| {
             err(
+                locale,
                 "missing_request_body",
                 "unable to read request body",
                 StatusCode::BAD_REQUEST,
@@ -258,6 +282,7 @@ async fn json_body(request: Request) -> Result<Value, Response> {
         })?;
     serde_json::from_slice(&bytes).map_err(|_| {
         err(
+            locale,
             "invalid_json_request",
             "request body must be a JSON object",
             StatusCode::BAD_REQUEST,
@@ -271,18 +296,32 @@ fn encoder() -> solstone_core_entity::EncoderIdentity {
         width: 256,
     }
 }
-fn err(code: &str, detail: &str, status: StatusCode) -> Response {
-    error_envelope(code, "that speaker command didn't finish.", detail, status).into_response()
+fn err(locale: &str, code: &str, detail: &str, status: StatusCode) -> Response {
+    error_envelope(
+        code,
+        window_catalog::text(
+            locale,
+            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
+        ),
+        detail,
+        status,
+    )
+    .into_response()
 }
-fn err_value(code: &str, detail: Value, status: StatusCode) -> Response {
-    err(code, &detail.to_string(), status)
+fn err_value(locale: &str, code: &str, detail: Value, status: StatusCode) -> Response {
+    err(locale, code, &detail.to_string(), status)
 }
-fn merge_error(error: solstone_core_entity::EntityMergeError) -> Response {
+fn merge_error(locale: &str, error: solstone_core_entity::EntityMergeError) -> Response {
     let detail = error.to_string();
     if detail.contains("lock") || detail.contains("busy") {
-        err("entity_busy", &detail, StatusCode::SERVICE_UNAVAILABLE)
+        err(
+            locale,
+            "entity_busy",
+            &detail,
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
     } else if detail.contains("not found") {
-        err("entity_not_found", &detail, StatusCode::NOT_FOUND)
+        err(locale, "entity_not_found", &detail, StatusCode::NOT_FOUND)
     } else if matches!(
         error,
         solstone_core_entity::EntityMergeError::Refused(_)
@@ -290,12 +329,14 @@ fn merge_error(error: solstone_core_entity::EntityMergeError) -> Response {
             | solstone_core_entity::EntityMergeError::VoiceprintEncoderMismatch { .. }
     ) {
         err(
+            locale,
             "invalid_operation_for_state",
             &detail,
             StatusCode::BAD_REQUEST,
         )
     } else {
         err(
+            locale,
             "entity_operation_failed",
             &detail,
             StatusCode::INTERNAL_SERVER_ERROR,

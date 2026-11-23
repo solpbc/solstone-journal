@@ -1,0 +1,16 @@
+{
+  "description": "Guidance shown in speaker status when an owner voice candidate is ready.",
+  "context": "Journal window. Guidance shown in speaker status when an owner voice candidate is ready.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ee77c7a3c52455ed0e5c9973cbcd08fdb69569655244487d1b517646c2442b10",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

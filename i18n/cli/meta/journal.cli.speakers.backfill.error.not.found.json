@@ -1,0 +1,21 @@
+{
+  "description": "Speaker backfill error when the operation id is not found.",
+  "context": "Journal CLI. Speaker backfill error when the operation id is not found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "db789f85ccf33dcc4557969bced455290e76c309106b95022f20930dce3f3575",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

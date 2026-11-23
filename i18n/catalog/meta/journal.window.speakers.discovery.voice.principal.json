@@ -1,0 +1,16 @@
+{
+  "description": "Speaker discovery refusal when attempting to name the owner voice as another person.",
+  "context": "Journal window. Speaker discovery refusal when attempting to name the owner voice as another person.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d9e6350fa1004f34d5a3b8a956a90bebdcf83808c70d6536c3654cfa1d66b13d",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

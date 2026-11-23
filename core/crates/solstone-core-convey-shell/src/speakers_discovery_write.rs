@@ -37,11 +37,10 @@ use solstone_core_speaker_resolve::segment_catalog::{
 };
 
 const OWNER_VOICE_UNAVAILABLE: &str = "speaker_discovery_owner_voice_unavailable";
-const OWNER_VOICE_UNAVAILABLE_MESSAGE: &str =
-    "your voice needs to be set up before the search for new voices can start.";
+const OWNER_VOICE_UNAVAILABLE_ID: &str =
+    "journal.window.speakers.discovery.owner.voice.unavailable";
 const INVALID_EMBEDDINGS: &str = "speaker_discovery_invalid_embeddings";
-const INVALID_EMBEDDINGS_MESSAGE: &str =
-    "some voice samples were skipped because they weren't usable.";
+const INVALID_EMBEDDINGS_ID: &str = "journal.window.speakers.discovery.invalid.embeddings";
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum IdentifyPreflightError {
@@ -114,12 +113,12 @@ pub async fn identify(
     request: Request,
 ) -> Response {
     let locale = window_catalog::response_locale(locale);
-    let body = match body(request).await {
+    let body = match body(locale, request).await {
         Ok(body) => body,
         Err(response) => return response,
     };
     let Some(cluster_id) = cluster_id_field(&body) else {
-        return bad("missing_required_field", "cluster_id is required");
+        return bad(locale, "missing_required_field", "cluster_id is required");
     };
     let name = body
         .get("name")
@@ -130,10 +129,14 @@ pub async fn identify(
         .map(|value| value.to_string().trim_matches('"').trim().to_owned())
         .filter(|value| !value.is_empty());
     if name.is_none() && entity_id.is_none() {
-        return bad("missing_required_field", "entity_id or name is required");
+        return bad(
+            locale,
+            "missing_required_field",
+            "entity_id or name is required",
+        );
     }
     if let Err(error) = preflight_identify_cluster(&root.0, cluster_id) {
-        return preflight_error(error);
+        return preflight_error(locale, error);
     }
     let request = solstone_core_speaker_resolve::identify_cluster::IdentifyClusterRequest {
         journal_root: root.0.clone(),
@@ -187,11 +190,11 @@ pub async fn identify(
                     }),
                 )
             {
-                return command(error, StatusCode::INTERNAL_SERVER_ERROR);
+                return command(locale, error, StatusCode::INTERNAL_SERVER_ERROR);
             }
             map(locale, value)
         }
-        Err(error) => identify_error(error.to_string()),
+        Err(error) => identify_error(locale, error.to_string()),
     }
 }
 
@@ -205,7 +208,7 @@ pub async fn identify_voice(
     request: Request,
 ) -> Response {
     let locale = window_catalog::response_locale(locale);
-    let body = match body(request).await {
+    let body = match body(locale, request).await {
         Ok(body) => body,
         Err(response) => return response,
     };
@@ -214,7 +217,7 @@ pub async fn identify_voice(
         .and_then(Value::as_i64)
         .filter(|id| *id > 0)
     else {
-        return bad("missing_required_field", "voice_id is required");
+        return bad(locale, "missing_required_field", "voice_id is required");
     };
     let Some(entity_id) = body
         .get("entity_id")
@@ -222,7 +225,7 @@ pub async fn identify_voice(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     else {
-        return bad("missing_required_field", "entity_id is required");
+        return bad(locale, "missing_required_field", "entity_id is required");
     };
     // The operation id derives from request_id, so a default would join unrelated taps.
     let Some(request_id) = body
@@ -231,7 +234,7 @@ pub async fn identify_voice(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     else {
-        return bad("missing_required_field", "request_id is required");
+        return bad(locale, "missing_required_field", "request_id is required");
     };
     let text = |field: &str| {
         body.get(field)
@@ -248,6 +251,7 @@ pub async fn identify_voice(
         body.get("sentence_id").and_then(Value::as_i64),
     ) else {
         return bad(
+            locale,
             "missing_required_field",
             "day, stream, segment_key, source and sentence_id of the chosen sentence are required",
         );
@@ -279,7 +283,7 @@ pub async fn identify_voice(
         &encoder(),
     ) {
         Ok(value) => value,
-        Err(error) => return identify_error(error.to_string()),
+        Err(error) => return identify_error(locale, error.to_string()),
     };
     match value.get("status").and_then(Value::as_str).unwrap_or("") {
         "identified" => {
@@ -301,26 +305,30 @@ pub async fn identify_voice(
         }
         "nothing_to_name" => Json(value).into_response(),
         "voice_not_found" => error(
+            locale,
             "speaker_voice_not_found",
-            "that voice couldn't be found. try refreshing the page.",
+            "journal.window.speakers.discovery.voice.not.found",
             &value.to_string(),
             StatusCode::NOT_FOUND,
         ),
         "voice_changed" => error(
+            locale,
             "speaker_voice_changed",
-            "that voice has changed since this page loaded. try refreshing the page.",
+            "journal.window.speakers.discovery.voice.changed",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "owner_voice_unavailable" => error(
+            locale,
             "speaker_voice_owner_unavailable",
-            "your own voice needs to be set up first, so it isn't named as someone else.",
+            "journal.window.speakers.discovery.voice.owner.unavailable",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "principal_voice" | "principal_target" => error(
+            locale,
             "speaker_voice_principal",
-            "your own voice is set up separately, not here.",
+            "journal.window.speakers.discovery.voice.principal",
             &value.to_string(),
             StatusCode::BAD_REQUEST,
         ),
@@ -334,7 +342,7 @@ pub async fn undo(
     request: Request,
 ) -> Response {
     let locale = window_catalog::response_locale(locale);
-    let body = match body(request).await {
+    let body = match body(locale, request).await {
         Ok(body) => body,
         Err(response) => return response,
     };
@@ -343,7 +351,7 @@ pub async fn undo(
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
     else {
-        return bad("missing_required_field", "operation_id is required");
+        return bad(locale, "missing_required_field", "operation_id is required");
     };
     match solstone_core_speaker_resolve::identify_undo::undo_identify_operation(
         &root.0,
@@ -351,17 +359,23 @@ pub async fn undo(
         &encoder(),
     ) {
         Ok(value) => map(locale, value),
-        Err(error) => identify_error(error.to_string()),
+        Err(error) => identify_error(locale, error.to_string()),
     }
 }
 
-pub async fn dismiss(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
-    let body = match body(request).await {
+pub async fn dismiss(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<axum::Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    let body = match body(locale, request).await {
         Ok(body) => body,
         Err(response) => return response,
     };
     let Some(cluster_id) = cluster_id_field(&body) else {
         return bad(
+            locale,
             "missing_required_field",
             "cluster_id and disposition are required",
         );
@@ -372,12 +386,14 @@ pub async fn dismiss(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         .filter(|value| !value.is_empty())
     else {
         return bad(
+            locale,
             "missing_required_field",
             "cluster_id and disposition are required",
         );
     };
     if !matches!(disposition, "not_a_person" | "quiet") {
         return bad(
+            locale,
             "invalid_request_value",
             &format!("unknown cluster dismissal disposition: {disposition}"),
         );
@@ -394,15 +410,16 @@ pub async fn dismiss(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         });
     let Some(members) = members.filter(|members| !members.is_empty()) else {
         return error(
+            locale,
             "speaker_review_unavailable",
-            "that speaker review couldn't be loaded.",
+            "journal.window.speakers.error.that.speaker.review.couldn.t.be.loaded",
             &format!("Cluster {cluster_id} was not found. Run a discovery scan first."),
             StatusCode::NOT_FOUND,
         );
     };
     let members = match canonical_members(&members) {
         Ok(members) => members,
-        Err(detail) => return command(detail, StatusCode::INTERNAL_SERVER_ERROR),
+        Err(detail) => return command(locale, detail, StatusCode::INTERNAL_SERVER_ERROR),
     };
     let ts = solstone_core_time::utc_z(Timestamp::now(), solstone_core_time::Precision::Secs);
     let canonical = json!({"disposition":disposition,"members":members,"ts":ts});
@@ -414,12 +431,12 @@ pub async fn dismiss(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     let path = root.0.join("speakers/cluster-dismissals.jsonl");
     let _lock = match hold_lock(&path, LockOptions::default()) {
         Ok(lock) => lock,
-        Err(error) => return command(error.to_string(), StatusCode::SERVICE_UNAVAILABLE),
+        Err(error) => return command(locale, error.to_string(), StatusCode::SERVICE_UNAVAILABLE),
     };
     if let Some(parent) = path.parent()
         && let Err(error) = fs::create_dir_all(parent)
     {
-        return command(error.to_string(), StatusCode::SERVICE_UNAVAILABLE);
+        return command(locale, error.to_string(), StatusCode::SERVICE_UNAVAILABLE);
     };
     if let Err(error) = OpenOptions::new()
         .create(true)
@@ -427,7 +444,7 @@ pub async fn dismiss(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         .open(&path)
         .and_then(|mut file| writeln!(file, "{}", event))
     {
-        return command(error.to_string(), StatusCode::SERVICE_UNAVAILABLE);
+        return command(locale, error.to_string(), StatusCode::SERVICE_UNAVAILABLE);
     };
     Json(json!({"status":"dismissed","dismiss_event_id":id,"disposition":disposition,"member_count":members.len()})).into_response()
 }
@@ -436,11 +453,14 @@ pub async fn dismiss(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
 pub async fn scan(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(hosted_launch): Extension<HostedLaunchContext>,
+    locale: Option<axum::Extension<ResponseLocale>>,
     #[cfg(windows)] generation: Option<Extension<crate::DiscoveryGenerationContext>>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     #[cfg(windows)]
     let Some(Extension(generation)) = generation else {
         return command(
+            locale,
             "discovery generation was not admitted at Convey entry".to_owned(),
             StatusCode::SERVICE_UNAVAILABLE,
         );
@@ -458,8 +478,9 @@ pub async fn scan(
     let (clusters, dropped_invalid) = match result {
         Ok(Ok(DiscoveryRefresh::IdentityInvalid)) => {
             return error(
+                locale,
                 "speaker_owner_identity_invalid",
-                "the search for new voices couldn't start because your configured owner identity needs attention.",
+                "journal.window.speakers.discovery.owner.identity.invalid",
                 "configured owner identity is not admitted",
                 StatusCode::CONFLICT,
             );
@@ -467,7 +488,11 @@ pub async fn scan(
         Ok(Ok(DiscoveryRefresh::NoConfirmedOwner)) => {
             return Json(json!({
                 "status":"degraded", "clusters":[],
-                "issues":[issue(OWNER_VOICE_UNAVAILABLE, OWNER_VOICE_UNAVAILABLE_MESSAGE, 0)],
+                "issues":[issue(
+                    OWNER_VOICE_UNAVAILABLE,
+                    &window_catalog::text(locale, OWNER_VOICE_UNAVAILABLE_ID),
+                    0,
+                )],
             }))
             .into_response();
         }
@@ -476,7 +501,7 @@ pub async fn scan(
             dropped_invalid,
         })) => (clusters, dropped_invalid),
         Ok(Err(DiscoveryRefreshError::Input(error))) => {
-            return command(error, StatusCode::INTERNAL_SERVER_ERROR);
+            return command(locale, error, StatusCode::INTERNAL_SERVER_ERROR);
         }
         failure => {
             let retryable = !matches!(failure, Ok(Err(DiscoveryRefreshError::Helper(ref error))) if error.stage != "invoke");
@@ -486,7 +511,8 @@ pub async fn scan(
                 StatusCode::INTERNAL_SERVER_ERROR
             };
             return (status, Json(json!({
-                "error":"couldn't look for new voices right now.", "reason_code":"speaker_discovery_failed",
+                "error": window_catalog::text(locale, "journal.window.speakers.copy.discovery.error"),
+                "reason_code":"speaker_discovery_failed",
                 "detail":"", "retryable":retryable,
             }))).into_response();
         }
@@ -495,7 +521,7 @@ pub async fn scan(
         .then(|| {
             issue(
                 INVALID_EMBEDDINGS,
-                INVALID_EMBEDDINGS_MESSAGE,
+                &window_catalog::text(locale, INVALID_EMBEDDINGS_ID),
                 dropped_invalid,
             )
         })
@@ -506,7 +532,7 @@ pub async fn scan(
     }
     let visible_clusters = match serialize_scan_clusters(&root.0, &clusters) {
         Ok(clusters) => clusters,
-        Err(error) => return command(error, StatusCode::INTERNAL_SERVER_ERROR),
+        Err(error) => return command(locale, error, StatusCode::INTERNAL_SERVER_ERROR),
     };
     Json(scan_result(visible_clusters, issues)).into_response()
 }
@@ -602,10 +628,10 @@ fn folded_dismissal_members(root: &Path) -> Result<Vec<BTreeSet<DiscoveryMember>
     Ok(fold_dismissal_members(&events))
 }
 
-fn preflight_error(failure: IdentifyPreflightError) -> Response {
+fn preflight_error(locale: &str, failure: IdentifyPreflightError) -> Response {
     match failure {
         IdentifyPreflightError::Failed(detail) => {
-            command(detail, StatusCode::INTERNAL_SERVER_ERROR)
+            command(locale, detail, StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
@@ -621,37 +647,43 @@ fn map(locale: &str, value: Value) -> Response {
         "identified" | "resolved" | "ambiguous" | "no_match" | "principal_match" | "undone"
         | "already_undone" => Json(value).into_response(),
         "recoverable" | "in_progress" | "undoing" => error(
+            locale,
             "speaker_identify_recoverable",
-            "that speaker change didn't finish. try again in a moment.",
+            "journal.window.speakers.error.change.recoverable",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "repair_required" | "undo_repair_required" => error(
+            locale,
             "speaker_identify_repair_required",
-            "that speaker change stopped partway and can't finish yet.",
+            "journal.window.speakers.error.change.repair.required",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "conflict" | "operation_already_undone" => error(
+            locale,
             "speaker_identify_conflict",
-            "that speaker change can't run right now.",
+            "journal.window.speakers.error.change.conflict",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "one_way" => error(
+            locale,
             "speaker_identify_one_way",
-            "naming a voice can't be undone.",
+            "journal.window.speakers.error.change.one.way",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "not_found" => error(
+            locale,
             "speaker_identify_operation_not_found",
-            "that speaker change couldn't be found.",
+            "journal.window.speakers.error.change.not.found",
             &value.to_string(),
             StatusCode::NOT_FOUND,
         ),
         "invalid_request" => invalid_request(locale, &value),
         _ => command(
+            locale,
             format!(
                 "Unexpected speaker identify result status: {}",
                 value
@@ -692,24 +724,30 @@ fn invalid_request(locale: &str, value: &Value) -> Response {
     (status, Json(body)).into_response()
 }
 
-fn identify_error(detail: String) -> Response {
+fn identify_error(locale: &str, detail: String) -> Response {
     let lower = detail.to_ascii_lowercase();
     if lower.contains("busy") || lower.contains("lock") {
-        let (code, message) =
+        let (code, message_id) =
             if lower.contains("speaker_labels") || lower.contains("speaker_corrections") {
                 (
                     "speaker_labels_busy",
-                    "speaker labels couldn't be updated because another update is running.",
+                    "journal.window.speakers.discovery.labels.busy",
                 )
             } else {
                 (
                     "speaker_voiceprint_busy",
-                    "that voice couldn't be updated because another update is running.",
+                    "journal.window.speakers.discovery.voiceprint.busy",
                 )
             };
-        return error(code, message, &detail, StatusCode::SERVICE_UNAVAILABLE);
+        return error(
+            locale,
+            code,
+            message_id,
+            &detail,
+            StatusCode::SERVICE_UNAVAILABLE,
+        );
     }
-    command(detail, StatusCode::INTERNAL_SERVER_ERROR)
+    command(locale, detail, StatusCode::INTERNAL_SERVER_ERROR)
 }
 /// Read a request's `cluster_id` as an integer or its decimal string.
 ///
@@ -721,31 +759,44 @@ fn cluster_id_field(body: &Value) -> Option<i64> {
         _ => None,
     }
 }
-async fn body(request: Request) -> Result<Value, Response> {
+async fn body(locale: &str, request: Request) -> Result<Value, Response> {
     let bytes = to_bytes(request.into_body(), usize::MAX)
         .await
-        .map_err(|_| bad("missing_request_body", "No data provided"))?;
-    serde_json::from_slice(&bytes)
-        .map_err(|_| bad("invalid_json_request", "request body must be a JSON object"))
+        .map_err(|_| bad(locale, "missing_request_body", "No data provided"))?;
+    serde_json::from_slice(&bytes).map_err(|_| {
+        bad(
+            locale,
+            "invalid_json_request",
+            "request body must be a JSON object",
+        )
+    })
 }
-fn bad(code: &str, detail: &str) -> Response {
+fn bad(locale: &str, code: &str, detail: &str) -> Response {
     error(
+        locale,
         code,
-        "that request couldn't be used.",
+        "journal.window.speakers.error.that.request.couldn.t.be.used",
         detail,
         StatusCode::BAD_REQUEST,
     )
 }
-fn command(detail: String, status: StatusCode) -> Response {
+fn command(locale: &str, detail: String, status: StatusCode) -> Response {
     error(
+        locale,
         "speaker_command_failed",
-        "that speaker command didn't finish.",
+        "journal.window.speakers.error.that.speaker.command.didn.t.finish",
         &detail,
         status,
     )
 }
-fn error(code: &str, message: &str, detail: &str, status: StatusCode) -> Response {
-    error_envelope(code, message, detail, status).into_response()
+fn error(locale: &str, code: &str, message_id: &str, detail: &str, status: StatusCode) -> Response {
+    error_envelope(
+        code,
+        window_catalog::text(locale, message_id),
+        detail,
+        status,
+    )
+    .into_response()
 }
 
 #[cfg(test)]

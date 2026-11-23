@@ -161455,6 +161455,902 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "operation_id",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "expected_commit",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "expected_reattribute",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "expected_accumulation",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "got_commit",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "got_reattribute",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "got_accumulation",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.backfill.error.flags.mismatch\u0004m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e666c6167732e6d69736d61746368",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e666c6167732e6d69736d61746368_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.backfill.error.flags.mismatch",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e666c6167732e6d69736d61746368",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "immutable backfill flags mismatch for operation ⁨sample⁩: expected commit=⁨sample⁩ reattribute=⁨sample⁩ accumulation=⁨sample⁩, got commit=⁨sample⁩ reattribute=⁨sample⁩ accumulation=⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "expected_accumulation": "sample",
+        "expected_commit": "sample",
+        "expected_reattribute": "sample",
+        "got_accumulation": "sample",
+        "got_commit": "sample",
+        "got_reattribute": "sample",
+        "operation_id": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "immutable backfill flags mismatch for operation ⁨sample⁩: expected commit=⁨sample⁩ reattribute=⁨sample⁩ accumulation=⁨sample⁩, got commit=⁨sample⁩ reattribute=⁨sample⁩ accumulation=⁨sample⁩",
+      "message_id": "journal.cli.speakers.backfill.error.flags.mismatch",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.backfill.error.flags.mismatch\", &[(\"expected_accumulation\", Value::String(\"sample\")), (\"expected_commit\", Value::String(\"sample\")), (\"expected_reattribute\", Value::String(\"sample\")), (\"got_accumulation\", Value::String(\"sample\")), (\"got_commit\", Value::String(\"sample\")), (\"got_reattribute\", Value::String(\"sample\")), (\"operation_id\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e666c6167732e6d69736d61746368",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.backfill.error.invalid.flags\u0004m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e696e76616c69642e666c616773",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e696e76616c69642e666c616773_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.backfill.error.invalid.flags",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e696e76616c69642e666c616773",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "invalid backfill flags: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "invalid backfill flags: ⁨sample⁩",
+      "message_id": "journal.cli.speakers.backfill.error.invalid.flags",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.backfill.error.invalid.flags\", &[(\"detail\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e696e76616c69642e666c616773",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.backfill.error.journal.root\u0004m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6a6f75726e616c2e726f6f74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6a6f75726e616c2e726f6f74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.backfill.error.journal.root",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6a6f75726e616c2e726f6f74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "journal root admission failed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "journal root admission failed: ⁨sample⁩",
+      "message_id": "journal.cli.speakers.backfill.error.journal.root",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.backfill.error.journal.root\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6a6f75726e616c2e726f6f74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.backfill.error.ledger\u0004m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6c6564676572",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6c6564676572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.backfill.error.ledger",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6c6564676572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "ledger operation failed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "ledger operation failed: ⁨sample⁩",
+      "message_id": "journal.cli.speakers.backfill.error.ledger",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.backfill.error.ledger\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6c6564676572",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.backfill.error.lock\u0004m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6c6f636b",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6c6f636b_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.backfill.error.lock",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6c6f636b",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "backfill execution lock failed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "backfill execution lock failed: ⁨sample⁩",
+      "message_id": "journal.cli.speakers.backfill.error.lock",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.backfill.error.lock\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6c6f636b",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "id",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.backfill.error.not.found\u0004m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6e6f742e666f756e64",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6e6f742e666f756e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.backfill.error.not.found",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6e6f742e666f756e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "backfill operation not found: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "id": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "backfill operation not found: ⁨sample⁩",
+      "message_id": "journal.cli.speakers.backfill.error.not.found",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.backfill.error.not.found\", &[(\"id\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6e6f742e666f756e64",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.backfill.error.scan\u0004m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e7363616e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e7363616e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.backfill.error.scan",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e7363616e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "backfill scan failed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "backfill scan failed: ⁨sample⁩",
+      "message_id": "journal.cli.speakers.backfill.error.scan",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.backfill.error.scan\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e7363616e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.owner.voice.error.identity.invalid\u0004m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6964656e746974792e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6964656e746974792e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.owner.voice.error.identity.invalid",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6964656e746974792e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "configured owner identity is not admitted",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "configured owner identity is not admitted",
+      "message_id": "journal.cli.speakers.owner.voice.error.identity.invalid",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.owner.voice.error.identity.invalid\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6964656e746974792e696e76616c6964",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.owner.voice.error.no.candidate\u0004m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6e6f2e63616e646964617465",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6e6f2e63616e646964617465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.owner.voice.error.no.candidate",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6e6f2e63616e646964617465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "No candidate available",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "No candidate available",
+      "message_id": "journal.cli.speakers.owner.voice.error.no.candidate",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.owner.voice.error.no.candidate\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6e6f2e63616e646964617465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.owner.voice.error.no.saved.voice\u0004m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6e6f2e73617665642e766f696365",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6e6f2e73617665642e766f696365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.owner.voice.error.no.saved.voice",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6e6f2e73617665642e766f696365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "No owner voice is saved",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "No owner voice is saved",
+      "message_id": "journal.cli.speakers.owner.voice.error.no.saved.voice",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.owner.voice.error.no.saved.voice\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6e6f2e73617665642e766f696365",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.owner.voice.error.stale.candidate\u0004m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e7374616c652e63616e646964617465",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e7374616c652e63616e646964617465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.owner.voice.error.stale.candidate",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e7374616c652e63616e646964617465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Candidate version mismatch or stale generation",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Candidate version mismatch or stale generation",
+      "message_id": "journal.cli.speakers.owner.voice.error.stale.candidate",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.owner.voice.error.stale.candidate\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e7374616c652e63616e646964617465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.error.centroid.width\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e63656e74726f69642e7769647468",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e63656e74726f69642e7769647468_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.error.centroid.width",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e63656e74726f69642e7769647468",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "candidate pool centroid width mismatch",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "candidate pool centroid width mismatch",
+      "message_id": "journal.cli.speakers.pool.error.centroid.width",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.error.centroid.width\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e63656e74726f69642e7769647468",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.error.lock\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e6c6f636b",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e6c6f636b_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.error.lock",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e6c6f636b",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "candidate pool lock failed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "candidate pool lock failed: ⁨sample⁩",
+      "message_id": "journal.cli.speakers.pool.error.lock",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.error.lock\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e6c6f636b",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.error.read\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e72656164",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e72656164_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.error.read",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e72656164",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "candidate pool read failed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "candidate pool read failed: ⁨sample⁩",
+      "message_id": "journal.cli.speakers.pool.error.read",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.error.read\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e72656164",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.error.write\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e7772697465",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e7772697465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.error.write",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e7772697465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "candidate pool write failed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "candidate pool write failed: ⁨sample⁩",
+      "message_id": "journal.cli.speakers.pool.error.write",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.error.write\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e7772697465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.refusal.days.unreadable\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e646179732e756e7265616461626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e646179732e756e7265616461626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.refusal.days.unreadable",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e646179732e756e7265616461626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "voice list catch-up refused: journal days could not be listed",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "voice list catch-up refused: journal days could not be listed",
+      "message_id": "journal.cli.speakers.pool.refusal.days.unreadable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.refusal.days.unreadable\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e646179732e756e7265616461626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.refusal.format.unsupported\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e666f726d61742e756e737570706f72746564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e666f726d61742e756e737570706f72746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.refusal.format.unsupported",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e666f726d61742e756e737570706f72746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "voice list catch-up refused: the voice list is in a format this version can't add to",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "voice list catch-up refused: the voice list is in a format this version can't add to",
+      "message_id": "journal.cli.speakers.pool.refusal.format.unsupported",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.refusal.format.unsupported\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e666f726d61742e756e737570706f72746564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.refusal.lock.timeout\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e6c6f636b2e74696d656f7574",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e6c6f636b2e74696d656f7574_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.refusal.lock.timeout",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e6c6f636b2e74696d656f7574",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "voice list catch-up refused: voice list lock timed out",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "voice list catch-up refused: voice list lock timed out",
+      "message_id": "journal.cli.speakers.pool.refusal.lock.timeout",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.refusal.lock.timeout\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e6c6f636b2e74696d656f7574",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.refusal.lock.timeout.kept\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e6c6f636b2e74696d656f75742e6b657074",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e6c6f636b2e74696d656f75742e6b657074_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.refusal.lock.timeout.kept",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e6c6f636b2e74696d656f75742e6b657074",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "voice list catch-up refused: voice list lock timed out; what was added is kept",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "voice list catch-up refused: voice list lock timed out; what was added is kept",
+      "message_id": "journal.cli.speakers.pool.refusal.lock.timeout.kept",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.refusal.lock.timeout.kept\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e6c6f636b2e74696d656f75742e6b657074",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.refusal.pool.unreadable\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e756e7265616461626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e756e7265616461626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.refusal.pool.unreadable",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e756e7265616461626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "voice list catch-up refused: voice list could not be read",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "voice list catch-up refused: voice list could not be read",
+      "message_id": "journal.cli.speakers.pool.refusal.pool.unreadable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.refusal.pool.unreadable\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e756e7265616461626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.refusal.pool.write.failed\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e77726974652e6661696c6564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e77726974652e6661696c6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.refusal.pool.write.failed",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e77726974652e6661696c6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "voice list catch-up refused: voice list could not be written",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "voice list catch-up refused: voice list could not be written",
+      "message_id": "journal.cli.speakers.pool.refusal.pool.write.failed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.refusal.pool.write.failed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e77726974652e6661696c6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.refusal.pool.write.failed.kept\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e77726974652e6661696c65642e6b657074",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e77726974652e6661696c65642e6b657074_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.refusal.pool.write.failed.kept",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e77726974652e6661696c65642e6b657074",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "voice list catch-up refused: voice list could not be written; what was added is kept",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "voice list catch-up refused: voice list could not be written; what was added is kept",
+      "message_id": "journal.cli.speakers.pool.refusal.pool.write.failed.kept",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.refusal.pool.write.failed.kept\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e77726974652e6661696c65642e6b657074",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.refusal.progress.invalid\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.refusal.progress.invalid",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json from your journal restarts the catch-up safely",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json from your journal restarts the catch-up safely",
+      "message_id": "journal.cli.speakers.pool.refusal.progress.invalid",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.refusal.progress.invalid\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e696e76616c6964",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.refusal.progress.unreadable\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e756e7265616461626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e756e7265616461626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.refusal.progress.unreadable",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e756e7265616461626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "voice list catch-up refused: catch-up progress file could not be read; check that your journal's awareness folder can be read",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "voice list catch-up refused: catch-up progress file could not be read; check that your journal's awareness folder can be read",
+      "message_id": "journal.cli.speakers.pool.refusal.progress.unreadable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.refusal.progress.unreadable\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e756e7265616461626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.refusal.progress.write.failed\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e77726974652e6661696c6564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e77726974652e6661696c6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.refusal.progress.write.failed",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e77726974652e6661696c6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "voice list catch-up refused: catch-up progress file could not be written",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "voice list catch-up refused: catch-up progress file could not be written",
+      "message_id": "journal.cli.speakers.pool.refusal.progress.write.failed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.refusal.progress.write.failed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e77726974652e6661696c6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.speakers.pool.refusal.progress.write.failed.kept\u0004m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e77726974652e6661696c65642e6b657074",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e77726974652e6661696c65642e6b657074_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.speakers.pool.refusal.progress.write.failed.kept",
+        "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e77726974652e6661696c65642e6b657074",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "voice list catch-up refused: catch-up progress file could not be written; what was added is kept",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "voice list catch-up refused: catch-up progress file could not be written; what was added is kept",
+      "message_id": "journal.cli.speakers.pool.refusal.progress.write.failed.kept",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.speakers.pool.refusal.progress.write.failed.kept\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e77726974652e6661696c65642e6b657074",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "argument",
             "type": "string",
             "value": "sample"

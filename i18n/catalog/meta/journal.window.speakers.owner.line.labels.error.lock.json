@@ -1,0 +1,21 @@
+{
+  "description": "Owner line label refusal when labels lock is busy.",
+  "context": "Journal window. Owner line label refusal when labels lock is busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cc2158dd0fd9060976dacfd23825259dcd217afd339af173339de7652e7eba9d",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

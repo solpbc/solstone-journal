@@ -1,0 +1,16 @@
+{
+  "description": "Speaker maintenance error when speaker files are busy.",
+  "context": "Journal window. Speaker maintenance error when speaker files are busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "caba5c21ff4b390f2aab440b5fdef4958e73fdf2a1382112c87a9313aa4f2b41",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

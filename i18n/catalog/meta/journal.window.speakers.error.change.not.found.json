@@ -1,0 +1,16 @@
+{
+  "description": "Speaker identify operation not found error.",
+  "context": "Journal window. Speaker identify operation not found error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e7ca1e0a88ccf75db927359f09dc5abeff97ef27a9ea8fd7a9d47fc7857375b3",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

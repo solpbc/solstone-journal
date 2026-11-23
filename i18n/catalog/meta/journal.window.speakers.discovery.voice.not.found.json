@@ -1,0 +1,16 @@
+{
+  "description": "Speaker discovery error when a selected voice can no longer be found.",
+  "context": "Journal window. Speaker discovery error when a selected voice can no longer be found.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "089b3559841cbd106c9de667681c5fd1d2cbfcd2a79aa9e0d1283418dc9934c9",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

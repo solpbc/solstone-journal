@@ -1,0 +1,16 @@
+{
+  "description": "Speaker pool catch-up refusal when journal days cannot be listed.",
+  "context": "Journal CLI. Speaker pool catch-up refusal when journal days cannot be listed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2e1626d67f229024b0f22ecbdcf47cefb06219a47188ffb068a20eddfb0300d8",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

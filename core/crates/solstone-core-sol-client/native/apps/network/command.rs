@@ -33,7 +33,7 @@ const LOCAL_NETWORK_CLOSE_ROUTE: &str = "/app/network/local-network/close";
 #[must_use]
 pub fn authorized_clients(ctx: CommandContext<'_>) -> CommandOutput {
     let locale = ctx.human_locale();
-    let devices = match devices(ctx) {
+    let devices = match devices(locale, ctx) {
         Ok(devices) => devices,
         Err(error) => return link_error(locale, error),
     };
@@ -65,7 +65,7 @@ pub fn authorized_clients(ctx: CommandContext<'_>) -> CommandOutput {
 #[must_use]
 pub fn list(ctx: CommandContext<'_>) -> CommandOutput {
     let locale = ctx.human_locale();
-    let devices = match devices(ctx) {
+    let devices = match devices(locale, ctx) {
         Ok(devices) => devices,
         Err(error) => return link_error(locale, error),
     };
@@ -139,6 +139,7 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
         payload.insert("role".to_string(), Value::String(role.to_string()));
     }
     let response = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/network/pair-start",
@@ -226,6 +227,7 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
     );
 
     let before_response = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/network/api/devices",
@@ -243,6 +245,7 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
     while wall_seconds(ctx) < deadline {
         sleep(ctx, Duration::from_secs(1));
         let devices_response = match request_json(
+            locale,
             ctx,
             HttpMethod::Get,
             "/app/network/api/devices",
@@ -286,6 +289,7 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
             return CommandOutput::success(out);
         }
         let nonce_status = match request_json(
+            locale,
             ctx,
             HttpMethod::Get,
             "/app/network/api/pair/nonce-status",
@@ -391,14 +395,21 @@ pub fn private_link_disable(ctx: CommandContext<'_>) -> CommandOutput {
     if state == Some("not_enabled") {
         // "devices connect directly again" is false while the journal is
         // closed to devices on the network.
-        let closed = request_json(ctx, HttpMethod::Get, LOCAL_NETWORK_ROUTE, vec![], None)
-            .ok()
-            .and_then(|body| {
-                body.get("listening_on")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })
-            .is_some_and(|listening| listening == "this_pc");
+        let closed = request_json(
+            locale,
+            ctx,
+            HttpMethod::Get,
+            LOCAL_NETWORK_ROUTE,
+            vec![],
+            None,
+        )
+        .ok()
+        .and_then(|body| {
+            body.get("listening_on")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .is_some_and(|listening| listening == "this_pc");
         return stdout_line(if closed {
             MessageDetail::window(
                 "journal.window.network.private.link.disable.success.closed",
@@ -421,6 +432,7 @@ pub fn private_link_disable(ctx: CommandContext<'_>) -> CommandOutput {
 pub fn private_link_status(ctx: CommandContext<'_>) -> CommandOutput {
     let locale = ctx.human_locale();
     let status = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/network/api/private-link",
@@ -440,7 +452,14 @@ pub fn local_network_status(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error, 2),
     };
-    match request_json(ctx, HttpMethod::Get, LOCAL_NETWORK_ROUTE, vec![], None) {
+    match request_json(
+        locale,
+        ctx,
+        HttpMethod::Get,
+        LOCAL_NETWORK_ROUTE,
+        vec![],
+        None,
+    ) {
         Ok(body) => local_network_output(locale, &body, parsed.has_flag("--json"), false),
         Err(error) => link_error(locale, error),
     }
@@ -462,7 +481,14 @@ fn local_network_set(ctx: CommandContext<'_>, route: &str, opening: bool) -> Com
         Ok(parsed) => parsed,
         Err(error) => return stderr(error, 2),
     };
-    match request_json(ctx, HttpMethod::Post, route, vec![], Some(json!({}))) {
+    match request_json(
+        locale,
+        ctx,
+        HttpMethod::Post,
+        route,
+        vec![],
+        Some(json!({})),
+    ) {
         Ok(body) => local_network_output(locale, &body, parsed.has_flag("--json"), opening),
         Err(ClientError::Unreachable { .. }) => stderr(service_down_for(locale), 1),
         Err(error) if error.reason_code() == Some("agents_on_network") => stderr(
@@ -522,6 +548,7 @@ fn local_network_output(
 pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
     let locale = ctx.human_locale();
     let state = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/network/api/status",
@@ -532,6 +559,7 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return link_error(locale, error),
     };
     let private_link = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/network/api/private-link",
@@ -541,7 +569,7 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(private_link) => private_link,
         Err(error) => return link_error(locale, error),
     };
-    let devices = match devices(ctx) {
+    let devices = match devices(locale, ctx) {
         Ok(devices) => devices,
         Err(error) => return link_error(locale, error),
     };
@@ -651,6 +679,7 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
 fn absent_instance_id_line(ctx: CommandContext<'_>) -> String {
     let locale = ctx.human_locale();
     let identity = request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/network/api/identity",
@@ -689,6 +718,7 @@ pub fn unpair(ctx: CommandContext<'_>) -> CommandOutput {
         json!({"device_label": target})
     };
     match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/network/unpair",
@@ -765,7 +795,14 @@ pub fn set_label(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let payload = json!({"label": label_value});
     let route = format!("/app/network/api/clients/{cid}/label");
-    match request_json(ctx, HttpMethod::Patch, &route, vec![], Some(payload)) {
+    match request_json(
+        locale,
+        ctx,
+        HttpMethod::Patch,
+        &route,
+        vec![],
+        Some(payload),
+    ) {
         Ok(response) => stdout_line(match response.get("owner_label").and_then(Value::as_str) {
             Some(label) => display_for(
                 locale,
@@ -782,8 +819,9 @@ pub fn set_label(ctx: CommandContext<'_>) -> CommandOutput {
     }
 }
 
-fn devices(ctx: CommandContext<'_>) -> Result<Vec<Value>, ClientError> {
+fn devices(locale: &str, ctx: CommandContext<'_>) -> Result<Vec<Value>, ClientError> {
     let body = request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/network/api/devices",
@@ -834,7 +872,7 @@ fn post_private_link(
     ctx: CommandContext<'_>,
     path: &str,
 ) -> Result<Value, ClientError> {
-    match request_json(ctx, HttpMethod::Post, path, vec![], None) {
+    match request_json(locale, ctx, HttpMethod::Post, path, vec![], None) {
         Ok(response) => Ok(response),
         Err(error) => {
             if let Some(promoted) = promote_invalid_state_detail(&error) {
@@ -883,6 +921,7 @@ fn poll_private_link_until_terminal(
     let interval = poll_interval.max(0.0);
     loop {
         let status = request_json(
+            locale,
             ctx,
             HttpMethod::Get,
             "/app/network/api/private-link",
@@ -1056,6 +1095,7 @@ fn render_private_link_status(locale: &str, status: &Value) -> Vec<String> {
 }
 
 fn request_json(
+    locale: &str,
     ctx: CommandContext<'_>,
     method: HttpMethod,
     path: &str,
@@ -1067,7 +1107,7 @@ fn request_json(
         path: path.to_string(),
         params,
         json,
-        headers: vec![],
+        headers: crate::transport::locale_headers(locale),
         policy: TimeoutPolicy::Api,
     })?;
     decode_response(&response)

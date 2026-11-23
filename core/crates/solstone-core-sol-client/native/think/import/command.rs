@@ -367,7 +367,7 @@ fn save_media(
                     .into_iter()
                     .map(|(name, value)| FormField { name, value })
                     .collect(),
-                headers: vec![],
+                headers: crate::transport::locale_headers(locale),
                 boundary: None,
                 policy: TimeoutPolicy::Upload,
             })
@@ -384,7 +384,7 @@ fn save_media(
                 path: format!("{IMPORT_API}/save-path"),
                 params: vec![],
                 json: Some(Value::Object(payload)),
-                headers: vec![],
+                headers: crate::transport::locale_headers(locale),
                 policy: TimeoutPolicy::Api,
             })
             .map_err(|e| map_transport_error(locale, e))?
@@ -445,7 +445,7 @@ fn start_import(
                 path: format!("{IMPORT_API}/preview"),
                 params: vec![],
                 json: Some(payload.clone()),
-                headers: vec![],
+                headers: crate::transport::locale_headers(locale),
                 policy: TimeoutPolicy::Upload,
             })
             .map_err(|e| map_transport_error(locale, e))?,
@@ -487,7 +487,7 @@ fn start_import(
             path: format!("{IMPORT_API}/start"),
             params: vec![],
             json: Some(payload),
-            headers: vec![],
+            headers: crate::transport::locale_headers(locale),
             policy: TimeoutPolicy::Upload,
         })
         .map_err(|e| map_transport_error(locale, e))?;

@@ -576,7 +576,7 @@ fn send_request_for(
             path: path.to_string(),
             params,
             json,
-            headers: vec![],
+            headers: crate::transport::locale_headers(locale),
             policy: TimeoutPolicy::Api,
         })
         .and_then(|response| decode_response(&response))

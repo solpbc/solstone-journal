@@ -1,0 +1,21 @@
+{
+  "description": "Owner line label refusal when segment is unavailable.",
+  "context": "Journal window. Owner line label refusal when segment is unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "16e5e1228b86b76fbfb34fbdc5e4e063f00da2d09b0070c587c8d52ee303c056",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

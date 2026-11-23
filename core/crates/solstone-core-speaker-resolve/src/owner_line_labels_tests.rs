@@ -995,3 +995,47 @@ fn the_tagged_speaker_form_reads_only_what_it_writes() {
         assert_eq!(LineSpeaker::from_tagged(&value), None, "{value}");
     }
 }
+
+#[test]
+fn owner_line_label_errors_render_identically_in_english() {
+    let cases = [
+        OwnerLineLabelError::SegmentUnavailable("missing".to_owned()),
+        OwnerLineLabelError::SourceUnsupported {
+            labelled: Some("a".to_owned()),
+            transcript_page: None,
+        },
+        OwnerLineLabelError::WrongSource {
+            requested: "a".to_owned(),
+            labelled: "b".to_owned(),
+        },
+        OwnerLineLabelError::NoLines,
+        OwnerLineLabelError::LineNotFound {
+            audio_source: "audio".to_owned(),
+            sentence_id: 4,
+        },
+        OwnerLineLabelError::LineIdMismatch {
+            audio_source: "audio".to_owned(),
+            sentence_id: 4,
+            stored: Some(9),
+        },
+        OwnerLineLabelError::PersonNotFound("ada".to_owned()),
+        OwnerLineLabelError::PersonHidden("bo".to_owned()),
+        OwnerLineLabelError::PersonMerged {
+            id: "old".to_owned(),
+            successor: "new".to_owned(),
+        },
+        OwnerLineLabelError::NotAPerson("acme".to_owned()),
+        OwnerLineLabelError::OwnerNotAdmitted,
+        OwnerLineLabelError::EntityStoreUnreadable("io".to_owned()),
+        OwnerLineLabelError::FileUnreadable("json".to_owned()),
+        OwnerLineLabelError::MergeRecoveryPending,
+        OwnerLineLabelError::Lock("held".to_owned()),
+        OwnerLineLabelError::Write("disk".to_owned()),
+    ];
+    for error in cases {
+        assert_eq!(
+            error.render_in(solstone_core_window_catalog::ENGLISH),
+            error.to_string()
+        );
+    }
+}

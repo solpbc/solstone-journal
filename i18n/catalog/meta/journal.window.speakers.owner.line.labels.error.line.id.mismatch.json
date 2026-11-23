@@ -1,0 +1,29 @@
+{
+  "description": "Owner line label refusal when stored sentence id does not match line number.",
+  "context": "Journal window. Owner line label refusal when stored sentence id does not match line number.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "sentence_id",
+      "type": "string"
+    },
+    {
+      "name": "audio_source",
+      "type": "string"
+    },
+    {
+      "name": "stored",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "15dce8d957b6ab5436a6c697905e803c277a9e9fb90bb85a8d44931b369b6290",
+  "max_length": 142,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

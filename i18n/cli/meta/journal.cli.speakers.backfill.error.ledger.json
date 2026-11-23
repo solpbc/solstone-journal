@@ -1,0 +1,21 @@
+{
+  "description": "Speaker backfill error when ledger operation fails.",
+  "context": "Journal CLI. Speaker backfill error when ledger operation fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "916092d280221f5a45733b94d8537382451c63ef5887fc873652d00dc5c8c329",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "CLI confirm-owner refusal directing the owner to confirm in the Speakers browser page.",
+  "context": "Journal window. CLI confirm-owner refusal directing the owner to confirm in the Speakers browser page.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eaba4afc9a909ce8a5b2d6669e287cc5b16f31a89fb9f2ab5ac800a573d267b5",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

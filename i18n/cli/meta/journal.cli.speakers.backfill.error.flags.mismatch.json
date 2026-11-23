@@ -1,0 +1,45 @@
+{
+  "description": "Speaker backfill error when resumed operation flags do not match the started operation.",
+  "context": "Journal CLI. Speaker backfill error when resumed operation flags do not match the started operation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation_id",
+      "type": "string"
+    },
+    {
+      "name": "expected_commit",
+      "type": "string"
+    },
+    {
+      "name": "expected_reattribute",
+      "type": "string"
+    },
+    {
+      "name": "expected_accumulation",
+      "type": "string"
+    },
+    {
+      "name": "got_commit",
+      "type": "string"
+    },
+    {
+      "name": "got_reattribute",
+      "type": "string"
+    },
+    {
+      "name": "got_accumulation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ba55929a039b7e17fa13381e094d5cdfb1478cd31505e3c50e5807e4e0663679",
+  "max_length": 317,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

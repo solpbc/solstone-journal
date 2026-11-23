@@ -1,0 +1,21 @@
+{
+  "description": "Speaker backfill error when journal root admission fails.",
+  "context": "Journal CLI. Speaker backfill error when journal root admission fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c2d7e0337804fbabeebf3b9671d4342fe8353b285ee04f7103a33d0589f1d61d",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

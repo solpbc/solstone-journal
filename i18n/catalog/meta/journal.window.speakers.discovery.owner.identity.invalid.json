@@ -1,0 +1,16 @@
+{
+  "description": "Speaker discovery error when configured owner identity needs attention.",
+  "context": "Journal window. Speaker discovery error when configured owner identity needs attention.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "873f859bd2b9770dbe6852671d0258b16af584e8d9f58167433fe2589b84999e",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

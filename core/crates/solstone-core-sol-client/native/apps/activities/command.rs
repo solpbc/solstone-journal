@@ -100,6 +100,7 @@ fn list_output(ctx: CommandContext<'_>) -> CommandOutput {
             params.push(QueryParam::single("facet", facet));
         }
         let body = match request_json(
+            locale,
             ctx,
             HttpMethod::Get,
             &format!("/app/activities/api/day/{day}/records"),
@@ -167,6 +168,7 @@ pub fn get(ctx: CommandContext<'_>) -> CommandOutput {
         Err(output) => return output,
     };
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("/app/activities/api/day/{day}/record/{span_id}"),
@@ -275,6 +277,7 @@ pub fn create(ctx: CommandContext<'_>) -> CommandOutput {
     }
 
     let response = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         &format!("/app/activities/api/day/{day}/records"),
@@ -380,6 +383,7 @@ pub fn update(ctx: CommandContext<'_>) -> CommandOutput {
     request_body.insert("note".to_string(), Value::String(note));
 
     let response = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         &format!("/app/activities/api/day/{day}/record/{span_id}/update"),
@@ -446,6 +450,7 @@ fn set_mute_state(ctx: CommandContext<'_>, verb: &str) -> CommandOutput {
             .unwrap_or(Value::Null),
     );
     let response = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         &format!("/app/activities/api/day/{day}/record/{span_id}/{verb}"),
@@ -905,6 +910,7 @@ fn value_to_string(value: &Value) -> String {
 }
 
 fn request_json(
+    locale: &str,
     ctx: CommandContext<'_>,
     method: HttpMethod,
     path: &str,
@@ -916,7 +922,7 @@ fn request_json(
         path: path.to_string(),
         params,
         json,
-        headers: vec![],
+        headers: crate::transport::locale_headers(locale),
         policy: TimeoutPolicy::Api,
     })?;
     decode_response(&response)

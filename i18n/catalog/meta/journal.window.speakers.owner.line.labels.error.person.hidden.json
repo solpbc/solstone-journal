@@ -1,0 +1,21 @@
+{
+  "description": "Owner line label refusal when person entity is hidden.",
+  "context": "Journal window. Owner line label refusal when person entity is hidden.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6f03f3fbdd6bf4f98fcf21d447b737d1b6e3eeb909a9f42f9ab033be47c68ab1",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

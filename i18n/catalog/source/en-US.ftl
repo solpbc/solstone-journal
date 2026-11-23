@@ -21410,3 +21410,112 @@ journal.window.import.preview.apple.logged.label = { $quantity ->
     [one] logged entry
    *[other] logged entries
 }
+
+journal.window.speakers.owner.line.labels.error.segment.unavailable = the segment can't take owner line labels: { $detail }
+
+journal.window.speakers.owner.line.labels.error.source.unsupported = the segment's transcript views don't agree on one audio source (labels: { $labelled }, transcript page: { $transcript_page })
+
+journal.window.speakers.owner.line.labels.error.wrong.source = lines of { $requested } can't be labelled; the segment's labelled source is { $labelled }
+
+journal.window.speakers.owner.line.labels.error.no.lines = no lines were named
+
+journal.window.speakers.owner.line.labels.error.line.not.found = line { $sentence_id } isn't a line of { $audio_source }
+
+journal.window.speakers.owner.line.labels.error.line.id.mismatch = line { $sentence_id } of { $audio_source } is stored with sentence id { $stored }, not its line number
+
+journal.window.speakers.owner.line.labels.error.person.not.found = person { $id } wasn't found
+
+journal.window.speakers.owner.line.labels.error.person.hidden = person { $id } is hidden
+
+journal.window.speakers.owner.line.labels.error.person.merged = { $id } was merged into { $successor }
+
+journal.window.speakers.owner.line.labels.error.not.a.person = { $id } isn't a person
+
+journal.window.speakers.owner.line.labels.error.owner.not.admitted = the journal's owner identity isn't settled
+
+journal.window.speakers.owner.line.labels.error.entity.store.unreadable = the journal's entities can't be read: { $detail }
+
+journal.window.speakers.owner.line.labels.error.file.unreadable = the segment's owner line labels can't be read: { $detail }
+
+journal.window.speakers.owner.line.labels.error.merge.recovery.pending = an interrupted entity merge is waiting to be recovered
+
+journal.window.speakers.owner.line.labels.error.lock = owner line labels are busy: { $detail }
+
+journal.window.speakers.owner.line.labels.error.write = owner line labels couldn't be written: { $detail }
+
+journal.window.speakers.wipe.error.path = artifact path failed: { $error }
+
+journal.window.speakers.wipe.error.read = artifact directory read failed at { $path }: { $source }
+
+journal.window.speakers.wipe.error.not.utf8 = a name in your journal can't be read: { $path }
+
+journal.window.speakers.error.change.not.found = that speaker change couldn't be found.
+
+journal.window.speakers.error.change.recoverable = that speaker change didn't finish. try again in a moment.
+
+journal.window.speakers.error.change.repair.required = that speaker change stopped partway and can't finish yet.
+
+journal.window.speakers.error.change.conflict = that speaker change can't run right now.
+
+journal.window.speakers.error.change.one.way = naming a voice can't be undone.
+
+journal.window.speakers.error.wipe.busy = your journal is busy with recordings right now; try again in a moment.
+
+journal.window.speakers.error.wipe.held = your voices couldn't be wiped right now, so nothing was wiped.
+
+journal.window.speakers.error.task.conflict = that speaker task is already running with different options.
+
+journal.window.speakers.error.task.not.found = that speaker task couldn't be found.
+
+journal.window.speakers.error.files.busy = speaker files are busy. try again in a moment.
+
+journal.window.speakers.error.attribution.owner.identity.invalid = that speaker attribution couldn't be changed because your configured owner identity needs attention.
+
+journal.window.speakers.error.attribution.state.invalid = that speaker attribution couldn't be changed.
+
+journal.window.speakers.error.sentence.not.found = that sentence couldn't be found.
+
+journal.window.speakers.error.owner.confirm.identity.invalid = that owner voice couldn't be confirmed because your configured owner identity needs attention.
+
+journal.window.speakers.error.owner.confirm.review.required = Confirm this candidate in the Speakers browser page.
+
+journal.window.speakers.error.status.owner.identity.invalid = speaker status couldn't be loaded because your configured owner identity needs attention.
+
+journal.window.speakers.cli.owner.candidate.guidance = Confirm this candidate if it is your voice.
+
+journal.window.speakers.cli.suggest.empty = No speaker curation suggestions found.
+
+journal.window.speakers.cli.suggest.candidate.pair = Speaker candidate pair: similarity { $similarity } ({ $source_intervals } vs { $target_intervals } intervals)
+
+journal.window.speakers.cli.suggest.low.confidence = Low confidence review: { $day }/{ $segment_key } — { $medium } of { $total } labels are medium/unresolved
+
+journal.window.speakers.discovery.owner.voice.unavailable = your voice needs to be set up before the search for new voices can start.
+
+journal.window.speakers.discovery.invalid.embeddings = some voice samples were skipped because they weren't usable.
+
+journal.window.speakers.discovery.owner.identity.invalid = the search for new voices couldn't start because your configured owner identity needs attention.
+
+journal.window.speakers.discovery.labels.busy = speaker labels couldn't be updated because another update is running.
+
+journal.window.speakers.discovery.voiceprint.busy = that voice couldn't be updated because another update is running.
+
+journal.window.speakers.discovery.voice.not.found = that voice couldn't be found. try refreshing the page.
+
+journal.window.speakers.discovery.voice.changed = that voice has changed since this page loaded. try refreshing the page.
+
+journal.window.speakers.discovery.voice.owner.unavailable = your own voice needs to be set up first, so it isn't named as someone else.
+
+journal.window.speakers.discovery.voice.principal = your own voice is set up separately, not here.
+
+journal.window.speakers.media.error.invalid.path = that path couldn't be used.
+
+journal.window.speakers.media.error.file.not.found = that file isn't available.
+
+journal.window.speakers.cli.suggest.import.linkable = { $meetings_quantity ->
+    [one]
+        Import linkable: { $name } ({ $entity_id }) — mentioned in { $meetings } meeting
+          Days: { $days }
+   *[other]
+        Import linkable: { $name } ({ $entity_id }) — mentioned in { $meetings } meetings
+          Days: { $days }
+}

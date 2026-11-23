@@ -1,0 +1,16 @@
+{
+  "description": "Speaker wipe refusal when journal is busy with recordings.",
+  "context": "Journal window. Speaker wipe refusal when journal is busy with recordings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5cf6159cabcd173eef993d98c7d11b978d497d8d38c7e573165f37d596555de",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

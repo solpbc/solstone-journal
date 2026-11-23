@@ -1,0 +1,16 @@
+{
+  "description": "Speaker discovery error when voiceprints are locked by another update.",
+  "context": "Journal window. Speaker discovery error when voiceprints are locked by another update.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a496d28ae933129adfac727b063b970d13688329aa302a45f04f1d3b8c908ce7",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

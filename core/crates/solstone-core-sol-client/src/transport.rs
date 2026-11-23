@@ -18,6 +18,19 @@ const UPLOAD_READ_SECONDS: u64 = 120;
 const UPLOAD_TOTAL_SECONDS: u64 = 180;
 const SSE_CONNECT_SECONDS: u64 = 10;
 
+/// HTTP headers selecting the display language for a human-mode CLI call.
+///
+/// English and machine-readable invocations send no language header so default
+/// requests remain byte-identical to baseline behavior.
+#[must_use]
+pub fn locale_headers(locale: &str) -> Vec<(String, String)> {
+    if locale == solstone_core_cli_copy::ENGLISH {
+        Vec::new()
+    } else {
+        vec![("X-Solstone-Locale".to_owned(), locale.to_owned())]
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HttpMethod {
     Delete,
@@ -1023,5 +1036,14 @@ mod delete_body_tests {
         assert_eq!(line, "DELETE /app/settings/api/facet/work HTTP/1.1");
         let body: Value = serde_json::from_slice(&body).expect("JSON body");
         assert_eq!(body["consent"], true);
+    }
+
+    #[test]
+    fn locale_headers_stay_empty_in_english_and_forward_other_locales() {
+        assert!(super::locale_headers(solstone_core_cli_copy::ENGLISH).is_empty());
+        assert_eq!(
+            super::locale_headers("en-XA"),
+            vec![("X-Solstone-Locale".to_owned(), "en-XA".to_owned())]
+        );
     }
 }

@@ -294,7 +294,7 @@ pub async fn confirm(
     ) {
         return write_error(locale, error, true);
     }
-    maybe_bootstrap_owner(&root.0, &target.speaker);
+    maybe_bootstrap_owner(locale, &root.0, &target.speaker);
     Json(json!({"success":true,"status":"confirmed","speaker":target.speaker,"stream_layout":layout_name(target.layout)})).into_response()
 }
 
@@ -423,7 +423,7 @@ pub async fn correct(
     }
     drop(_trust);
     reresolve_segment(&root.0, &fields);
-    maybe_bootstrap_owner(&root.0, &fields.speaker);
+    maybe_bootstrap_owner(locale, &root.0, &fields.speaker);
     let propagation_offer = propagation_offer(&root.0, old_speaker.as_deref(), &fields.speaker);
     Json(json!({"success":true,"status":"corrected","old_speaker":old_speaker,"new_speaker":fields.speaker,"stream_layout":layout_name(fields.layout),"voiceprint_removal":removal,"propagation_offer":propagation_offer})).into_response()
 }
@@ -479,12 +479,9 @@ fn propagation_offer(
     })
 }
 
-fn maybe_bootstrap_owner(root: &std::path::Path, speaker: &str) {
+fn maybe_bootstrap_owner(locale: &str, root: &std::path::Path, speaker: &str) {
     if admitted_owner(root).as_deref() == Some(speaker) {
-        let _ = crate::speakers_owner_write::bootstrap_owner_from_manual_tags(
-            window_catalog::ENGLISH,
-            root,
-        );
+        let _ = crate::speakers_owner_write::bootstrap_owner_from_manual_tags(locale, root);
     }
 }
 

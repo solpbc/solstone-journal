@@ -1,0 +1,21 @@
+{
+  "description": "Speaker candidate pool read failure.",
+  "context": "Journal CLI. Speaker candidate pool read failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "67b9a57dc555b651e4092ef1f8e40634395ae2de83aa3a656f7f24157b3f90d8",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

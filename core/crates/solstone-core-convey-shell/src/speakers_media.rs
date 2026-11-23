@@ -16,12 +16,14 @@ use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::media::{
     MediaBody, ParsedRange, media_response, mime_type, parse_range,
 };
 
 use crate::JournalRoot;
 use crate::speakers_calendar::{is_day, journal_principal_id, live_entities, value_truthy};
+use crate::window_catalog;
 
 const PEOPLE_SEARCH_LIMIT: usize = 8;
 
@@ -80,13 +82,16 @@ pub async fn people_search(
 
 pub async fn serve_audio(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     RoutePath((day, rel_path)): RoutePath<(String, String)>,
     headers: HeaderMap,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     if !is_day(&day) {
         return media_error(
+            locale,
             "invalid_day",
-            "that day couldn't be used.",
+            "journal.window.speakers.error.that.day.couldn.t.be.used",
             "Day not found",
             StatusCode::NOT_FOUND,
         )
@@ -97,8 +102,9 @@ pub async fn serve_audio(
         Some(path) => path,
         None => {
             return media_error(
+                locale,
                 "invalid_path",
-                "that path couldn't be used.",
+                "journal.window.speakers.media.error.invalid.path",
                 "",
                 StatusCode::FORBIDDEN,
             )
@@ -108,8 +114,9 @@ pub async fn serve_audio(
     spawn_blocking_response(OwnerReadRole::SpeakersServeAudio, move || {
         if !path.is_file() {
             return media_error(
+                locale,
                 "file_not_found",
-                "that file isn't available.",
+                "journal.window.speakers.media.error.file.not.found",
                 "File not found",
                 StatusCode::NOT_FOUND,
             )
@@ -119,8 +126,9 @@ pub async fn serve_audio(
             // Declared frozen-oracle deviation: Python lets this unregistered,
             // existing file reach a global 500. Refuse cleanly instead of panicking.
             return media_error(
+                locale,
                 "invalid_request_value",
-                "one of those values couldn't be used.",
+                "journal.window.speakers.error.one.of.those.values.couldn.t.be.used",
                 "Unregistered media extension",
                 StatusCode::BAD_REQUEST,
             )
@@ -129,12 +137,13 @@ pub async fn serve_audio(
         let response = (|| {
             let file = fs::File::open(&path)?;
             let total = file.metadata()?.len();
-            audio_response(file, total, mimetype, &path, &headers)
+            audio_response(locale, file, total, mimetype, &path, &headers)
         })();
         response.unwrap_or_else(|_: std::io::Error| {
             media_error(
+                locale,
                 "file_not_found",
-                "that file isn't available.",
+                "journal.window.speakers.media.error.file.not.found",
                 "File not found",
                 StatusCode::NOT_FOUND,
             )
@@ -146,6 +155,7 @@ pub async fn serve_audio(
 // Length comes from the opened file. Serve only that observed interval; a
 // short read refuses the response, while growth after observation is excluded.
 fn audio_response(
+    locale: &str,
     file: impl Read + Seek + Send + 'static,
     total: u64,
     mimetype: &str,
@@ -175,8 +185,9 @@ fn audio_response(
         ),
         Some(ParsedRange::Unsatisfiable) => {
             return Ok(media_error(
+                locale,
                 "http_error",
-                "that request didn't finish.",
+                "journal.window.speakers.error.that.request.didn.t.finish",
                 "",
                 StatusCode::RANGE_NOT_SATISFIABLE,
             ));
@@ -221,11 +232,21 @@ fn person_search_strings(entity: &Value) -> Vec<&str> {
     .collect()
 }
 
-fn media_error(reason_code: &str, message: &str, detail: &str, status: StatusCode) -> Response {
+fn media_error(
+    locale: &str,
+    reason_code: &str,
+    message_id: &str,
+    detail: &str,
+    status: StatusCode,
+) -> Response {
     // Flask's jsonify appends a newline, including on these error envelopes.
     let body = format!(
         "{}\n",
-        json!({"error": message, "reason_code": reason_code, "detail": detail})
+        json!({
+            "error": window_catalog::text(locale, message_id),
+            "reason_code": reason_code,
+            "detail": detail,
+        })
     );
     Response::builder()
         .status(status)
@@ -280,30 +301,59 @@ mod tests {
 
     #[test]
     fn audio_uses_observed_length_and_refuses_truncation_within_selected_bytes() {
+        let english = crate::window_catalog::ENGLISH;
         let file = || Cursor::new(b"abc".to_vec());
         let mut headers = HeaderMap::new();
         headers.insert(header::RANGE, "bytes=1-2".parse().unwrap());
-        let response =
-            audio_response(file(), 5, "audio/flac", Path::new("mic.flac"), &headers).unwrap();
+        let response = audio_response(
+            english,
+            file(),
+            5,
+            "audio/flac",
+            Path::new("mic.flac"),
+            &headers,
+        )
+        .unwrap();
         assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
         assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 1-2/5");
         assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");
         headers.insert(header::RANGE, "bytes=1-4".parse().unwrap());
         assert_eq!(
-            audio_response(file(), 5, "audio/flac", Path::new("mic.flac"), &headers)
-                .unwrap_err()
-                .kind(),
+            audio_response(
+                english,
+                file(),
+                5,
+                "audio/flac",
+                Path::new("mic.flac"),
+                &headers,
+            )
+            .unwrap_err()
+            .kind(),
             ErrorKind::UnexpectedEof
         );
         headers.clear();
         assert_eq!(
-            audio_response(file(), 5, "audio/flac", Path::new("mic.flac"), &headers)
-                .unwrap_err()
-                .kind(),
+            audio_response(
+                english,
+                file(),
+                5,
+                "audio/flac",
+                Path::new("mic.flac"),
+                &headers,
+            )
+            .unwrap_err()
+            .kind(),
             ErrorKind::UnexpectedEof
         );
-        let response =
-            audio_response(file(), 2, "audio/flac", Path::new("mic.flac"), &headers).unwrap();
+        let response = audio_response(
+            english,
+            file(),
+            2,
+            "audio/flac",
+            Path::new("mic.flac"),
+            &headers,
+        )
+        .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[header::CONTENT_LENGTH], "2");
         assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");

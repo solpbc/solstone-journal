@@ -14,28 +14,46 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use jiff::Timestamp;
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_entity::{is_admissible_person, load_all_journal_entities};
 use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
+use crate::window_catalog;
 use solstone_core_speaker_resolve::segment_catalog::{
     SegmentLookup, catalog_journal, decode_required_stream_layout_value, lookup_segment,
 };
 use solstone_core_speaker_resolve::voiceprint_metadata::{owner_timezone, segment_start_ts_ms};
 
-pub async fn bootstrap(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
-    bootstrap_call(root, request, false).await
+pub async fn bootstrap(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    bootstrap_call(
+        root,
+        window_catalog::response_locale(locale),
+        request,
+        false,
+    )
+    .await
 }
 pub async fn seed_from_imports(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
-    bootstrap_call(root, request, true).await
+    bootstrap_call(root, window_catalog::response_locale(locale), request, true).await
 }
 
-async fn bootstrap_call(root: Arc<JournalRoot>, request: Request, imports: bool) -> Response {
-    let body = match json_body(request).await {
+async fn bootstrap_call(
+    root: Arc<JournalRoot>,
+    locale: &'static str,
+    request: Request,
+    imports: bool,
+) -> Response {
+    let body = match json_body(locale, request).await {
         Ok(body) => body,
         Err(response) => return response,
     };
@@ -53,22 +71,29 @@ async fn bootstrap_call(root: Arc<JournalRoot>, request: Request, imports: bool)
     };
     match result {
         Ok(value) if value["error"] == "speaker_owner_identity_invalid" => err(
+            locale,
             "speaker_owner_identity_invalid",
-            "that speaker command couldn't run because your configured owner identity needs attention.",
+            "journal.window.speakers.attribution.attribution.response.that.speaker.command.couldn.t.run",
             "configured owner identity is not admitted",
             StatusCode::CONFLICT,
         ),
         Ok(value) => Json(value).into_response(),
         Err(error) => err(
+            locale,
             "speaker_command_failed",
-            "that speaker command didn't finish.",
+            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
             &error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
 }
 
-pub async fn wipe(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+pub async fn wipe(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     // No page calls this route; the command line does. `commit` moves every
     // voice file to the trash; `erase` erases it at once as well.
     let surface = solstone_core_removals::Surface::of_request(
@@ -78,7 +103,9 @@ pub async fn wipe(Extension(root): Extension<Arc<JournalRoot>>, request: Request
             .get(axum::http::header::USER_AGENT)
             .and_then(|value| value.to_str().ok()),
     );
-    let body = json_body(request).await.unwrap_or_else(|_| json!({}));
+    let body = json_body(locale, request)
+        .await
+        .unwrap_or_else(|_| json!({}));
     let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
     let erase = body.get("erase").and_then(Value::as_bool).unwrap_or(false);
     let backups = body
@@ -101,7 +128,7 @@ pub async fn wipe(Extension(root): Extension<Arc<JournalRoot>>, request: Request
         } else {
             solstone_core_speaker_resolve::artifact_wipe::dry_run(&journal)
                 .map(|report| serde_json::to_value(report).unwrap_or_else(|_| json!({})))
-                .map_err(|error| (false, error.to_string()))
+                .map_err(|error| (false, error.render_window(locale)))
         }
     })
     .await;
@@ -110,11 +137,14 @@ pub async fn wipe(Extension(root): Extension<Arc<JournalRoot>>, request: Request
         Ok(Err((true, reason))) => {
             let code = solstone_core_speaker_resolve::speakers_trash::refusal_code(&reason)
                 .unwrap_or_else(|| "busy".to_owned());
-            let words = if code == "busy" {
-                "your journal is busy with recordings right now; try again in a moment."
-            } else {
-                "your voices couldn't be wiped right now, so nothing was wiped."
-            };
+            let words = window_catalog::text(
+                locale,
+                if code == "busy" {
+                    "journal.window.speakers.error.wipe.busy"
+                } else {
+                    "journal.window.speakers.error.wipe.held"
+                },
+            );
             (
                 StatusCode::CONFLICT,
                 Json(json!({
@@ -127,14 +157,16 @@ pub async fn wipe(Extension(root): Extension<Arc<JournalRoot>>, request: Request
                 .into_response()
         }
         Ok(Err((false, detail))) => err(
+            locale,
             "speaker_command_failed",
-            "that speaker command didn't finish.",
+            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
             &detail,
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
         Err(_) => err(
+            locale,
             "speaker_command_failed",
-            "that speaker command didn't finish.",
+            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
             "the wipe task stopped",
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -143,9 +175,11 @@ pub async fn wipe(Extension(root): Extension<Arc<JournalRoot>>, request: Request
 
 pub async fn resolve_names(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
-    let body = match json_body(request).await {
+    let locale = window_catalog::response_locale(locale);
+    let body = match json_body(locale, request).await {
         Ok(body) => body,
         Err(response) => return response,
     };
@@ -157,8 +191,9 @@ pub async fn resolve_names(
             Ok(scan) => scan,
             Err(error) => {
                 return err(
+                    locale,
                     "speaker_command_failed",
-                    "that speaker command didn't finish.",
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                     &error.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 );
@@ -173,12 +208,17 @@ pub async fn resolve_names(
     Json(stats).into_response()
 }
 
-pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
-    let body = match json_body(request).await {
+pub async fn attribute(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    let body = match json_body(locale, request).await {
         Ok(body) => body,
         Err(response) => return response,
     };
-    let (day, stream, segment) = match fields(&body) {
+    let (day, stream, segment) = match fields(locale, &body) {
         Ok(fields) => fields,
         Err(response) => return response,
     };
@@ -186,8 +226,9 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         Ok(layout) => layout,
         Err(_) => {
             return err(
+                locale,
                 "invalid_segment_or_stream",
-                "that segment or stream couldn't be used.",
+                "journal.window.speakers.attribution.attribution.response.that.segment.or.stream.couldn.t",
                 "Invalid segment key or stream",
                 StatusCode::BAD_REQUEST,
             );
@@ -197,24 +238,27 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         SegmentLookup::Present(path) => path,
         SegmentLookup::MalformedLayout => {
             return err(
+                locale,
                 "invalid_segment_or_stream",
-                "that segment or stream couldn't be used.",
+                "journal.window.speakers.attribution.attribution.response.that.segment.or.stream.couldn.t",
                 "Invalid segment key or stream",
                 StatusCode::BAD_REQUEST,
             );
         }
         SegmentLookup::Absent => {
             return err(
+                locale,
                 "speaker_review_unavailable",
-                "that speaker review couldn't be loaded.",
+                "journal.window.speakers.error.that.speaker.review.couldn.t.be.loaded",
                 "No transcript found",
                 StatusCode::NOT_FOUND,
             );
         }
         SegmentLookup::Failed(error) => {
             return err(
+                locale,
                 "speaker_command_failed",
-                "that speaker command didn't finish.",
+                "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                 &error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -234,8 +278,9 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         Ok(outcome) => outcome,
         Err(error) => {
             return err(
+                locale,
                 "speaker_command_failed",
-                "that speaker command didn't finish.",
+                "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                 &error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -247,8 +292,9 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         solstone_core_speaker_resolve::resolve::ResolveOutcome::IdentityInvalid
     ) {
         return err(
+            locale,
             "speaker_owner_identity_invalid",
-            "that speaker command couldn't run because your configured owner identity needs attention.",
+            "journal.window.speakers.attribution.attribution.response.that.speaker.command.couldn.t.run",
             "configured owner identity is not admitted",
             StatusCode::CONFLICT,
         );
@@ -258,8 +304,9 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid
     ) {
         return err(
+            locale,
             "speaker_owner_centroid_required",
-            "that speaker command can't run until your owner voice is set up.",
+            "journal.window.speakers.attribution.attribution.response.that.speaker.command.can.t.run",
             "owner centroid unavailable",
             StatusCode::CONFLICT,
         );
@@ -277,7 +324,7 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
             labels(output),
             &metadata,
         ) {
-            return write_error(error.to_string(), true);
+            return write_error(locale, error.to_string(), true);
         }
         written_path = json!(
             directory
@@ -305,7 +352,7 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
             now,
         ) {
             Ok(value) => value,
-            Err(error) => return accumulation_error(error),
+            Err(error) => return accumulation_error(locale, error),
         }
     } else {
         Value::Null
@@ -314,8 +361,15 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         .into_response()
 }
 
-pub async fn backfill(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
-    let body = json_body(request).await.unwrap_or_else(|_| json!({}));
+pub async fn backfill(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    let body = json_body(locale, request)
+        .await
+        .unwrap_or_else(|_| json!({}));
     let reattribute = body
         .get("reattribute")
         .and_then(Value::as_bool)
@@ -349,16 +403,18 @@ pub async fn backfill(Extension(root): Extension<Arc<JournalRoot>>, request: Req
             got_reattribute,
             got_accumulation,
         }) => err(
+            locale,
             "speaker_operation_conflict",
-            "that speaker task is already running with different options.",
+            "journal.window.speakers.error.task.conflict",
             &format!(
                 "backfill operation {operation_id} flags mismatch: expected commit={expected_commit}, reattribute={expected_reattribute}, accumulation={expected_accumulation}; got commit={got_commit}, reattribute={got_reattribute}, accumulation={got_accumulation}"
             ),
             StatusCode::CONFLICT,
         ),
         Err(error) => err(
+            locale,
             "speaker_command_failed",
-            "that speaker command didn't finish.",
+            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
             &error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -367,8 +423,10 @@ pub async fn backfill(Extension(root): Extension<Arc<JournalRoot>>, request: Req
 
 pub async fn backfill_status(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     RoutePath(operation_id): RoutePath<String>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     match solstone_core_speaker_resolve::backfill_coordinator::backfill_status(
         &root.0,
         &operation_id,
@@ -377,14 +435,16 @@ pub async fn backfill_status(
             Json(serde_json::to_value(&status).unwrap_or_else(|_| json!({}))).into_response()
         }
         Ok(None) => err(
+            locale,
             "speaker_operation_not_found",
-            "that speaker task couldn't be found.",
+            "journal.window.speakers.error.task.not.found",
             &format!("backfill operation {operation_id} not found"),
             StatusCode::NOT_FOUND,
         ),
         Err(error) => err(
+            locale,
             "speaker_command_failed",
-            "that speaker command didn't finish.",
+            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
             &error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -393,8 +453,10 @@ pub async fn backfill_status(
 
 pub async fn backfill_resume(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     RoutePath(operation_id): RoutePath<String>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     match solstone_core_speaker_resolve::backfill_coordinator::resume_backfill(
         &root.0,
         &operation_id,
@@ -408,22 +470,31 @@ pub async fn backfill_resume(
                 id,
             ),
         ) => err(
+            locale,
             "speaker_operation_not_found",
-            "that speaker task couldn't be found.",
+            "journal.window.speakers.error.task.not.found",
             &format!("backfill operation {id} not found"),
             StatusCode::NOT_FOUND,
         ),
         Err(error) => err(
+            locale,
             "speaker_command_failed",
-            "that speaker command didn't finish.",
+            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
             &error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
 }
 
-pub async fn repair(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
-    let body = json_body(request).await.unwrap_or_else(|_| json!({}));
+pub async fn repair(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    let body = json_body(locale, request)
+        .await
+        .unwrap_or_else(|_| json!({}));
     let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
     let operation_id = body
         .get("operation_id")
@@ -444,22 +515,25 @@ pub async fn repair(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
         Err(err_msg) => {
             if err_msg.contains("busy") || err_msg.contains("locked") {
                 err(
+                    locale,
                     "speaker_operation_busy",
-                    "speaker files are busy. try again in a moment.",
+                    "journal.window.speakers.error.files.busy",
                     &err_msg,
                     StatusCode::CONFLICT,
                 )
             } else if err_msg.contains("not found") {
                 err(
+                    locale,
                     "speaker_operation_not_found",
-                    "that speaker task couldn't be found.",
+                    "journal.window.speakers.error.task.not.found",
                     &err_msg,
                     StatusCode::NOT_FOUND,
                 )
             } else {
                 err(
+                    locale,
                     "speaker_command_failed",
-                    "that speaker command didn't finish.",
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                     &err_msg,
                     StatusCode::INTERNAL_SERVER_ERROR,
                 )
@@ -470,8 +544,10 @@ pub async fn repair(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
 
 pub async fn repair_status(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     RoutePath(operation_id): RoutePath<String>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     match solstone_core_speaker_resolve::repair_coordinator::query_repair_status(
         &root.0,
         &operation_id,
@@ -480,15 +556,17 @@ pub async fn repair_status(
         Err(error) => {
             if error.contains("not found") {
                 err(
+                    locale,
                     "speaker_operation_not_found",
-                    "that speaker task couldn't be found.",
+                    "journal.window.speakers.error.task.not.found",
                     &format!("repair operation {operation_id} not found"),
                     StatusCode::NOT_FOUND,
                 )
             } else {
                 err(
+                    locale,
                     "speaker_command_failed",
-                    "that speaker command didn't finish.",
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                     &error,
                     StatusCode::INTERNAL_SERVER_ERROR,
                 )
@@ -499,8 +577,10 @@ pub async fn repair_status(
 
 pub async fn repair_resume(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     RoutePath(operation_id): RoutePath<String>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     match solstone_core_speaker_resolve::repair_coordinator::launch_repair_resume(
         &root.0,
         &operation_id,
@@ -513,22 +593,25 @@ pub async fn repair_resume(
         Err(error) => {
             if error.contains("not found") {
                 err(
+                    locale,
                     "speaker_operation_not_found",
-                    "that speaker task couldn't be found.",
+                    "journal.window.speakers.error.task.not.found",
                     &format!("repair operation {operation_id} not found: {error}"),
                     StatusCode::NOT_FOUND,
                 )
             } else if error.contains("busy") || error.contains("locked") {
                 err(
+                    locale,
                     "speaker_operation_busy",
-                    "speaker files are busy. try again in a moment.",
+                    "journal.window.speakers.error.files.busy",
                     &error,
                     StatusCode::CONFLICT,
                 )
             } else {
                 err(
+                    locale,
                     "speaker_command_failed",
-                    "that speaker command didn't finish.",
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                     &error,
                     StatusCode::INTERNAL_SERVER_ERROR,
                 )
@@ -539,16 +622,21 @@ pub async fn repair_resume(
 
 pub async fn backfill_last_seen(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
-    let body = json_body(request).await.unwrap_or_else(|_| json!({}));
+    let locale = window_catalog::response_locale(locale);
+    let body = json_body(locale, request)
+        .await
+        .unwrap_or_else(|_| json!({}));
     let dry_run = !body.get("commit").and_then(Value::as_bool).unwrap_or(false);
     let (entity_max_ts, labels_read) = match last_seen_sources(&root.0) {
         Ok(sources) => sources,
         Err(error) => {
             return err(
+                locale,
                 "speaker_command_failed",
-                "that speaker command didn't finish.",
+                "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                 &error,
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -717,11 +805,13 @@ pub(crate) fn accumulate(
 }
 
 fn accumulation_error(
+    locale: &str,
     error: solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationError,
 ) -> Response {
     err(
+        locale,
         "speaker_command_failed",
-        "that speaker command didn't finish.",
+        "journal.window.speakers.error.that.speaker.command.didn.t.finish",
         &error.to_string(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
@@ -764,13 +854,14 @@ fn last_seen_sources(root: &std::path::Path) -> Result<(BTreeMap<String, i64>, u
     Ok((entity_max_ts, labels_read))
 }
 
-async fn json_body(request: Request) -> Result<Value, Response> {
+async fn json_body(locale: &str, request: Request) -> Result<Value, Response> {
     let bytes = to_bytes(request.into_body(), usize::MAX)
         .await
         .map_err(|_| {
             err(
+                locale,
                 "missing_request_body",
-                "that request had no data in it.",
+                "journal.window.speakers.attribution.attribution.response.that.request.had.no.data.in",
                 "unable to read request body",
                 StatusCode::BAD_REQUEST,
             )
@@ -780,35 +871,39 @@ async fn json_body(request: Request) -> Result<Value, Response> {
     }
     serde_json::from_slice(&bytes).map_err(|_| {
         err(
+            locale,
             "invalid_json_request",
-            "that JSON request couldn't be read.",
+            "journal.window.speakers.attribution.attribution.response.that.json.request.couldn.t.be",
             "request body must be a JSON object",
             StatusCode::BAD_REQUEST,
         )
     })
 }
 #[allow(clippy::result_large_err)]
-fn fields(body: &Value) -> Result<(&str, &str, &str), Response> {
+fn fields<'a>(locale: &str, body: &'a Value) -> Result<(&'a str, &'a str, &'a str), Response> {
     let day = body.get("day").and_then(Value::as_str).ok_or_else(|| {
         err(
+            locale,
             "missing_required_field",
-            "a required field is missing.",
+            "journal.window.speakers.attribution.attribution.response.a.required.field.is.missing",
             "day is required",
             StatusCode::BAD_REQUEST,
         )
     })?;
     let stream = body.get("stream").and_then(Value::as_str).ok_or_else(|| {
         err(
+            locale,
             "missing_required_field",
-            "a required field is missing.",
+            "journal.window.speakers.attribution.attribution.response.a.required.field.is.missing",
             "stream is required",
             StatusCode::BAD_REQUEST,
         )
     })?;
     let segment = body.get("segment").and_then(Value::as_str).ok_or_else(|| {
         err(
+            locale,
             "missing_required_field",
-            "a required field is missing.",
+            "journal.window.speakers.attribution.attribution.response.a.required.field.is.missing",
             "segment is required",
             StatusCode::BAD_REQUEST,
         )
@@ -896,16 +991,23 @@ fn seed_value(outcome: solstone_core_speaker_resolve::bootstrap::SeedFromImports
         }
     }
 }
-fn write_error(detail: String, _labels: bool) -> Response {
+fn write_error(locale: &str, detail: String, _labels: bool) -> Response {
     err(
+        locale,
         "speaker_labels_busy",
-        "those speaker attributions couldn't be updated right now because they were busy. try again in a moment.",
+        "journal.window.speakers.attribution.attribution.response.those.speaker.attributions.couldn.t.be",
         &detail,
         StatusCode::SERVICE_UNAVAILABLE,
     )
 }
-fn err(code: &str, message: &str, detail: &str, status: StatusCode) -> Response {
-    error_envelope(code, message, detail, status).into_response()
+fn err(locale: &str, code: &str, message_id: &str, detail: &str, status: StatusCode) -> Response {
+    error_envelope(
+        code,
+        window_catalog::text(locale, message_id),
+        detail,
+        status,
+    )
+    .into_response()
 }
 
 #[cfg(test)]
@@ -937,6 +1039,7 @@ mod tests {
             let request = Request::new(Body::from(json!({"commit":commit}).to_string()));
             let response = backfill_last_seen(
                 Extension(Arc::new(JournalRoot(root.path().to_owned()))),
+                None,
                 request,
             )
             .await;

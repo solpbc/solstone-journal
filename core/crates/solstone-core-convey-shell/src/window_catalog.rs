@@ -9,8 +9,8 @@ use serde_json::Value;
 #[cfg(test)]
 pub(crate) use solstone_core_convey_http::window_catalog::packaged_locale;
 pub(crate) use solstone_core_convey_http::window_catalog::{
-    ENGLISH, MissingPage, escape_html, html, language_tag, not_found, response_locale, strings,
-    text,
+    ENGLISH, MissingPage, Value as CopyValue, escape_html, html, language_tag, not_found, render,
+    response_locale, strings, text,
 };
 
 pub(crate) const LOCALE_HEADER: &str = "x-solstone-locale";

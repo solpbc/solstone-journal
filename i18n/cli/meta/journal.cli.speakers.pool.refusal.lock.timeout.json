@@ -1,0 +1,16 @@
+{
+  "description": "Speaker pool catch-up refusal when voice list lock times out.",
+  "context": "Journal CLI. Speaker pool catch-up refusal when voice list lock times out.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "62caf9a21c296dfdd0444232863f9d9bda19c81f7948bb2b5ec0035179bde4d4",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

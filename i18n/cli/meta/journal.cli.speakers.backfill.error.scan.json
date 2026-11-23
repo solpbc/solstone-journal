@@ -1,0 +1,21 @@
+{
+  "description": "Speaker backfill error when backfill scan fails.",
+  "context": "Journal CLI. Speaker backfill error when backfill scan fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "95313c291875bbaddfbe573c060bb20ee44505dde3fe6c47c075932fdaccafe2",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

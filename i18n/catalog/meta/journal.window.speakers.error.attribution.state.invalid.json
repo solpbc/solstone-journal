@@ -1,0 +1,16 @@
+{
+  "description": "Speaker attribution refusal when sentence already has a speaker.",
+  "context": "Journal window. Speaker attribution refusal when sentence already has a speaker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "00a5f587832ab0bceb49e6c9a6b960ee56fee51fd89e9826f782283bd0487b45",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

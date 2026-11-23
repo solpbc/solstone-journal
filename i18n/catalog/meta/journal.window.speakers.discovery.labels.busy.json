@@ -1,0 +1,16 @@
+{
+  "description": "Speaker discovery error when speaker labels are locked by another update.",
+  "context": "Journal window. Speaker discovery error when speaker labels are locked by another update.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "12ad0a26570f68b5734b9711f221cfff8393f7ba6b0c1d6a725a906e93766a7e",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

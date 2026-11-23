@@ -1,0 +1,16 @@
+{
+  "description": "Speaker audio serving error when the requested file is not found.",
+  "context": "Journal window. Speaker audio serving error when the requested file is not found.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f6a01675276c736637b07aa8dadbf5c8eec62300a54e4718b327940517968ad",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

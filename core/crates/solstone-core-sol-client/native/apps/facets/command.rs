@@ -17,6 +17,7 @@ pub fn list_candidates(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let payload = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/curation/api/facet/candidates",
@@ -74,6 +75,7 @@ pub fn accept(ctx: CommandContext<'_>) -> CommandOutput {
         );
     };
     let result = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/curation/api/facet/accept",
@@ -101,6 +103,7 @@ pub fn dismiss(ctx: CommandContext<'_>) -> CommandOutput {
         );
     };
     let result = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/curation/api/facet/dismiss",
@@ -182,6 +185,7 @@ fn canonical_option<'a>(token: &str, options: &'a [(&'a str, Option<&'a str>)]) 
 }
 
 fn request_json(
+    locale: &str,
     ctx: CommandContext<'_>,
     method: HttpMethod,
     path: &str,
@@ -193,7 +197,7 @@ fn request_json(
         path: path.to_string(),
         params,
         json,
-        headers: vec![],
+        headers: crate::transport::locale_headers(locale),
         policy: TimeoutPolicy::Api,
     })?;
     decode_response(&response)

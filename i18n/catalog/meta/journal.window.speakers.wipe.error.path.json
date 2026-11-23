@@ -1,0 +1,21 @@
+{
+  "description": "Speaker artifact wipe dry-run error when resolving a path fails.",
+  "context": "Journal window. Speaker artifact wipe dry-run error when resolving a path fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "19134005f4d3e76a126c6a27321ef5a03bce05733c6540358aa25c111f070057",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

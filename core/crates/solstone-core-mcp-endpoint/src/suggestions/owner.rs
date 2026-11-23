@@ -1127,7 +1127,7 @@ pub async fn undo_suggestion(
                         }
                         solstone_core_facets::remove_activity_edit(&journal, facet, day, activity, position, timestamp, "owner:lines", &now)
                             .map_err(|error|error.to_string())
-                    }).map_err(|error|error.to_string())??;
+                    }).map_err(|error| error.render_in(crate::owner_web::owner_response_locale()))??;
                 }
             }
             "name" => {

@@ -10109,6 +10109,58 @@ m6a6f75726e616c2e636c692e736f6c2e7570646174652e73756d6d6172792e746172676574 = av
 
 m6a6f75726e616c2e636c692e736f6c2e7573616765 = Usage: { "solstone <command> [args...]" }
 
+m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e666c6167732e6d69736d61746368 = immutable backfill flags mismatch for operation { $operation_id }: expected commit={ $expected_commit } reattribute={ $expected_reattribute } accumulation={ $expected_accumulation }, got commit={ $got_commit } reattribute={ $got_reattribute } accumulation={ $got_accumulation }
+
+m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e696e76616c69642e666c616773 = invalid backfill flags: { $detail }
+
+m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6a6f75726e616c2e726f6f74 = journal root admission failed: { $error }
+
+m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6c6564676572 = ledger operation failed: { $error }
+
+m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6c6f636b = backfill execution lock failed: { $error }
+
+m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e6e6f742e666f756e64 = backfill operation not found: { $id }
+
+m6a6f75726e616c2e636c692e737065616b6572732e6261636b66696c6c2e6572726f722e7363616e = backfill scan failed: { $error }
+
+m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6964656e746974792e696e76616c6964 = configured owner identity is not admitted
+
+m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6e6f2e63616e646964617465 = No candidate available
+
+m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e6e6f2e73617665642e766f696365 = No owner voice is saved
+
+m6a6f75726e616c2e636c692e737065616b6572732e6f776e65722e766f6963652e6572726f722e7374616c652e63616e646964617465 = Candidate version mismatch or stale generation
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e63656e74726f69642e7769647468 = candidate pool centroid width mismatch
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e6c6f636b = candidate pool lock failed: { $error }
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e72656164 = candidate pool read failed: { $error }
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e6572726f722e7772697465 = candidate pool write failed: { $error }
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e646179732e756e7265616461626c65 = voice list catch-up refused: journal days could not be listed
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e666f726d61742e756e737570706f72746564 = voice list catch-up refused: the voice list is in a format this version can't add to
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e6c6f636b2e74696d656f7574 = voice list catch-up refused: voice list lock timed out
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e6c6f636b2e74696d656f75742e6b657074 = voice list catch-up refused: voice list lock timed out; what was added is kept
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e756e7265616461626c65 = voice list catch-up refused: voice list could not be read
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e77726974652e6661696c6564 = voice list catch-up refused: voice list could not be written
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e706f6f6c2e77726974652e6661696c65642e6b657074 = voice list catch-up refused: voice list could not be written; what was added is kept
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e696e76616c6964 = voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json from your journal restarts the catch-up safely
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e756e7265616461626c65 = voice list catch-up refused: catch-up progress file could not be read; check that your journal's awareness folder can be read
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e77726974652e6661696c6564 = voice list catch-up refused: catch-up progress file could not be written
+
+m6a6f75726e616c2e636c692e737065616b6572732e706f6f6c2e7265667573616c2e70726f67726573732e77726974652e6661696c65642e6b657074 = voice list catch-up refused: catch-up progress file could not be written; what was added is kept
+
 m6a6f75726e616c2e636c692e73746174732e617267756d656e7473 = usage: { "solstone journal journal-stats [-h] [--no-cache] [-v] [-d]" }{ "\u000a" }{ "solstone journal journal-stats" }: error: unrecognized arguments: { $argument }
 
 m6a6f75726e616c2e636c692e73746174732e63617573652e6661636574 = facet store error: { $detail }

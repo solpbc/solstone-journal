@@ -1,0 +1,16 @@
+{
+  "description": "Speaker pool catch-up refusal when voice list format is unsupported.",
+  "context": "Journal CLI. Speaker pool catch-up refusal when voice list format is unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3dfc0a021ab4eadc4116ba9d5be32e96b8f294d4907d75ffc1d46b3db4510743",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

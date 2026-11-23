@@ -11,18 +11,25 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use serde_json::{Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 
 use crate::JournalRoot;
 use crate::speakers_discovery_write::{IdentifyPreflightError, preflight_identify_cluster};
+use crate::window_catalog;
 
-pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
-    let body = match request_json(request).await {
+pub async fn identify(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+    request: Request,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    let body = match request_json(locale, request).await {
         Ok(body) => body,
         Err(response) => return response,
     };
     let Some(cluster_id) = body.get("cluster_id").and_then(Value::as_i64) else {
-        return bad("missing_required_field", "cluster_id is required");
+        return bad(locale, "missing_required_field", "cluster_id is required");
     };
     let name = body.get("name").and_then(Value::as_str).map(str::to_owned);
     let entity_id = body
@@ -30,14 +37,19 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
         .and_then(Value::as_str)
         .map(str::to_owned);
     if name.as_deref().is_none_or(str::is_empty) && entity_id.as_deref().is_none_or(str::is_empty) {
-        return bad("missing_required_field", "name or entity_id is required");
+        return bad(
+            locale,
+            "missing_required_field",
+            "name or entity_id is required",
+        );
     }
     match preflight_identify_cluster(&root.0, cluster_id) {
         Ok(()) => {}
         Err(IdentifyPreflightError::Failed(detail)) => {
             return err(
+                locale,
                 "speaker_command_failed",
-                "that speaker command didn't finish.",
+                "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                 &detail,
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -85,17 +97,22 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
     };
     let encoder = encoder();
     match solstone_core_speaker_resolve::identify_cluster::identify_cluster(&request, &encoder) {
-        Ok(value) => identify_response(value),
+        Ok(value) => identify_response(locale, value),
         Err(error) => err(
+            locale,
             "speaker_command_failed",
-            "that speaker command didn't finish.",
+            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
             &error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
 }
 
-pub async fn operations(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+pub async fn operations(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::SpeakersIdentifyOperations,
         move || {
@@ -105,8 +122,9 @@ pub async fn operations(Extension(root): Extension<Arc<JournalRoot>>) -> Respons
                     Ok(rows) => rows,
                     Err(error) => {
                         return err(
+                            locale,
                             "speaker_command_failed",
-                            "that speaker command didn't finish.",
+                            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                             &error.to_string(),
                             StatusCode::INTERNAL_SERVER_ERROR,
                         );
@@ -118,8 +136,9 @@ pub async fn operations(Extension(root): Extension<Arc<JournalRoot>>) -> Respons
                     Json(json!({"operations":operations,"total":operations.len()})).into_response()
                 }
                 Err(error) => err(
+                    locale,
                     "speaker_command_failed",
-                    "that speaker command didn't finish.",
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                     &error.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 ),
@@ -131,8 +150,10 @@ pub async fn operations(Extension(root): Extension<Arc<JournalRoot>>) -> Respons
 
 pub async fn operation(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     RoutePath(operation_id): RoutePath<String>,
 ) -> Response {
+    let locale = window_catalog::response_locale(locale);
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::SpeakersIdentifyOperation,
         move || {
@@ -142,8 +163,9 @@ pub async fn operation(
                     Ok(rows) => rows,
                     Err(error) => {
                         return err(
+                            locale,
                             "speaker_command_failed",
-                            "that speaker command didn't finish.",
+                            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                             &error.to_string(),
                             StatusCode::INTERNAL_SERVER_ERROR,
                         );
@@ -155,14 +177,16 @@ pub async fn operation(
             ) {
                 Ok(Some(state)) => Json(json!({"operation":summary(&state)})).into_response(),
                 Ok(None) => err(
+                    locale,
                     "speaker_identify_operation_not_found",
-                    "that speaker change couldn't be found.",
+                    "journal.window.speakers.error.change.not.found",
                     &format!("operation_id={operation_id}"),
                     StatusCode::NOT_FOUND,
                 ),
                 Err(error) => err(
+                    locale,
                     "speaker_command_failed",
-                    "that speaker command didn't finish.",
+                    "journal.window.speakers.error.that.speaker.command.didn.t.finish",
                     &error.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 ),
@@ -176,7 +200,7 @@ fn summary(state: &solstone_core_speaker_resolve::identify_operations::Operation
     json!({"operation_id":state.operation_id,"request_id":state.request_id,"status":format!("{:?}",state.terminal_status).to_lowercase(),"target_entity_id":state.target_entity_id,"will_create":state.will_create,"entity_type":state.entity_type,"reviewed_near_match_entity_ids":state.reviewed_near_match_entity_ids,"cluster_member_count":state.cluster_member_set.len(),"completed_phases":state.completed_phases.iter().map(|phase| phase.as_str()).collect::<Vec<_>>(),"pending_phases":state.pending_phases,"checkpoints":{"forward":format!("{:?}",state.phase_checkpoints),"undo":format!("{:?}",state.undo_phase_checkpoints)},"result":state.result,"undo_report":state.undo_report,"repair":state.repair_required.as_ref().map(|event| event.to_json())})
 }
 
-fn identify_response(value: Value) -> Response {
+fn identify_response(locale: &str, value: Value) -> Response {
     let status = value
         .get("status")
         .and_then(Value::as_str)
@@ -185,44 +209,60 @@ fn identify_response(value: Value) -> Response {
         "identified" | "resolved" | "ambiguous" | "no_match" | "principal_match" | "undone"
         | "already_undone" => Json(value).into_response(),
         "recoverable" | "in_progress" | "undoing" => err(
+            locale,
             "speaker_identify_recoverable",
-            "that speaker change didn't finish. try again in a moment.",
+            "journal.window.speakers.error.change.recoverable",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "repair_required" | "undo_repair_required" => err(
+            locale,
             "speaker_identify_repair_required",
-            "that speaker change stopped partway and can't finish yet.",
+            "journal.window.speakers.error.change.repair.required",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "conflict" | "operation_already_undone" => err(
+            locale,
             "speaker_identify_conflict",
-            "that speaker change can't run right now.",
+            "journal.window.speakers.error.change.conflict",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "not_found" => err(
+            locale,
             "speaker_not_found",
-            "that speaker couldn't be found.",
+            "journal.window.speakers.attribution.attribution.response.that.speaker.couldn.t.be.found",
             &value.to_string(),
             StatusCode::NOT_FOUND,
         ),
         _ => err(
+            locale,
             "speaker_command_failed",
-            "that speaker command didn't finish.",
+            "journal.window.speakers.error.that.speaker.command.didn.t.finish",
             &value.to_string(),
             StatusCode::BAD_REQUEST,
         ),
     }
 }
 
-async fn request_json(request: Request) -> Result<Value, Response> {
+async fn request_json(locale: &str, request: Request) -> Result<Value, Response> {
     let bytes = to_bytes(request.into_body(), usize::MAX)
         .await
-        .map_err(|_| bad("missing_request_body", "unable to read request body"))?;
-    serde_json::from_slice(&bytes)
-        .map_err(|_| bad("invalid_json_request", "request body must be a JSON object"))
+        .map_err(|_| {
+            bad(
+                locale,
+                "missing_request_body",
+                "unable to read request body",
+            )
+        })?;
+    serde_json::from_slice(&bytes).map_err(|_| {
+        bad(
+            locale,
+            "invalid_json_request",
+            "request body must be a JSON object",
+        )
+    })
 }
 fn encoder() -> solstone_core_entity::EncoderIdentity {
     solstone_core_entity::EncoderIdentity {
@@ -231,14 +271,21 @@ fn encoder() -> solstone_core_entity::EncoderIdentity {
         width: 256,
     }
 }
-fn bad(code: &str, detail: &str) -> Response {
+fn bad(locale: &str, code: &str, detail: &str) -> Response {
     err(
+        locale,
         code,
-        "that request couldn't be used.",
+        "journal.window.speakers.error.that.request.couldn.t.be.used",
         detail,
         StatusCode::BAD_REQUEST,
     )
 }
-fn err(code: &str, message: &str, detail: &str, status: StatusCode) -> Response {
-    error_envelope(code, message, detail, status).into_response()
+fn err(locale: &str, code: &str, message_id: &str, detail: &str, status: StatusCode) -> Response {
+    error_envelope(
+        code,
+        window_catalog::text(locale, message_id),
+        detail,
+        status,
+    )
+    .into_response()
 }

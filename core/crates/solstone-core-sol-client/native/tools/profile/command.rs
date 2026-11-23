@@ -25,6 +25,7 @@ pub fn brief(ctx: CommandContext<'_>) -> CommandOutput {
         return missing_argument(locale, "call profile brief", "NAME");
     };
     let profile = match request_json(
+        locale,
         ctx,
         &format!("/api/profile/{}/brief", quote_path(name)),
         vec![],
@@ -80,6 +81,7 @@ pub fn cadence(ctx: CommandContext<'_>) -> CommandOutput {
         params.push(QueryParam::single("include_mentions", "true"));
     }
     let cadence = match request_json(
+        locale,
         ctx,
         &format!("/api/profile/{}/cadence", quote_path(name)),
         params,
@@ -137,7 +139,12 @@ pub fn full(ctx: CommandContext<'_>) -> CommandOutput {
     if parsed.has_flag("--include-mentions") {
         params.push(QueryParam::single("include_mentions", "true"));
     }
-    let profile = match request_json(ctx, &format!("/api/profile/{}", quote_path(name)), params) {
+    let profile = match request_json(
+        locale,
+        ctx,
+        &format!("/api/profile/{}", quote_path(name)),
+        params,
+    ) {
         Ok(profile) => profile,
         Err(error) => return profile_error(locale, error, name),
     };
@@ -183,6 +190,7 @@ pub fn list_active(ctx: CommandContext<'_>) -> CommandOutput {
 }
 
 fn request_json(
+    locale: &str,
     ctx: CommandContext<'_>,
     path: &str,
     params: Vec<QueryParam>,
@@ -192,7 +200,7 @@ fn request_json(
         path: path.to_string(),
         params,
         json: None,
-        headers: vec![],
+        headers: crate::transport::locale_headers(locale),
         policy: TimeoutPolicy::Api,
     })?;
     decode_response(&response)

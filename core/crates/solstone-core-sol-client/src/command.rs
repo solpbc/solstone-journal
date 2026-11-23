@@ -330,7 +330,7 @@ pub(crate) fn backups_choice_for(
             path: "/app/settings/api/trash/backups".to_owned(),
             params: vec![],
             json: None,
-            headers: vec![],
+            headers: crate::transport::locale_headers(locale),
             policy: TimeoutPolicy::Api,
         })
         .ok()

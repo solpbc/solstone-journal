@@ -1,0 +1,16 @@
+{
+  "description": "Speaker identify operation recoverable conflict error.",
+  "context": "Journal window. Speaker identify operation recoverable conflict error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "959c404e3568c52958b1c3c71e0f5ea0fc289639b3aa13aa21a7ef6c78e9c29e",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Speaker candidate pool centroid width mismatch error.",
+  "context": "Journal CLI. Speaker candidate pool centroid width mismatch error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f105aa8fa60c3c7a579a4f67409aa4422c302845f6d3161b832f508a3c506f8",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

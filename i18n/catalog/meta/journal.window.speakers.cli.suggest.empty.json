@@ -1,0 +1,16 @@
+{
+  "description": "Message returned when there are no speaker curation suggestions.",
+  "context": "Journal window. Message returned when there are no speaker curation suggestions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c4d6084d0a0ac13bba7c2832dc38cea5a605426714fbc4a7addd3ccfad0dc43",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

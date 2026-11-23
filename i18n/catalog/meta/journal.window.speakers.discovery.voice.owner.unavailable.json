@@ -1,0 +1,16 @@
+{
+  "description": "Speaker discovery refusal when naming a voice before the owner voice is set up.",
+  "context": "Journal window. Speaker discovery refusal when naming a voice before the owner voice is set up.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3d0e110808d2fead5fe63ef687339ab3fa63e4db4f366cf7390c15151c8ba11c",
+  "max_length": 115,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

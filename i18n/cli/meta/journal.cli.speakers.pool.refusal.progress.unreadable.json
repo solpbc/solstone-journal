@@ -1,0 +1,16 @@
+{
+  "description": "Speaker pool catch-up refusal when progress file cannot be read.",
+  "context": "Journal CLI. Speaker pool catch-up refusal when progress file cannot be read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "df5ab32a5a7626df999d69bfae6db029e6589923ac31acf76bf6b6a3235ffb33",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

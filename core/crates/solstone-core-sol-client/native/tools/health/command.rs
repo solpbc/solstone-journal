@@ -21,7 +21,7 @@ pub fn summary(ctx: CommandContext<'_>) -> CommandOutput {
     if let Some(day) = parsed.value("--day") {
         params.push(QueryParam::single("day", day));
     }
-    let mut report = match request_json(ctx, "/api/health/summary", params) {
+    let mut report = match request_json(locale, ctx, "/api/health/summary", params) {
         Ok(report) => report,
         Err(error) => return health_error(locale, error),
     };
@@ -45,7 +45,7 @@ pub fn full(ctx: CommandContext<'_>) -> CommandOutput {
     if let Some(day) = parsed.value("--day") {
         params.push(QueryParam::single("day", day));
     }
-    let mut report = match request_json(ctx, "/api/health/full", params) {
+    let mut report = match request_json(locale, ctx, "/api/health/full", params) {
         Ok(report) => report,
         Err(error) => return health_error(locale, error),
     };
@@ -72,7 +72,7 @@ pub fn for_range(ctx: CommandContext<'_>) -> CommandOutput {
     if let Some(day_to) = parsed.value("--day-to") {
         params.push(QueryParam::single("day_to", day_to));
     }
-    let mut report = match request_json(ctx, "/api/health/range", params) {
+    let mut report = match request_json(locale, ctx, "/api/health/range", params) {
         Ok(report) => report,
         Err(error) => return health_error(locale, error),
     };
@@ -108,6 +108,7 @@ pub fn pipeline(ctx: CommandContext<'_>) -> CommandOutput {
         }
     };
     let summary = match request_json(
+        locale,
         ctx,
         "/api/health/pipeline",
         vec![QueryParam::single("day", target)],
@@ -183,6 +184,7 @@ fn parse_args(
 }
 
 fn request_json(
+    locale: &str,
     ctx: CommandContext<'_>,
     path: &str,
     params: Vec<QueryParam>,
@@ -192,7 +194,7 @@ fn request_json(
         path: path.to_string(),
         params,
         json: None,
-        headers: vec![],
+        headers: crate::transport::locale_headers(locale),
         policy: TimeoutPolicy::Api,
     })?;
     decode_response(&response)

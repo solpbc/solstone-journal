@@ -36,6 +36,7 @@ fn list_output(ctx: CommandContext<'_>) -> CommandOutput {
     let day = parsed.value("--day");
     let result = if let Some(day) = day {
         request_json(
+            locale,
             ctx,
             HttpMethod::Get,
             &format!("/app/entities/api/{facet}/detected"),
@@ -44,6 +45,7 @@ fn list_output(ctx: CommandContext<'_>) -> CommandOutput {
         )
     } else {
         request_json(
+            locale,
             ctx,
             HttpMethod::Get,
             &format!("/app/entities/api/{facet}"),
@@ -194,6 +196,7 @@ fn move_entity_output(ctx: CommandContext<'_>) -> CommandOutput {
     let merge = parsed.bool_value("--merge").unwrap_or(false);
     let consent = parsed.bool_value("--consent").unwrap_or(false);
     match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/entities/api/move",
@@ -261,6 +264,7 @@ fn detect_output(ctx: CommandContext<'_>) -> CommandOutput {
         Err(output) => return output,
     };
     match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         &format!("/app/entities/api/{facet}/detected"),
@@ -321,6 +325,7 @@ pub fn attach(ctx: CommandContext<'_>) -> CommandOutput {
         Err(output) => return output,
     };
     match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         &format!("/app/entities/api/{facet}/attach"),
@@ -375,6 +380,7 @@ fn update_output(ctx: CommandContext<'_>) -> CommandOutput {
     };
     if let Some(day) = parsed.value("--day") {
         return match request_json(
+            locale,
             ctx,
             HttpMethod::Post,
             &format!("/app/entities/api/{facet}/update-detected"),
@@ -396,6 +402,7 @@ fn update_output(ctx: CommandContext<'_>) -> CommandOutput {
     let resolved_name = string_field(&resolved, "name").unwrap_or_else(|| entity.clone());
     let entity_id = string_field(&resolved, "id").unwrap_or_default();
     match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         &format!("/app/entities/api/{facet}/update-description"),
@@ -479,6 +486,7 @@ fn aka_output(ctx: CommandContext<'_>) -> CommandOutput {
     }
     let entity_id = string_field(&resolved, "id").unwrap_or_default();
     match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         &format!("/app/entities/api/{facet}/aka"),
@@ -561,6 +569,7 @@ fn record_merge_candidate_output(ctx: CommandContext<'_>) -> CommandOutput {
         "needs": parsed.value("--needs").map(number_value).unwrap_or(Value::Null),
     });
     let result = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/entities/api/record-merge-candidate",
@@ -607,6 +616,7 @@ pub fn merge_candidates(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/entities/api/merge-candidates",
@@ -706,6 +716,7 @@ fn accept_merge_candidate_output(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     }
     let result = match request_json_with_policy(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/entities/api/accept-merge-candidate",
@@ -755,6 +766,7 @@ pub fn dismiss_merge_candidate(ctx: CommandContext<'_>) -> CommandOutput {
         Err(output) => return output,
     };
     let result = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/entities/api/dismiss-merge-candidate",
@@ -834,6 +846,7 @@ pub fn merge(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     }
     let result = match request_json_with_policy(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/entities/api/merge",
@@ -883,6 +896,7 @@ pub fn ambiguities(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     }
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/entities/api/ambiguities",
@@ -934,6 +948,7 @@ fn resolve_ambiguity_output(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     }
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         &format!("/app/entities/api/ambiguities/{ambiguity_id}/resolve"),
@@ -1011,6 +1026,7 @@ fn resolve_ambiguity_group_output(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     }
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/entities/api/ambiguities/group-resolve",
@@ -1137,6 +1153,7 @@ fn restore_review_output(ctx: CommandContext<'_>) -> CommandOutput {
     };
 
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/entities/api/review/restore",
@@ -1170,6 +1187,7 @@ fn review_output(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/entities/api/review",
@@ -1232,6 +1250,7 @@ pub fn sweep_review(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     }
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         "/app/entities/api/review/sweep",
@@ -1304,6 +1323,7 @@ fn delete_entity_output(ctx: CommandContext<'_>) -> CommandOutput {
     };
     // The set route takes a body on POST, so one entity goes as a set of one.
     let body = match request_json_with_policy(
+        locale,
         ctx,
         HttpMethod::Post,
         &format!("{ENTITY_HISTORY_BASE_ROUTE}/delete"),
@@ -1389,6 +1409,7 @@ fn entity_history_output(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     };
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("{ENTITY_HISTORY_BASE_ROUTE}/entity/{entity_id}/history"),
@@ -1439,6 +1460,7 @@ fn restore_version_output(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     }
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         &format!("{ENTITY_HISTORY_BASE_ROUTE}/entity/{entity_id}/restore"),
@@ -1671,6 +1693,7 @@ fn observations_output(ctx: CommandContext<'_>) -> CommandOutput {
                 QueryParam::single("after_id", after_id.to_string()),
             ];
             let body = match request_json(
+                locale,
                 ctx,
                 HttpMethod::Get,
                 &format!("/app/entities/api/{facet}/observations"),
@@ -1724,6 +1747,7 @@ fn observations_output(ctx: CommandContext<'_>) -> CommandOutput {
             query.push(QueryParam::single("order", "oldest"));
         }
         let body = match request_json(
+            locale,
             ctx,
             HttpMethod::Get,
             &format!("/app/entities/api/{facet}/observations"),
@@ -1846,6 +1870,7 @@ fn observe_output(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let resolved_name = string_field(&resolved, "name").unwrap_or_default();
     match request_json(
+        locale,
         ctx,
         HttpMethod::Post,
         &format!("/app/entities/api/{facet}/observe"),
@@ -1950,6 +1975,7 @@ fn search_output(ctx: CommandContext<'_>) -> CommandOutput {
         parsed.value("--limit").unwrap_or("20"),
     ));
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/entities/api/search",
@@ -2113,16 +2139,18 @@ fn bool_option_value<'a>(
 }
 
 fn request_json(
+    locale: &str,
     ctx: CommandContext<'_>,
     method: HttpMethod,
     path: &str,
     params: Vec<QueryParam>,
     json: Option<Value>,
 ) -> Result<Value, ClientError> {
-    request_json_with_policy(ctx, method, path, params, json, TimeoutPolicy::Api)
+    request_json_with_policy(locale, ctx, method, path, params, json, TimeoutPolicy::Api)
 }
 
 fn request_json_with_policy(
+    locale: &str,
     ctx: CommandContext<'_>,
     method: HttpMethod,
     path: &str,
@@ -2135,7 +2163,7 @@ fn request_json_with_policy(
         path: path.to_string(),
         params,
         json,
-        headers: vec![],
+        headers: crate::transport::locale_headers(locale),
         policy,
     })?;
     decode_response(&response)
@@ -2148,6 +2176,7 @@ fn resolve_request(
     entity: &str,
 ) -> Result<Value, CommandOutput> {
     request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("/app/entities/api/{facet}/resolve"),
@@ -2227,7 +2256,7 @@ fn edge_body_or_exit(
     params: Vec<QueryParam>,
     json_output: bool,
 ) -> Result<Value, CommandOutput> {
-    let body = request_json(ctx, HttpMethod::Get, path, params, None)
+    let body = request_json(locale, ctx, HttpMethod::Get, path, params, None)
         .map_err(|error| entity_error(locale, error, None, None))?;
     if !body.is_object() {
         return Err(stderr(render_for(

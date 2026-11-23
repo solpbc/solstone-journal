@@ -152,6 +152,7 @@ fn read_output(ctx: CommandContext<'_>) -> CommandOutput {
     }
 
     let body = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("/app/transcripts/api/read/{day}"),
@@ -179,6 +180,7 @@ pub fn scan(ctx: CommandContext<'_>) -> CommandOutput {
         Err(output) => return output,
     };
     let data = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("/app/transcripts/api/day/{day}"),
@@ -284,6 +286,7 @@ pub fn segments(ctx: CommandContext<'_>) -> CommandOutput {
         Err(output) => return output,
     };
     let data = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("/app/transcripts/api/segments/{day}"),
@@ -357,6 +360,7 @@ pub fn speakers(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     };
     let payload = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("/app/transcripts/api/segment/{day}/{stream}/{segment}"),
@@ -430,6 +434,7 @@ pub fn stats(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     };
     let day_totals = match request_json(
+        locale,
         ctx,
         HttpMethod::Get,
         &format!("/app/transcripts/api/stats/{month}"),
@@ -448,6 +453,7 @@ pub fn stats(ctx: CommandContext<'_>) -> CommandOutput {
     let mut days_with_data = 0_usize;
     for day in days {
         let ranges = match request_json(
+            locale,
             ctx,
             HttpMethod::Get,
             &format!("/app/transcripts/api/ranges/{day}"),
@@ -496,6 +502,7 @@ pub fn stats(ctx: CommandContext<'_>) -> CommandOutput {
 }
 
 fn request_json(
+    locale: &str,
     ctx: CommandContext<'_>,
     method: HttpMethod,
     path: &str,
@@ -507,7 +514,7 @@ fn request_json(
         path: path.to_string(),
         params,
         json,
-        headers: vec![],
+        headers: crate::transport::locale_headers(locale),
         policy: TimeoutPolicy::Api,
     })?;
     decode_response(&response)

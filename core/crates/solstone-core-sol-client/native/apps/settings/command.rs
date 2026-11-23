@@ -15,7 +15,9 @@ const NO_PROCESSING_OPTIONS_ERROR: &str = "error: provide at least one of \
 
 #[must_use]
 pub fn convey_status(ctx: CommandContext<'_>) -> CommandOutput {
-    match request_json(
+    let locale = ctx.human_locale();
+    match request_json_for(
+        locale,
         ctx,
         HttpMethod::Get,
         "/app/settings/api/convey/status",
@@ -23,10 +25,8 @@ pub fn convey_status(ctx: CommandContext<'_>) -> CommandOutput {
     ) {
         Ok(value) => stdout_line(string_value(value.get("status_text"))),
         Err(error) => match error {
-            ClientError::Unreachable { .. } => {
-                stderr(crate::error::service_down_for(ctx.human_locale()))
-            }
-            other => stderr(other.message_for(ctx.human_locale())),
+            ClientError::Unreachable { .. } => stderr(crate::error::service_down_for(locale)),
+            other => stderr(other.message_for(locale)),
         },
     }
 }
@@ -508,12 +508,22 @@ fn request_json(
     path: &str,
     json: Option<Value>,
 ) -> Result<Value, ClientError> {
+    request_json_for(solstone_core_cli_copy::ENGLISH, ctx, method, path, json)
+}
+
+fn request_json_for(
+    locale: &str,
+    ctx: CommandContext<'_>,
+    method: HttpMethod,
+    path: &str,
+    json: Option<Value>,
+) -> Result<Value, ClientError> {
     let response = ctx.transport.request(ApiRequest {
         method,
         path: path.to_string(),
         params: Vec::<QueryParam>::new(),
         json,
-        headers: vec![],
+        headers: crate::transport::locale_headers(locale),
         policy: TimeoutPolicy::Api,
     })?;
     decode_response(&response)

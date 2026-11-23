@@ -1,0 +1,16 @@
+{
+  "description": "Owner line label refusal when no lines were specified.",
+  "context": "Journal window. Owner line label refusal when no lines were specified.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "25b9eabc9fa355f81e4151716a71ff0b90b192877376a8cc3a772f3b33521fef",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

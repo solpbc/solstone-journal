@@ -1,0 +1,16 @@
+{
+  "description": "Speaker maintenance conflict when task is already running with different options.",
+  "context": "Journal window. Speaker maintenance conflict when task is already running with different options.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "abcb943a2d8ac9abc410a9a38a52b0041adf1da598a3be15ebe7f585ea4b5680",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

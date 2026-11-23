@@ -1,0 +1,21 @@
+{
+  "description": "Owner line label refusal when target entity is not a person.",
+  "context": "Journal window. Owner line label refusal when target entity is not a person.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6440d6c80255c9299d4d671b25f90f614bbda020dc7c21c6bcd069d8084e88d4",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

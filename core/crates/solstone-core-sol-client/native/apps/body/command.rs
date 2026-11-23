@@ -18,7 +18,7 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
-    let payload = match request_json(ctx, "/app/body/api/status", vec![]) {
+    let payload = match request_json(locale, ctx, "/app/body/api/status", vec![]) {
         Ok(payload) => payload,
         Err(error) => return body_error(locale, error),
     };
@@ -76,7 +76,12 @@ pub fn day(ctx: CommandContext<'_>) -> CommandOutput {
             crate::args::Missing::Argument("DAY_VALUE"),
         );
     };
-    let payload = match request_json(ctx, &format!("/app/body/api/day/{day_value}"), vec![]) {
+    let payload = match request_json(
+        locale,
+        ctx,
+        &format!("/app/body/api/day/{day_value}"),
+        vec![],
+    ) {
         Ok(payload) => payload,
         Err(error) => return body_error(locale, error),
     };
@@ -148,6 +153,7 @@ pub fn window(ctx: CommandContext<'_>) -> CommandOutput {
         );
     };
     let payload = match request_json(
+        locale,
         ctx,
         "/app/body/api/window",
         vec![
@@ -196,6 +202,7 @@ pub fn window(ctx: CommandContext<'_>) -> CommandOutput {
 }
 
 fn request_json(
+    locale: &str,
     ctx: CommandContext<'_>,
     path: &str,
     params: Vec<QueryParam>,
@@ -205,7 +212,7 @@ fn request_json(
         path: path.to_string(),
         params,
         json: None,
-        headers: vec![],
+        headers: crate::transport::locale_headers(locale),
         policy: TimeoutPolicy::Api,
     })?;
     decode_response(&response)

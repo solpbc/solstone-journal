@@ -1,0 +1,33 @@
+{
+  "description": "Speaker curation suggestion line for a low-confidence segment review.",
+  "context": "Journal window. Speaker curation suggestion line for a low-confidence segment review.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "segment_key",
+      "type": "string"
+    },
+    {
+      "name": "medium",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c7bd64bc11b7f2fb24234537296d4d4da22dff689a0476ce34cc9c092ec14639",
+  "max_length": 145,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

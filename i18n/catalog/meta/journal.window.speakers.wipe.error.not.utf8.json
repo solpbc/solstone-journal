@@ -1,0 +1,21 @@
+{
+  "description": "Speaker artifact wipe dry-run error when a file name is not valid UTF-8.",
+  "context": "Journal window. Speaker artifact wipe dry-run error when a file name is not valid UTF-8.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ff8972c9e703a4d380457ecb0947c5e6e92a884865568b64f1894da6b13e52f5",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

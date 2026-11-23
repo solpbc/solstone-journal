@@ -102,6 +102,66 @@ pub enum BackfillCoordinatorError {
     Backfill(#[from] BackfillError),
 }
 
+impl BackfillCoordinatorError {
+    #[must_use]
+    pub fn render_cli(&self, locale: &str) -> String {
+        use solstone_core_cli_copy::display_for;
+        match self {
+            Self::JournalRoot(error) => display_for(
+                locale,
+                "journal.cli.speakers.backfill.error.journal.root",
+                [("error", error)],
+            ),
+            Self::Ledger(error) => display_for(
+                locale,
+                "journal.cli.speakers.backfill.error.ledger",
+                [("error", error)],
+            ),
+            Self::InvalidFlags(detail) => display_for(
+                locale,
+                "journal.cli.speakers.backfill.error.invalid.flags",
+                [("detail", detail)],
+            ),
+            Self::ImmutableFlagsMismatch {
+                operation_id,
+                expected_commit,
+                expected_reattribute,
+                expected_accumulation,
+                got_commit,
+                got_reattribute,
+                got_accumulation,
+            } => display_for(
+                locale,
+                "journal.cli.speakers.backfill.error.flags.mismatch",
+                [
+                    ("operation_id", operation_id),
+                    ("expected_commit", expected_commit),
+                    ("expected_reattribute", expected_reattribute),
+                    ("expected_accumulation", expected_accumulation),
+                    ("got_commit", got_commit),
+                    ("got_reattribute", got_reattribute),
+                    ("got_accumulation", got_accumulation),
+                ],
+            ),
+            Self::NotFound(id) => display_for(
+                locale,
+                "journal.cli.speakers.backfill.error.not.found",
+                [("id", id)],
+            ),
+            Self::Lock(error) => display_for(
+                locale,
+                "journal.cli.speakers.backfill.error.lock",
+                [("error", error)],
+            ),
+            Self::Backfill(error) => display_for(
+                locale,
+                "journal.cli.speakers.backfill.error.scan",
+                [("error", error)],
+            ),
+        }
+    }
+}
+
 /// Mint a new operation ID formatted as `bfop-` + 32 lowercase hex chars.
 #[must_use]
 pub fn mint_operation_id() -> String {

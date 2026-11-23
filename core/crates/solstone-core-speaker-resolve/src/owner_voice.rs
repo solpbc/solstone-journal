@@ -141,6 +141,35 @@ impl std::fmt::Display for OwnerVoiceError {
 
 impl std::error::Error for OwnerVoiceError {}
 
+impl OwnerVoiceError {
+    #[must_use]
+    pub fn render_cli(&self, locale: &str) -> String {
+        match self {
+            Self::IdentityInvalid => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.speakers.owner.voice.error.identity.invalid",
+                &[],
+            ),
+            Self::NoCandidate => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.speakers.owner.voice.error.no.candidate",
+                &[],
+            ),
+            Self::StaleCandidate => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.speakers.owner.voice.error.stale.candidate",
+                &[],
+            ),
+            Self::NoSavedVoice => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.speakers.owner.voice.error.no.saved.voice",
+                &[],
+            ),
+            Self::Failed(detail) => detail.clone(),
+        }
+    }
+}
+
 fn failed(error: impl std::fmt::Display) -> OwnerVoiceError {
     OwnerVoiceError::Failed(error.to_string())
 }

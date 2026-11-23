@@ -139,7 +139,7 @@ fn store_refused(locale: &str, error: &OwnerLineLabelError) -> Response {
             locale,
             "journal.window.transcripts.response.error.who.said.that.line.couldn.t",
         ),
-        error.to_string(),
+        error.render_in(locale),
         status,
     )
 }

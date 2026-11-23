@@ -47749,6 +47749,41 @@
       "locales": []
     },
     {
+      "id": "journal.window.speakers.cli.owner.candidate.guidance",
+      "source": "ee77c7a3c52455ed0e5c9973cbcd08fdb69569655244487d1b517646c2442b10",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.cli.suggest.candidate.pair",
+      "source": "843c12d1be46c53c8be6a7bf32205eeaedcc1d09024e4aff8b96683d7fdb443a",
+      "contract": "6407e22a1f097e878eb2edf3a2aac110a8fb6ec71db63296ba98f21f7e304959",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.cli.suggest.empty",
+      "source": "5c4d6084d0a0ac13bba7c2832dc38cea5a605426714fbc4a7addd3ccfad0dc43",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.cli.suggest.import.linkable",
+      "source": "13fabc667f4ec0a0da283de149632dd40df75343228ab67a21af5d421c9f1201",
+      "contract": "322460fcf77686581376e0b7602e6ea8a3444b0a98d1d04f69e5c6aec745ee18",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.cli.suggest.low.confidence",
+      "source": "c7bd64bc11b7f2fb24234537296d4d4da22dff689a0476ce34cc9c092ec14639",
+      "contract": "52177a30c529c3bbc6a492667f9196bb4b24b2a02594b0ad598e5130475ddfc2",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.speakers.confidence.accessible",
       "source": "25de9a9d0839521bba3c303f823cbf7cf47586137ee5ef6eb909c672291cb51e",
       "contract": "8be6c2a8564de481c68488d5904b2cc8e9b78036e3e9fef222686349d4f7eac8",
@@ -48743,8 +48778,36 @@
       "locales": []
     },
     {
+      "id": "journal.window.speakers.discovery.invalid.embeddings",
+      "source": "d6a95fc4e4a4b9fa02bf460ca773d8efa5f91da24314d8c96a8d7a693c09d866",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.discovery.labels.busy",
+      "source": "12ad0a26570f68b5734b9711f221cfff8393f7ba6b0c1d6a725a906e93766a7e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.speakers.discovery.not.ran",
       "source": "d60383b459c5f26a5dfc9f257c236bd4c83756551cf975329599d54fa59a82e9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.discovery.owner.identity.invalid",
+      "source": "873f859bd2b9770dbe6852671d0258b16af584e8d9f58167433fe2589b84999e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.discovery.owner.voice.unavailable",
+      "source": "a2fa6c7542961cc088f03a18bc05eae6cae59eaa1e5c456c71ff80c900ba6e9b",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
@@ -48778,6 +48841,90 @@
       "locales": []
     },
     {
+      "id": "journal.window.speakers.discovery.voice.changed",
+      "source": "38746e41de1c44b364647ce3cace681a1c6aaa1da01186e3992983de47c5c9d1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.discovery.voice.not.found",
+      "source": "089b3559841cbd106c9de667681c5fd1d2cbfcd2a79aa9e0d1283418dc9934c9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.discovery.voice.owner.unavailable",
+      "source": "3d0e110808d2fead5fe63ef687339ab3fa63e4db4f366cf7390c15151c8ba11c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.discovery.voice.principal",
+      "source": "d9e6350fa1004f34d5a3b8a956a90bebdcf83808c70d6536c3654cfa1d66b13d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.discovery.voiceprint.busy",
+      "source": "a496d28ae933129adfac727b063b970d13688329aa302a45f04f1d3b8c908ce7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.attribution.owner.identity.invalid",
+      "source": "dc1a358af33e26812e77062986091ab22eaa089fa5108a247c1071a975ede0b6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.attribution.state.invalid",
+      "source": "00a5f587832ab0bceb49e6c9a6b960ee56fee51fd89e9826f782283bd0487b45",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.change.conflict",
+      "source": "abe6d4436032c0e2c9ea441b06b4ddfebe287cb638c4bdd55497deb8efae27e9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.change.not.found",
+      "source": "e7ca1e0a88ccf75db927359f09dc5abeff97ef27a9ea8fd7a9d47fc7857375b3",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.change.one.way",
+      "source": "a16dbdc93fac26c09870483654ac56341e1392ccf7b20d337882feb5759a53a3",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.change.recoverable",
+      "source": "959c404e3568c52958b1c3c71e0f5ea0fc289639b3aa13aa21a7ef6c78e9c29e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.change.repair.required",
+      "source": "fb87726fb6c8ef444689d01b3fb7d2ba144e31e8fa1e9ac3983b757e1725e38f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.speakers.error.configured.owner.identity.is.not.admitted",
       "source": "b9be9893b2283ea595718511457c64fa742982f919ccc134104717b297b8e185",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -48787,6 +48934,13 @@
     {
       "id": "journal.window.speakers.error.embedding.too.similar.to.owner.voice.cannot.save",
       "source": "a62814600c2ba9d69cf7914670bc8a528ac4bfa842bc865987590efa928fea1f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.files.busy",
+      "source": "caba5c21ff4b390f2aab440b5fdef4958e73fdf2a1382112c87a9313aa4f2b41",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
@@ -48841,8 +48995,50 @@
       "locales": []
     },
     {
+      "id": "journal.window.speakers.error.owner.confirm.identity.invalid",
+      "source": "cbca3fefebb8667f0b409978fe51b1f80d9d2346e93fc9a9c84b9785569163d9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.owner.confirm.review.required",
+      "source": "eaba4afc9a909ce8a5b2d6669e287cc5b16f31a89fb9f2ab5ac800a573d267b5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.sentence.not.found",
+      "source": "95eb76a9c6eadee3d72886a984c53ecd671f272fa6d752a50ab5cd62a7b5386e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.speakers.error.speaker.quality.couldn.t.be.loaded.because.your.configured.owner.identity",
       "source": "57091f735f9808aea24499b29da78a6a1de19793c13bbeb85689cfcf18e01b0d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.status.owner.identity.invalid",
+      "source": "7ceaa24874909689f0b7ce5f754bd79a8599fa9440a03953dfc477211199f567",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.task.conflict",
+      "source": "abcb943a2d8ac9abc410a9a38a52b0041adf1da598a3be15ebe7f585ea4b5680",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.task.not.found",
+      "source": "f6ade05bc00d885ffc044517c9657c55bcf56d4ac1d9ccecaa1766bc0a36dd0e",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
@@ -48892,6 +49088,20 @@
     {
       "id": "journal.window.speakers.error.voice.sentence.id.must.be.an.integer",
       "source": "f38640c97845defe025d9238d5ab92d588f94d8f36c22b0a84497e6b065ddd23",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.wipe.busy",
+      "source": "b5cf6159cabcd173eef993d98c7d11b978d497d8d38c7e573165f37d596555de",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.error.wipe.held",
+      "source": "d7115c71fff1eef45da1e77573370b726bc284abfd5952cbc9bb85548b199d53",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
@@ -49016,6 +49226,20 @@
       "locales": []
     },
     {
+      "id": "journal.window.speakers.media.error.file.not.found",
+      "source": "3f6a01675276c736637b07aa8dadbf5c8eec62300a54e4718b327940517968ad",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.media.error.invalid.path",
+      "source": "e863b12a8c67dfdd422dfe0a670bb52b67783a79c79b7490359d538bdd643395",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.speakers.notice.couldn.t.load.voice.samples",
       "source": "b21a58a44797aee21533bc69288a198dbeea73f4623c18ae68b77658e097be24",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -49040,6 +49264,118 @@
       "id": "journal.window.speakers.owner.cooldown.until.day",
       "source": "b22cbd43a7ffaa24d8ea0b4d3ffca43e71e8f3fc5a13feacdd1d2a3ee14ec597",
       "contract": "48d4470957d2d241bd6deb03b4b2b53246076c8f9996da79a81d6c2a432e9bc8",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.entity.store.unreadable",
+      "source": "1878ea3c880b2ab39a5c2d0f84e1712e09197f77606763107c9dfefb027a48a7",
+      "contract": "31e746bbc13c2b968d13b420463402a590a666e3276ee56d147245d81f8bc5de",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.file.unreadable",
+      "source": "c9e7f5b47ef48c0db39ca2e48a93a05f93e63e86e0a93311077a32c3aae5712e",
+      "contract": "31e746bbc13c2b968d13b420463402a590a666e3276ee56d147245d81f8bc5de",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.line.id.mismatch",
+      "source": "15dce8d957b6ab5436a6c697905e803c277a9e9fb90bb85a8d44931b369b6290",
+      "contract": "3c6c9b075df9f2de689674253657b9950b631d40d122e87006a984681fd66a6a",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.line.not.found",
+      "source": "24f7163c9339e154971b112fe41b838a53a672d6cc117db8ccf322a77d2c1bef",
+      "contract": "500304f6c26a9fa72d63555a8df86e488a8c42c368b1b257cf7732e989cce7c7",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.lock",
+      "source": "cc2158dd0fd9060976dacfd23825259dcd217afd339af173339de7652e7eba9d",
+      "contract": "31e746bbc13c2b968d13b420463402a590a666e3276ee56d147245d81f8bc5de",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.merge.recovery.pending",
+      "source": "48eb6d42622b654c9b80302fe5f6b6e35458eca1d0f53d5e440fd5d0d73cf1ee",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.no.lines",
+      "source": "25b9eabc9fa355f81e4151716a71ff0b90b192877376a8cc3a772f3b33521fef",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.not.a.person",
+      "source": "6440d6c80255c9299d4d671b25f90f614bbda020dc7c21c6bcd069d8084e88d4",
+      "contract": "55a38a827f0ce1dee7644684c5b40b269ade666a46ce14778c8590b790ee93d1",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.owner.not.admitted",
+      "source": "7eb819976ea8443f51826b96098c5f807b882a5a83e4f24a4ba35f6973b30979",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.person.hidden",
+      "source": "6f03f3fbdd6bf4f98fcf21d447b737d1b6e3eeb909a9f42f9ab033be47c68ab1",
+      "contract": "55a38a827f0ce1dee7644684c5b40b269ade666a46ce14778c8590b790ee93d1",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.person.merged",
+      "source": "81c4d71c91341546d98743b9037cdb5999ef7e4bfbd7e506e9ad7d88d3faef80",
+      "contract": "85396f52eb9e7142830ac1e9b09af52884b84d0c245af04d0042192bfe1f12b6",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.person.not.found",
+      "source": "dd396b8adea6556006490401d823149e47e845fe5fd160ba0ec362ecd70740ea",
+      "contract": "55a38a827f0ce1dee7644684c5b40b269ade666a46ce14778c8590b790ee93d1",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.segment.unavailable",
+      "source": "16e5e1228b86b76fbfb34fbdc5e4e063f00da2d09b0070c587c8d52ee303c056",
+      "contract": "31e746bbc13c2b968d13b420463402a590a666e3276ee56d147245d81f8bc5de",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.source.unsupported",
+      "source": "5101bb383f89d723902dd5e1d8321c28d6a0b551a2c52cf5ff18bbed42411667",
+      "contract": "cf187163150ecccd64617dbda49a7d5c16d30adefe555eddaeacf145805c66ed",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.write",
+      "source": "046f65a44cbba1d61eccab5abb1261c45b5aeb51730b209ce6abc32ed2c17e06",
+      "contract": "31e746bbc13c2b968d13b420463402a590a666e3276ee56d147245d81f8bc5de",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.owner.line.labels.error.wrong.source",
+      "source": "ca557167168f6c20a76f060bdb2602e2144516cc7984bb786ab8deb4ec07904a",
+      "contract": "97e67d592db887ff0e2b9fd341f8702bc0765ff4aadbed844e44f7e83f334436",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
@@ -50125,6 +50461,27 @@
       "id": "journal.window.speakers.window.state.text.you.identified",
       "source": "e95798eda5a9cce416d58e1d6640c6457fd569c5d1c3576b6fca52fea4a8cdbb",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.wipe.error.not.utf8",
+      "source": "ff8972c9e703a4d380457ecb0947c5e6e92a884865568b64f1894da6b13e52f5",
+      "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.wipe.error.path",
+      "source": "19134005f4d3e76a126c6a27321ef5a03bce05733c6540358aa25c111f070057",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.wipe.error.read",
+      "source": "f21034483b3fbf068ca466e15e2f16d9b940e94f163e81a93a8b7e8bd3d06567",
+      "contract": "4e07e90c2dac375c542282b1f34377eaef4bb3b4569b7e55ac0078fc40f81754",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },

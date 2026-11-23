@@ -1,0 +1,21 @@
+{
+  "description": "Owner line label refusal when entity store cannot be read.",
+  "context": "Journal window. Owner line label refusal when entity store cannot be read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1878ea3c880b2ab39a5c2d0f84e1712e09197f77606763107c9dfefb027a48a7",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

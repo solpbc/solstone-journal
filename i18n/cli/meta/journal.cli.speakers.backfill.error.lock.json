@@ -1,0 +1,21 @@
+{
+  "description": "Speaker backfill error when acquiring execution lock fails.",
+  "context": "Journal CLI. Speaker backfill error when acquiring execution lock fails.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5c07f6c1eb8fb2418f74a922f721a8d08a2f934b75142bb6a0f9873f53de9d8f",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

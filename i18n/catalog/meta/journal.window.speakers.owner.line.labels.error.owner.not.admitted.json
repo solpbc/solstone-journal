@@ -1,0 +1,16 @@
+{
+  "description": "Owner line label refusal when journal owner identity is not settled.",
+  "context": "Journal window. Owner line label refusal when journal owner identity is not settled.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7eb819976ea8443f51826b96098c5f807b882a5a83e4f24a4ba35f6973b30979",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

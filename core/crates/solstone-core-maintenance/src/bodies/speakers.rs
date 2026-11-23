@@ -43,7 +43,7 @@ pub(crate) fn backfill_pool(copy: Output<'_>, args: &[String], journal: &Path) -
         solstone_core_speaker_resolve::candidate_tracker::SpeakerPoolCatchUp::Refuse(refusal) => {
             CliRun {
                 stdout: String::new(),
-                stderr: format!("{refusal}\n"),
+                stderr: copy.line(refusal.message_id(), []),
                 exit_code: 1,
             }
         }
@@ -80,14 +80,17 @@ pub(crate) fn backfill_labels(copy: Output<'_>, args: &[String], journal: &Path)
             stderr: String::new(),
             exit_code: 0,
         },
-        Err(error) => CliRun {
-            stdout: String::new(),
-            stderr: copy.line(
-                "journal.cli.maintenance.speakers.error.speaker.label.backfill.failed",
-                [("error", &error)],
-            ),
-            exit_code: 1,
-        },
+        Err(error) => {
+            let rendered = error.render_cli(copy.locale());
+            CliRun {
+                stdout: String::new(),
+                stderr: copy.line(
+                    "journal.cli.maintenance.speakers.error.speaker.label.backfill.failed",
+                    [("error", &rendered)],
+                ),
+                exit_code: 1,
+            }
+        }
     }
 }
 
@@ -108,14 +111,17 @@ pub(crate) fn consolidate(copy: Output<'_>, args: &[String], journal: &Path) -> 
             stderr: String::new(),
             exit_code: 0,
         },
-        Err(error) => CliRun {
-            stdout: String::new(),
-            stderr: copy.line(
-                "journal.cli.maintenance.speakers.error.speaker.candidate.consolidation.failed",
-                [("error", &error)],
-            ),
-            exit_code: 1,
-        },
+        Err(error) => {
+            let rendered = error.render_cli(copy.locale());
+            CliRun {
+                stdout: String::new(),
+                stderr: copy.line(
+                    "journal.cli.maintenance.speakers.error.speaker.candidate.consolidation.failed",
+                    [("error", &rendered)],
+                ),
+                exit_code: 1,
+            }
+        }
     }
 }
 

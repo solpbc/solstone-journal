@@ -1,0 +1,21 @@
+{
+  "description": "Speaker backfill error when flags are invalid.",
+  "context": "Journal CLI. Speaker backfill error when flags are invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7e3a4db1ce13ea801dde80ba4d0efa73b46cae34e8a4dc4d0abb35f1e569202c",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Owner line label refusal when person entity was merged into another entity.",
+  "context": "Journal window. Owner line label refusal when person entity was merged into another entity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "successor",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "81c4d71c91341546d98743b9037cdb5999ef7e4bfbd7e506e9ad7d88d3faef80",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Owner line label refusal when requested line is missing from audio source.",
+  "context": "Journal window. Owner line label refusal when requested line is missing from audio source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "sentence_id",
+      "type": "string"
+    },
+    {
+      "name": "audio_source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "24f7163c9339e154971b112fe41b838a53a672d6cc117db8ccf322a77d2c1bef",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

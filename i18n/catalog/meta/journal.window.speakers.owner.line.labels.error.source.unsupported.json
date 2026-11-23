@@ -1,0 +1,25 @@
+{
+  "description": "Owner line label refusal when segment transcript views disagree on audio source.",
+  "context": "Journal window. Owner line label refusal when segment transcript views disagree on audio source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "labelled",
+      "type": "string"
+    },
+    {
+      "name": "transcript_page",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5101bb383f89d723902dd5e1d8321c28d6a0b551a2c52cf5ff18bbed42411667",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

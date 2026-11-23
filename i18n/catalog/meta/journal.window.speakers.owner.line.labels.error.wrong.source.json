@@ -1,0 +1,25 @@
+{
+  "description": "Owner line label refusal when requested audio source does not match labelled source.",
+  "context": "Journal window. Owner line label refusal when requested audio source does not match labelled source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "requested",
+      "type": "string"
+    },
+    {
+      "name": "labelled",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ca557167168f6c20a76f060bdb2602e2144516cc7984bb786ab8deb4ec07904a",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

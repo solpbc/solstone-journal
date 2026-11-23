@@ -1,0 +1,25 @@
+{
+  "description": "Speaker artifact wipe dry-run error when reading a directory fails.",
+  "context": "Journal window. Speaker artifact wipe dry-run error when reading a directory fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f21034483b3fbf068ca466e15e2f16d9b940e94f163e81a93a8b7e8bd3d06567",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

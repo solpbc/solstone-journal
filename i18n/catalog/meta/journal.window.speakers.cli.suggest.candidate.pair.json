@@ -1,0 +1,29 @@
+{
+  "description": "Speaker curation suggestion line for a candidate pair.",
+  "context": "Journal window. Speaker curation suggestion line for a candidate pair.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "similarity",
+      "type": "string"
+    },
+    {
+      "name": "source_intervals",
+      "type": "string"
+    },
+    {
+      "name": "target_intervals",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "843c12d1be46c53c8be6a7bf32205eeaedcc1d09024e4aff8b96683d7fdb443a",
+  "max_length": 149,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
