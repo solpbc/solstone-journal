@@ -52,6 +52,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on the settings page on an iphone, choosing any section but facets or support from the section menu now leaves focus on the menu. before, focus was dropped as the menu closed.
 - on an iphone, choosing from a menu now leaves focus on that menu in more places: in settings, the pronouns, transcription backend and parakeet.cpp device menus; the level menu in health's service logs; the source menu in import; the "call it" menu on a map place; and the type menu when you edit an entity. before, focus was dropped as the menu closed.
 - on an iphone, when a priority change on the settings page can't be saved, its menu no longer opens again by itself.
+- on windows, a single slow status check during setup no longer leaves the journal window saying "the journal isn't answering". the window checks once more first.
+- importing an audio file the journal can't read with `solstone journal importer` now prints one plain line, without the media library's extra log lines or an internal error dump.
+- `solstone call` before first-run setup is finished now says your journal isn't set up yet, instead of saying the journal returned an unreadable error.
 
 ### Removed
 
