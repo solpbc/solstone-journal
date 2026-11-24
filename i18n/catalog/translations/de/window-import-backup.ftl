@@ -3134,7 +3134,7 @@ journal.window.import.visible.text.ready.to.sync.recordings.into.your = bereit, 
 
 journal.window.import.visible.text.saving.folder.this.can.take.a = Ordner wird gespeichert… das kann bei einem großen Ordner eine Weile dauern.
 
-journal.window.import.visible.text.select.this.tab.to.browse.imported = wähle diesen Tab, um importierten Inhalt zu durchsuchen
+journal.window.import.visible.text.select.this.tab.to.browse.imported = wähle diesen Tab, um importierten Inhalt durchzusehen
 
 journal.window.import.visible.text.stalled = stockt
 
