@@ -69,6 +69,7 @@ mod owner_diagnostics;
 mod owner_memories;
 mod owner_state;
 mod owner_web;
+mod people_view;
 mod permissions;
 mod permits;
 mod photo_picture;

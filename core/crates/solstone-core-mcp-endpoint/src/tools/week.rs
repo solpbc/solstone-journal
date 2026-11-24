@@ -463,13 +463,23 @@ fn project_sunday(
         primary
     })
     .collect();
+    let mut photo_cache = BTreeMap::new();
+    let collect_entities = include.contains(&AdmittedCategory::Entities)
+        && snapshot.categories.contains(&AdmittedCategory::Entities);
+    let owner = if collect_entities {
+        Some(crate::people_view::OwnerIdentity::load(journal))
+    } else {
+        None
+    };
     let mut people_by_day = BTreeMap::<String, BTreeSet<String>>::new();
-    if include.contains(&AdmittedCategory::Entities)
-        && snapshot.categories.contains(&AdmittedCategory::Entities)
-    {
+    if collect_entities {
         for row in &collected {
-            let people = crate::tools::activities::activity_people_across(
+            let people = crate::tools::activities::activity_people_in_context(
                 std::iter::once(&row.record).chain(row.copies.iter()),
+                None,
+                None,
+                None,
+                owner.as_ref(),
             );
             people_by_day
                 .entry(row.day.clone())
@@ -581,8 +591,12 @@ fn project_sunday(
 
         let (start, end, duration) =
             crate::tools::activities::activity_times_and_duration(&rep.record);
-        let people = crate::tools::activities::activity_people_across(
+        let people = crate::tools::activities::activity_people_in_context(
             std::iter::once(&rep.record).chain(rep.copies.iter()),
+            Some(journal),
+            Some(&rep.day),
+            Some(&mut photo_cache),
+            None,
         );
         let entities = crate::tools::activities::activity_entities(&rep.record);
         let title = crate::tools::activities::activity_title(&rep.record);
@@ -603,6 +617,7 @@ fn project_sunday(
             "duration": duration,
             "participants": people.participants,
             "heard": people.heard,
+            "in_photo": people.in_photo,
             "mentioned": people.mentioned,
             "on_screen": people.on_screen,
             "entities": entities,
@@ -870,6 +885,34 @@ fn project_sunday(
             }
         }
     }
+    if collect_entities {
+        let today = solstone_core_time::day_key(now.date());
+        let clamped_end = if end_day < today { &end_day } else { &today };
+        let facet_pairs: Vec<(String, String)> = facets
+            .iter()
+            .map(|(id, dir, _)| (id.clone(), dir.clone()))
+            .collect();
+        let owner_ref = owner.as_ref().expect("owner loaded when collect_entities");
+        let people_summary = crate::people_view::build_people_range_summary(
+            journal,
+            principal,
+            snapshot,
+            &facet_pairs,
+            &start_day,
+            clamped_end,
+            owner_ref,
+            &mut photo_cache,
+        )?;
+        windows.extend(people_summary.targets);
+        value["people"] = Value::Array(people_summary.people);
+        if people_summary.people_truncated {
+            value["people_truncated"] = Value::Bool(true);
+        }
+        value["co_occurrence"] = Value::Array(people_summary.co_occurrence);
+        if people_summary.co_occurrence_truncated {
+            value["co_occurrence_truncated"] = Value::Bool(true);
+        }
+    }
 
     Ok(WeekRead {
         value,
@@ -1087,10 +1130,15 @@ fn build_day_summary(
                     }
                 }
                 AdmittedCategory::Entities => {
-                    json!({
+                    let limit = crate::people_view::MAX_WEEK_DAY_ENTITIES;
+                    let mut entry = json!({
                         "count": people.len(),
-                        "people": people.iter().take(12).cloned().collect::<Vec<_>>(),
-                    })
+                        "people": people.iter().take(limit).cloned().collect::<Vec<_>>(),
+                    });
+                    if people.len() > limit {
+                        entry["more"] = json!(true);
+                    }
+                    entry
                 }
                 _ => {
                     let (value, kind_targets) = kind_summaries
@@ -1119,7 +1167,7 @@ fn summarize_day_activities(
     snapshot: &ConnectionReadSnapshot,
     facets: &[(String, String)],
     day_str: &str,
-    collect_entities: bool,
+    owner: Option<&crate::people_view::OwnerIdentity>,
 ) -> Result<DayActivitiesSummary, ToolError> {
     struct DayCollected {
         record: Map<String, Value>,
@@ -1187,10 +1235,14 @@ fn summarize_day_activities(
     .collect();
 
     let mut people = BTreeSet::new();
-    if collect_entities {
+    if let Some(owner) = owner {
         for row in &merged {
-            let found = crate::tools::activities::activity_people_across(
+            let found = crate::tools::activities::activity_people_in_context(
                 std::iter::once(&row.record).chain(row.copies.iter()),
+                None,
+                None,
+                None,
+                Some(owner),
             );
             people.extend(found.participants.into_iter().chain(found.heard));
         }
@@ -1401,6 +1453,11 @@ fn project_range_with_limits(
         .collect();
     let collect_entities = include.contains(&AdmittedCategory::Entities)
         && snapshot.categories.contains(&AdmittedCategory::Entities);
+    let owner = if collect_entities {
+        Some(crate::people_view::OwnerIdentity::load(journal))
+    } else {
+        None
+    };
 
     let mut body_days = BTreeMap::new();
     let mut body_targets = Vec::new();
@@ -1452,6 +1509,22 @@ fn project_range_with_limits(
     } else {
         None
     };
+    let people_summary = if cursor.is_none() && collect_entities {
+        let mut photo_cache = BTreeMap::new();
+        let owner_ref = owner.as_ref().expect("owner loaded when collect_entities");
+        Some(crate::people_view::build_people_range_summary(
+            journal,
+            principal,
+            snapshot,
+            &facets,
+            day_from,
+            &effective_end_day,
+            owner_ref,
+            &mut photo_cache,
+        )?)
+    } else {
+        None
+    };
     let mut kind_summaries =
         prefetch_kind_summaries(journal, principal, snapshot, &candidate_day_keys, include);
 
@@ -1461,14 +1534,19 @@ fn project_range_with_limits(
     let mut page_bytes: usize = places_roster
         .as_ref()
         .and_then(|roster| serde_json::to_string(&roster.items).ok())
-        .map_or(0, |s| s.len());
+        .map_or(0, |s| s.len())
+        .saturating_add(people_summary.as_ref().map_or(0, |summary| {
+            let p_bytes = serde_json::to_string(&summary.people).map_or(0, |s| s.len());
+            let c_bytes = serde_json::to_string(&summary.co_occurrence).map_or(0, |s| s.len());
+            p_bytes.saturating_add(c_bytes)
+        }));
     let mut last_served_day: Option<String> = None;
     let mut resume_date: Option<Date> = None;
 
     for &date in &candidate_dates {
         let day_str = solstone_core_time::day_key(date);
         let summary_activities =
-            summarize_day_activities(journal, snapshot, &facets, &day_str, collect_entities)?;
+            summarize_day_activities(journal, snapshot, &facets, &day_str, owner.as_ref())?;
 
         let mut cell = json!({"day": day_str});
         if let Some(state) = day_states.get(&day_str) {
@@ -1571,10 +1649,15 @@ fn project_range_with_limits(
         None => None,
     };
 
+    let mut people_targets = Vec::new();
+    if let Some(ref summary) = people_summary {
+        people_targets.extend(summary.targets.iter().cloned());
+    }
     let targets = served_weeks
         .into_iter()
         .map(|stem| format!("week:{stem}"))
         .chain(extra_targets)
+        .chain(people_targets)
         .collect();
     let count = days.len();
     let mut value = json!({
@@ -1589,6 +1672,16 @@ fn project_range_with_limits(
         value["places"] = Value::Array(roster.items);
         if roster.truncated {
             value["places_truncated"] = Value::Bool(true);
+        }
+    }
+    if let Some(summary) = people_summary {
+        value["people"] = Value::Array(summary.people);
+        if summary.people_truncated {
+            value["people_truncated"] = Value::Bool(true);
+        }
+        value["co_occurrence"] = Value::Array(summary.co_occurrence);
+        if summary.co_occurrence_truncated {
+            value["co_occurrence_truncated"] = Value::Bool(true);
         }
     }
 
@@ -3954,5 +4047,366 @@ mod tests {
             ),
             Err(McpProbeError::Unavailable)
         );
+    }
+
+    #[test]
+    fn get_week_entities_daily_cap_owner_exclusion_people_roster_and_co_occurrence() {
+        use crate::permissions::PermissionDecision;
+        use solstone_core_indexer_query::AdmittedCategory;
+        use std::collections::BTreeMap;
+
+        let root = journal("solstone-week-people-roster-");
+        grant(
+            root.path(),
+            &["transcripts", "facets", "entities", "profile_pics"],
+            ReadScope::WholeJournal,
+        );
+
+        let facet_a = "123e4567-e89b-42d3-a456-426614174000";
+        let facet_b = "123e4567-e89b-42d3-a456-426614174001";
+        write_raw(
+            root.path(),
+            "facets/work/facet.json",
+            &json!({"id": facet_a, "title": "Work", "description": "Work"}).to_string(),
+        );
+        write_raw(
+            root.path(),
+            "facets/home/facet.json",
+            &json!({"id": facet_b, "title": "Home", "description": "Home"}).to_string(),
+        );
+
+        // Principal (owner), non-Person, blocked, and valid Person entities.
+        write_raw(
+            root.path(),
+            "entities/owner_self/entity.json",
+            &json!({"id": "owner_self", "name": "Owner Person", "type": "Person", "is_principal": true}).to_string(),
+        );
+        write_raw(
+            root.path(),
+            "facets/work/entities/owner_self/entity.json",
+            &json!({"entity_id": "owner_self"}).to_string(),
+        );
+        for (id, name, kind, blocked, facets) in [
+            ("alice", "Alice", "Person", false, vec!["work", "home"]),
+            ("bob", "Bob", "Person", false, vec!["work"]),
+            ("photo_only", "Photo Only", "Person", false, vec!["home"]),
+            ("screen_only", "Screen Only", "Person", false, vec!["work"]),
+            (
+                "mention_only",
+                "Mention Only",
+                "Person",
+                false,
+                vec!["work"],
+            ),
+            ("blocked_p", "Blocked Person", "Person", true, vec!["work"]),
+            ("cat_gib", "Gib", "Animal", false, vec!["home"]),
+        ] {
+            write_raw(
+                root.path(),
+                &format!("entities/{id}/entity.json"),
+                &json!({"id": id, "name": name, "type": kind, "blocked": blocked}).to_string(),
+            );
+            for f in facets {
+                write_raw(
+                    root.path(),
+                    &format!("facets/{f}/entities/{id}/entity.json"),
+                    &json!({"entity_id": id}).to_string(),
+                );
+            }
+        }
+
+        // Photo vs imported screenshot segments on 20250309.
+        write_raw(
+            root.path(),
+            "chronicle/20250309/import.image/120000_0/image_transcript.md",
+            "Group portrait",
+        );
+        write_raw(
+            root.path(),
+            "chronicle/20250309/import.image/130000_0/screenshot_transcript.md",
+            "App window",
+        );
+
+        // Shared cross-facet moment on 20250309 (same stream + segment) must count ONCE.
+        let shared_meeting = json!({
+            "id": "m1",
+            "title": "Planning",
+            "stream": "talk",
+            "segments": ["090000_600"],
+            "created_at": 100,
+            "participation": [
+                {"name": "Owner Person", "entity_id": "owner_self", "role": "attendee"},
+                {"name": "Alice", "entity_id": "alice", "role": "attendee"},
+                {"name": "Bob", "entity_id": "bob", "role": "heard"},
+                {"name": "Mention Only", "entity_id": "mention_only", "role": "mentioned"},
+                {"name": "Blocked Person", "entity_id": "blocked_p", "role": "attendee"},
+                {"name": "Speaker 1", "role": "heard"},
+            ]
+        });
+        let shot_act = json!({
+            "id": "photo_screen_decoy",
+            "title": "Screenshot",
+            "stream": "import.image",
+            "segments": ["130000_0"],
+            "created_at": 200,
+            "participation": [
+                {"name": "Screen Only", "entity_id": "screen_only", "role": "visible"}
+            ]
+        });
+        write_raw(
+            root.path(),
+            "facets/work/activities/20250309.jsonl",
+            &format!("{}\n{}\n", shared_meeting, shot_act),
+        );
+
+        let home_copy = json!({
+            "id": "m1_home",
+            "title": "Planning",
+            "stream": "talk",
+            "segments": ["090000_600"],
+            "created_at": 100,
+            "participation": [
+                {"name": "Alice", "entity_id": "alice", "role": "attendee"},
+                {"name": "Bob", "entity_id": "bob", "role": "heard"},
+            ]
+        });
+        let real_photo = json!({
+            "id": "img_real",
+            "title": "Portrait",
+            "stream": "import.image",
+            "segments": ["120000_0"],
+            "created_at": 300,
+            "participation": [
+                {"name": "Alice", "entity_id": "alice", "role": "visible"},
+                {"name": "Photo Only", "entity_id": "photo_only", "role": "visible"},
+                {"name": "Gib", "entity_id": "cat_gib", "role": "visible"},
+            ]
+        });
+        write_raw(
+            root.path(),
+            "facets/home/activities/20250309.jsonl",
+            &format!("{}\n{}\n", home_copy, real_photo),
+        );
+
+        // Day 20250310: 15 distinct non-owner people + owner (verifies cap > 12 & owner excluded).
+        let mut day10_parts =
+            vec![json!({"name": "Owner Person", "entity_id": "owner_self", "role": "attendee"})];
+        for i in 1..=15 {
+            day10_parts.push(json!({"name": format!("Guest {i:02}"), "role": "attendee"}));
+        }
+        write_raw(
+            root.path(),
+            "facets/work/activities/20250310.jsonl",
+            &format!(
+                "{}\n",
+                json!({
+                    "id": "d10",
+                    "title": "Town Hall",
+                    "stream": "talk",
+                    "segments": ["100000_600"],
+                    "created_at": 400,
+                    "participation": day10_parts,
+                })
+            ),
+        );
+
+        // Day 20250311: 55 non-owner people (verifies cap = 50 + more: true).
+        let day11_parts: Vec<Value> = (1..=55)
+            .map(|i| json!({"name": format!("Crowd {i:02}"), "role": "attendee"}))
+            .collect();
+        write_raw(
+            root.path(),
+            "facets/work/activities/20250311.jsonl",
+            &format!(
+                "{}\n",
+                json!({
+                    "id": "d11",
+                    "title": "Festival",
+                    "stream": "talk",
+                    "segments": ["110000_600"],
+                    "created_at": 500,
+                    "participation": day11_parts,
+                })
+            ),
+        );
+
+        // Range page 1 (2 days) returns top-level `people` and `co_occurrence` for full 3-day range.
+        let snapshot = match evaluate_connection_read(root.path(), CONNECTION) {
+            PermissionDecision::Snapshot(s) => s,
+            other => panic!("expected snapshot, got {other:?}"),
+        };
+        let principal = DispatchPrincipal {
+            connection: CONNECTION,
+            agent_identity: CONNECTION,
+        };
+        let include = BTreeSet::from([AdmittedCategory::Entities]);
+        let p1 = super::project_range_with_limits(
+            root.path(),
+            "20250309",
+            "20250311",
+            None,
+            principal,
+            &snapshot,
+            &include,
+            2,
+            super::MAX_SPAN_PAGE_BYTES,
+        )
+        .unwrap();
+
+        // Day 20250309: Owner excluded, Alice + Bob present (count 2).
+        let d09 = &p1.value["days"][0]["summary"]["entities"];
+        assert_eq!(d09["count"], 2);
+        assert_eq!(d09["people"], json!(["Alice", "Bob"]));
+        assert!(d09.get("more").is_none());
+
+        // Day 20250310: 15 non-owner people fit under cap 50 without truncation.
+        let d10 = &p1.value["days"][1]["summary"]["entities"];
+        assert_eq!(d10["count"], 15);
+        assert_eq!(d10["people"].as_array().unwrap().len(), 15);
+        assert!(d10.get("more").is_none());
+        assert!(!d10.to_string().contains("Owner Person"));
+
+        // Top-level roster on page 1:
+        let people_arr = p1.value["people"].as_array().unwrap();
+        let find_person = |id: &str| people_arr.iter().find(|p| p["id"] == id);
+        let alice = find_person("alice").expect("alice in roster");
+        assert_eq!(alice["days"], 1);
+        assert_eq!(alice["activities"], 1);
+        assert_eq!(alice["in_photo_days"], 1);
+        assert_eq!(alice["in_photo_activities"], 1);
+        assert!(alice["reference"].is_string());
+        assert!(alice["link"].is_string());
+
+        let bob = find_person("bob").expect("bob in roster");
+        assert_eq!(bob["days"], 1);
+        assert_eq!(bob["activities"], 1);
+        assert!(bob.get("in_photo_days").is_none());
+
+        let photo_only = find_person("photo_only").expect("photo-only person in roster");
+        assert_eq!(photo_only["days"], 0);
+        assert_eq!(photo_only["activities"], 0);
+        assert_eq!(photo_only["in_photo_days"], 1);
+        assert_eq!(photo_only["in_photo_activities"], 1);
+        assert_eq!(photo_only["first_day"], "20250309");
+
+        // Owner, blocked, non-Person, mentioned, screen-only, unnamed voices are excluded.
+        for excluded in [
+            "owner_self",
+            "blocked_p",
+            "cat_gib",
+            "mention_only",
+            "screen_only",
+        ] {
+            assert!(
+                find_person(excluded).is_none(),
+                "{excluded} leaked into people roster"
+            );
+        }
+        assert!(!p1.value["people"].to_string().contains("Speaker 1"));
+
+        // Co-occurrence has (alice, bob) counted ONCE across the deduplicated cross-facet moment,
+        // and NO edge for photo_only.
+        let co = p1.value["co_occurrence"].as_array().unwrap();
+        let ab = co
+            .iter()
+            .find(|e| e["a"] == "alice" && e["b"] == "bob")
+            .expect("alice-bob co-occurrence");
+        assert_eq!(ab["activities"], 1);
+        assert_eq!(ab["days"], 1);
+        assert!(
+            !co.iter()
+                .any(|e| e["a"] == "photo_only" || e["b"] == "photo_only")
+        );
+
+        // Page 2 omits top-level people/co_occurrence and verifies 55-person day cap at 50 + more: true.
+        let cursor = p1.value["next_cursor"].as_str().unwrap();
+        let p2 = super::project_range_with_limits(
+            root.path(),
+            "20250309",
+            "20250311",
+            Some(cursor),
+            principal,
+            &snapshot,
+            &include,
+            2,
+            super::MAX_SPAN_PAGE_BYTES,
+        )
+        .unwrap();
+        assert!(p2.value.get("people").is_none());
+        assert!(p2.value.get("co_occurrence").is_none());
+        let d11 = &p2.value["days"][0]["summary"]["entities"];
+        assert_eq!(d11["count"], 55);
+        assert_eq!(d11["people"].as_array().unwrap().len(), 50);
+        assert_eq!(d11["more"], true);
+
+        // Single-week mode also includes top-level people/co_occurrence and splits in_photo on activities[].
+        let week_res = probe(
+            root.path(),
+            json!({"week": "20250309", "include": ["entities"]}),
+        )
+        .unwrap();
+        assert!(week_res["people"].is_array());
+        assert!(week_res["co_occurrence"].is_array());
+        let acts = week_res["activities"].as_array().unwrap();
+        let portrait_act = acts
+            .iter()
+            .find(|a| a["title"] == "Portrait")
+            .expect("portrait activity in week");
+        assert_eq!(
+            portrait_act["in_photo"],
+            json!(["Alice", "Photo Only", "Gib"])
+        );
+        assert_eq!(portrait_act["on_screen"], json!([]));
+        let screenshot_act = acts
+            .iter()
+            .find(|a| a["title"] == "Screenshot")
+            .expect("screenshot activity in week");
+        assert_eq!(screenshot_act["in_photo"], json!([]));
+        assert_eq!(screenshot_act["on_screen"], json!(["Screen Only"]));
+
+        // Subset-facet isolation on build_people_range_summary: granting only `work` must not
+        // disclose `home`-only photo_only person or `home` facet id.
+        let scoped_snapshot = crate::permissions::ConnectionReadSnapshot {
+            categories: [AdmittedCategory::Facets, AdmittedCategory::Entities]
+                .into_iter()
+                .collect(),
+            scope: solstone_core_indexer_query::ConnectionScope::ChosenFacets {
+                ids: [facet_a.to_owned()].into_iter().collect(),
+            },
+            generation: snapshot.generation,
+            places_precision: None,
+        };
+        let mut cache = BTreeMap::new();
+        let owner = crate::people_view::OwnerIdentity::load(root.path());
+        let scoped_summary = crate::people_view::build_people_range_summary(
+            root.path(),
+            principal,
+            &scoped_snapshot,
+            &[(facet_a.to_owned(), "work".to_owned())],
+            "20250309",
+            "20250309",
+            &owner,
+            &mut cache,
+        )
+        .unwrap();
+        let scoped_json = serde_json::to_string(&scoped_summary.people).unwrap();
+        assert!(!scoped_json.contains("photo_only"));
+        assert!(!scoped_json.contains(facet_b));
+        assert!(scoped_summary.people.iter().any(|p| p["id"] == "alice"));
+
+        // Missing Entities permission omits top-level people/co_occurrence and returns day note.
+        grant(
+            root.path(),
+            &["transcripts", "facets"],
+            ReadScope::WholeJournal,
+        );
+        let no_ent = probe(
+            root.path(),
+            json!({"day_from": "20250309", "day_to": "20250309", "include": ["entities"]}),
+        )
+        .unwrap();
+        assert!(no_ent.get("people").is_none());
+        assert!(no_ent.get("co_occurrence").is_none());
+        assert!(no_ent["days"][0]["summary"]["entities"]["note"].is_string());
     }
 }

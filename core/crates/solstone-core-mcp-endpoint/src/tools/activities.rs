@@ -302,10 +302,91 @@ pub(crate) fn activity_times_and_duration(
     (start, end, duration)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ImageSegmentKind {
+    Photo,
+    Screenshot,
+    Other,
+}
+
+fn classify_image_segment(journal_root: &Path, day: &str, segment: &str) -> ImageSegmentKind {
+    if !solstone_core_journal_io::is_day_key(day)
+        || segment.is_empty()
+        || segment.contains('/')
+        || segment.contains('\\')
+        || segment == "."
+        || segment == ".."
+    {
+        return ImageSegmentKind::Other;
+    }
+    for prefix in ["chronicle/", ""] {
+        let rel = format!("{prefix}{day}/import.image/{segment}");
+        let Ok(dir) = solstone_core_journal_io::contained_path(journal_root, &rel) else {
+            continue;
+        };
+        let Ok(Some(entries)) = solstone_core_journal_io::list_dir_entries_bounded(&dir, 64) else {
+            continue;
+        };
+        let mut has_photo = false;
+        let mut has_screenshot = false;
+        for entry in entries {
+            if entry.kind != solstone_core_journal_io::DirEntryKind::File {
+                continue;
+            }
+            if entry.name == "image_transcript.md" {
+                has_photo = true;
+            } else if entry.name == "screenshot_transcript.md" {
+                has_screenshot = true;
+            }
+        }
+        if has_screenshot {
+            return ImageSegmentKind::Screenshot;
+        }
+        if has_photo {
+            return ImageSegmentKind::Photo;
+        }
+    }
+    ImageSegmentKind::Other
+}
+
+/// True when `record` comes from `import.image` and every segment it names on
+/// `day` is a real photo segment (`image_transcript.md` present and no
+/// `screenshot_transcript.md`). Never infers from activity IDs.
+pub(crate) fn is_real_photo_record(
+    journal_root: &Path,
+    day: &str,
+    record: &Map<String, Value>,
+    cache: &mut BTreeMap<(String, String), ImageSegmentKind>,
+) -> bool {
+    if record.get("stream").and_then(Value::as_str) != Some("import.image") {
+        return false;
+    }
+    let Some(segments) = record.get("segments").and_then(Value::as_array) else {
+        return false;
+    };
+    let seg_names: Vec<&str> = segments
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    if seg_names.is_empty() {
+        return false;
+    }
+    seg_names.into_iter().all(|seg| {
+        let key = (day.to_owned(), seg.to_owned());
+        let kind = *cache
+            .entry(key)
+            .or_insert_with(|| classify_image_segment(journal_root, day, seg));
+        kind == ImageSegmentKind::Photo
+    })
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct ActivityPeople {
     pub participants: Vec<String>,
     pub heard: Vec<String>,
+    pub in_photo: Vec<String>,
     pub mentioned: Vec<String>,
     pub on_screen: Vec<String>,
     /// Voices heard that the journal has no name for.
@@ -314,7 +395,7 @@ pub(crate) struct ActivityPeople {
 
 /// A voice the journal has no name for, as participation records it:
 /// `Speaker 3`. It is a voice, not a person.
-fn is_unnamed_voice(name: &str) -> bool {
+pub(crate) fn is_unnamed_voice(name: &str) -> bool {
     let lower = name.to_lowercase();
     let Some(rest) = lower.strip_prefix("speaker") else {
         return false;
@@ -325,17 +406,18 @@ fn is_unnamed_voice(name: &str) -> bool {
 
 /// How strongly a role places someone in an activity; a name recorded under
 /// two roles is listed under the stronger.
-fn role_rank(role: &str) -> u8 {
+fn role_rank(role: &str, photo_record: bool) -> u8 {
     match role {
-        "attendee" => 3,
-        "heard" => 2,
+        "attendee" => 4,
+        "heard" => 3,
+        "visible" if photo_record => 2,
         "visible" => 0,
         _ => 1,
     }
 }
 
-/// Classifies an activity's participants into participants, heard, mentioned,
-/// and on-screen names.
+/// Classifies an activity's participants into participants, heard, in_photo,
+/// mentioned, and on-screen names.
 #[cfg(test)]
 pub(crate) fn activity_people(record: &Map<String, Value>) -> ActivityPeople {
     activity_people_across(std::iter::once(record))
@@ -347,12 +429,34 @@ pub(crate) fn activity_people(record: &Map<String, Value>) -> ActivityPeople {
 pub(crate) fn activity_people_across<'a>(
     records: impl Iterator<Item = &'a Map<String, Value>>,
 ) -> ActivityPeople {
+    activity_people_in_context(records, None, None, None, None)
+}
+
+/// Like `activity_people_across`, resolving real photo provenance when
+/// `journal_root` and `day` are given (so `visible` on an `import.image`
+/// photo splits into `in_photo` while screen captures and imported screenshots
+/// remain `on_screen`) and optionally excluding the journal's owner.
+pub(crate) fn activity_people_in_context<'a>(
+    records: impl Iterator<Item = &'a Map<String, Value>>,
+    journal_root: Option<&Path>,
+    day: Option<&str>,
+    mut photo_cache: Option<&mut BTreeMap<(String, String), ImageSegmentKind>>,
+    exclude_owner: Option<&crate::people_view::OwnerIdentity>,
+) -> ActivityPeople {
+    let mut local_cache = BTreeMap::new();
     // Name as first written, and its strongest role so far.
     let mut named: Vec<(String, u8)> = Vec::new();
     let mut people = ActivityPeople::default();
     for record in records {
         let Some(entries) = record.get("participation").and_then(Value::as_array) else {
             continue;
+        };
+        let photo_record = match (journal_root, day) {
+            (Some(root), Some(day_key)) => {
+                let cache = photo_cache.as_deref_mut().unwrap_or(&mut local_cache);
+                is_real_photo_record(root, day_key, record, cache)
+            }
+            _ => false,
         };
         let mut voices = 0;
         for entry in entries.iter().filter_map(Value::as_object) {
@@ -369,12 +473,22 @@ pub(crate) fn activity_people_across<'a>(
                 .unwrap_or_default();
             if is_unnamed_voice(trimmed) {
                 // Counted only where it was heard: an attendee or a heard voice.
-                if role_rank(role) >= 2 {
+                if role_rank(role, false) >= 3 {
                     voices += 1;
                 }
                 continue;
             }
-            let rank = role_rank(role);
+            if let Some(owner) = exclude_owner {
+                let explicit_id = entry
+                    .get("entity_id")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty());
+                if owner.excludes(explicit_id, trimmed) {
+                    continue;
+                }
+            }
+            let rank = role_rank(role, photo_record);
             match named
                 .iter_mut()
                 .find(|(known, _)| known.eq_ignore_ascii_case(trimmed))
@@ -388,8 +502,9 @@ pub(crate) fn activity_people_across<'a>(
     }
     for (name, rank) in named {
         match rank {
-            3 => people.participants.push(name),
-            2 => people.heard.push(name),
+            4 => people.participants.push(name),
+            3 => people.heard.push(name),
+            2 => people.in_photo.push(name),
             0 => people.on_screen.push(name),
             _ => people.mentioned.push(name),
         }
@@ -1077,6 +1192,7 @@ pub(crate) fn execute_list(
 
     let sources = crate::dispatch::source_labels(journal_root);
     let mut activities = Vec::new();
+    let mut photo_cache: BTreeMap<(String, String), ImageSegmentKind> = BTreeMap::new();
     // Beside lines between body faces and capture activities, both ways, only
     // between items this connection reads. Worked out when read; never stored.
     let mut body_near: BTreeMap<String, Vec<BesideLine>> = BTreeMap::new();
@@ -1145,8 +1261,13 @@ pub(crate) fn execute_list(
             continue;
         }
         let (start, end, duration) = activity_times_and_duration(&item.record);
-        let people =
-            activity_people_across(std::iter::once(&item.record).chain(item.copies.iter()));
+        let people = activity_people_in_context(
+            std::iter::once(&item.record).chain(item.copies.iter()),
+            Some(journal_root),
+            Some(&item.day),
+            Some(&mut photo_cache),
+            None,
+        );
         let entities = activity_entities(&item.record);
         let title = activity_title(&item.record);
 
@@ -1166,6 +1287,7 @@ pub(crate) fn execute_list(
             "duration": duration,
             "participants": people.participants,
             "heard": people.heard,
+            "in_photo": people.in_photo,
             "mentioned": people.mentioned,
             "on_screen": people.on_screen,
             "entities": entities,
@@ -1954,7 +2076,145 @@ mod tests {
         let people = activity_people(record.as_object().unwrap());
         assert_eq!(people.participants, vec!["Alice"]);
         assert_eq!(people.heard, vec!["Bob"]);
+        assert!(people.in_photo.is_empty());
         assert_eq!(people.mentioned, vec!["Carol", "Eve", "Frank"]);
         assert_eq!(people.on_screen, vec!["Dave"]);
+    }
+
+    #[test]
+    fn real_photos_split_into_in_photo_while_screenshots_and_decoys_stay_on_screen() {
+        let dir = tempfile::Builder::new()
+            .prefix("solstone-photo-visible-")
+            .tempdir_in(crate::test_scratch())
+            .unwrap();
+        let root = dir.path();
+
+        // Owner identity with an alias to verify entity_id precedence.
+        let owner_dir = root.join("entities/owner");
+        std::fs::create_dir_all(&owner_dir).unwrap();
+        std::fs::write(
+            owner_dir.join("entity.json"),
+            json!({
+                "id": "owner_id",
+                "name": "William Shakespeare",
+                "type": "Person",
+                "aka": ["Will"],
+                "is_principal": true
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        // Real photo segment: image_transcript.md only.
+        let photo_seg = root.join("chronicle/20250501/import.image/120000_0");
+        std::fs::create_dir_all(&photo_seg).unwrap();
+        std::fs::write(photo_seg.join("image_transcript.md"), "Garden photo").unwrap();
+
+        // Imported screenshot segment: screenshot_transcript.md only.
+        let shot_seg = root.join("chronicle/20250501/import.image/130000_0");
+        std::fs::create_dir_all(&shot_seg).unwrap();
+        std::fs::write(shot_seg.join("screenshot_transcript.md"), "Desktop UI").unwrap();
+
+        // Ambiguous segment carrying both fails closed to on_screen.
+        let both_seg = root.join("chronicle/20250501/import.image/140000_0");
+        std::fs::create_dir_all(&both_seg).unwrap();
+        std::fs::write(both_seg.join("image_transcript.md"), "Photo").unwrap();
+        std::fs::write(both_seg.join("screenshot_transcript.md"), "Shot").unwrap();
+
+        let mut cache = BTreeMap::new();
+        let owner = crate::people_view::OwnerIdentity::load(root);
+
+        let photo_rec = json!({
+            "id": "moment_01",
+            "stream": "import.image",
+            "segments": ["120000_0"],
+            "participation": [
+                {"name": "Anne", "entity_id": "anne", "role": "visible"},
+                {"name": "William Shakespeare", "entity_id": "owner_id", "role": "visible"},
+                {"name": "Will", "entity_id": "other_will", "role": "visible"},
+                {"name": "Will", "role": "visible"},
+                {"name": "Carol", "role": "mentioned"},
+            ]
+        });
+        let p_photo = activity_people_in_context(
+            std::iter::once(photo_rec.as_object().unwrap()),
+            Some(root),
+            Some("20250501"),
+            Some(&mut cache),
+            Some(&owner),
+        );
+        assert_eq!(p_photo.in_photo, vec!["Anne", "Will"]);
+        assert!(p_photo.on_screen.is_empty());
+        assert_eq!(p_photo.mentioned, vec!["Carol"]);
+
+        let shot_rec = json!({
+            "id": "photo_999",
+            "stream": "import.image",
+            "segments": ["130000_0"],
+            "participation": [{"name": "Screen User", "role": "visible"}]
+        });
+        let p_shot = activity_people_in_context(
+            std::iter::once(shot_rec.as_object().unwrap()),
+            Some(root),
+            Some("20250501"),
+            Some(&mut cache),
+            None,
+        );
+        assert!(p_shot.in_photo.is_empty());
+        assert_eq!(p_shot.on_screen, vec!["Screen User"]);
+
+        let both_rec = json!({
+            "id": "photo_both",
+            "stream": "import.image",
+            "segments": ["140000_0"],
+            "participation": [{"name": "Ambiguous", "role": "visible"}]
+        });
+        let p_both = activity_people_in_context(
+            std::iter::once(both_rec.as_object().unwrap()),
+            Some(root),
+            Some("20250501"),
+            Some(&mut cache),
+            None,
+        );
+        assert!(p_both.in_photo.is_empty());
+        assert_eq!(p_both.on_screen, vec!["Ambiguous"]);
+
+        // Non-photo stream with a synthetic "photo_" id must remain on_screen.
+        let decoy_rec = json!({
+            "id": "photo_decoy_01",
+            "stream": "desk",
+            "segments": ["120000_0"],
+            "participation": [{"name": "Desk Face", "role": "visible"}]
+        });
+        let p_decoy = activity_people_in_context(
+            std::iter::once(decoy_rec.as_object().unwrap()),
+            Some(root),
+            Some("20250501"),
+            Some(&mut cache),
+            None,
+        );
+        assert!(p_decoy.in_photo.is_empty());
+        assert_eq!(p_decoy.on_screen, vec!["Desk Face"]);
+
+        // Attendee outranks in_photo across merged copies.
+        let attendee_copy = json!({
+            "id": "moment_01_b",
+            "stream": "talk",
+            "segments": ["120000_0"],
+            "participation": [{"name": "Anne", "role": "attendee"}]
+        });
+        let p_merged = activity_people_in_context(
+            [
+                photo_rec.as_object().unwrap(),
+                attendee_copy.as_object().unwrap(),
+            ]
+            .into_iter(),
+            Some(root),
+            Some("20250501"),
+            Some(&mut cache),
+            Some(&owner),
+        );
+        assert_eq!(p_merged.participants, vec!["Anne"]);
+        assert_eq!(p_merged.in_photo, vec!["Will"]);
     }
 }

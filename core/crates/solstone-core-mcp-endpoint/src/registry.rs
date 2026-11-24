@@ -222,7 +222,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListEntities,
         wire_name: "list_entities",
         title: "list people and projects",
-        description: "List the people, projects and other entities this connection may see, each with the facet it belongs to. One that belongs to several facets is listed once for each. When more remain, pass next_cursor as cursor to continue. To learn who or what one is, call get_entity with its reference. An entity's reference stays the same from one call to the next. when a row includes link, give it to the owner when pointing to that place in their journal. it needs a solstone app version that supports journal links; older versions may not open the place. keep using reference for tool calls.",
+        description: "list the people, projects and other entities this connection may see, each with its type when known. without a facet filter, an entity shared across allowed facets appears once, with facets listing all allowed facets it belongs to, reference pointing to one facet (preferring a facet with a profile pic when allowed and available), and facet_references mapping each facet id to its reference when it belongs to more than one. pass facet to list entities scoped to that single facet. when more remain, pass next_cursor as cursor with the same filter to continue. pass a reference, or references for up to 12, to get_entity to read notes and profile pics. an entity's reference stays the same from one call to the next. when a row includes link, give it to the owner when pointing to that place in their journal. it needs a solstone app version that supports journal links; older versions may not open the place. keep using reference for tool calls.",
         input_schema: list_entities_input_schema,
         requires: ENTITIES,
         audit_name: solstone_core_mcp_audit::ToolName::ListEntities,
@@ -231,7 +231,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetEntity,
         wire_name: "get_entity",
         title: "read about a person or project",
-        description: "Read what the journal has noted about an entity returned by list_entities: its type and, in that facet, its description, the last day it came up, and notes about it.",
+        description: "read what the journal has noted about entities returned by list_entities or get_week: each entity's type and, in that facet, its description, the last day it came up, notes about it, and its profile pic when allowed and available. pass either reference for one entity or references for up to 12. each batch item carries its own result or error in input order. if an item reaches the batch size limit, read it separately or in a smaller batch. in a batch, image_content_index identifies each profile pic in content.",
         input_schema: entity_input_schema,
         requires: ENTITIES,
         audit_name: solstone_core_mcp_audit::ToolName::GetEntity,
@@ -240,7 +240,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetWeek,
         wire_name: "get_week",
         title: "read a week",
-        description: "read one week (sunday to saturday) or a date range of up to 366 days as one row per day, such as a month, a season or a year. pass day_from and day_to for a date range: each day row carries its journal link, top memory, activity count, and, where the week has a stored page, day state and the owner's quotes with the activity each quote came from. a range omits activity rows and pages up to 100 days at a time; pass next_cursor as cursor with the same arguments to continue. pass any day as week for one week's full view (memories, up to seven activity rows and body items), or omit week, day_from and day_to for the current week. use include in either mode for a day-by-day summary of body, places, photos, notes or entities. these summaries use what this connection may read and are available without a week page. photos lists up to 50 photos per day in chronological order with time when known, time_source when available, and description (more is true when a day has over 50, and count_is_lower_bound when a range summary is incomplete; search has the rest). entities gives a count and up to 12 names of people listed as present or heard in readable activities. body gives movement totals from readable entries and nights by source. check the notes alongside movement totals. places lists up to 50 visits, stays and runs of location readings per day with a reference for fetch, plus top-level places_precision and the owner's places list on the first page (with exact coordinates, ~1 km cells or names only according to permission). without a readable week page, days have no state or quotes; memories and summaries still come from readable activities and entries. said quotes the owner's words. mentioned, on_screen and scheduled alone do not establish attendance. use list_activities to list individual activities on a day or short range.",
+        description: "read one week (sunday to saturday) or a date range of up to 366 days as one row per day, such as a month, a season or a year. pass day_from and day_to for a date range: each day row carries its journal link, top memory, activity count, and, where the week has a stored page, day state and the owner's quotes with the activity each quote came from. a range omits activity rows and pages up to 100 days at a time; pass next_cursor as cursor with the same arguments to continue. pass any day as week for one week's full view (memories, up to seven activity rows and body items), or omit week, day_from and day_to for the current week. use include in either mode for a day-by-day summary of body, places, photos, notes or entities. these summaries use what this connection may read and are available without a week page. photos lists up to 50 photos per day in chronological order with time when known, time_source when available, and description (more is true when a day has over 50, and count_is_lower_bound when a range summary is incomplete; search has the rest). entities gives a count and up to 50 non-owner people listed as present or heard in readable activities per day (more is true when a day has over 50), plus top-level people and co_occurrence lists on the first page summarizing non-owner people across the full requested range (day and activity counts for spoken or attended presence, separate in_photo_days and in_photo_activities counts for appearances in imported photos, references and journal links, and who-with-whom co-occurrence counts for spoken or attended presence). body gives movement totals from readable entries and nights by source. check the notes alongside movement totals. places lists up to 50 visits, stays and runs of location readings per day with a reference for fetch, plus top-level places_precision and the owner's places list on the first page (with exact coordinates, ~1 km cells or names only according to permission). without a readable week page, days have no state or quotes; memories and summaries still come from readable activities and entries. said quotes the owner's words. on single-week activity rows, in_photo lists people seen in imported photos separately from on_screen entries. mentioned, on_screen and scheduled alone do not establish attendance. use list_activities to list individual activities on a day or short range.",
         input_schema: week_input_schema,
         requires: WEEK,
         audit_name: solstone_core_mcp_audit::ToolName::GetWeek,
@@ -249,7 +249,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListActivities,
         wire_name: "list_activities",
         title: "list activities",
-        description: "list individual activities from the facets this connection may read. use day or an inclusive range with day_from and day_to. for a day-by-day overview across a month, a season or a year (with day links, memories, owner quotes and optional daily summaries), use get_week with day_from and day_to instead when available. on the activity list without the shared find filters, a moment in several facets appears once, with the other facets in also_in. when places is allowed, an activity carries place when available, with words and, according to permission, exact coordinates or a ~1 km cell. mentioned, on_screen and scheduled alone do not establish attendance. pass an activity reference to get_activity_sources. in a filtered result, use activity_reference when present. use kind, person, place or activity to find matching journal entries, then pass their references to fetch. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
+        description: "list individual activities from the facets this connection may read. use day or an inclusive range with day_from and day_to. for a day-by-day overview across a month, a season or a year (with day links, memories, owner quotes and optional daily summaries), use get_week with day_from and day_to instead when available. on the activity list without the shared find filters, a moment in several facets appears once, with the other facets in also_in. when places is allowed, an activity carries place when available, with words and, according to permission, exact coordinates or a ~1 km cell. in_photo lists people seen in imported photos separately from on_screen entries (screen recordings, imported screenshots and other non-photo entries). mentioned, on_screen and scheduled alone do not establish attendance. pass an activity reference to get_activity_sources. in a filtered result, use activity_reference when present. use kind, person, place or activity to find matching journal entries, then pass their references to fetch. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
         input_schema: list_activities_input_schema,
         requires: FACETS,
         audit_name: solstone_core_mcp_audit::ToolName::ListActivities,
@@ -819,12 +819,23 @@ fn with_batch_references(schema: &mut Value) {
 }
 
 fn entity_input_schema(_context: &SchemaContext<'_>) -> Value {
+    let reference = json!({
+        "type": "string",
+        "minLength": 1,
+        "maxLength": MAX_OPAQUE_REFERENCE_BYTES,
+    });
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["reference"],
         "properties": {
-            "reference": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
+            "reference": reference,
+            "references": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": crate::tools::MAX_BATCH_REFERENCES,
+                "items": reference,
+                "description": "read up to 12 entities in order, each with its own result or error.",
+            },
         }
     })
 }
@@ -914,7 +925,7 @@ fn week_input_schema(_context: &SchemaContext<'_>) -> Value {
                 "type": "array",
                 "maxItems": crate::tools::week::SUMMARY_KINDS.len(),
                 "items": {"type": "string", "enum": crate::tools::week::SUMMARY_KINDS.iter().map(category_token).collect::<Vec<_>>()},
-                "description": "kinds to summarize inside each day, for one week or across a date range. photos lists up to 50 photos per day in chronological order with time when known, time_source when available, and description. entities gives a count and up to 12 names of people listed as present or heard in readable activities.",
+                "description": "kinds to summarize inside each day, for one week or across a date range. photos lists up to 50 photos per day in chronological order with time when known, time_source when available, and description. entities gives a count and up to 50 non-owner people per day, plus top-level people and co_occurrence summaries across the full range on the first page.",
             },
             "week": {
                 "type": "string",
@@ -1436,6 +1447,29 @@ mod tests {
                 "facet": "x".repeat(MAX_FACET_BYTES + 1)
             })))
             .is_err()
+        );
+        let entity_schema = entity_input_schema(&context);
+        assert_eq!(entity_schema["additionalProperties"], false);
+        assert!(entity_schema.get("required").is_none());
+        assert_eq!(
+            entity_schema["properties"]["reference"]["maxLength"],
+            MAX_OPAQUE_REFERENCE_BYTES
+        );
+        assert_eq!(
+            entity_schema["properties"]["references"]["maxItems"],
+            crate::tools::MAX_BATCH_REFERENCES
+        );
+        assert_eq!(
+            explain_arguments(
+                "get_entity",
+                &entity_schema,
+                Some(&json!({"reference": "a", "references": ["b"]}))
+            ),
+            "get_entity takes either `reference` or `references`."
+        );
+        assert_eq!(
+            explain_arguments("get_entity", &entity_schema, Some(&json!({}))),
+            "get_entity takes either `reference` or `references`."
         );
     }
 }

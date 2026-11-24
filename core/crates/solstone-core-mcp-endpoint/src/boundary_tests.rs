@@ -5590,11 +5590,9 @@ fn list_pagination_walks_and_limits_over_100_items() {
     }
 
     let mut expected_entities = Vec::new();
-    for f in 0..5 {
-        let f_id = format!("00000000-0000-4000-8000-{f:012}");
-        for i in (0..105).filter(|i| i % 5 == f) {
-            expected_entities.push((f_id.clone(), format!("entity-id-{:03}", i)));
-        }
+    for i in 0..105 {
+        let f_id = format!("00000000-0000-4000-8000-{:012}", i % 5);
+        expected_entities.push((f_id, format!("entity-id-{:03}", i)));
     }
     assert_eq!(expected_entities.len(), 105);
 
@@ -5813,8 +5811,10 @@ fn facet_and_entity_ordering_and_scoping() {
     assert_eq!(f_det[0]["description"], "Desc A");
     assert_eq!(f_det[1]["description"], "Desc B");
 
+    // Unfiltered list_entities collapses entity_shared across both facets into one row.
     let ent_page_lim3 = probe(&journal, "list_entities", json!({"limit": 3})).unwrap();
-    assert_eq!(ent_page_lim3["entities"].as_array().unwrap().len(), 3);
+    assert_eq!(ent_page_lim3["entities"].as_array().unwrap().len(), 2);
+    assert_eq!(ent_page_lim3["entities"][0]["type"], "Person");
     assert_eq!(
         resolve_entity_reference(
             journal.path(),
@@ -5824,6 +5824,15 @@ fn facet_and_entity_ordering_and_scoping() {
             "10000000-0000-4000-8000-000000000001".to_owned(),
             "entity_other".to_owned()
         )
+    );
+    assert_eq!(
+        ent_page_lim3["entities"][0]["facets"],
+        json!(["10000000-0000-4000-8000-000000000001"])
+    );
+    assert!(
+        ent_page_lim3["entities"][0]
+            .get("facet_references")
+            .is_none()
     );
     assert_eq!(
         resolve_entity_reference(
@@ -5836,9 +5845,19 @@ fn facet_and_entity_ordering_and_scoping() {
         )
     );
     assert_eq!(
+        ent_page_lim3["entities"][1]["facets"],
+        json!([
+            "10000000-0000-4000-8000-000000000001",
+            "10000000-0000-4000-8000-000000000002"
+        ])
+    );
+    assert_eq!(
         resolve_entity_reference(
             journal.path(),
-            ent_page_lim3["entities"][2]["reference"].as_str().unwrap()
+            ent_page_lim3["entities"][1]["facet_references"]
+                ["10000000-0000-4000-8000-000000000002"]
+                .as_str()
+                .unwrap()
         ),
         (
             "10000000-0000-4000-8000-000000000002".to_owned(),
@@ -5851,22 +5870,14 @@ fn facet_and_entity_ordering_and_scoping() {
     assert!(!page_lim3_str.contains("Blocked Entity"));
     assert!(!page_lim3_str.contains("Detached Entity"));
 
-    let ent_page = probe(&journal, "list_entities", json!({"limit": 2})).unwrap();
-    assert_eq!(ent_page["entities"].as_array().unwrap().len(), 2);
+    let ent_page = probe(&journal, "list_entities", json!({"limit": 1})).unwrap();
+    assert_eq!(ent_page["entities"].as_array().unwrap().len(), 1);
     let ref0 = ent_page["entities"][0]["reference"].as_str().unwrap();
-    let ref1 = ent_page["entities"][1]["reference"].as_str().unwrap();
     assert_eq!(
         resolve_entity_reference(journal.path(), ref0),
         (
             "10000000-0000-4000-8000-000000000001".to_owned(),
             "entity_other".to_owned()
-        )
-    );
-    assert_eq!(
-        resolve_entity_reference(journal.path(), ref1),
-        (
-            "10000000-0000-4000-8000-000000000001".to_owned(),
-            "entity_shared".to_owned()
         )
     );
 
@@ -5878,11 +5889,11 @@ fn facet_and_entity_ordering_and_scoping() {
     )
     .unwrap();
     assert_eq!(ent_page2["entities"].as_array().unwrap().len(), 1);
-    let ref2 = ent_page2["entities"][0]["reference"].as_str().unwrap();
+    let ref1 = ent_page2["entities"][0]["reference"].as_str().unwrap();
     assert_eq!(
-        resolve_entity_reference(journal.path(), ref2),
+        resolve_entity_reference(journal.path(), ref1),
         (
-            "10000000-0000-4000-8000-000000000002".to_owned(),
+            "10000000-0000-4000-8000-000000000001".to_owned(),
             "entity_shared".to_owned()
         )
     );
@@ -5999,11 +6010,9 @@ fn entity_context_and_relationship_error_handling() {
         .unwrap();
 
     let listed = probe(&journal, "list_entities", json!({})).unwrap();
-    assert_eq!(listed["entities"].as_array().unwrap().len(), 2);
-    let r0 = listed["entities"][0]["reference"].as_str().unwrap();
-    let r1 = listed["entities"][1]["reference"].as_str().unwrap();
-    // The same person in two facets: each row names the facet it is from,
-    // as list_facets identifies it.
+    assert_eq!(listed["entities"].as_array().unwrap().len(), 1);
+    // The same person in two facets collapses into one row with both facet
+    // ids in `facets` and each facet's reference in `facet_references`.
     let facets = probe(&journal, "list_facets", json!({})).unwrap();
     let facet_id = |title: &str| {
         facets["facets"]
@@ -6012,10 +6021,21 @@ fn entity_context_and_relationship_error_handling() {
             .iter()
             .find(|facet| facet["name"] == title)
             .unwrap()["id"]
-            .clone()
+            .as_str()
+            .unwrap()
+            .to_owned()
     };
-    assert_eq!(listed["entities"][0]["facet"], facet_id("Facet 1"));
-    assert_eq!(listed["entities"][1]["facet"], facet_id("Facet 2"));
+    let f1_id = facet_id("Facet 1");
+    let f2_id = facet_id("Facet 2");
+    assert_eq!(listed["entities"][0]["facet"], f1_id);
+    assert_eq!(listed["entities"][0]["facets"], json!([f1_id, f2_id]));
+    let r0 = listed["entities"][0]["facet_references"][&f1_id]
+        .as_str()
+        .unwrap();
+    let r1 = listed["entities"][0]["facet_references"][&f2_id]
+        .as_str()
+        .unwrap();
+    assert_eq!(listed["entities"][0]["reference"].as_str().unwrap(), r0);
 
     let g0 = probe(&journal, "get_entity", json!({"reference": r0})).unwrap();
     let g1 = probe(&journal, "get_entity", json!({"reference": r1})).unwrap();
@@ -21572,5 +21592,404 @@ fn places_precision_tiers_roster_week_cap_dedup_hidden_suppression_and_tools_lis
             );
         }
         prior_tools = Some(tools);
+    }
+}
+
+#[test]
+fn people_tools_batched_get_entity_list_entities_dedup_photo_facet_and_in_photo() {
+    use solstone_core_entity::faceprints as fp;
+
+    let journal = tempfile::Builder::new()
+        .prefix("people-tools-boundary-")
+        .tempdir_in(crate::test_scratch())
+        .unwrap();
+    let root = journal.path();
+    setup_facets(root);
+
+    fs::create_dir_all(root.join("config")).unwrap();
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"faces":{"enabled":true}}"#,
+    )
+    .unwrap();
+
+    // Shared entity in both FACET_A ("alpha") and FACET_B ("beta"), plus a single-facet Work
+    // entity and a single-facet Person entity without a photo.
+    write_entity_fixture(
+        root,
+        "alpha",
+        "shared_person",
+        "shared_person",
+        "Robert Devereux",
+        Some("Person"),
+        Some("Seen in alpha"),
+        None,
+    );
+    write_entity_fixture(
+        root,
+        "beta",
+        "shared_person",
+        "shared_person",
+        "Robert Devereux",
+        Some("Person"),
+        Some("Seen in beta"),
+        None,
+    );
+    write_entity_fixture(
+        root,
+        "alpha",
+        "plain_person",
+        "plain_person",
+        "John Heminges",
+        Some("Person"),
+        Some("Colleague"),
+        None,
+    );
+    write_entity_fixture(
+        root,
+        "alpha",
+        "play_work",
+        "play_work",
+        "Hamlet",
+        Some("Work"),
+        Some("Tragedy"),
+        None,
+    );
+
+    // Anchor a confirmed faceprint for `shared_person` strictly inside `beta` (FACET_B > FACET_A).
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new(&mut jpeg)
+        .encode_image(&image::RgbImage::from_pixel(
+            200,
+            200,
+            image::Rgb([30, 60, 90]),
+        ))
+        .unwrap();
+    let encoder = fp::Encoder {
+        id: "synthetic".into(),
+        sha256: "0".repeat(64),
+        width: 128,
+    };
+    let faces: Vec<_> = (0..5)
+        .map(|i| {
+            let mut embedding = vec![0.; 128];
+            embedding[0] = 0.8;
+            embedding[i + 1] = 0.6;
+            let key = fp::FaceKey {
+                day: DAY.into(),
+                stream: STREAM.into(),
+                stream_layout: "named".into(),
+                segment_key: format!("{i:06}_300"),
+                source_name: "screen.webm".into(),
+                frame_id: i as u64,
+                face_idx: 0,
+            };
+            let crop = format!(
+                "{}-crops/{i}-0-test.jpg",
+                fp::accumulation::source_prefix("screen.webm")
+            );
+            let path = fp::crop_path(root, &key, &crop).unwrap();
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, &jpeg).unwrap();
+            fp::Face {
+                embedding,
+                metadata: fp::Metadata {
+                    schema_version: 1,
+                    key,
+                    activities: BTreeSet::new(),
+                    source: fp::Source::Anchored,
+                    label_text: None,
+                    quality: i as f32 / 10.,
+                    det_score: 1.,
+                    face_w: 100.,
+                    category: "meeting".into(),
+                    crop: Some(crop),
+                    added_at: "now".into(),
+                    rejected: false,
+                },
+            }
+        })
+        .collect();
+    let coordinate = json!(["beta", DAY, "beta-photo"]).to_string();
+    fp::reconcile(
+        root,
+        &coordinate,
+        &encoder,
+        &std::collections::BTreeMap::from([("shared_person".into(), faces.clone())]),
+    )
+    .unwrap();
+    fp::choose(root, "shared_person", &faces[4].metadata.key).unwrap();
+
+    // Real photo, imported screenshot, and decoy desk capture on DAY.
+    fs::create_dir_all(root.join(format!("chronicle/{DAY}/import.image/120000_0"))).unwrap();
+    fs::write(
+        root.join(format!(
+            "chronicle/{DAY}/import.image/120000_0/image_transcript.md"
+        )),
+        "Courtyard photograph",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join(format!("chronicle/{DAY}/import.image/130000_0"))).unwrap();
+    fs::write(
+        root.join(format!(
+            "chronicle/{DAY}/import.image/130000_0/screenshot_transcript.md"
+        )),
+        "Playbill scan",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("facets/alpha/activities")).unwrap();
+    let acts_jsonl = [
+        json!({
+            "id": "import_photo_01",
+            "title": "Accession Day Portrait",
+            "stream": "import.image",
+            "segments": ["120000_0"],
+            "created_at": 100,
+            "participation": [{"name": "Queen Elizabeth", "role": "visible"}]
+        }),
+        json!({
+            "id": "photo_imported_shot",
+            "title": "Playbill Screenshot",
+            "stream": "import.image",
+            "segments": ["130000_0"],
+            "created_at": 200,
+            "participation": [{"name": "Shot Name", "role": "visible"}]
+        }),
+        json!({
+            "id": "photo_desk_decoy",
+            "title": "Desk Capture",
+            "stream": "desk",
+            "segments": ["120000_0"],
+            "created_at": 300,
+            "participation": [{"name": "Desk Name", "role": "visible"}]
+        }),
+    ]
+    .into_iter()
+    .map(|v| v.to_string())
+    .collect::<Vec<_>>()
+    .join("\n")
+        + "\n";
+    fs::write(
+        root.join(format!("facets/alpha/activities/{DAY}.jsonl")),
+        acts_jsonl,
+    )
+    .unwrap();
+
+    let grant = |cats: &[&str], scope: ReadScope| {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: cats.iter().map(|c| (*c).to_owned()).collect(),
+                    scope,
+                },
+            )
+            .unwrap();
+    };
+
+    grant(
+        &["entities", "profile_pics", "facets", "transcripts"],
+        ReadScope::WholeJournal,
+    );
+
+    // 1. Unfiltered list_entities deduplicates shared_person, emits `type`, prefers photo-bearing
+    // FACET_B for primary `facet`/`reference`, and provides both refs in `facet_references`.
+    let listed = probe(&journal, "list_entities", json!({})).unwrap();
+    let rows = listed["entities"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    let play = rows.iter().find(|r| r["name"] == "Hamlet").unwrap();
+    assert_eq!(play["type"], "Work");
+    assert_eq!(play["facets"], json!([FACET_A]));
+    assert!(play.get("facet_references").is_none());
+
+    let plain = rows.iter().find(|r| r["name"] == "John Heminges").unwrap();
+    assert_eq!(plain["type"], "Person");
+    assert_eq!(plain["has_photo"], false);
+    let plain_ref = plain["reference"].as_str().unwrap().to_owned();
+
+    let shared = rows
+        .iter()
+        .find(|r| r["name"] == "Robert Devereux")
+        .unwrap();
+    assert_eq!(shared["type"], "Person");
+    assert_eq!(shared["has_photo"], true);
+    assert_eq!(shared["facet"], FACET_B);
+    assert_eq!(shared["facets"], json!([FACET_A, FACET_B]));
+    let shared_photo_ref = shared["reference"].as_str().unwrap().to_owned();
+    let shared_alpha_ref = shared["facet_references"][FACET_A]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(shared["facet_references"][FACET_B], shared_photo_ref);
+
+    // Explicit single-facet filter preserves facet-scoped row + adds `type`.
+    let alpha_only = probe(&journal, "list_entities", json!({"facet": FACET_A})).unwrap();
+    let shared_in_alpha = alpha_only["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "Robert Devereux")
+        .unwrap();
+    assert_eq!(shared_in_alpha["type"], "Person");
+    assert_eq!(shared_in_alpha["facet"], FACET_A);
+    assert_eq!(shared_in_alpha["has_photo"], false);
+    assert!(shared_in_alpha.get("facets").is_none());
+    assert!(shared_in_alpha.get("facet_references").is_none());
+
+    // 2. Batched get_entity(references=[...]) preserves input order, aligns image_content_index
+    // with content image blocks, returns item-level errors, and enforces facet portrait isolation.
+    let batch_out = dispatch_output(
+        &journal,
+        "get_entity",
+        json!({"references": [&plain_ref, &shared_photo_ref, "not-a-valid-ref", &shared_alpha_ref]}),
+    );
+    let batch_items = batch_out.value["items"].as_array().unwrap();
+    assert_eq!(batch_items.len(), 4);
+    assert_eq!(batch_items[0]["index"], 0);
+    assert_eq!(batch_items[0]["result"]["name"], "John Heminges");
+    assert!(batch_items[0].get("image_content_index").is_none());
+
+    assert_eq!(batch_items[1]["index"], 1);
+    assert_eq!(batch_items[1]["result"]["name"], "Robert Devereux");
+    assert_eq!(batch_items[1]["result"]["description"], "Seen in beta");
+    assert_eq!(batch_items[1]["result"]["photo"]["state"], "confirmed");
+    assert_eq!(batch_items[1]["image_content_index"], 1);
+    assert_eq!(batch_out.images.len(), 1);
+    let rendered =
+        crate::jsonrpc::image_tool_result(batch_out.value.clone(), None, &batch_out.images);
+    assert_eq!(rendered["content"][0]["type"], "text");
+    assert_eq!(rendered["content"][1]["type"], "image");
+
+    assert_eq!(batch_items[2]["index"], 2);
+    assert!(batch_items[2].get("result").is_none());
+    assert_eq!(batch_items[2]["error"]["code"], "not_found");
+
+    assert_eq!(batch_items[3]["index"], 3);
+    assert_eq!(batch_items[3]["result"]["description"], "Seen in alpha");
+    assert!(batch_items[3].get("image_content_index").is_none());
+
+    // Invalid batch shapes are rejected.
+    assert_eq!(
+        probe(&journal, "get_entity", json!({"references": []})),
+        Err(McpProbeError::InvalidInput)
+    );
+    assert_eq!(
+        probe(
+            &journal,
+            "get_entity",
+            json!({"references": vec![&plain_ref; 13]})
+        ),
+        Err(McpProbeError::InvalidInput)
+    );
+    assert_eq!(
+        probe(
+            &journal,
+            "get_entity",
+            json!({"reference": &plain_ref, "references": [&plain_ref]})
+        ),
+        Err(McpProbeError::InvalidInput)
+    );
+
+    // `no_profile_pics` withholds all portraits in batched get_entity and clears has_photo.
+    grant(
+        &["entities", "no_profile_pics", "facets"],
+        ReadScope::WholeJournal,
+    );
+    let no_pic_list = probe(&journal, "list_entities", json!({})).unwrap();
+    let shared_nopic = no_pic_list["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "Robert Devereux")
+        .unwrap();
+    assert_eq!(shared_nopic["has_photo"], false);
+    let no_pic_batch = dispatch_output(
+        &journal,
+        "get_entity",
+        json!({"references": [shared_nopic["facet_references"][FACET_B].as_str().unwrap()]}),
+    );
+    assert!(no_pic_batch.images.is_empty());
+    assert!(
+        no_pic_batch.value["items"][0]["result"]
+            .get("photo")
+            .is_none()
+    );
+    assert!(
+        no_pic_batch.value["items"][0]
+            .get("image_content_index")
+            .is_none()
+    );
+
+    // Subset-facet scope: granting only FACET_A hides FACET_B and its portrait in list_entities & batch.
+    grant(
+        &["entities", "profile_pics", "facets"],
+        ReadScope::Facets {
+            ids: vec![FACET_A.to_owned()],
+        },
+    );
+    let scoped_list = probe(&journal, "list_entities", json!({})).unwrap();
+    assert!(!scoped_list.to_string().contains(FACET_B));
+    let scoped_shared = scoped_list["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "Robert Devereux")
+        .unwrap();
+    assert_eq!(scoped_shared["facets"], json!([FACET_A]));
+    assert!(scoped_shared.get("facet_references").is_none());
+    assert_eq!(scoped_shared["has_photo"], false);
+    let scoped_batch = dispatch_output(
+        &journal,
+        "get_entity",
+        json!({"references": [scoped_shared["reference"].as_str().unwrap()]}),
+    );
+    assert!(scoped_batch.images.is_empty());
+    assert!(
+        scoped_batch.value["items"][0]
+            .get("image_content_index")
+            .is_none()
+    );
+
+    // 3. list_activities splits real photo into `in_photo` while keeping imported screenshots
+    // and non-photo `photo_*` decoys in `on_screen`.
+    let acts = probe(&journal, "list_activities", json!({"day": DAY})).unwrap();
+    let arr = acts["activities"].as_array().unwrap();
+    let real_photo = arr
+        .iter()
+        .find(|a| a["title"] == "Accession Day Portrait")
+        .unwrap();
+    assert_eq!(real_photo["in_photo"], json!(["Queen Elizabeth"]));
+    assert_eq!(real_photo["on_screen"], json!([]));
+
+    let imported_shot = arr
+        .iter()
+        .find(|a| a["title"] == "Playbill Screenshot")
+        .unwrap();
+    assert_eq!(imported_shot["in_photo"], json!([]));
+    assert_eq!(imported_shot["on_screen"], json!(["Shot Name"]));
+
+    let desk_decoy = arr.iter().find(|a| a["title"] == "Desk Capture").unwrap();
+    assert_eq!(desk_decoy["in_photo"], json!([]));
+    assert_eq!(desk_decoy["on_screen"], json!(["Desk Name"]));
+
+    // 4. tools/list invariance: 13 tools, unchanged annotations, 0 root combinators.
+    assert_eq!(crate::registry::TOOLS.len(), 13);
+    grant(
+        &["transcripts", "entities", "profile_pics", "facets"],
+        ReadScope::WholeJournal,
+    );
+    let decision = evaluate_connection_read(root, CONNECTION);
+    let tools = crate::registry::advertised_tools_list(root, &decision);
+    for tool in tools["tools"].as_array().unwrap() {
+        let schema = tool["inputSchema"].as_object().unwrap();
+        for combinator in ["oneOf", "anyOf", "allOf"] {
+            assert!(
+                !schema.contains_key(combinator),
+                "tool {} has top-level {combinator}",
+                tool["name"]
+            );
+        }
+        assert!(tool["annotations"]["title"].is_string());
+        assert_eq!(tool["annotations"]["openWorldHint"], false);
     }
 }

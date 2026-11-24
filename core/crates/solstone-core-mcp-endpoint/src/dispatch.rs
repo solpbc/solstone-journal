@@ -814,6 +814,7 @@ fn validate(
         crate::jsonrpc::ToolName::Fetch
             | crate::jsonrpc::ToolName::GetTranscript
             | crate::jsonrpc::ToolName::GetActivitySources
+            | crate::jsonrpc::ToolName::GetEntity
     ) && let Some(object) = arguments.and_then(Value::as_object)
         && let Some(references) = object.get("references")
     {
@@ -1289,6 +1290,7 @@ fn read_batch(
                     cursor: None,
                 })
             }
+            ToolName::GetEntity => ValidatedTool::GetEntity(ValidatedGetEntity { reference }),
             _ => unreachable!("only reference readers are batchable"),
         };
         if let Some((message, _)) = scope_refusal(
@@ -2904,6 +2906,7 @@ fn matches_find_filters(
                     .participants
                     .iter()
                     .chain(&people.heard)
+                    .chain(&people.in_photo)
                     .chain(&people.mentioned)
                     .chain(&people.on_screen)
                     .any(|person| fold_literal(person).contains(&name))
@@ -4025,62 +4028,172 @@ fn list_entities(
         }
     }
 
-    all_entities.sort_by(|(f_a, _, item_a), (f_b, _, item_b)| {
-        f_a.cmp(f_b)
-            .then_with(|| item_a.entity_id.cmp(&item_b.entity_id))
-    });
-
-    if let Some(cursor) = cursor.as_ref() {
-        all_entities.retain(|(facet_id, _, item)| {
-            (facet_id.as_str(), item.entity_id.as_str())
-                > (
-                    cursor.last_facet_id.as_str(),
-                    cursor.last_entity_id.as_str(),
-                )
-        });
-    }
-
-    let has_more = all_entities.len() > request.limit;
-    let page = all_entities
-        .into_iter()
-        .take(request.limit)
-        .collect::<Vec<_>>();
-
-    let last_anchor = page
-        .last()
-        .map(|(facet_id, _, item)| (facet_id.clone(), item.entity_id.clone()));
+    let photos_allowed = !all_entities.is_empty()
+        && snapshot.categories.contains(&AdmittedCategory::ProfilePics)
+        && solstone_core_entities::photos::enabled(journal_root)
+            .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+    let entity_type = |identity: &Value| {
+        identity
+            .get("type")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned)
+    };
 
     let mut targets = Vec::new();
     let mut entities = Vec::new();
-    for (facet_id, facet_dir, item) in page {
-        let reference = entity_reference(
-            principal,
-            snapshot,
-            folders.get(&facet_id).map(String::as_str),
-            EntityReference {
-                facet_id: facet_id.clone(),
-                entity_id: item.entity_id.clone(),
-            },
-        )?;
-        targets.push(format!("facet:{facet_id}/entity:{}", item.entity_id));
-        // An entity in two facets is listed once for each; the facet tells the rows apart.
-        let mut row = json!({
-            "name": entity_name(&item.identity),
-            "facet": facet_id,
-            "reference": reference,
-            "has_photo": snapshot.categories.contains(&AdmittedCategory::ProfilePics)
-                && solstone_core_entities::photos::has_photo_in_facet(journal_root, &item.entity_dir, &facet_dir)
-                    .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?,
+    let (has_more, last_anchor) = if request.facet_id.is_some() {
+        all_entities.sort_by(|(f_a, _, item_a), (f_b, _, item_b)| {
+            f_a.cmp(f_b)
+                .then_with(|| item_a.entity_id.cmp(&item_b.entity_id))
         });
-        crate::journal_links::attach(
-            journal_root,
-            &mut row,
-            solstone_core_journal_link::Place::Person {
-                id: item.entity_id.clone(),
-            },
-        );
-        entities.push(row);
-    }
+
+        if let Some(cursor) = cursor.as_ref() {
+            all_entities.retain(|(facet_id, _, item)| {
+                (facet_id.as_str(), item.entity_id.as_str())
+                    > (
+                        cursor.last_facet_id.as_str(),
+                        cursor.last_entity_id.as_str(),
+                    )
+            });
+        }
+
+        let has_more = all_entities.len() > request.limit;
+        let page = all_entities
+            .into_iter()
+            .take(request.limit)
+            .collect::<Vec<_>>();
+
+        let last_anchor = page
+            .last()
+            .map(|(facet_id, _, item)| (facet_id.clone(), item.entity_id.clone()));
+
+        for (facet_id, facet_dir, item) in page {
+            let reference = entity_reference(
+                principal,
+                snapshot,
+                folders.get(&facet_id).map(String::as_str),
+                EntityReference {
+                    facet_id: facet_id.clone(),
+                    entity_id: item.entity_id.clone(),
+                },
+            )?;
+            targets.push(format!("facet:{facet_id}/entity:{}", item.entity_id));
+            let mut row = json!({
+                "name": entity_name(&item.identity),
+                "facet": facet_id,
+                "reference": reference,
+                "has_photo": photos_allowed
+                    && solstone_core_entities::photos::has_photo_in_facet(
+                        journal_root,
+                        &item.entity_dir,
+                        &facet_dir,
+                    )
+                    .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?,
+            });
+            if let Some(kind) = entity_type(&item.identity) {
+                row["type"] = json!(kind);
+            }
+            crate::journal_links::attach(
+                journal_root,
+                &mut row,
+                solstone_core_journal_link::Place::Person {
+                    id: item.entity_id.clone(),
+                },
+            );
+            entities.push(row);
+        }
+        (has_more, last_anchor)
+    } else {
+        // Without a facet filter, collapse multi-facet entities into one row per
+        // global entity id across this connection's allowed facets, keeping a
+        // primary reference (preferring a facet that carries the entity's photo)
+        // and per-facet references when an entity appears in more than one facet.
+        type FacetScopedEntry = (String, String, solstone_core_facets::ScopedFacetEntity);
+        let mut grouped: BTreeMap<String, Vec<FacetScopedEntry>> = BTreeMap::new();
+        for (facet_id, facet_dir, item) in all_entities {
+            grouped
+                .entry(item.entity_id.clone())
+                .or_default()
+                .push((facet_id, facet_dir, item));
+        }
+
+        let mut deduped: Vec<(String, Vec<FacetScopedEntry>)> = grouped
+            .into_iter()
+            .filter(|(entity_id, _)| {
+                cursor
+                    .as_ref()
+                    .is_none_or(|c| entity_id.as_str() > c.last_entity_id.as_str())
+            })
+            .collect();
+
+        let has_more = deduped.len() > request.limit;
+        deduped.truncate(request.limit);
+
+        let last_anchor = deduped
+            .last()
+            .map(|(entity_id, _)| (String::new(), entity_id.clone()));
+
+        for (entity_id, mut entries) in deduped {
+            entries.sort_by(|(f_a, _, _), (f_b, _, _)| f_a.cmp(f_b));
+            let mut per_facet = Vec::with_capacity(entries.len());
+            let mut primary_idx = 0usize;
+            let mut found_photo = false;
+            for (idx, (facet_id, facet_dir, item)) in entries.iter().enumerate() {
+                let has_facet_photo = photos_allowed
+                    && solstone_core_entities::photos::has_photo_in_facet(
+                        journal_root,
+                        &item.entity_dir,
+                        facet_dir,
+                    )
+                    .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+                if has_facet_photo && !found_photo {
+                    primary_idx = idx;
+                    found_photo = true;
+                }
+                let reference = entity_reference(
+                    principal,
+                    snapshot,
+                    folders.get(facet_id).map(String::as_str),
+                    EntityReference {
+                        facet_id: facet_id.clone(),
+                        entity_id: entity_id.clone(),
+                    },
+                )?;
+                targets.push(format!("facet:{facet_id}/entity:{entity_id}"));
+                per_facet.push((facet_id.clone(), reference));
+            }
+
+            let primary_item = &entries[primary_idx].2;
+            let (primary_facet, primary_ref) = &per_facet[primary_idx];
+            let facet_ids: Vec<String> = per_facet.iter().map(|(fid, _)| fid.clone()).collect();
+            let mut row = json!({
+                "name": entity_name(&primary_item.identity),
+                "facet": primary_facet,
+                "facets": facet_ids,
+                "reference": primary_ref,
+                "has_photo": found_photo,
+            });
+            if let Some(kind) = entity_type(&primary_item.identity) {
+                row["type"] = json!(kind);
+            }
+            if per_facet.len() > 1 {
+                let mut ref_map = Map::new();
+                for (fid, reference) in per_facet {
+                    ref_map.insert(fid, json!(reference));
+                }
+                row["facet_references"] = Value::Object(ref_map);
+            }
+            crate::journal_links::attach(
+                journal_root,
+                &mut row,
+                solstone_core_journal_link::Place::Person { id: entity_id },
+            );
+            entities.push(row);
+        }
+        (has_more, last_anchor)
+    };
 
     let next_cursor = if has_more {
         if let Some((last_facet_id, last_entity_id)) = last_anchor {
