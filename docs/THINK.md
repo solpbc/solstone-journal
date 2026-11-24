@@ -276,10 +276,22 @@ budget does not count as a try. Unknown entry kinds and fields are preserved for
 newer versions.
 
 The supervisor checks due hints every 30 seconds without relying on Callosum.
-Daily thinking first runs a forced drain with its own ten-minute budget, then
-continues its talents even if the wait expires, recording pending paths. Its later
-indexer phase drains hints too. The enabled `search-catch-all` schedule runs a
-light `indexer --rescan` daily with a two-hour cap, separately from daily thinking.
+The same check queues a full pass (`@scan-full`) when the index file is absent
+and the journal has something to index, so a missing index is rebuilt without a
+save or a command. Daily thinking first runs a forced drain with its own
+ten-minute budget, then continues its talents even if the wait expires, recording
+pending paths. Its later indexer phase drains hints too. The enabled
+`search-catch-all` schedule runs a light `indexer --rescan` daily with a two-hour
+cap, separately from daily thinking.
+
+A light scan removes the search and connection rows of a day with no file left
+on disk, as a full pass does, unless so many days went at once that a disk going
+away is the likelier cause: every indexed day gone, or at least two days and a
+quarter of the days indexed. A guarded scan keeps those rows (index status lists
+them as `retained`) and records `retained_prune_guarded`, with `gone_days` and
+`indexed_days`, on its receipt (`last_scan` in `indexer status --json`). The next
+light scan that finds fewer days gone prunes and clears it; a scan that stops keeps
+the last finding; `indexer --rescan-full` prunes regardless.
 Mobile hosts supply the same drain capability in process, after thinking and from
 their scheduled loop. Health reports queued work and how long the oldest has
 waited, failed removals and tokens, and the age and repair counts of the last
@@ -304,10 +316,11 @@ that indexes the newer note.
 The listing is derived from stored notes alone, so a rebuild yields the same
 listing, and nothing outside the index writer writes it. Removing a segment
 drops its notes and falls each affected event back to its latest surviving note.
-Timed events are listed in the journal's zone as it is when they are indexed: if
-the owner changes the journal's time zone, timed events keep their old days until
-the search index is rebuilt. The journal's usual fallback zone applies when none
-is configured. While the settings file cannot be read, existing listing rows stay
+Timed events are listed in the journal's zone as it is when they are indexed.
+The zone is part of the mark the listing was written under, so when it changes
+the next scan lists every calendar file again; a zone change made in Settings
+queues a full pass so that happens at the next drain. The journal's usual
+fallback zone applies when none is configured. While the settings file cannot be read, existing listing rows stay
 as they are, the scan reports the failure once, and a note that arrives meanwhile
 is listed once the file reads again.
 
