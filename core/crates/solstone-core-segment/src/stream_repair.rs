@@ -2168,6 +2168,23 @@ mod backfill_tests {
         assert_eq!(segment_key("invalid"), None);
         assert_eq!(segment_key("workstation"), None);
     }
+}
+
+#[cfg(test)]
+#[allow(clippy::disallowed_methods, clippy::disallowed_types)]
+mod tail_heal_tests {
+    use std::fs;
+    use std::time::Duration;
+
+    use solstone_core_journal_io::{LockOptions, hold_lock};
+
+    use crate::test_support::TempDir;
+
+    use super::*;
+
+    fn record_path(root: &Path, name: &str) -> PathBuf {
+        root.join("streams").join(format!("{name}.json"))
+    }
 
     fn place_marker(root: &Path, stream: &str, segment: &str, seq: u64) -> PathBuf {
         let dir = root.join("chronicle/20260101").join(stream).join(segment);
