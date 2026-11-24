@@ -340,6 +340,57 @@ fn merge_folder(name: &str) -> bool {
     name.starts_with(MERGE_PREFIX) && !name.contains(['/', '\\']) && name.len() > MERGE_PREFIX.len()
 }
 
+/// Every facet merge folder left under `facets/`, in name order. A merge
+/// removes its own as it finishes, so one here is from a merge that stopped.
+pub fn merge_leftovers(journal: &Path) -> Vec<String> {
+    let mut leftovers: Vec<String> = fs::read_dir(journal.join("facets"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
+        .filter(|name| merge_folder(name))
+        .collect();
+    leftovers.sort();
+    leftovers
+}
+
+/// Sort a facet merge's leftover folders into copies a live facet already
+/// holds -- a `.dest`, `.stage` or dry-run `.preview` whose declaration carries
+/// a live facet's id -- and every other leftover, which may hold the only copy
+/// of something (`.source`, `.dropped`, a `.dest` whose facet is no longer
+/// live) and is never to be removed as a copy. The caller holds the facet
+/// trust lock, so no merge is part-way through one of them.
+pub fn sort_merge_leftovers(
+    journal: &Path,
+    leftovers: Vec<String>,
+) -> Result<(Vec<String>, Vec<String>), crate::FacetStoreError> {
+    let mut live = std::collections::BTreeSet::new();
+    for name in crate::list_declared_facet_names(journal)? {
+        if let Some(id) = crate::read_facet_declaration(journal, &name)?.and_then(|snapshot| {
+            snapshot
+                .value()
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| crate::is_well_formed_facet_id(id))
+                .map(str::to_owned)
+        }) {
+            live.insert(id);
+        }
+    }
+    Ok(leftovers.into_iter().partition(|name| {
+        let copy_kind = [".dest", ".stage", ".preview"]
+            .iter()
+            .any(|suffix| name.ends_with(suffix));
+        copy_kind
+            && read_json(&crate::facet_declaration_file(
+                &journal.join("facets").join(name),
+            ))
+            .and_then(|value| value.get("id")?.as_str().map(str::to_owned))
+            .is_some_and(|id| live.contains(&id))
+    }))
+}
+
 /// The trash's kind for what a facet merge dropped, and for a merge's
 /// leftover folders.
 pub struct FacetDrops<'a> {

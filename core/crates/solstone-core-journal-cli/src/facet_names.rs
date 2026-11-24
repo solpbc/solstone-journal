@@ -501,29 +501,15 @@ pub(crate) fn scan_dot_directories(journal: &Path) -> (Vec<String>, Vec<String>)
     (leftovers, hidden)
 }
 
-/// A facet merge's leftover folders: copies a live facet already holds (a
-/// `.dest`, `.stage` or dry-run `.preview` whose declaration carries a live
-/// facet's id), and those that may hold the only copy of something (every
-/// other leftover), which are never to be deleted by hand.
+/// A facet merge's leftover folders: copies a live facet already holds, and
+/// those that may hold the only copy of something, which are never to be
+/// deleted by hand. The sort is the facet store's, shared with its self-heal.
 pub(crate) fn sort_merge_leftovers(
     journal: &Path,
     leftovers: Vec<String>,
 ) -> Result<(Vec<String>, Vec<String>), String> {
-    let live: BTreeSet<String> = live_facets(journal)?.into_values().flatten().collect();
-    let (copies, kept) = leftovers.into_iter().partition(|name| {
-        let copy_kind = [".dest", ".stage", ".preview"]
-            .iter()
-            .any(|suffix| name.ends_with(suffix));
-        copy_kind
-            && fs::read(solstone_core_facets::facet_declaration_file(
-                &journal.join("facets").join(name),
-            ))
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-            .and_then(|value| value.get("id")?.as_str().map(str::to_owned))
-            .is_some_and(|id| live.contains(&id))
-    });
-    Ok((copies, kept))
+    solstone_core_facets::facet_trash::sort_merge_leftovers(journal, leftovers)
+        .map_err(|e| facet_copy::store(&e))
 }
 
 /// Repair a `facets/retired.json` that exists but does not parse. It is moved

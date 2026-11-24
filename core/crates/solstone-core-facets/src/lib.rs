@@ -12,6 +12,7 @@ mod body_facet;
 pub mod cli_copy;
 pub mod entity_trash;
 pub mod facet_trash;
+mod link_heal;
 mod moment_copies;
 mod speculative_facets;
 mod store;
@@ -29,6 +30,7 @@ pub use body_facet::{
     BodyFacetAsk, BodyFacetOfferRead, BodyFacetReadError, apply_body_facet_answer, body_facet_ask,
     body_facet_offer, default_for_unattended,
 };
+pub use link_heal::{FacetLinkHealError, FacetLinkHealReport, self_heal_facet_links};
 pub use moment_copies::{Moment, merge_moment_copies, moment_key};
 pub use solstone_core_entity::facet_links;
 pub use solstone_core_entity::hidden_names;

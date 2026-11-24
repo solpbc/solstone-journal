@@ -116,6 +116,7 @@ pub use hidden_names::{
     queue_facet_detections, queue_linked_facet_detections, unhide_detected_name,
 };
 pub use identity::{FacetEntityLinkSnapshot, read_facet_entity_link};
+pub(crate) use lifecycle::detach_attached_for_hide;
 pub use lifecycle::{
     BulkBlockReport, BulkJournalError, BulkUnblockReport, EntityBlockReport,
     EntityDeleteGuardOutcome, EntityDeleteReport, EntityHistoryReference, EntityUnblockReport,

@@ -627,7 +627,24 @@ fn block_journal_entity_inner(
     hook();
 
     let mut facets_detached = Vec::new();
-    for rel in &planned {
+    for rel in detach_attached_for_hide(journal_root, &planned)? {
+        if !facets_detached.contains(&rel.facet_dir) {
+            facets_detached.push(rel.facet_dir.clone());
+        }
+    }
+    Ok(EntityBlockReport { facets_detached })
+}
+
+/// Detach each still-attached link in `planned` as hiding its entity does,
+/// marked `detached_by: "hide"` so unhiding puts it back. A link already
+/// detached is never touched, its marker or lack of one included. Returns the
+/// links this call detached. The caller holds facet trust.
+pub(crate) fn detach_attached_for_hide<'a>(
+    journal_root: &Path,
+    planned: impl IntoIterator<Item = &'a PlannedFacetRelationship>,
+) -> Result<Vec<&'a PlannedFacetRelationship>, FacetWriteError> {
+    let mut detached = Vec::new();
+    for rel in planned {
         if !rel.is_detached
             && set_facet_entity_link_detached(
                 journal_root,
@@ -636,12 +653,11 @@ fn block_journal_entity_inner(
                 true,
                 Some(HIDE_DETACHED_BY),
             )?
-            && !facets_detached.contains(&rel.facet_dir)
         {
-            facets_detached.push(rel.facet_dir.clone());
+            detached.push(rel);
         }
     }
-    Ok(EntityBlockReport { facets_detached })
+    Ok(detached)
 }
 
 /// Unblock an entity and re-attach relationships marked as detached by hide.

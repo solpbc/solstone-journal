@@ -1246,9 +1246,14 @@ pub struct LinkIssue {
 
 /// Every link folder problem in the journal, facet by facet. Changes nothing.
 pub fn check_journal_links(journal: &Path) -> Result<Vec<LinkIssue>, LinkFolderError> {
+    check_links_in(journal, &journal_facets(journal)?)
+}
+
+/// [`check_journal_links`] for the named facets only.
+fn check_links_in(journal: &Path, facets: &[String]) -> Result<Vec<LinkIssue>, LinkFolderError> {
     let mut issues = Vec::new();
-    for facet in journal_facets(journal)? {
-        let dirs = LinkDirs::for_facet(journal, &facet);
+    for facet in facets {
+        let dirs = LinkDirs::for_facet(journal, facet);
         let (links, unreadable) = dirs.scan()?;
         for dir in unreadable {
             issues.push(LinkIssue {
@@ -1318,17 +1323,39 @@ pub fn repair_journal_links_with_notes(
     journal: &Path,
     render: impl Fn(RepairNote<'_>) -> String,
 ) -> Result<(Vec<LinkIssue>, Vec<LinkIssue>), LinkFolderError> {
+    repair_links_in(journal, None, render)
+}
+
+/// [`repair_journal_links`] for the named facets only: a folder under
+/// `facets/` that isn't one of them is never read or changed.
+pub fn repair_facet_links(
+    journal: &Path,
+    facets: &[String],
+) -> Result<(Vec<LinkIssue>, Vec<LinkIssue>), LinkFolderError> {
+    repair_links_in(journal, Some(facets), |note| note.to_string())
+}
+
+fn repair_links_in(
+    journal: &Path,
+    facets: Option<&[String]>,
+    render: impl Fn(RepairNote<'_>) -> String,
+) -> Result<(Vec<LinkIssue>, Vec<LinkIssue>), LinkFolderError> {
     let _trust =
         crate::trust_lock::hold_facet_trust_lock(journal).map_err(LinkFolderError::TrustLock)?;
+    let facets = match facets {
+        Some(facets) => facets.to_vec(),
+        None => journal_facets(journal)?,
+    };
+    let check = || check_links_in(journal, &facets);
     let mut repaired = Vec::new();
     let mut failed: std::collections::BTreeMap<(String, String, Vec<String>), (String, bool)> =
         std::collections::BTreeMap::new();
     // Each pass can free a folder another entity needs, so repeat until a
     // pass changes nothing; every productive pass removes at least one
     // folder, so the bound is never what ends it.
-    for _ in 0..=check_journal_links(journal)?.len() {
+    for _ in 0..=check()?.len() {
         let mut progress = false;
-        for issue in check_journal_links(journal)? {
+        for issue in check()? {
             let dirs = LinkDirs::for_facet(journal, &issue.facet);
             let attempt: Result<bool, LinkFolderError> = match &issue.kind {
                 LinkIssueKind::Duplicate | LinkIssueKind::Misnamed => dirs
@@ -1389,7 +1416,7 @@ pub fn repair_journal_links_with_notes(
             break;
         }
     }
-    let left = check_journal_links(journal)?
+    let left = check()?
         .into_iter()
         .map(|mut issue| {
             if let Some((note, errored)) = failed.get(&(
