@@ -17,6 +17,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - connected agents with entities permission now see each entity's type when listing people and projects, with shared entries combined into one listing unless filtered to a single facet. they can also read up to 12 entities and their allowed profile pics in one request, and weekly and date-range summaries now list up to 50 other people per day alongside a summary of who came up and who appeared together across the whole range.
 - when connected agents read activities or a week, people seen in imported photos are now listed separately from people who appeared on screen, such as in screen recordings and imported screenshots.
+- connected agents also receive updated instructions for reading people across a date range, counting both participants and people heard in a moment as present, telling people seen in imported photos apart from people who appeared on screen, and loading allowed profile pics in batches of up to 12.
 - the import page on android and iphone development journals no longer has a Plaud row.
 
 ### Fixed
