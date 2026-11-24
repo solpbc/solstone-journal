@@ -6,7 +6,7 @@ journal.cli.journal.archive.day.invalid = { $token_day } muss ein echtes { $toke
 
 journal.cli.journal.archive.day.required = { $day_flag } erfordert { $token_yyyymmdd }
 
-journal.cli.journal.archive.encode.finish.body = Rumpf des Archivabschlusses: { $detail }
+journal.cli.journal.archive.encode.finish.body = Inhalt des Archivabschlusses: { $detail }
 
 journal.cli.journal.archive.encode.finish.finalize = endgültiger Archivabschluss: { $detail }
 
@@ -2742,7 +2742,7 @@ journal.cli.sol.link.serve.unavailable = Die Link-Bereitstellungsnaht ist nicht 
 
 journal.cli.sol.link.serve.usage.error = Verwendung: { $solstone_link_serve_h_label_la }{ $line_break }{ $relay_url_relay_url_direct_rel }{ $line_break }{ $solstone_link_serve }: Fehler: { $error }{ $line_break }
 
-journal.cli.sol.link.serve.warning = Warnung: Entwicklungsnutzung nur auf vertrauenswürdigen Systemen.{ $line_break }diese Brücke gibt lokalen Aufrufern deine volle Journal-{ $api }-Befugnis.{ $line_break }führe sie nur dort aus, wo du aller Software vertraust, die auf diesem System läuft.
+journal.cli.sol.link.serve.warning = Warnung: Entwicklungsnutzung nur auf vertrauenswürdigen Systemen.{ $line_break }diese Brücke gibt lokalen Aufrufern die volle { $api }-Befugnis deines gekoppelten Journals.{ $line_break }führe sie nur dort aus, wo du aller Software vertraust, die auf diesem System läuft.
 
 journal.cli.sol.link.sighting.certainty = { $line_break }{ $line_break }das ist weniger gewiss als eine Direktverbindung.
 
