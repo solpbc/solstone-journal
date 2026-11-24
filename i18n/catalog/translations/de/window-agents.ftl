@@ -2266,9 +2266,9 @@ journal.window.thinking.copy.thinking = Denken
 
 journal.window.thinking.copy.thinking.budget = Denkbudget
 
-journal.window.thinking.copy.thinking.may.improve.results.and.it = Denken kann Ergebnisse verbessern und deine ChatGPT-Nutzung schneller aufbrauchen. die Verarbeitung ist darauf abgestimmt, auch ohne gut zu funktionieren.
+journal.window.thinking.copy.thinking.may.improve.results.and.it = Denken kann Ergebnisse verbessern und deine ChatGPT-Nutzung schneller aufbrauchen. die Verarbeitung ist darauf abgestimmt, auch ohne Denken gut zu funktionieren.
 
-journal.window.thinking.copy.thinking.may.improve.results.and.it.variant2 = Denken kann Ergebnisse verbessern und kostet bei deinem Anbieter mehr. die Verarbeitung ist darauf abgestimmt, auch ohne gut zu funktionieren.
+journal.window.thinking.copy.thinking.may.improve.results.and.it.variant2 = Denken kann Ergebnisse verbessern und kostet bei deinem Anbieter mehr. die Verarbeitung ist darauf abgestimmt, auch ohne Denken gut zu funktionieren.
 
 journal.window.thinking.copy.thinking.room = Denkraum
 
