@@ -16,7 +16,7 @@ use solstone_core_import::{ImportError, ObservingSegment};
 use solstone_core_import_host::audio::{
     AudioImportOutcome, AudioImportRequest, AudioImportSeams, AudioProbeError,
     AudioProcessingState, AudioSliceError, AudioSourceProbe, AudioWaitRecord,
-    import_audio_with_seams, native_processing_wait, read_audio_import_record,
+    import_audio_with_seams, native_processing_wait, preview, read_audio_import_record,
 };
 use tempfile::TempDir;
 use tokio::time::timeout;
@@ -1955,4 +1955,17 @@ async fn a_slow_segment_inside_its_audio_window_is_not_a_stall() {
     let outcome = outcome.unwrap();
     assert!(created(&outcome).processing.stalled_segments.is_empty());
     assert!(created(&outcome).processing.failed_segments.is_empty());
+}
+
+#[test]
+fn an_unreadable_audio_file_is_refused_in_one_plain_sentence() {
+    let temp = TempDir::new().unwrap();
+    let req = request(&temp, "unreadable");
+    fs::write(&req.source_media, b"not an audio file").unwrap();
+    let message = preview(&req).unwrap_err().to_string();
+    assert!(
+        message.starts_with("could not read audio input "),
+        "{message}"
+    );
+    assert!(!message.contains('{'), "no internal dump: {message}");
 }

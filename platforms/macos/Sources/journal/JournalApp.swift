@@ -76,11 +76,8 @@ final class JournalAppModel {
         _ = updateController
         JournalMarkFont.register()
         iconManager.start()
-        Task { @MainActor in
-            await config.applyLaunchAtLoginPreference()
-            windowModel.noteLaunchAtLoginApplied()
-            firstRunModel.loginFailure = config.launchAtLoginFailureSentence
-        }
+        // The login item is applied once setup lands home (`JournalFirstRunModel`),
+        // so a launch that has not finished setup registers nothing.
         windowModel.prepareForWindowOpen()
         startActivation()
     }

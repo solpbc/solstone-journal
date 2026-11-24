@@ -3,6 +3,7 @@
 
 import Foundation
 import JournalMarkKit
+import JournalRuntime
 import os
 import ServiceManagement
 import SolstoneCore
@@ -76,13 +77,10 @@ final class JournalAppConfig {
     init(
         defaults: UserDefaults = UserDefaults(suiteName: suiteName) ?? .standard,
         loginItemManager: any LoginItemManaging = LiveJournalLoginItemManager(),
+        // A login item only from a place the app stays: not a disk image or other
+        // removable volume, a cache, a temporary folder or AppTranslocation.
         loginItemEligibility: @escaping () -> Bool = {
-            let fileManager = FileManager.default
-            return WatchdogAppLocationEligibility.isEligible(
-                enclosingAppURL: Bundle.main.bundleURL,
-                cachesURL: fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0],
-                temporaryDirectoryURL: fileManager.temporaryDirectory
-            )
+            JournalRuntimeEntryLocationClassifier.classify(bundleURL: Bundle.main.bundleURL) == .standard
         },
         loginItemBundleIdentity: @escaping () -> (url: URL, build: String?) = {
             let url = Bundle.main.bundleURL

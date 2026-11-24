@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text when a call reaches a journal that hasn't finished first-run setup.",
+  "context": "Journal command-line text when a call reaches a journal that hasn't finished first-run setup.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1973490778649a3c09d7a1a4e3a004cd920dc03a5e1dc350bad1518eaa659228",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

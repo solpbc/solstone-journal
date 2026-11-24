@@ -52,6 +52,24 @@ impl ServiceStatus {
     }
 }
 
+/// The journal's port from one status read, read once more when the read
+/// fails. A journal that is set up reports its port whether or not it runs, so
+/// a failed read is a slow or interrupted query rather than a journal that is
+/// down, and one of them must not leave the window saying the journal isn't
+/// answering. A read that succeeds is never repeated.
+pub fn bound_port(
+    mut read: impl FnMut() -> Result<ServiceStatus, String>,
+    pause: impl FnOnce(),
+) -> Option<u16> {
+    read()
+        .or_else(|_| {
+            pause();
+            read()
+        })
+        .ok()
+        .and_then(|status| status.port)
+}
+
 /// The run state the window shows, in the Mac app's words where they apply.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -152,5 +170,25 @@ mod tests {
         assert!(!parsed.is_set_up());
         assert!(ServiceStatus::parse("{\"schema\":\"other\"}").is_err());
         assert!(ServiceStatus::parse("").is_err());
+    }
+
+    #[test]
+    fn one_failed_status_read_is_read_again_before_the_port_is_given_up() {
+        let mut reads = vec![Ok(status(true, true, true)), Err("stalled".to_owned())];
+        let mut paused = false;
+        let port = bound_port(|| reads.pop().unwrap(), || paused = true);
+        assert_eq!(port, Some(5015));
+        assert!(paused && reads.is_empty());
+
+        let mut reads = vec![Err("stalled".to_owned()), Err("stalled".to_owned())];
+        assert_eq!(bound_port(|| reads.pop().unwrap(), || {}), None);
+        assert!(reads.is_empty());
+
+        let not_set_up = ServiceStatus {
+            port: None,
+            ..status(false, false, false)
+        };
+        let mut reads = vec![Ok(not_set_up)];
+        assert_eq!(bound_port(|| reads.pop().unwrap(), || panic!("no pause")), None);
     }
 }

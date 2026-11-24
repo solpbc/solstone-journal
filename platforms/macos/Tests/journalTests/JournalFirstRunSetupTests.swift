@@ -506,6 +506,34 @@ extension JournalFirstRunModelTests {
         expectQuietLaunch(world)
     }
 
+    @Test func aLaunchStillInSetupRegistersNoLoginItemUntilSetupLandsHome() async throws {
+        func config(_ items: CountingLoginItems) -> JournalAppConfig {
+            let suite = "app.solstone.journal.first-run.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defaults.removePersistentDomain(forName: suite)
+            return JournalAppConfig(defaults: defaults, loginItemManager: items, loginItemEligibility: { true })
+        }
+
+        let freshItems = CountingLoginItems()
+        let fresh = try makeSetupWorld(config: config(freshItems))
+        defer { fresh.refresh.release() }
+        await fresh.fixture.model.reconcileActivation()
+        #expect(fresh.fixture.model.route == .ritual(.welcome))
+        #expect(freshItems.registerCalls == 0)
+
+        let setUpItems = CountingLoginItems()
+        let setUp = try makeSetupWorld(
+            configureRoot: true, done: true, supervisorLive: true, probes: [.complete],
+            config: config(setUpItems)
+        )
+        defer { setUp.refresh.release() }
+        await setUp.fixture.model.reconcileActivation()
+        #expect(setUp.fixture.model.route == .home)
+        #expect(setUpItems.registerCalls == 1)
+        await setUp.fixture.model.reconcileForReopen()
+        #expect(setUpItems.registerCalls == 1)
+    }
+
     @Test func loginFailureStaysOnScreenAndIsNotStored() async throws {
         let suite = "app.solstone.journal.first-run.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -2407,6 +2435,19 @@ private final class Flag: @unchecked Sendable {
     private var stored = false
     var value: Bool { lock.withLock { stored } }
     func set(_ value: Bool) { lock.withLock { stored = value } }
+}
+
+@MainActor
+private final class CountingLoginItems: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
+    private(set) var registerCalls = 0
+
+    func register() throws {
+        registerCalls += 1
+        status = .enabled
+    }
+    func unregister() throws { status = .notRegistered }
+    func unregisterAwaitingCompletion() async throws { status = .notRegistered }
 }
 
 @MainActor

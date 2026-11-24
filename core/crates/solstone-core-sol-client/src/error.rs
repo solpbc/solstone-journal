@@ -9,6 +9,7 @@ pub const SERVICE_DOWN_MESSAGE: &str =
     "journal isn't running. start it with 'solstone journal up' and retry.";
 pub const MALFORMED_RESPONSE_MESSAGE: &str = "the journal response couldn't be read.";
 pub const SERVER_ERROR_MESSAGE: &str = "The journal returned an unreadable error.";
+pub const NOT_SET_UP_MESSAGE: &str = "your journal isn't set up yet. finish setup, then try again.";
 pub const LOCAL_CONVEY_TIMEOUT_REASON: &str = "local_convey_timeout";
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,6 +26,10 @@ pub enum ClientError {
     },
     UnreadableServerError {
         status: Option<u16>,
+    },
+    /// The journal sent the call to its first-run setup page.
+    NotSetUp {
+        status: u16,
     },
     ReasonRejected {
         status: u16,
@@ -47,6 +52,7 @@ impl ClientError {
             ClientError::Timeout { .. } => "journal.cli.client.error.timeout",
             ClientError::MalformedSuccess { .. } => "journal.cli.client.error.malformed",
             ClientError::UnreadableServerError { .. } => "journal.cli.client.error.unreadable",
+            ClientError::NotSetUp { .. } => "journal.cli.client.error.not.set.up",
             ClientError::ReasonRejected { error, .. } => return error.to_owned(),
         };
         solstone_core_cli_copy::render_for(locale, id, &[])
@@ -74,6 +80,7 @@ impl ClientError {
             ClientError::Timeout { .. } => TIMEOUT_MESSAGE,
             ClientError::MalformedSuccess { .. } => MALFORMED_RESPONSE_MESSAGE,
             ClientError::UnreadableServerError { .. } => SERVER_ERROR_MESSAGE,
+            ClientError::NotSetUp { .. } => NOT_SET_UP_MESSAGE,
             ClientError::ReasonRejected { error, .. } => error,
         }
     }
@@ -93,9 +100,9 @@ impl ClientError {
             ClientError::Unreachable { detail }
             | ClientError::Timeout { detail, .. }
             | ClientError::ReasonRejected { detail, .. } => detail.as_deref(),
-            ClientError::MalformedSuccess { .. } | ClientError::UnreadableServerError { .. } => {
-                None
-            }
+            ClientError::MalformedSuccess { .. }
+            | ClientError::UnreadableServerError { .. }
+            | ClientError::NotSetUp { .. } => None,
         }
     }
 
@@ -115,7 +122,9 @@ impl ClientError {
         match self {
             ClientError::MalformedSuccess { status }
             | ClientError::UnreadableServerError { status } => *status,
-            ClientError::ReasonRejected { status, .. } => Some(*status),
+            ClientError::ReasonRejected { status, .. } | ClientError::NotSetUp { status } => {
+                Some(*status)
+            }
             ClientError::Unreachable { .. } | ClientError::Timeout { .. } => None,
         }
     }
