@@ -16,7 +16,7 @@ journal.mac.connection.timed.out = die Journal-App hat zu lange auf dein Journal
 
 journal.mac.connection.unavailable = dein Journal ist noch nicht bereit für die Journal-App. versuch es in Kürze noch einmal.
 
-journal.mac.devices.add.device = ein Gerät koppeln
+journal.mac.devices.add.device = Gerät koppeln
 
 journal.mac.devices.cancel = abbrechen
 
@@ -90,7 +90,7 @@ journal.mac.devices.pairing.link.label = Kopplungslink
 
 journal.mac.devices.pairing.opening = Kopplung wird geöffnet...
 
-journal.mac.devices.pairing.title = ein Gerät koppeln
+journal.mac.devices.pairing.title = Gerät koppeln
 
 journal.mac.devices.pane.title = Geräte
 
@@ -373,7 +373,7 @@ journal.mac.setup.on.this.mac.description = Anfragen an das Modell bleiben auf d
 
 journal.mac.setup.open.your.journal = dein Journal öffnen
 
-journal.mac.setup.reopen.in.browser.button = die Ersteinrichtungsseite öffnen
+journal.mac.setup.reopen.in.browser.button = Ersteinrichtungsseite öffnen
 
 journal.mac.setup.restore.from.backup = aus einer Sicherung wiederherstellen
 

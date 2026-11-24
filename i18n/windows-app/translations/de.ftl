@@ -1,4 +1,4 @@
-journal.windows.add.device = ein Gerät koppeln
+journal.windows.add.device = Gerät koppeln
 
 journal.windows.admin.terminal = ein Terminal öffnen
 
@@ -130,7 +130,7 @@ journal.windows.error.setup.actions = systemeigene Ersteinrichtungsaktionen sind
 
 journal.windows.error.setup.copy = ungültiges JSON des Ersteinrichtungstexts: { $error }
 
-journal.windows.error.setup.sequence = Ersteinrichtungsablauf ist in diesem Build nicht verfügbar
+journal.windows.error.setup.sequence = die Sequenz der Ersteinrichtung ist in diesem Build nicht verfügbar
 
 journal.windows.error.setup.start = Ersteinrichtung konnte nicht gestartet werden: { $error }
 
@@ -154,7 +154,7 @@ journal.windows.error.step.save = dieser Schritt ließ sich nicht speichern. ver
 
 journal.windows.error.terminal.open = ein Terminal ließ sich nicht öffnen: { $error }
 
-journal.windows.error.thinking.choice = unbekannte Auswahl fürs Denken
+journal.windows.error.thinking.choice = unbekannte Wahl fürs Denken
 
 journal.windows.error.thinking.unavailable = lokales Denken ist auf diesem Gerät nicht verfügbar
 
@@ -198,11 +198,11 @@ journal.windows.mark.placeholder.words = dein·journal
 
 journal.windows.mark.unavailable.name = die mark deines Journals, gerade nicht verfügbar
 
-journal.windows.mark.unavailable.words = mark·unverfügbar
+journal.windows.mark.unavailable.words = mark·nicht verfügbar
 
 journal.windows.models.downloading = wird heruntergeladen…
 
-journal.windows.models.missing = repariere die Journal-App oder installiere sie neu, dann starte dein Journal neu.
+journal.windows.models.missing = repariere die journal-App oder installiere sie neu, dann starte dein Journal neu.
 
 journal.windows.network.close.confirm = dein Journal für Geräte in deinem Netzwerk schließen? jedes Gerät, das gerade über dein Netzwerk verbunden ist, wird getrennt.
 
@@ -216,7 +216,7 @@ journal.windows.network.closed.help.windows = die solstone-App auf diesem PC kan
 
 journal.windows.network.failed = es ließ sich nicht ändern, ob dein Journal für Geräte in deinem Netzwerk offen ist. versuch es noch einmal.
 
-journal.windows.network.not.reachable = Geräte erreichen dein Journal gerade nicht.
+journal.windows.network.not.reachable = Geräte können dein Journal gerade nicht erreichen.
 
 journal.windows.network.open = für Geräte in deinem Netzwerk offen
 
@@ -240,7 +240,7 @@ journal.windows.never.connected.paired = nie verbunden · gekoppelt { $date }
 
 journal.windows.open.backup = Sicherung öffnen
 
-journal.windows.open.browser = die Ersteinrichtungsseite öffnen
+journal.windows.open.browser = Ersteinrichtungsseite öffnen
 
 journal.windows.open.fresh.link = einen neuen Kopplungslink öffnen
 
@@ -262,7 +262,7 @@ journal.windows.paired.note = prüfe auf diesem Gerät, ob es dieselbe mark zeig
 
 journal.windows.paired.note.anywhere = prüfe auf diesem Gerät, ob es dieselbe mark zeigt, dann antworte dort. es kann dein Journal von überall erreichen. hast du es nicht gekoppelt?
 
-journal.windows.paired.note.this.pc = wenn die solstone-App fragt, prüfe, ob sie dieselbe mark zeigt, und antworte dann dort. du hast es nicht gekoppelt?
+journal.windows.paired.note.this.pc = wenn die solstone-App dich fragt, prüfe, ob sie dieselbe mark zeigt, und antworte dann dort. hast du es nicht gekoppelt?
 
 journal.windows.paired.remove.failed = dieses Gerät konnte nicht entkoppelt werden. versuch es noch einmal, oder entferne es unter Geräte.
 
