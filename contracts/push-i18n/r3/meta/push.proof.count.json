@@ -1,0 +1,29 @@
+{
+  "description": "Synthetic native rendering proof; not a user feature.",
+  "context": "Notification after device-side decryption; no owner content.",
+  "bundles": [
+    "PushMessages"
+  ],
+  "surfaces": [
+    "phone",
+    "notification-extension"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped",
+      "min": 0,
+      "max": 10000
+    }
+  ],
+  "format_intent": "cardinal",
+  "max_length": 200,
+  "source_revision": "d61bc3d990d506de57b9e9c933d83b2d03ca4119c1315c9d363b796ac69dd11b",
+  "risk": "routine",
+  "auto_merge": true,
+  "selector": {
+    "name": "count",
+    "type": "cardinal"
+  }
+}

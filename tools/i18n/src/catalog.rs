@@ -143,11 +143,21 @@ impl LoadedCatalog {
         requested_locale: Option<&str>,
         fallback_stale: bool,
     ) -> Result<Self, Vec<Fault>> {
+        let requested: Vec<String> = requested_locale.into_iter().map(str::to_string).collect();
+        Self::load_and_validate_for_locales(catalog_dir, channel, &requested, fallback_stale)
+    }
+
+    pub fn load_and_validate_for_locales(
+        catalog_dir: &Path,
+        channel: Channel,
+        requested_locales: &[String],
+        fallback_stale: bool,
+    ) -> Result<Self, Vec<Fault>> {
         let registry = LocaleRegistry::embedded().map_err(|fault| vec![fault])?;
-        Self::load_with_registry_options(
+        Self::load_with_registry_for_locales(
             catalog_dir,
             channel,
-            requested_locale,
+            requested_locales,
             registry,
             fallback_stale,
         )
@@ -163,6 +173,7 @@ impl LoadedCatalog {
         Self::load_with_registry_options(catalog_dir, channel, requested_locale, registry, false)
     }
 
+    #[cfg(test)]
     pub(crate) fn load_with_registry_options(
         catalog_dir: &Path,
         channel: Channel,
@@ -170,10 +181,27 @@ impl LoadedCatalog {
         registry: LocaleRegistry,
         fallback_stale: bool,
     ) -> Result<Self, Vec<Fault>> {
+        let requested: Vec<String> = requested_locale.into_iter().map(str::to_string).collect();
+        Self::load_with_registry_for_locales(
+            catalog_dir,
+            channel,
+            &requested,
+            registry,
+            fallback_stale,
+        )
+    }
+
+    pub(crate) fn load_with_registry_for_locales(
+        catalog_dir: &Path,
+        channel: Channel,
+        requested_locales: &[String],
+        registry: LocaleRegistry,
+        fallback_stale: bool,
+    ) -> Result<Self, Vec<Fault>> {
         Self::load_internal(
             catalog_dir,
             channel,
-            requested_locale,
+            requested_locales,
             registry,
             true,
             fallback_stale,
@@ -185,7 +213,7 @@ impl LoadedCatalog {
         Self::load_internal(
             catalog_dir,
             Channel::Production,
-            None,
+            &[],
             registry,
             false,
             false,
@@ -195,7 +223,7 @@ impl LoadedCatalog {
     fn load_internal(
         catalog_dir: &Path,
         channel: Channel,
-        requested_locale: Option<&str>,
+        requested_locales: &[String],
         registry: LocaleRegistry,
         include_translations: bool,
         fallback_stale: bool,
@@ -221,10 +249,10 @@ impl LoadedCatalog {
         };
         config.validate().map_err(|fault| vec![fault])?;
 
-        if let Some(req) = requested_locale
-            && !validate_locale_tag(req)
-        {
-            return Err(vec![Fault::new("locale-tag", req, "*")]);
+        for req in requested_locales {
+            if !validate_locale_tag(req) {
+                return Err(vec![Fault::new("locale-tag", req, "*")]);
+            }
         }
 
         let namespace_owners = registry.get_namespace_owners();
@@ -385,7 +413,7 @@ impl LoadedCatalog {
 
         // Check channel eligibility of requested locale
         let eligible_locales = if include_translations {
-            match registry.get_eligible_locales(channel, &all_bundle_names, requested_locale) {
+            match registry.get_eligible_locales_for(channel, &all_bundle_names, requested_locales) {
                 Ok(locs) => locs,
                 Err(f) => {
                     faults.push(f);

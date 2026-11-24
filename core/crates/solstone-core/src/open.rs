@@ -38,9 +38,10 @@ pub(crate) fn run(path: String, print_url: bool) -> ExitCode {
         }
     };
     let path = rooted(&path);
+    let window_locale = solstone_core_window_catalog::cli_locale();
     #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     {
-        let url = match mint(locale, &journal.path, &path) {
+        let url = match mint(locale, window_locale, &journal.path, &path) {
             Ok(url) => url,
             Err(message) => {
                 eprintln!("{message}");
@@ -120,7 +121,12 @@ fn link_port(url: &str) -> Option<&str> {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn mint(locale: &str, journal: &std::path::Path, path: &str) -> Result<String, String> {
+fn mint(
+    locale: &str,
+    window_locale: &str,
+    journal: &std::path::Path,
+    path: &str,
+) -> Result<String, String> {
     use solstone_core_local_endpoint as endpoint;
     let root = std::fs::canonicalize(journal).unwrap_or_else(|_| journal.to_owned());
     let socket = endpoint::socket_for_journal(&root)
@@ -131,13 +137,17 @@ fn mint(locale: &str, journal: &std::path::Path, path: &str) -> Result<String, S
         })
         .ok_or_else(|| solstone_core_cli_copy::render_for(locale, NOT_RUNNING, &[]))?;
     let agent = endpoint::socket_agent(&socket, std::time::Duration::from_secs(5));
-    let mut response = agent
+    let mut request = agent
         .post("http://localhost/_solstone/browser-link")
         .header(
             "User-Agent",
             concat!("solstone/", env!("CARGO_PKG_VERSION")),
         )
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/json");
+    if window_locale != solstone_core_window_catalog::ENGLISH {
+        request = request.header("X-Solstone-Locale", window_locale);
+    }
+    let mut response = request
         .send(serde_json::json!({ "path": path }).to_string())
         .map_err(|_| solstone_core_cli_copy::render_for(locale, NOT_RUNNING, &[]))?;
     let status = response.status().as_u16();
@@ -182,7 +192,12 @@ fn mint(locale: &str, journal: &std::path::Path, path: &str) -> Result<String, S
 }
 
 #[cfg(windows)]
-fn mint(locale: &str, journal: &std::path::Path, path: &str) -> Result<String, String> {
+fn mint(
+    locale: &str,
+    window_locale: &str,
+    journal: &std::path::Path,
+    path: &str,
+) -> Result<String, String> {
     use solstone_core_local_endpoint as endpoint;
     let root = std::fs::canonicalize(journal).unwrap_or_else(|_| journal.to_owned());
     let pipe = endpoint::socket_for_journal(&root)
@@ -191,10 +206,13 @@ fn mint(locale: &str, journal: &std::path::Path, path: &str) -> Result<String, S
         .ok_or_else(|| solstone_core_cli_copy::render_for(locale, NOT_RUNNING, &[]))?;
     let timeout = std::time::Duration::from_secs(5);
     let request = serde_json::json!({ "path": path }).to_string();
-    let response = endpoint::pipe_request(
+    let locale_header = (window_locale != solstone_core_window_catalog::ENGLISH)
+        .then_some(("X-Solstone-Locale", window_locale));
+    let response = endpoint::pipe_request_with_headers(
         &pipe,
         "POST",
         "/_solstone/browser-link",
+        locale_header.as_slice(),
         Some(request.as_bytes()),
         timeout,
     )

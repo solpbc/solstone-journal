@@ -354,7 +354,7 @@
     renderMain() {
       const body = this.renderFrame('spk-who-main-state');
       if (this.notice) {
-        append(body, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.status.spk.status.info.spk'), this.notice));
+        append(body, textEl(this.doc, 'p', 'spk-status spk-status-info spk-who-notice', this.notice));
         this.notice = '';
       }
       const facts = this.presence?.facts || {};
@@ -373,7 +373,7 @@
         append(body, list);
       }
       if (mentions.length) {
-        append(body, textEl(this.doc, 'h3', window.JournalI18n.render('journal.window.speakers.status.text.spk.who.shelf.title.spk.who'), copyText(this.copy, COPY.SHELF_MENTIONS)));
+        append(body, textEl(this.doc, 'h3', 'spk-who-shelf-title spk-who-shelf-muted', copyText(this.copy, COPY.SHELF_MENTIONS)));
         const list = el(this.doc, 'div', 'spk-who-mentions');
         mentions.forEach((candidate) => append(list, this.personRow(normalizePerson(candidate), {
           quiet: true,
@@ -465,7 +465,7 @@
 
     personRow(person, options) {
       const row = el(this.doc, 'div', options?.quiet ? 'spk-who-person spk-who-person-quiet' : 'spk-who-person');
-      const action = buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.person'), person.name, () => {
+      const action = buttonEl(this.doc, 'spk-overview-btn spk-who-person-action', person.name, () => {
         this.enterPreview({
           mode: 'attach',
           entity_id: person.entity_id,
@@ -475,9 +475,9 @@
       });
       append(row, action);
       if (options?.evidence) {
-        append(row, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.card.line.spk.who.evidence'), options.evidence));
+        append(row, textEl(this.doc, 'p', 'spk-card-line spk-who-evidence', options.evidence));
       }
-      append(row, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.card.line.spk.who.anchor'), copyText(this.copy, person.has_voice ? COPY.ANCHOR_HAS_VOICE : COPY.ANCHOR)));
+      append(row, textEl(this.doc, 'p', 'spk-card-line spk-who-anchor', copyText(this.copy, person.has_voice ? COPY.ANCHOR_HAS_VOICE : COPY.ANCHOR)));
       return row;
     }
 
@@ -555,8 +555,8 @@
       if (!this.searchResults) return;
       clear(this.searchResults);
       if (this.mainState.searchError) {
-        append(this.searchResults, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.status.spk.status.error'), copyText(this.copy, COPY.SEARCH_ERROR)));
-        append(this.searchResults, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.search'), copyText(this.copy, COPY.ACTION_RETRY), () => {
+        append(this.searchResults, textEl(this.doc, 'p', 'spk-status spk-status-error', copyText(this.copy, COPY.SEARCH_ERROR)));
+        append(this.searchResults, buttonEl(this.doc, 'spk-overview-btn spk-who-search-retry', copyText(this.copy, COPY.ACTION_RETRY), () => {
           this.runSearch(this.mainState.query);
         }));
         return;
@@ -566,24 +566,24 @@
         quiet: true,
       })));
       if (!this.mainState.people.length) {
-        append(this.searchResults, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.card.line.spk.who.no'), window.JournalI18n.render('journal.window.speakers.who.search.no.person', [['query', this.mainState.query]])));
+        append(this.searchResults, textEl(this.doc, 'p', 'spk-card-line spk-who-no-results', window.JournalI18n.render('journal.window.speakers.who.search.no.person', [['query', this.mainState.query]])));
       }
-      append(this.searchResults, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.create'), window.JournalI18n.render('journal.window.speakers.who.create.named.person', [['person_name', this.mainState.query]]), () => this.resolveCreateName(this.mainState.query)));
+      append(this.searchResults, buttonEl(this.doc, 'spk-overview-btn spk-who-create-row', window.JournalI18n.render('journal.window.speakers.who.create.named.person', [['person_name', this.mainState.query]]), () => this.resolveCreateName(this.mainState.query)));
     }
 
     renderExitActions(body) {
       const actions = el(this.doc, 'div', 'spk-who-actions');
-      append(actions, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.this'), copyText(this.copy, COPY.THIS_IS_ME), () => {
+      append(actions, buttonEl(this.doc, 'spk-overview-btn spk-who-this-is-me', copyText(this.copy, COPY.THIS_IS_ME), () => {
         const cluster = this.cluster;
         const clusterId = this.clusterId;
         const trigger = this.trigger;
         this.close({ restoreFocus: false });
         this.onThisIsMe({ cluster, clusterId, trigger });
       }));
-      append(actions, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.exit.variant2'), copyText(this.copy, COPY.EXIT_NOT_PERSON), () => {
+      append(actions, buttonEl(this.doc, 'spk-overview-btn spk-who-exit-not-person', copyText(this.copy, COPY.EXIT_NOT_PERSON), () => {
         this.dismissCluster(DISMISS_NOT_PERSON);
       }));
-      append(actions, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.exit'), copyText(this.copy, COPY.EXIT_NOT_NOW), () => {
+      append(actions, buttonEl(this.doc, 'spk-overview-btn spk-who-exit-not-now', copyText(this.copy, COPY.EXIT_NOT_NOW), () => {
         this.dismissCluster(DISMISS_QUIET);
       }));
       append(body, actions);
@@ -619,10 +619,10 @@
       this.dialog.querySelector('.spk-who-title').textContent = window.JournalI18n.render('journal.window.speakers.who.identify.preview.heading', [['person_name', target.name]]);
       append(body, textEl(this.doc, 'p', 'spk-who-preview-body', target.has_voice ? window.JournalI18n.render('journal.window.speakers.who.identify.preview.existing.voice', [['person_name', target.name]]) : copyText(this.copy, COPY.PREVIEW_BODY_FRESH)));
       const facts = this.presence?.facts || {};
-      append(body, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.card.line.spk.who.preview'), window.JournalI18n.render('journal.window.speakers.who.preview.fact.count', [...speakerCountArgs('statements', positiveCount(facts.statement_count)), ...speakerCountArgs('conversations', positiveCount(facts.conversation_count))])));
+      append(body, textEl(this.doc, 'p', 'spk-card-line spk-who-preview-facts', window.JournalI18n.render('journal.window.speakers.who.preview.fact.count', [...speakerCountArgs('statements', positiveCount(facts.statement_count)), ...speakerCountArgs('conversations', positiveCount(facts.conversation_count))])));
       const actions = el(this.doc, 'div', 'spk-who-actions');
-      append(actions, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.overview.btn'), window.JournalI18n.render('journal.window.speakers.who.identify.confirm.first.name', [['first_name', firstName(target.name)]]), () => this.commitPreview()));
-      append(actions, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.preview'), copyText(this.copy, COPY.PREVIEW_BACK), () => this.renderMain()));
+      append(actions, buttonEl(this.doc, 'spk-overview-btn spk-overview-btn-primary spk-who-confirm', window.JournalI18n.render('journal.window.speakers.who.identify.confirm.first.name', [['first_name', firstName(target.name)]]), () => this.commitPreview()));
+      append(actions, buttonEl(this.doc, 'spk-overview-btn spk-who-preview-return', copyText(this.copy, COPY.PREVIEW_BACK), () => this.renderMain()));
       append(body, actions);
       this.focusInitial('preview');
     }
@@ -683,8 +683,8 @@
 
     renderCheckNameError() {
       const body = this.renderFrame('spk-who-load-error-state');
-      append(body, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.status.spk.status.error'), copyText(this.copy, COPY.CHECK_NAME_ERROR)));
-      append(body, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.retry'), copyText(this.copy, COPY.ACTION_RETRY), () => this.renderMain()));
+      append(body, textEl(this.doc, 'p', 'spk-status spk-status-error', copyText(this.copy, COPY.CHECK_NAME_ERROR)));
+      append(body, buttonEl(this.doc, 'spk-overview-btn spk-who-retry', copyText(this.copy, COPY.ACTION_RETRY), () => this.renderMain()));
       this.focusInitial('error');
     }
 
@@ -705,9 +705,9 @@
         quiet: true,
       })));
       if (options.allowCreate) {
-        append(body, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.create'), window.JournalI18n.render('journal.window.speakers.who.create.named.person', [['person_name', options.createName]]), () => this.renderKeepSeparate(options.createName, shown)));
+        append(body, buttonEl(this.doc, 'spk-overview-btn spk-who-create-row', window.JournalI18n.render('journal.window.speakers.who.create.named.person', [['person_name', options.createName]]), () => this.renderKeepSeparate(options.createName, shown)));
       }
-      append(body, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.preview'), copyText(this.copy, COPY.PREVIEW_BACK), () => this.renderMain()));
+      append(body, buttonEl(this.doc, 'spk-overview-btn spk-who-preview-return', copyText(this.copy, COPY.PREVIEW_BACK), () => this.renderMain()));
       this.focusInitial('candidates');
     }
 
@@ -717,14 +717,14 @@
       this.dialog.querySelector('.spk-who-title').textContent = window.JournalI18n.render('journal.window.speakers.who.keep.separate.heading', [['person_name', top.name]]);
       append(body, textEl(this.doc, 'p', 'spk-who-keep-body', window.JournalI18n.render('journal.window.speakers.who.keep.separate.reason', [['person_name', top.name]])));
       const actions = el(this.doc, 'div', 'spk-who-actions');
-      append(actions, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.overview.btn.variant2'), copyText(this.copy, COPY.KEEP_SEPARATE_CONFIRM), () => {
+      append(actions, buttonEl(this.doc, 'spk-overview-btn spk-overview-btn-primary spk-who-keep-confirm', copyText(this.copy, COPY.KEEP_SEPARATE_CONFIRM), () => {
         this.enterPreview({
           mode: 'create',
           name,
           reviewed_near_match_entity_ids: matches.map((match) => match.entity_id),
         });
       }));
-      append(actions, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.keep'), window.JournalI18n.render('journal.window.speakers.who.keep.separate.decline', [['person_name', top.name]]), () => {
+      append(actions, buttonEl(this.doc, 'spk-overview-btn spk-who-keep-decline', window.JournalI18n.render('journal.window.speakers.who.keep.separate.decline', [['person_name', top.name]]), () => {
         this.enterPreview({
           mode: 'attach',
           entity_id: top.entity_id,
@@ -801,9 +801,9 @@
       this.dialog.querySelector('.spk-who-title').textContent = window.JournalI18n.render('journal.window.speakers.who.identify.receipt.heading', [['person_name', result?.entity_name || result?.target_entity_name || this.previewTarget?.name || '']]);
       append(body, textEl(this.doc, 'p', 'spk-who-receipt-body', window.JournalI18n.render('journal.window.speakers.who.identify.receipt.conversations', [['person_name', result?.entity_name || result?.target_entity_name || this.previewTarget?.name || '']])));
       if (partialMessage) {
-        append(body, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.status.spk.status.error.spk'), partialMessage));
+        append(body, textEl(this.doc, 'p', 'spk-status spk-status-error spk-who-undo-partial', partialMessage));
       }
-      append(body, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.undo'), copyText(this.copy, COPY.RECEIPT_UNDO), () => this.undoReceipt()));
+      append(body, buttonEl(this.doc, 'spk-overview-btn spk-who-undo', copyText(this.copy, COPY.RECEIPT_UNDO), () => this.undoReceipt()));
       this.focusInitial('receipt');
     }
 
@@ -870,14 +870,14 @@
     renderDismissed(disposition) {
       const body = this.renderFrame('spk-who-dismissed-state');
       const key = disposition === DISMISS_NOT_PERSON ? COPY.NOT_PERSON_DONE : COPY.NOT_NOW_DONE;
-      append(body, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.status.spk.status.info.spk.variant2'), copyText(this.copy, key)));
+      append(body, textEl(this.doc, 'p', 'spk-status spk-status-info spk-who-dismissed', copyText(this.copy, key)));
       this.focusInitial('dismissed');
     }
 
     renderLoadError(retry) {
       const body = this.renderFrame('spk-who-load-error-state');
-      append(body, textEl(this.doc, 'p', window.JournalI18n.render('journal.window.speakers.status.text.spk.status.spk.status.error'), copyText(this.copy, COPY.LOAD_ERROR)));
-      append(body, buttonEl(this.doc, window.JournalI18n.render('journal.window.speakers.status.text.spk.overview.btn.spk.who.retry'), copyText(this.copy, COPY.ACTION_RETRY), retry));
+      append(body, textEl(this.doc, 'p', 'spk-status spk-status-error', copyText(this.copy, COPY.LOAD_ERROR)));
+      append(body, buttonEl(this.doc, 'spk-overview-btn spk-who-retry', copyText(this.copy, COPY.ACTION_RETRY), retry));
       this.focusInitial('error');
     }
 

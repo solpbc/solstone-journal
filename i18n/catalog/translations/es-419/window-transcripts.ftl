@@ -1240,8 +1240,6 @@ journal.window.health.window.explanation.analysis.has.failed.repeatedly = el an√
 
 journal.window.health.window.explanation.choose.a.model.in.thinking.before = elige un modelo en razonamiento antes de que este trabajo pueda ejecutarse.
 
-journal.window.health.window.explanation.error.network.error.loading.log.file = ERROR: error de red al cargar el archivo de registro
-
 journal.window.health.window.explanation.error.services.need.attention = error, los servicios necesitan atenci√≥n
 
 journal.window.health.window.explanation.in.under.a.minute = en menos de un minuto

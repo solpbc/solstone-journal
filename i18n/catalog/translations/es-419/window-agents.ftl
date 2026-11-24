@@ -2882,8 +2882,6 @@ journal.window.thinking.status.text.details = detalles →
 
 journal.window.thinking.status.text.downloading.the.local.model = descargando el modelo local.
 
-journal.window.thinking.status.text.error = error
-
 journal.window.thinking.status.text.manage = administrar →
 
 journal.window.thinking.status.text.manage.endpoint = administrar endpoint →
@@ -2897,8 +2895,6 @@ journal.window.thinking.status.text.not.in.use.while.confidential.processing = n
 journal.window.thinking.status.text.not.in.use.while.your.own = no se usa mientras tu propio endpoint está configurado.
 
 journal.window.thinking.status.text.of.the.thinking.was.about.older = del razonamiento fue sobre días anteriores
-
-journal.window.thinking.status.text.ok = bien
 
 journal.window.thinking.status.text.older.days = días anteriores
 

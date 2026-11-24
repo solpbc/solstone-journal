@@ -2102,7 +2102,7 @@ function renderImportRow(imp, picking = false) {
   );
   if (imp.status === 'success') {
     statusClass = 'success';
-    statusText = imp.body_state === 'saved' ? bodyStateLabel(window.JournalI18n.render('journal.window.import.status.saved')) : window.JournalI18n.render('journal.window.import.status.completed');
+    statusText = imp.body_state === 'saved' ? bodyStateLabel('saved') : window.JournalI18n.render('journal.window.import.status.completed');
   } else if (imp.status === 'failed') {
     statusClass = 'failed';
     statusText = bodyStateLabel(imp.body_state) || window.JournalI18n.render('journal.window.import.status.failed');
@@ -5380,11 +5380,11 @@ ctx.on(importMain, 'click', event => {
   // In select mode a press on a row that can be deleted toggles it; the day
   // link inside it still opens the day.
   const pickRow = importPick.on && event.target.closest('.import-table--picking tr[data-import-id]');
-  if (pickRow && !event.target.closest(window.JournalI18n.render('journal.window.import.window.explanation.a.button.select.textarea'))) {
+  if (pickRow && !event.target.closest('a, button, select, textarea')) {
     if (toggleImportPick(pickRow, Boolean(event.target.closest('input[data-import-pick]')))) return;
   }
   const tr = event.target.closest('tr[data-import-link]');
-  if (tr && !event.target.closest(window.JournalI18n.render('journal.window.import.window.explanation.a.button.input.select.textarea'))) {
+  if (tr && !event.target.closest('a, button, input, select, textarea')) {
     const link = tr.getAttribute('data-import-link');
     if (link) importMove(link);
   }

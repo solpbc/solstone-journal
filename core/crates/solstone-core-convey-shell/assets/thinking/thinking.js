@@ -1140,7 +1140,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       resetDraft();
       setMode('paste');
       renderFn();
-      showStatus(byoFailureCopy(check?.reason_code, providerName), window.JournalI18n.render('journal.window.thinking.status.text.error'));
+      showStatus(byoFailureCopy(check?.reason_code, providerName), 'error');
       return {status: 'invalid', validation: check};
     }
     const result = await apiFn('api/keys', {
@@ -1153,7 +1153,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       resetDraft();
       setMode('paste');
       renderFn();
-      showStatus(byoFailureCopy(validation.reason_code, providerName), window.JournalI18n.render('journal.window.thinking.status.text.error'));
+      showStatus(byoFailureCopy(validation.reason_code, providerName), 'error');
       return {status: 'invalid', validation};
     }
     resetDraft();
@@ -1188,11 +1188,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (probe?.reason_code === 'key_missing') {
         setMode('paste');
         renderFn();
-        showStatus(byoFailureCopy(probe.reason_code, providerName), window.JournalI18n.render('journal.window.thinking.status.text.error'));
+        showStatus(byoFailureCopy(probe.reason_code, providerName), 'error');
         return {status: 'key_missing', probe};
       }
       const message = byoFailureCopy(probe?.reason_code, providerName, model);
-      showStatus(message, window.JournalI18n.render('journal.window.thinking.status.text.error'));
+      showStatus(message, 'error');
       return {status: 'probe_failed', probe};
     }
     try {
@@ -1209,14 +1209,14 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (providers?.active_lane?.lane === 'confidential') {
         showStatus(
           window.JournalI18n.render('journal.window.thinking.keys.model.restored', [['model_name', String(model)]]),
-          window.JournalI18n.render('journal.window.thinking.status.text.ok'),
+          'ok',
         );
         return {status: 'restored', providers};
       }
       return {status: 'saved', providers};
     } catch (err) {
       renderFn();
-      showStatus(err?.message || '', window.JournalI18n.render('journal.window.thinking.status.text.error'));
+      showStatus(err?.message || '', 'error');
       return {status: 'save_failed', error: err};
     }
   }

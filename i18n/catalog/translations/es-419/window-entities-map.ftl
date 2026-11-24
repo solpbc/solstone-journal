@@ -2395,20 +2395,6 @@ journal.window.facets.activities.line.question.selected =
        *[other] ¿quién dijo las { $count } líneas que marcaste?
     }
 
-journal.window.facets.activities.line.refusal.owner.line.answers.unreadable = rechazo: línea ilegible
-
-journal.window.facets.activities.line.refusal.owner.line.empty = rechazo: línea vacía
-
-journal.window.facets.activities.line.refusal.owner.line.not.found = rechazo: línea cambiada
-
-journal.window.facets.activities.line.refusal.owner.line.outside.activity = rechazo: línea fuera
-
-journal.window.facets.activities.line.refusal.owner.line.owner.not.admitted = rechazo: línea de propietario
-
-journal.window.facets.activities.line.refusal.owner.line.person.unavailable = rechazo: línea de persona
-
-journal.window.facets.activities.line.refusal.owner.line.source.unsupported = rechazo: línea de fuente
-
 journal.window.facets.activities.months.short.apr = abr
 
 journal.window.facets.activities.months.short.aug = ago

@@ -1144,13 +1144,13 @@
   // How often the panel reads the day again while an activity is updating.
   const UPDATING_POLL_MS = 5000;
   const LINE_REFUSALS = {
-    owner_line_source_unsupported: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.source.unsupported'),
-    owner_line_not_found: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.not.found'),
-    owner_line_person_unavailable: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.person.unavailable'),
-    owner_line_owner_not_admitted: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.owner.not.admitted'),
-    owner_line_answers_unreadable: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.answers.unreadable'),
-    owner_line_outside_activity: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.outside.activity'),
-    owner_line_empty: window.JournalI18n.render('journal.window.facets.activities.line.refusal.owner.line.empty')
+    owner_line_source_unsupported: 'refusal-line-source',
+    owner_line_not_found: 'refusal-line-changed',
+    owner_line_person_unavailable: 'refusal-line-person',
+    owner_line_owner_not_admitted: 'refusal-line-owner',
+    owner_line_answers_unreadable: 'refusal-line-unreadable',
+    owner_line_outside_activity: 'refusal-line-outside',
+    owner_line_empty: 'refusal-line-empty'
   };
   // A remove refused because the history moved on; the view is read again.
   const REMOVE_STALE = new Set(['activity_edit_not_found', 'activity_edit_mismatch', 'activity_edit_already_removed']);

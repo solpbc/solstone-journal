@@ -126,10 +126,11 @@ ci: resolve support-check check-catalog
 ci-release: resolve support-check
 	@$(SUPPORT_SCRIPTS)/run-ci.sh --package-root "$(CURDIR)" -c release -Xswiftc -DSOLSTONE_TEST_SUPPORT
 
+I18N_CHANNEL ?= production
 .PHONY: catalog check-catalog
 catalog:
 	cargo build --locked --manifest-path ../../tools/i18n/Cargo.toml --target-dir .build/i18n
-	python3 scripts/catalog.py --compiler .build/i18n/debug/i18n-catalog
+	python3 scripts/catalog.py --compiler .build/i18n/debug/i18n-catalog --channel $(I18N_CHANNEL)
 
 check-catalog:
 	python3 scripts/catalog.py --check

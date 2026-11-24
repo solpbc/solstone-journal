@@ -316,6 +316,16 @@ impl LocaleRegistry {
         bundle_names: &[String],
         requested_locale: Option<&str>,
     ) -> Result<Vec<String>, Fault> {
+        let requested: Vec<String> = requested_locale.into_iter().map(str::to_string).collect();
+        self.get_eligible_locales_for(channel, bundle_names, &requested)
+    }
+
+    pub fn get_eligible_locales_for(
+        &self,
+        channel: Channel,
+        bundle_names: &[String],
+        requested_locales: &[String],
+    ) -> Result<Vec<String>, Fault> {
         if bundle_names.is_empty() {
             return Err(Fault::catalog("empty-membership"));
         }
@@ -332,19 +342,27 @@ impl LocaleRegistry {
             }
         }
 
-        if let Some(req) = requested_locale {
-            let entry = self
-                .locales
-                .iter()
-                .find(|l| l.tag == req)
-                .ok_or_else(|| Fault::catalog("locale-channel"))?;
-            if !entry.is_eligible_for_channel(channel) {
-                return Err(Fault::catalog("locale-channel"));
+        if !requested_locales.is_empty() {
+            let mut selected = Vec::new();
+            let mut seen = HashSet::new();
+            for req in requested_locales {
+                let entry = self
+                    .locales
+                    .iter()
+                    .find(|l| l.tag == *req)
+                    .ok_or_else(|| Fault::catalog("locale-channel"))?;
+                if !entry.is_eligible_for_channel(channel) {
+                    return Err(Fault::catalog("locale-channel"));
+                }
+                if !bundle_locales.contains(req.as_str()) {
+                    return Err(Fault::catalog("locale-channel"));
+                }
+                if seen.insert(req.as_str()) {
+                    selected.push(req.clone());
+                }
             }
-            if !bundle_locales.contains(req) {
-                return Err(Fault::catalog("locale-channel"));
-            }
-            return Ok(vec![req.to_string()]);
+            selected.sort();
+            return Ok(selected);
         }
 
         let mut selected = Vec::new();

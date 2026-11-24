@@ -12,7 +12,23 @@ mod compiled {
 }
 
 pub use compiled::Value;
-pub use solstone_core_window_catalog::{ENGLISH, cli_locale, packaged_locale};
+pub use solstone_core_window_catalog::ENGLISH;
+
+pub fn packaged_locale(requested: Option<&str>) -> &'static str {
+    const LOCALES: &[&str] = include!(concat!(env!("OUT_DIR"), "/locales.rs"));
+    requested
+        .and_then(|tag| {
+            LOCALES
+                .iter()
+                .copied()
+                .find(|locale| locale.eq_ignore_ascii_case(tag))
+        })
+        .unwrap_or(ENGLISH)
+}
+
+pub fn cli_locale() -> &'static str {
+    packaged_locale(std::env::var("SOLSTONE_LOCALE").ok().as_deref())
+}
 
 pub fn terminal_locale() -> Option<&'static str> {
     if std::env::var("SOL_SUPERVISOR_SPAWNED").as_deref() == Ok("1") {
@@ -354,7 +370,7 @@ impl MessageDetail {
                         .collect();
                     values.push((*slot, solstone_core_window_catalog::Value::String(&cause)));
                     return solstone_core_window_catalog::render(
-                        packaged_locale(Some(locale)),
+                        solstone_core_window_catalog::packaged_locale(Some(locale)),
                         message.id,
                         &values,
                     );

@@ -87,8 +87,11 @@ pub fn render(locale: &str, id: &str, arguments: &[(&str, Value<'_>)]) -> String
     let (locale, id) = id
         .strip_prefix('!')
         .map_or((locale, id), |id| (ENGLISH, id));
-    compiled::render_dotted_with_options(locale, id, arguments, locale != ENGLISH)
-        .unwrap_or_else(|error| panic!("window catalog message {id} for {locale}: {error:?}"))
+    let mut result = compiled::render_dotted_with_options(locale, id, arguments, locale != ENGLISH);
+    if matches!(result, Err(compiled::RenderError::UnknownLocale)) {
+        result = compiled::render_dotted_with_options(ENGLISH, id, arguments, false);
+    }
+    result.unwrap_or_else(|error| panic!("window catalog message {id} for {locale}: {error:?}"))
 }
 
 pub fn language_tag(locale: &str) -> &str {

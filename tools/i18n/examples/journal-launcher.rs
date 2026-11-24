@@ -18,9 +18,14 @@ fn quoted(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-fn compile(channel: Channel) -> Result<String, String> {
-    let catalog = LoadedCatalog::load_and_validate(Path::new("i18n/cli"), channel, None)
-        .map_err(|faults| format!("{faults:?}"))?;
+fn compile(channel: Channel, fallback_stale: bool) -> Result<String, String> {
+    let catalog = LoadedCatalog::load_and_validate_with_options(
+        Path::new("i18n/cli"),
+        channel,
+        None,
+        fallback_stale,
+    )
+    .map_err(|faults| format!("{faults:?}"))?;
     let locales = catalog
         .registry
         .get_eligible_locales(channel, &["journal-cli".to_owned()], None)
@@ -66,8 +71,17 @@ fn compile(channel: Channel) -> Result<String, String> {
                     .metadata
                     .get(&id)
                     .ok_or_else(|| format!("missing {id}"))?;
-                let message = catalog.translations[&tag]
-                    .get(&id)
+                let message = catalog
+                    .translations
+                    .get(&tag)
+                    .and_then(|messages| messages.get(&id))
+                    .or_else(|| {
+                        catalog
+                            .registry
+                            .is_draft(&tag)
+                            .then(|| catalog.source_messages.get(&id))
+                            .flatten()
+                    })
                     .ok_or_else(|| format!("missing {tag} {id}"))?;
                 let [branch] = message.branches.as_slice() else {
                     return Err(format!("expected plain text for {id}"));
@@ -105,23 +119,32 @@ fn compile(channel: Channel) -> Result<String, String> {
 
 fn main() -> Result<(), String> {
     let args: Vec<_> = env::args().skip(1).collect();
-    let (channel, check) = match args.as_slice() {
-        [channel, rest @ ..] if rest.is_empty() || rest == ["--check"] => {
-            let channel = match channel.as_str() {
-                "production" => Channel::Production,
-                "development" => Channel::Development,
-                _ => return Err("unknown launcher catalog channel".into()),
-            };
-            (channel, !rest.is_empty())
-        }
-        _ => return Err("expected production|development [--check]".into()),
+    let Some((channel_arg, rest)) = args.split_first() else {
+        return Err("expected production|development [--fallback-stale] [--check]".into());
     };
+    let channel = match channel_arg.as_str() {
+        "production" => Channel::Production,
+        "development" => Channel::Development,
+        _ => return Err("unknown launcher catalog channel".into()),
+    };
+    let mut check = false;
+    let mut fallback_stale = false;
+    for arg in rest {
+        match arg.as_str() {
+            "--check" => check = true,
+            "--fallback-stale" => fallback_stale = true,
+            _ => return Err("expected production|development [--fallback-stale] [--check]".into()),
+        }
+    }
     let original = fs::read_to_string(LAUNCHER).map_err(|error| error.to_string())?;
     let (prefix, body) = original
         .split_once(BEGIN)
         .ok_or("missing launcher message start")?;
     let (_, suffix) = body.split_once(END).ok_or("missing launcher message end")?;
-    let generated = format!("{prefix}{BEGIN}{}{END}{suffix}", compile(channel)?);
+    let generated = format!(
+        "{prefix}{BEGIN}{}{END}{suffix}",
+        compile(channel, fallback_stale)?
+    );
     if original != generated {
         if check {
             return Err("Launcher messages are stale. Run make journal-cli-catalog.".into());

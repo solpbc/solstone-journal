@@ -2947,3 +2947,80 @@ fn test_sharded_translations_scoped_ack_and_english_edit_staleness() {
     let _ = fs::remove_dir_all(&exported);
     let _ = fs::remove_dir_all(&imported);
 }
+
+#[test]
+fn test_journal_dev_bundles_exclude_uncommitted_pseudo_and_repeatable_locale_filters() {
+    let reg = LocaleRegistry::embedded().unwrap();
+    for bundle_id in ["journal-window", "journal-windows-app", "journal-cli"] {
+        let locales = reg
+            .get_eligible_locales(Channel::Development, &[bundle_id.to_string()], None)
+            .unwrap();
+        assert!(
+            locales.contains(&"en-US".to_string()),
+            "{bundle_id}: {locales:?}"
+        );
+        assert!(
+            locales.contains(&"es-419".to_string()),
+            "{bundle_id}: {locales:?}"
+        );
+        assert!(
+            !locales.contains(&"en-XA".to_string()),
+            "{bundle_id} should not require uncommitted en-XA: {locales:?}"
+        );
+    }
+
+    // Repeatable --locale filters PushMessages to en-US + es-419 without en-GB test tier
+    let push_filtered = reg
+        .get_eligible_locales_for(
+            Channel::Development,
+            &["PushMessages".to_string()],
+            &["en-US".to_string(), "es-419".to_string()],
+        )
+        .unwrap();
+    assert_eq!(
+        push_filtered,
+        vec!["en-US".to_string(), "es-419".to_string()]
+    );
+
+    // Exercise repeatable --locale through CLI targets on a draft catalog
+    let cat = build_draft_test_catalog("repeatable_locale_cli");
+    fs::write(
+        cat.join("translations/es-419.ftl"),
+        "link.test.hello = hola mundo\n",
+    )
+    .unwrap();
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "lock".into(),
+            cat.to_str().unwrap().into(),
+            "--acknowledge".into(),
+            "es-419".into(),
+        ]),
+        0
+    );
+    let out = unique_temp_dir("repeatable_locale_out");
+    let _ = fs::remove_dir_all(&out);
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "targets".into(),
+            cat.to_str().unwrap().into(),
+            "--channel".into(),
+            "development".into(),
+            "--locale".into(),
+            "en-US".into(),
+            "--locale".into(),
+            "es-419".into(),
+            "--target".into(),
+            "esm".into(),
+            "--out".into(),
+            out.to_str().unwrap().into(),
+        ]),
+        0
+    );
+    assert!(out.join("esm/link-host/en-US.ftl").is_file());
+    assert!(out.join("esm/link-host/es-419.ftl").is_file());
+    let _ = fs::remove_dir_all(&cat);
+    let _ = fs::remove_dir_all(&out);
+}

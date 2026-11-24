@@ -9444,20 +9444,6 @@ journal.window.facets.activities.copy.untimed.heading = without a time
 
 journal.window.facets.activities.copy.updating = updating…
 
-journal.window.facets.activities.line.refusal.owner.line.answers.unreadable = refusal-line-unreadable
-
-journal.window.facets.activities.line.refusal.owner.line.empty = refusal-line-empty
-
-journal.window.facets.activities.line.refusal.owner.line.not.found = refusal-line-changed
-
-journal.window.facets.activities.line.refusal.owner.line.outside.activity = refusal-line-outside
-
-journal.window.facets.activities.line.refusal.owner.line.owner.not.admitted = refusal-line-owner
-
-journal.window.facets.activities.line.refusal.owner.line.person.unavailable = refusal-line-person
-
-journal.window.facets.activities.line.refusal.owner.line.source.unsupported = refusal-line-source
-
 journal.window.facets.activities.months.short.apr = Apr
 
 journal.window.facets.activities.months.short.aug = Aug
@@ -10683,8 +10669,6 @@ journal.window.health.visible.text.your.request.is.saved = your request is saved
 journal.window.health.window.explanation.analysis.has.failed.repeatedly = analysis has failed repeatedly.
 
 journal.window.health.window.explanation.choose.a.model.in.thinking.before = choose a model in thinking before this work can run.
-
-journal.window.health.window.explanation.error.network.error.loading.log.file = ERROR: network error loading log file
 
 journal.window.health.window.explanation.error.services.need.attention = error, services need attention
 
@@ -12360,10 +12344,6 @@ journal.window.shared.mount.workspace.section.heading.couldn.t.load.this.section
 
 journal.window.shared.mount.workspace.visible.text.reload.to.try.again = reload to try again.
 
-journal.window.shared.pairing.qr.window.explanation.code.length.overflow = code length overflow. (
-
-journal.window.shared.pairing.qr.window.explanation.unexpected.end.of.file = unexpected end of file./
-
 journal.window.shared.question.visible.text.cancel = cancel
 
 journal.window.shared.question.visible.text.name = name
@@ -13399,48 +13379,6 @@ journal.window.speakers.status.text.not.yet.named = not yet named
 journal.window.speakers.status.text.play.from.here = play from here
 
 journal.window.speakers.status.text.set.aside = set aside
-
-journal.window.speakers.status.text.spk.card.line.spk.who.anchor = spk-card-line spk-who-anchor
-
-journal.window.speakers.status.text.spk.card.line.spk.who.evidence = spk-card-line spk-who-evidence
-
-journal.window.speakers.status.text.spk.card.line.spk.who.no = spk-card-line spk-who-no-results
-
-journal.window.speakers.status.text.spk.card.line.spk.who.preview = spk-card-line spk-who-preview-facts
-
-journal.window.speakers.status.text.spk.overview.btn.spk.overview.btn = spk-overview-btn spk-overview-btn-primary spk-who-confirm
-
-journal.window.speakers.status.text.spk.overview.btn.spk.overview.btn.variant2 = spk-overview-btn spk-overview-btn-primary spk-who-keep-confirm
-
-journal.window.speakers.status.text.spk.overview.btn.spk.who.create = spk-overview-btn spk-who-create-row
-
-journal.window.speakers.status.text.spk.overview.btn.spk.who.exit = spk-overview-btn spk-who-exit-not-now
-
-journal.window.speakers.status.text.spk.overview.btn.spk.who.exit.variant2 = spk-overview-btn spk-who-exit-not-person
-
-journal.window.speakers.status.text.spk.overview.btn.spk.who.keep = spk-overview-btn spk-who-keep-decline
-
-journal.window.speakers.status.text.spk.overview.btn.spk.who.person = spk-overview-btn spk-who-person-action
-
-journal.window.speakers.status.text.spk.overview.btn.spk.who.preview = spk-overview-btn spk-who-preview-return
-
-journal.window.speakers.status.text.spk.overview.btn.spk.who.retry = spk-overview-btn spk-who-retry
-
-journal.window.speakers.status.text.spk.overview.btn.spk.who.search = spk-overview-btn spk-who-search-retry
-
-journal.window.speakers.status.text.spk.overview.btn.spk.who.this = spk-overview-btn spk-who-this-is-me
-
-journal.window.speakers.status.text.spk.overview.btn.spk.who.undo = spk-overview-btn spk-who-undo
-
-journal.window.speakers.status.text.spk.status.spk.status.error = spk-status spk-status-error
-
-journal.window.speakers.status.text.spk.status.spk.status.error.spk = spk-status spk-status-error spk-who-undo-partial
-
-journal.window.speakers.status.text.spk.status.spk.status.info.spk = spk-status spk-status-info spk-who-notice
-
-journal.window.speakers.status.text.spk.status.spk.status.info.spk.variant2 = spk-status spk-status-info spk-who-dismissed
-
-journal.window.speakers.status.text.spk.who.shelf.title.spk.who = spk-who-shelf-title spk-who-shelf-muted
 
 journal.window.speakers.status.text.this.sample.isn.t.available = this sample isn't available
 
@@ -14787,8 +14725,6 @@ journal.window.thinking.status.text.details = details →
 
 journal.window.thinking.status.text.downloading.the.local.model = downloading the local model.
 
-journal.window.thinking.status.text.error = error
-
 journal.window.thinking.status.text.manage = manage →
 
 journal.window.thinking.status.text.manage.endpoint = manage endpoint →
@@ -14802,8 +14738,6 @@ journal.window.thinking.status.text.not.in.use.while.confidential.processing = n
 journal.window.thinking.status.text.not.in.use.while.your.own = not in use while your own endpoint is set.
 
 journal.window.thinking.status.text.of.the.thinking.was.about.older = of the thinking was about older days
-
-journal.window.thinking.status.text.ok = ok
 
 journal.window.thinking.status.text.older.days = older days
 
@@ -19636,8 +19570,6 @@ journal.window.import.status.pending = pending
 
 journal.window.import.status.running = running
 
-journal.window.import.status.saved = saved
-
 journal.window.import.status.status.unavailable = status unavailable
 
 journal.window.import.status.stopped = stopped
@@ -19943,10 +19875,6 @@ journal.window.import.visible.text.uploading.your.file.keep.this.page = uploadin
 journal.window.import.visible.text.validate = validate
 
 journal.window.import.visible.text.validating = validating
-
-journal.window.import.window.explanation.a.button.input.select.textarea = a, button, input, select, textarea
-
-journal.window.import.window.explanation.a.button.select.textarea = a, button, select, textarea
 
 journal.window.import.window.explanation.could.not.preview.this.import = could not preview this import
 

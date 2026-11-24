@@ -3512,10 +3512,6 @@ journal.window.shared.mount.workspace.section.heading.couldn.t.load.this.section
 
 journal.window.shared.mount.workspace.visible.text.reload.to.try.again = recarga para volver a intentarlo.
 
-journal.window.shared.pairing.qr.window.explanation.code.length.overflow = desbordamiento de la longitud del código. (
-
-journal.window.shared.pairing.qr.window.explanation.unexpected.end.of.file = fin de archivo inesperado./
-
 journal.window.shared.question.visible.text.cancel = cancelar
 
 journal.window.shared.question.visible.text.name = nombre

@@ -1711,10 +1711,14 @@ check-rust-i18n-catalog:
 	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo test --manifest-path tools/i18n/Cargo.toml --lib --locked --offline
 
 JOURNAL_WINDOW_CATALOG = CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo run --quiet --manifest-path tools/i18n/Cargo.toml --locked --offline -- targets i18n/catalog --channel production --target rust --target classic
+JOURNAL_WINDOW_CATALOG_DEV = CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo run --quiet --manifest-path tools/i18n/Cargo.toml --locked --offline -- targets i18n/catalog --channel development --fallback-stale --target rust --target classic
 
-.PHONY: journal-window-catalog check-journal-window-catalog
+.PHONY: journal-window-catalog journal-window-catalog-dev check-journal-window-catalog
 journal-window-catalog:
 	$(JOURNAL_WINDOW_CATALOG) --out i18n/generated/window
+
+journal-window-catalog-dev:
+	$(JOURNAL_WINDOW_CATALOG_DEV) --out i18n/generated/window
 
 check-journal-window-catalog:
 	@set -eu; \
@@ -1729,12 +1733,18 @@ check-journal-window-catalog:
 
 JOURNAL_CLI_COMPILER = CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo run --quiet --manifest-path tools/i18n/Cargo.toml --locked --offline
 JOURNAL_LAUNCHER_COPY = $(JOURNAL_CLI_COMPILER) --example journal-launcher -- production
+JOURNAL_LAUNCHER_COPY_DEV = $(JOURNAL_CLI_COMPILER) --example journal-launcher -- development --fallback-stale
 JOURNAL_CLI_CATALOG = $(JOURNAL_CLI_COMPILER) -- targets i18n/cli --channel production --target rust
+JOURNAL_CLI_CATALOG_DEV = $(JOURNAL_CLI_COMPILER) -- targets i18n/cli --channel development --fallback-stale --target rust
 
-.PHONY: journal-cli-catalog check-journal-cli-catalog
+.PHONY: journal-cli-catalog journal-cli-catalog-dev check-journal-cli-catalog
 journal-cli-catalog:
 	$(JOURNAL_CLI_CATALOG) --out i18n/generated/cli
 	$(JOURNAL_LAUNCHER_COPY)
+
+journal-cli-catalog-dev:
+	$(JOURNAL_CLI_CATALOG_DEV) --out i18n/generated/cli
+	$(JOURNAL_LAUNCHER_COPY_DEV)
 
 check-journal-cli-catalog:
 	@set -eu; \
@@ -1749,10 +1759,16 @@ check-journal-cli-catalog:
 	fi
 
 WINDOWS_APP_CATALOG = CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo run --quiet --manifest-path tools/i18n/Cargo.toml --locked --offline -- targets i18n/windows-app --channel production --target rust --target classic
+WINDOWS_APP_CATALOG_DEV = CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo run --quiet --manifest-path tools/i18n/Cargo.toml --locked --offline -- targets i18n/windows-app --channel development --fallback-stale --target rust --target classic
 
-.PHONY: windows-app-catalog check-windows-app-catalog
+.PHONY: windows-app-catalog windows-app-catalog-dev check-windows-app-catalog dev-catalogs
 windows-app-catalog:
 	$(WINDOWS_APP_CATALOG) --out i18n/generated/windows-app
+
+windows-app-catalog-dev:
+	$(WINDOWS_APP_CATALOG_DEV) --out i18n/generated/windows-app
+
+dev-catalogs: journal-window-catalog-dev journal-cli-catalog-dev windows-app-catalog-dev
 
 check-windows-app-catalog:
 	@set -eu; \

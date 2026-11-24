@@ -72,22 +72,23 @@ fn print_usage() {
          USAGE:\n\
          i18n-catalog <COMMAND> [OPTIONS]\n\n\
          COMMANDS:\n\
-         compile <catalog> --channel <development|production> [--locale <tag>] [--fallback-stale]\n\
-         emit <catalog> --channel <development|production> [--locale <tag>] [--fallback-stale] --out <file>\n\
+         compile <catalog> --channel <development|production> [--locale <tag>...] [--fallback-stale]\n\
+         emit <catalog> --channel <development|production> [--locale <tag>...] [--fallback-stale] --out <file>\n\
          history <catalog>\n\
          retire <catalog> --id <id> [--replacement <id>]\n\
          lock <catalog> [--acknowledge <locale> [--id <id> | --ids-file <path>]]\n\
          pseudo <catalog> --out <dir>\n\
-         coverage <catalog> --channel <development|production> [--locale <tag>] [--fallback-stale]\n\
+         coverage <catalog> --channel <development|production> [--locale <tag>...] [--fallback-stale]\n\
          status <catalog> --locale <tag> [--ids-file <path>] [--json]\n\
          import <bundle> --dest <dir>\n\
          export <catalog> --out <dir>\n\
-         targets <catalog> --channel <development|production> [--locale <tag>] [--fallback-stale] --out <dir> --target <rust|esm|classic|apple|android|webextension|gettext> [--target ...]\n"
+         targets <catalog> --channel <development|production> [--locale <tag>...] [--fallback-stale] --out <dir> --target <rust|esm|classic|apple|android|webextension|gettext> [--target ...]\n"
     );
 }
 
 fn run_compile(args: &[String]) -> i32 {
-    let (catalog_dir, channel, locale, fallback_stale) = match parse_channel_and_locale_args(args) {
+    let (catalog_dir, channel, locales, fallback_stale) = match parse_channel_and_locale_args(args)
+    {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{}", e);
@@ -95,10 +96,10 @@ fn run_compile(args: &[String]) -> i32 {
         }
     };
 
-    match LoadedCatalog::load_and_validate_with_options(
+    match LoadedCatalog::load_and_validate_for_locales(
         &catalog_dir,
         channel,
-        locale.as_deref(),
+        &locales,
         fallback_stale,
     ) {
         Ok(_) => 0,
@@ -134,7 +135,7 @@ fn run_emit(args: &[String]) -> i32 {
         }
     };
 
-    let (catalog_dir, channel, locale, fallback_stale) = match parse_channel_and_locale_args(&rest)
+    let (catalog_dir, channel, locales, fallback_stale) = match parse_channel_and_locale_args(&rest)
     {
         Ok(v) => v,
         Err(e) => {
@@ -143,10 +144,10 @@ fn run_emit(args: &[String]) -> i32 {
         }
     };
 
-    let catalog = match LoadedCatalog::load_and_validate_with_options(
+    let catalog = match LoadedCatalog::load_and_validate_for_locales(
         &catalog_dir,
         channel,
-        locale.as_deref(),
+        &locales,
         fallback_stale,
     ) {
         Ok(c) => c,
@@ -169,7 +170,7 @@ fn run_emit(args: &[String]) -> i32 {
     let eligible_locales =
         match catalog
             .registry
-            .get_eligible_locales(channel, &all_bundle_names, locale.as_deref())
+            .get_eligible_locales_for(channel, &all_bundle_names, &locales)
         {
             Ok(l) => l,
             Err(f) => {
@@ -824,7 +825,8 @@ fn run_pseudo(args: &[String]) -> i32 {
 }
 
 fn run_coverage(args: &[String]) -> i32 {
-    let (catalog_dir, channel, locale, fallback_stale) = match parse_channel_and_locale_args(args) {
+    let (catalog_dir, channel, locales, fallback_stale) = match parse_channel_and_locale_args(args)
+    {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{}", e);
@@ -832,10 +834,10 @@ fn run_coverage(args: &[String]) -> i32 {
         }
     };
 
-    let catalog = match LoadedCatalog::load_and_validate_with_options(
+    let catalog = match LoadedCatalog::load_and_validate_for_locales(
         &catalog_dir,
         channel,
-        locale.as_deref(),
+        &locales,
         fallback_stale,
     ) {
         Ok(c) => c,
@@ -858,7 +860,7 @@ fn run_coverage(args: &[String]) -> i32 {
     let eligible_locales =
         match catalog
             .registry
-            .get_eligible_locales(channel, &all_bundle_names, locale.as_deref())
+            .get_eligible_locales_for(channel, &all_bundle_names, &locales)
         {
             Ok(l) => l,
             Err(f) => {
@@ -1201,14 +1203,14 @@ fn run_export(args: &[String]) -> i32 {
 
 fn parse_channel_and_locale_args(
     args: &[String],
-) -> Result<(PathBuf, Channel, Option<String>, bool), String> {
+) -> Result<(PathBuf, Channel, Vec<String>, bool), String> {
     if args.is_empty() {
         return Err("Missing catalog directory".to_string());
     }
 
     let catalog_dir = PathBuf::from(&args[0]);
     let mut channel = None;
-    let mut locale = None;
+    let mut locales = Vec::new();
     let mut fallback_stale = false;
 
     let mut i = 1;
@@ -1223,7 +1225,7 @@ fn parse_channel_and_locale_args(
                 i += 2;
             }
             "--locale" if i + 1 < args.len() => {
-                locale = Some(args[i + 1].clone());
+                locales.push(args[i + 1].clone());
                 i += 2;
             }
             "--fallback-stale" => {
@@ -1235,13 +1237,13 @@ fn parse_channel_and_locale_args(
     }
 
     let ch = channel.ok_or_else(|| "Missing required --channel argument".to_string())?;
-    Ok((catalog_dir, ch, locale, fallback_stale))
+    Ok((catalog_dir, ch, locales, fallback_stale))
 }
 
 fn run_targets(args: &[String]) -> i32 {
     let mut catalog_dir = None;
     let mut channel = None;
-    let mut locale = None;
+    let mut locales = Vec::new();
     let mut out_dir = None;
     let mut targets = Vec::new();
     let mut fallback_stale = false;
@@ -1261,7 +1263,7 @@ fn run_targets(args: &[String]) -> i32 {
                 i += 2;
             }
             "--locale" if i + 1 < args.len() => {
-                locale = Some(args[i + 1].clone());
+                locales.push(args[i + 1].clone());
                 i += 2;
             }
             "--fallback-stale" => {
@@ -1319,23 +1321,20 @@ fn run_targets(args: &[String]) -> i32 {
         return 1;
     }
 
-    let catalog = match LoadedCatalog::load_and_validate_with_options(
-        &cat_path,
-        ch,
-        locale.as_deref(),
-        fallback_stale,
-    ) {
-        Ok(c) => c,
-        Err(faults) => {
-            for f in faults {
-                eprintln!("{}", f);
+    let catalog =
+        match LoadedCatalog::load_and_validate_for_locales(&cat_path, ch, &locales, fallback_stale)
+        {
+            Ok(c) => c,
+            Err(faults) => {
+                for f in faults {
+                    eprintln!("{}", f);
+                }
+                return 1;
             }
-            return 1;
-        }
-    };
+        };
 
     if let Err(faults) =
-        crate::target::publish(&catalog, ch, locale.as_deref(), &targets, &out_path)
+        crate::target::publish_for_locales(&catalog, ch, &locales, &targets, &out_path)
     {
         for f in faults {
             eprintln!("{}", f);

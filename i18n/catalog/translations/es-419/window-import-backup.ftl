@@ -3172,8 +3172,6 @@ journal.window.import.status.pending = pendiente
 
 journal.window.import.status.running = en ejecución
 
-journal.window.import.status.saved = guardado
-
 journal.window.import.status.stage.execution = Ejecución
 
 journal.window.import.status.stage.finalization = Finalización
@@ -3505,10 +3503,6 @@ journal.window.import.visible.text.uploading.your.file.keep.this.page = subiendo
 journal.window.import.visible.text.validate = validar
 
 journal.window.import.visible.text.validating = validando
-
-journal.window.import.window.explanation.a.button.input.select.textarea = a, button, input, select, textarea
-
-journal.window.import.window.explanation.a.button.select.textarea = a, button, select, textarea
 
 journal.window.import.window.explanation.could.not.preview.this.import = no se pudo previsualizar esta importación
 
