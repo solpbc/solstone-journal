@@ -36,7 +36,7 @@ journal.setup.downloads.complete = listo
 
 journal.setup.downloads.error = no se pudo descargar. vuelve a intentarlo.
 
-journal.setup.downloads.idle = sin empezar
+journal.setup.downloads.idle = sin iniciar
 
 journal.setup.downloads.progress = descargando…
 
@@ -2046,7 +2046,7 @@ journal.window.home.originals.confirm.trash.until.erase.named.stream.third = { $
     }, y su espacio vuelve entonces.
 }
 
-journal.window.home.originals.copy.bulk.clear = quitar la selección
+journal.window.home.originals.copy.bulk.clear = limpiar la selección
 
 journal.window.home.originals.copy.bulk.delete = eliminar lo seleccionado
 
@@ -2331,20 +2331,20 @@ journal.window.home.today.activity.preview.count = { $quantity ->
 }
 
 journal.window.home.today.duration.hour.and.minute.count = { $quantity ->
-    [one] { $hours }h { $minute_quantity ->
-        [one] { $minutes }m
-        [many] { $minutes }m
-       *[other] { $minutes }m
+    [one] { $hours } h { $minute_quantity ->
+        [one] { $minutes } min
+        [many] { $minutes } min
+       *[other] { $minutes } min
     }
-    [many] { $hours }h { $minute_quantity ->
-        [one] { $minutes }m
-        [many] { $minutes }m
-       *[other] { $minutes }m
+    [many] { $hours } h { $minute_quantity ->
+        [one] { $minutes } min
+        [many] { $minutes } min
+       *[other] { $minutes } min
     }
-   *[other] { $hours }h { $minute_quantity ->
-        [one] { $minutes }m
-        [many] { $minutes }m
-       *[other] { $minutes }m
+   *[other] { $hours } h { $minute_quantity ->
+        [one] { $minutes } min
+        [many] { $minutes } min
+       *[other] { $minutes } min
     }
 }
 
@@ -2710,7 +2710,7 @@ journal.window.loading.records = cargando registros…
 
 journal.window.loading.search = cargando búsqueda…
 
-journal.window.loading.settings = cargando configuración…
+journal.window.loading.settings = cargando la configuración…
 
 journal.window.loading.sources = cargando fuentes…
 
@@ -2720,7 +2720,7 @@ journal.window.loading.stats = cargando estadísticas…
 
 journal.window.loading.support = cargando soporte…
 
-journal.window.loading.thinking = cargando configuración de razonamiento…
+journal.window.loading.thinking = cargando la configuración de razonamiento…
 
 journal.window.loading.transcripts = cargando transcripciones…
 
@@ -3126,7 +3126,7 @@ journal.window.shared.api.window.explanation.couldn.t.finish.that.request = no s
 
 journal.window.shared.app.disclosure.label.show.details = mostrar detalles
 
-journal.window.shared.app.label.try.now = Probar ahora
+journal.window.shared.app.label.try.now = Intentar ahora
 
 journal.window.shared.app.notice.background.task = { $app_name }{ $slot1 }tarea en segundo plano
 
@@ -3154,11 +3154,11 @@ journal.window.shared.app.window.explanation.also.remove.it.from.your.backups = 
 
 journal.window.shared.app.window.explanation.also.remove.them.from.your.backups = quitarlos también de tus copias de seguridad
 
-journal.window.shared.app.window.explanation.backup.is.paused.so.this.happens = la copia de seguridad está en pausa, así que esto ocurre cuando la reanudes.
+journal.window.shared.app.window.explanation.backup.is.paused.so.this.happens = la copia de seguridad está en pausa, así que esto ocurre una vez que la reanudes.
 
 journal.window.shared.app.window.explanation.couldn.t.load.this.section = no se pudo cargar esta sección
 
-journal.window.shared.app.window.explanation.couldn.t.reach.your.journal.some = no se pudo llegar a tu diario. algunas actualizaciones en segundo plano están en pausa.
+journal.window.shared.app.window.explanation.couldn.t.reach.your.journal.some = no se pudo conectar con tu diario. algunas actualizaciones en segundo plano están en pausa.
 
 journal.window.shared.app.window.explanation.reload.to.try.again = recarga para volver a intentarlo.
 
@@ -3698,7 +3698,7 @@ journal.window.shared.status.pane.security.restart = reiniciar tu diario
 
 journal.window.shared.status.pane.security.unnamed.device.update.version = a la app de solstone en uno de tus dispositivos le falta una corrección de seguridad (actualiza a { $fixed_version }).
 
-journal.window.shared.status.pane.status.text.a.device.isn.t.reaching.your = un dispositivo no llega a tu diario.
+journal.window.shared.status.pane.status.text.a.device.isn.t.reaching.your = un dispositivo no conecta con tu diario.
 
 journal.window.shared.status.pane.status.text.a.device.needs.attention = un dispositivo necesita atención
 
@@ -4000,7 +4000,7 @@ journal.window.view.entities.source = nombres que tu diario encontró en lo que 
 
 journal.window.view.health.description = si tu diario va al día: procesamiento, dispositivos, errores
 
-journal.window.view.health.label = salud
+journal.window.view.health.label = estado
 
 journal.window.view.health.source = las revisiones propias de tu diario
 

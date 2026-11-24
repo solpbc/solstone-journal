@@ -450,7 +450,7 @@ journal.window.agents.field.label.what.it.did = qué hizo
 
 journal.window.agents.field.label.which.part.of.your.journal = qué parte de tu diario
 
-journal.window.agents.field.label.your.journal.s.address = la dirección de tu diario
+journal.window.agents.field.label.your.journal.s.address = dirección de tu diario
 
 journal.window.agents.field.label.your.server.s.ipv4.address = la dirección IPv4 de tu servidor
 
@@ -922,13 +922,13 @@ journal.window.agents.title.delete.this.memory = ¿eliminar este recuerdo?
 
 journal.window.agents.title.erase.this.memory.now = ¿borrar este recuerdo ahora?
 
-journal.window.agents.title.moved.to.the.trash = movido a la papelera
+journal.window.agents.title.moved.to.the.trash = se movió a la papelera
 
 journal.window.agents.title.your.journal.didn.t.answer = tu diario no respondió
 
-journal.window.agents.trash.copy.agent.read.anything.an.agent.already.read.stays = lo que un agente ya leyó se queda con él.
+journal.window.agents.trash.copy.agent.read.anything.an.agent.already.read.stays = cualquier cosa que un agente ya leyó se queda con él.
 
-journal.window.agents.trash.copy.back.back = volver
+journal.window.agents.trash.copy.back.back = atrás
 
 journal.window.agents.trash.copy.cancel.cancel = cancelar
 
@@ -944,7 +944,7 @@ journal.window.agents.trash.copy.reach.it.leaves.your.journal.now.and.variant2 =
 
 journal.window.agents.trash.copy.recover.recover = recuperar
 
-journal.window.agents.trash.copy.stays.summaries.made.from.it.elsewhere.in = los resúmenes hechos a partir de esto en otra parte de tu diario no se borran y pueden seguir mencionando esto.
+journal.window.agents.trash.copy.stays.summaries.made.from.it.elsewhere.in = los resúmenes hechos a partir de esto en otra parte de tu diario no se borran y pueden seguir mencionándolo.
 
 journal.window.agents.trash.copy.stays.summaries.made.from.it.elsewhere.in.variant2 = los resúmenes hechos a partir de esto en otra parte de tu diario se quedan donde están y pueden seguir mencionando esto.
 
@@ -1176,7 +1176,7 @@ journal.window.agents.visible.text.your.journal.lost.its.certificate.registratio
 
 journal.window.agents.visible.text.your.journal.records.each.request.you = tu diario registra cada solicitud. puedes cambiar lo que puede ver o desconectarlo en cualquier momento.
 
-journal.window.agents.visible.text.your.journal.s.address = la dirección de tu diario
+journal.window.agents.visible.text.your.journal.s.address = dirección de tu diario
 
 journal.window.agents.visible.text.your.journal.s.certificate.for.these = el certificado de tu diario para estas direcciones tiene esta huella SHA-256:
 
@@ -1274,7 +1274,7 @@ journal.window.agents.window.explanation.the.device.running.your.journal = el di
 
 journal.window.agents.window.explanation.the.local.address.is.in.use = la dirección local está en uso o reservada. libérala antes de volver a intentarlo.
 
-journal.window.agents.window.explanation.this.code.expired.before.an.agent = este código caducó antes de que un agente lo usara. crea uno nuevo y luego conecta de nuevo desde tu agente.
+journal.window.agents.window.explanation.this.code.expired.before.an.agent = este código venció antes de que un agente lo usara. crea uno nuevo y luego conecta de nuevo desde tu agente.
 
 journal.window.agents.window.explanation.this.code.was.entered.wrong.too = este código se ingresó mal demasiadas veces, así que ya no funciona. crea uno nuevo y luego conecta de nuevo desde tu agente.
 
@@ -1412,9 +1412,9 @@ journal.window.describe.notification.blocked.provider.key.missing = tu proveedor
 
 journal.window.describe.notification.blocked.title = las descripciones de pantalla están en espera
 
-journal.window.oauth.callback.failure = el acceso no terminó. vuelve a tu diario y vuelve a intentarlo.
+journal.window.oauth.callback.failure = el inicio de sesión no terminó. vuelve a tu diario y vuelve a intentarlo
 
-journal.window.oauth.callback.success = iniciaste sesión. puedes cerrar esta pestaña y volver a tu diario.
+journal.window.oauth.callback.success = iniciaste sesión. puedes cerrar esta pestaña y volver a tu diario
 
 journal.window.oauth.cancel.after.code = ¿cambiaste de opinión? cierra esta pestaña. no hay nada conectado, y este código no vuelve a funcionar.
 
@@ -1446,7 +1446,7 @@ journal.window.oauth.error.attempts = demasiados códigos incorrectos para esta 
 
 journal.window.oauth.error.code = este código de vinculación ya no funciona. crea uno nuevo en la app de agentes y luego conecta de nuevo desde tu agente.
 
-journal.window.oauth.error.expired = esta solicitud caducó o ya no es válida. conecta de nuevo desde tu agente, con un código nuevo de la app de agentes si el tuyo ya no está abierto.
+journal.window.oauth.error.expired = esta solicitud venció o ya no es válida. conecta de nuevo desde tu agente, con un código nuevo de la app de agentes si el tuyo ya no está abierto.
 
 journal.window.oauth.error.facets = no se pudieron verificar las facetas elegidas; vuelve a tu diario y vuelve a intentarlo
 
@@ -1624,7 +1624,7 @@ journal.window.stats.chart.hours.tip = { $day } - Audio: { $audio }h, Pantalla: 
 
 journal.window.stats.chart.hours.tip.disk = { $day } - Audio: { $audio }h, Pantalla: { $screen }h, Disco: { $storage }
 
-journal.window.stats.chart.hours.value = { $hours }h
+journal.window.stats.chart.hours.value = { $hours } h
 
 journal.window.stats.chart.inspection.caption = día{ $slot1 }
 
@@ -2396,7 +2396,7 @@ journal.window.thinking.copy.your.journal.can.t.read.its = tu diario no puede le
 
 journal.window.thinking.copy.your.journal.is.here.choose.how = tu diario está aquí. elige abajo cómo corre el procesamiento.
 
-journal.window.thinking.copy.your.journal.must.verify.the.service = tu diario tiene que verificar el servicio antes de que se envíe algo. si no puede verificar, no envía.
+journal.window.thinking.copy.your.journal.must.verify.the.service = tu diario debe verificar el servicio antes de que se envíe algo. si no puede verificar, no envía.
 
 journal.window.thinking.copy.your.journal.needs.to.re.check = tu diario tiene que volver a revisar el servicio antes de enviar.
 
@@ -2544,7 +2544,7 @@ journal.window.thinking.label.thinking.events = eventos de razonamiento
 
 journal.window.thinking.label.tool.calls = llamadas de herramienta
 
-journal.window.thinking.lane.attestation.your.journal.must.verify.the.service = tu diario tiene que verificar el servicio antes de que se envíe algo. si no puede verificar, no envía.
+journal.window.thinking.lane.attestation.your.journal.must.verify.the.service = tu diario debe verificar el servicio antes de que se envíe algo. si no puede verificar, no envía.
 
 journal.window.thinking.lane.check.failed.keep.active = no se pudo revisar la configuración local. todavía puedes usar { $active_lane }.
 
@@ -2986,7 +2986,7 @@ journal.window.thinking.thinking.brain.headline.thinking.isn.t.set.up.yet = el r
 
 journal.window.thinking.thinking.brain.headline.thinking.needs.attention = el razonamiento necesita atención
 
-journal.window.thinking.thinking.brain.headline.thinking.status.unavailable = el estado del razonamiento no está disponible
+journal.window.thinking.thinking.brain.headline.thinking.status.unavailable = estado del razonamiento no disponible
 
 journal.window.thinking.thinking.brain.reason.a.check.is.already.running = una revisión ya está en curso
 
@@ -3202,7 +3202,7 @@ journal.window.thinking.visible.text.show.all.facets = mostrar todas las facetas
 
 journal.window.thinking.visible.text.show.all.runs = mostrar todas las ejecuciones
 
-journal.window.thinking.visible.text.still.working = sigue trabajando…
+journal.window.thinking.visible.text.still.working = todavía trabajando…
 
 journal.window.thinking.visible.text.stored.text = texto almacenado
 
@@ -3324,7 +3324,7 @@ journal.window.thinking.window.state.text.entity.detection = detección de entid
 
 journal.window.thinking.window.state.text.entity.facts = hechos de la entidad
 
-journal.window.thinking.window.state.text.just.now = hace un momento
+journal.window.thinking.window.state.text.just.now = justo ahora
 
 journal.window.thinking.window.state.text.not.active = inactivo
 

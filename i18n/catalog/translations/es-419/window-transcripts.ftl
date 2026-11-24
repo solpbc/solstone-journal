@@ -102,7 +102,7 @@ journal.window.health.action.missing.unit = Falta { $slot1 }
 
 journal.window.health.action.no.model.is.chosen.yet.choose.one.in.thinking = todavía no hay un modelo elegido. elige uno en razonamiento y vuelve a intentarlo.
 
-journal.window.health.action.one.of.those.values.couldn.t.be.used = uno de esos valores no se pudo usar.
+journal.window.health.action.one.of.those.values.couldn.t.be.used = no se pudo usar uno de esos valores.
 
 journal.window.health.action.reprocess.failed.cause = no se pudo reprocesar:{ $slot1 }{ $cause }
 
@@ -112,7 +112,7 @@ journal.window.health.action.retry.record.unrecognized = registro de reintento n
 
 journal.window.health.action.saved.request.could.not.be.read = no se pudo leer la solicitud guardada
 
-journal.window.health.action.that.day.couldn.t.be.used = ese día no se pudo usar.
+journal.window.health.action.that.day.couldn.t.be.used = no se pudo usar ese día.
 
 journal.window.health.action.that.work.has.changed.since.this.list.was.checked = ese trabajo cambió desde que se revisó esta lista. actualizando su estado.
 
@@ -437,7 +437,7 @@ journal.window.health.glance.glance.ok.the.journal.s.live.services.and = los ser
 
 journal.window.health.glance.glance.services.the.journal.s.services.couldn.t = no se pudo conectar con los servicios del diario. revisa que tu diario esté en ejecución.
 
-journal.window.health.glance.glance.work.queued.work.status.is.unavailable.right = el estado del trabajo en cola no está disponible ahora.
+journal.window.health.glance.glance.work.queued.work.status.is.unavailable.right = el estado del trabajo en cola no está disponible ahora mismo.
 
 journal.window.health.glance.glance.work.some.queued.work.is.on.hold = parte del trabajo en cola está en espera de una revisión de seguridad.
 
@@ -589,7 +589,7 @@ journal.window.health.logs.that.file.couldn.t.be.read = no se pudo leer ese arch
 
 journal.window.health.logs.that.file.isn.t.available = ese archivo no está disponible.
 
-journal.window.health.logs.that.path.couldn.t.be.used = esa ruta no se pudo usar.
+journal.window.health.logs.that.path.couldn.t.be.used = no se pudo usar esa ruta.
 
 journal.window.health.observe.local.reporting = la computadora de tu diario todavía no se reporta. mostrando { $stream }.
 
@@ -764,7 +764,7 @@ journal.window.health.section.heading.processing = procesamiento
 
 journal.window.health.section.heading.programs.using.the.older.local.connection = programas que usan la conexión local anterior
 
-journal.window.health.section.heading.right.now = ahora
+journal.window.health.section.heading.right.now = ahora mismo
 
 journal.window.health.section.heading.set.aside.work = trabajo apartado
 
@@ -1260,7 +1260,7 @@ journal.window.health.window.explanation.older.history.is.still.catching.up = el
 
 journal.window.health.window.explanation.ran.into.a.problem = se encontró un problema
 
-journal.window.health.window.explanation.reload.to.try.again = vuelve a cargar para intentarlo de nuevo.
+journal.window.health.window.explanation.reload.to.try.again = recarga para volver a intentarlo.
 
 journal.window.health.window.explanation.the.model.repeatedly.returned.an.unusable = el modelo devolvió varias veces un resultado que no se puede usar.
 
@@ -1535,7 +1535,7 @@ journal.window.speakers.attribution.attribution.response.detail.invalid.stream.l
 
 journal.window.speakers.attribution.attribution.response.detail.missing.required.fields = Faltan campos obligatorios
 
-journal.window.speakers.attribution.attribution.response.detail.no.data.provided = No hay datos
+journal.window.speakers.attribution.attribution.response.detail.no.data.provided = No se proporcionaron datos
 
 journal.window.speakers.attribution.attribution.response.detail.no.speaker.labels.found = No se encontraron etiquetas de hablante
 
@@ -1561,19 +1561,19 @@ journal.window.speakers.attribution.attribution.response.detail.use.a.valid.day.
 
 journal.window.speakers.attribution.attribution.response.detail.use.one.file.name.without.a = usa un solo nombre de archivo, sin ruta
 
-journal.window.speakers.attribution.attribution.response.one.of.those.values.couldn.t = uno de esos valores no se pudo usar.
+journal.window.speakers.attribution.attribution.response.one.of.those.values.couldn.t = no se pudo usar uno de esos valores.
 
 journal.window.speakers.attribution.attribution.response.source.name.is.invalid = el nombre de la fuente no es válido.
 
 journal.window.speakers.attribution.attribution.response.that.change.couldn.t.be.applied = no se pudo aplicar ese cambio porque la oración no está en el estado correcto.
 
-journal.window.speakers.attribution.attribution.response.that.day.couldn.t.be.used = ese día no se pudo usar.
+journal.window.speakers.attribution.attribution.response.that.day.couldn.t.be.used = no se pudo usar ese día.
 
 journal.window.speakers.attribution.attribution.response.that.json.request.couldn.t.be = no se pudo leer esa solicitud JSON.
 
 journal.window.speakers.attribution.attribution.response.that.request.didn.t.finish = esa solicitud no terminó.
 
-journal.window.speakers.attribution.attribution.response.that.request.had.no.data.in = esa solicitud no traía datos.
+journal.window.speakers.attribution.attribution.response.that.request.had.no.data.in = esa solicitud no tenía datos.
 
 journal.window.speakers.attribution.attribution.response.that.segment.or.stream.couldn.t = ese segmento o flujo no se pudo usar.
 
@@ -2015,7 +2015,7 @@ journal.window.speakers.error.invalid.speaker.parameter = Parámetro de hablante
 
 journal.window.speakers.error.no.transcript.found = No se encontró una transcripción
 
-journal.window.speakers.error.one.of.those.values.couldn.t.be.used = uno de esos valores no se pudo usar.
+journal.window.speakers.error.one.of.those.values.couldn.t.be.used = no se pudo usar uno de esos valores.
 
 journal.window.speakers.error.owner.confirm.identity.invalid = no se pudo confirmar esa voz de propietario porque la identidad de propietario configurada necesita atención.
 
@@ -2031,9 +2031,9 @@ journal.window.speakers.error.task.conflict = esa tarea de hablante ya está en 
 
 journal.window.speakers.error.task.not.found = no se encontró esa tarea de hablante.
 
-journal.window.speakers.error.that.day.couldn.t.be.used = ese día no se pudo usar.
+journal.window.speakers.error.that.day.couldn.t.be.used = no se pudo usar ese día.
 
-journal.window.speakers.error.that.month.couldn.t.be.used = ese mes no se pudo usar.
+journal.window.speakers.error.that.month.couldn.t.be.used = no se pudo usar ese mes.
 
 journal.window.speakers.error.that.request.couldn.t.be.used = esa solicitud no se pudo usar.
 
@@ -2105,7 +2105,7 @@ journal.window.speakers.known.show.all.count =
 
 journal.window.speakers.media.error.file.not.found = ese archivo no está disponible.
 
-journal.window.speakers.media.error.invalid.path = esa ruta no se pudo usar.
+journal.window.speakers.media.error.invalid.path = no se pudo usar esa ruta.
 
 journal.window.speakers.notice.couldn.t.load.voice.samples = no se pudieron cargar las muestras de voz.
 
@@ -2278,7 +2278,7 @@ journal.window.speakers.owner.write.owner.voice.error.detail.missing.required.fi
 
 journal.window.speakers.owner.write.owner.voice.error.detail.no.candidate.available = No hay un candidato disponible
 
-journal.window.speakers.owner.write.owner.voice.error.detail.no.data.provided = No hay datos
+journal.window.speakers.owner.write.owner.voice.error.detail.no.data.provided = No se proporcionaron datos
 
 journal.window.speakers.owner.write.owner.voice.error.detail.no.owner.voice.is.saved = No hay una voz de propietario guardada
 
@@ -2298,13 +2298,13 @@ journal.window.speakers.owner.write.owner.voice.response.a.required.field.is.mis
 
 journal.window.speakers.owner.write.owner.voice.response.source.name.is.invalid = el nombre de la fuente no es válido.
 
-journal.window.speakers.owner.write.owner.voice.response.that.day.couldn.t.be.used = ese día no se pudo usar.
+journal.window.speakers.owner.write.owner.voice.response.that.day.couldn.t.be.used = no se pudo usar ese día.
 
 journal.window.speakers.owner.write.owner.voice.response.that.json.request.couldn.t.be = no se pudo leer esa solicitud JSON.
 
 journal.window.speakers.owner.write.owner.voice.response.that.person.couldn.t.be.found = no se pudo encontrar a esa persona.
 
-journal.window.speakers.owner.write.owner.voice.response.that.request.had.no.data.in = esa solicitud no traía datos.
+journal.window.speakers.owner.write.owner.voice.response.that.request.had.no.data.in = esa solicitud no tenía datos.
 
 journal.window.speakers.owner.write.owner.voice.response.that.segment.or.stream.couldn.t = ese segmento o flujo no se pudo usar.
 
@@ -2882,7 +2882,7 @@ journal.window.transcripts.consent.stretch.copy.in.trash.anything.from.then.that
 
 journal.window.transcripts.consent.stretch.copy.inflight.to.move.those.delete.this.stretch = para mover eso, elimina este tramo de nuevo cuando terminen.
 
-journal.window.transcripts.consent.stretch.copy.location.location = lugar
+journal.window.transcripts.consent.stretch.copy.location.location = ubicación
 
 journal.window.transcripts.consent.stretch.copy.made.the.entities.you.re.tending.and = las entidades que cuidas y lo que tu diario escribió sobre ellas, que todavía pueden mencionarlo
 
@@ -2930,7 +2930,7 @@ journal.window.transcripts.consent.trash.copy.erase.if.it.s.the.last.segment = s
 
 journal.window.transcripts.consent.trash.copy.erase.if.these.include.the.last.segments = si estos incluyen los últimos segmentos de una importación, la importación, cualquier archivo que conservó y sus segmentos en la papelera se borran con ellos.
 
-journal.window.transcripts.consent.trash.copy.erasefound.detected.entities.drop.them.too.and = las entidades detectadas también los sueltan, y las muestras de voz de ellos salen de tus voces conocidas. las entidades que cuidas no se borran, y lo que tu diario escribió sobre ellas puede seguir mencionándolos.
+journal.window.transcripts.consent.trash.copy.erasefound.detected.entities.drop.them.too.and = las entidades detectadas también los sueltan, y las muestras de voz que vengan de ellos salen de tus voces conocidas. las entidades que cuidas no se borran, y lo que tu diario escribió sobre ellas puede seguir mencionándolos.
 
 journal.window.transcripts.consent.trash.copy.eraselead.this.erases.each.segment.s.own = esto borra lo propio de cada segmento:
 
@@ -2940,15 +2940,15 @@ journal.window.transcripts.consent.trash.copy.erasereach.they.leave.your.journal
 
 journal.window.transcripts.consent.trash.copy.erasestays.activities.made.from.them.drop.them = las actividades hechas a partir de ellos los sueltan ahora, y los relatos de sus días y semanas salen de la búsqueda. tu diario luego los reescribe desde lo que queda, con el razonamiento que elegiste.
 
-journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and = las entidades detectadas también lo sueltan, y las muestras de voz de esto salen de tus voces conocidas. las entidades que cuidas quedan, y lo que tu diario escribió sobre ellas puede seguir mencionándolo.
+journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and = las entidades detectadas también lo sueltan, y las muestras de voz que vengan de esto salen de tus voces conocidas. las entidades que cuidas se quedan, y lo que tu diario escribió sobre ellas puede seguir mencionándolo.
 
-journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and.variant2 = las entidades detectadas también lo sueltan, y las muestras de voz de esto salen de tus voces conocidas. las entidades que cuidas no se borran, y lo que tu diario escribió sobre ellas puede seguir mencionándolo.
+journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and.variant2 = las entidades detectadas también lo sueltan, y las muestras de voz que vengan de esto salen de tus voces conocidas. las entidades que cuidas no se borran, y lo que tu diario escribió sobre ellas puede seguir mencionándolo.
 
 journal.window.transcripts.consent.trash.copy.lead.this.erases.the.segment.s.own = esto borra lo propio del segmento:
 
 journal.window.transcripts.consent.trash.copy.lead.this.moves.the.segment.s.own = esto mueve lo propio del segmento:
 
-journal.window.transcripts.consent.trash.copy.location.location = lugar
+journal.window.transcripts.consent.trash.copy.location.location = ubicación
 
 journal.window.transcripts.consent.trash.copy.many.the.files.its.import.kept.stay = los archivos que su importación conservó siguen en tu diario, porque otros segmentos todavía vienen de ellos. para quitarlos, elimina la importación.
 
@@ -2962,7 +2962,7 @@ journal.window.transcripts.consent.trash.copy.move.if.it.s.the.last.segment = si
 
 journal.window.transcripts.consent.trash.copy.move.if.these.include.the.last.segments = si estos incluyen los últimos segmentos de una importación, la importación y cualquier archivo que conservó van a la papelera con ellos.
 
-journal.window.transcripts.consent.trash.copy.movefound.detected.entities.drop.them.too.and = las entidades detectadas también los sueltan, y las muestras de voz de ellos salen de tus voces conocidas. las entidades que cuidas se quedan, y lo que tu diario escribió sobre ellas puede seguir mencionándolos.
+journal.window.transcripts.consent.trash.copy.movefound.detected.entities.drop.them.too.and = las entidades detectadas también los sueltan, y las muestras de voz que vengan de ellos salen de tus voces conocidas. las entidades que cuidas se quedan, y lo que tu diario escribió sobre ellas puede seguir mencionándolos.
 
 journal.window.transcripts.consent.trash.copy.movelead.this.moves.each.segment.s.own = esto mueve lo propio de cada segmento:
 
@@ -2980,7 +2980,7 @@ journal.window.transcripts.consent.trash.copy.one.it.s.the.last.segment.from = e
 
 journal.window.transcripts.consent.trash.copy.one.it.s.the.last.segment.from.variant2 = es el último segmento de su importación, así que el archivo que conservó y su fila en tu historial de importación van a la papelera con él.
 
-journal.window.transcripts.consent.trash.copy.one.its.original.media.in.the.trash = su contenido multimedia original en la papelera se borra con esto.
+journal.window.transcripts.consent.trash.copy.one.its.original.media.in.the.trash = su contenido multimedia original en la papelera se borra con eso.
 
 journal.window.transcripts.consent.trash.copy.one.the.file.import.kept.stays.in = el archivo que 1 importación conservó sigue en tu diario, porque otros segmentos todavía vienen de él. para quitarlo, elimina la importación en la página de importación.
 
@@ -3236,7 +3236,7 @@ journal.window.transcripts.kind.audio.plus.screen = audio + pantalla
 
 journal.window.transcripts.kind.desktop.activity = actividad de escritorio
 
-journal.window.transcripts.kind.location = lugar
+journal.window.transcripts.kind.location = ubicación
 
 journal.window.transcripts.kind.pages = páginas
 
@@ -3374,7 +3374,7 @@ journal.window.transcripts.owner.desc.now.pick.a.block.in.the = ahora elige un b
 
 journal.window.transcripts.owner.desc.pick.part.of.the.day.on = elige una parte del día a la izquierda y luego un bloque en el detalle para leerlo.
 
-journal.window.transcripts.owner.desc.reload.to.try.again = vuelve a cargar para intentarlo de nuevo.
+journal.window.transcripts.owner.desc.reload.to.try.again = recarga para volver a intentarlo.
 
 journal.window.transcripts.owner.desc.something.went.wrong.decoding.the.screen = algo salió mal al decodificar los datos de pantalla. vuelve a elegir el segmento.
 
@@ -3434,7 +3434,7 @@ journal.window.transcripts.photo.copy.noprocessingaction.set.up.thinking = confi
 
 journal.window.transcripts.photo.copy.unavailable.this.photo.couldn.t.be.described = no se pudo describir esta foto. la foto sigue en tu diario.
 
-journal.window.transcripts.photo.copy.uploadfallback.no.date.in.photo.placed.at = sin fecha en la foto · colocada al momento de la importación
+journal.window.transcripts.photo.copy.uploadfallback.no.date.in.photo.placed.at = sin fecha en la foto · colocada a la hora de la importación
 
 journal.window.transcripts.photo.copy.viewerlabel.photo.viewer = visor de fotos
 
@@ -3500,7 +3500,7 @@ journal.window.transcripts.response.error.choose.days.or.less = elige 31 días o
 
 journal.window.transcripts.response.error.nothing.from.that.time.could.go = nada de ese momento pudo ir a la papelera.
 
-journal.window.transcripts.response.error.one.of.those.values.couldn.t = uno de esos valores no se pudo usar.
+journal.window.transcripts.response.error.one.of.those.values.couldn.t = no se pudo usar uno de esos valores.
 
 journal.window.transcripts.response.error.only.you.can.say.who.said = solo tú puedes decir quién dijo una línea.
 
@@ -3508,7 +3508,7 @@ journal.window.transcripts.response.error.reason.nothing.was.deleted = { $reason
 
 journal.window.transcripts.response.error.that.action.isn.t.available.in = esa acción no está disponible en el estado actual.
 
-journal.window.transcripts.response.error.that.day.couldn.t.be.used = ese día no se pudo usar.
+journal.window.transcripts.response.error.that.day.couldn.t.be.used = no se pudo usar ese día.
 
 journal.window.transcripts.response.error.that.delete.couldn.t.be.read = no se pudo leer esa eliminación, así que no se eliminó nada.
 
@@ -3516,9 +3516,9 @@ journal.window.transcripts.response.error.that.file.couldn.t.be.read = no se pud
 
 journal.window.transcripts.response.error.that.file.isn.t.available = ese archivo no está disponible.
 
-journal.window.transcripts.response.error.that.month.couldn.t.be.used = ese mes no se pudo usar.
+journal.window.transcripts.response.error.that.month.couldn.t.be.used = no se pudo usar ese mes.
 
-journal.window.transcripts.response.error.that.path.couldn.t.be.used = esa ruta no se pudo usar.
+journal.window.transcripts.response.error.that.path.couldn.t.be.used = no se pudo usar esa ruta.
 
 journal.window.transcripts.response.error.that.request.didn.t.finish = esa solicitud no terminó.
 
@@ -3532,7 +3532,7 @@ journal.window.transcripts.response.error.the.end.has.to.be.after = el fin tiene
 
 journal.window.transcripts.response.error.who.said.that.line.couldn.t = no se pudo guardar quién dijo esa línea.
 
-journal.window.transcripts.response.error.your.journal.couldn.t.finish.that = tu diario no pudo terminar esa eliminación. vuelve a cargar para revisar.
+journal.window.transcripts.response.error.your.journal.couldn.t.finish.that = tu diario no pudo terminar esa eliminación. recarga para revisar.
 
 journal.window.transcripts.response.error.your.journal.couldn.t.move.that = tu diario no pudo mover eso a la papelera, así que no se eliminó nada.
 
@@ -3562,7 +3562,7 @@ journal.window.transcripts.screenshot.copy.j7.the.text.in.this.screenshot.couldn
 
 journal.window.transcripts.section.heading.body.context = contexto del cuerpo
 
-journal.window.transcripts.section.heading.location = lugar
+journal.window.transcripts.section.heading.location = ubicación
 
 journal.window.transcripts.section.heading.transcripts = transcripciones
 
@@ -3642,7 +3642,7 @@ journal.window.transcripts.signals.section.device.capabilities = capacidades del
 
 journal.window.transcripts.signals.section.glasses.battery = batería de las gafas
 
-journal.window.transcripts.signals.section.location = lugar
+journal.window.transcripts.signals.section.location = ubicación
 
 journal.window.transcripts.signals.yes = sí
 
@@ -3866,7 +3866,7 @@ journal.window.transcripts.tooltip.previous.frame.left.arrow = fotograma anterio
 
 journal.window.transcripts.trash.copy.back.back = atrás
 
-journal.window.transcripts.trash.copy.busy.this.is.already.being.moved.or = esto ya se está moviendo o borrando. vuelve a cargar en un minuto para revisar.
+journal.window.transcripts.trash.copy.busy.this.is.already.being.moved.or = esto ya se está moviendo o borrando. recarga en un minuto para revisar.
 
 journal.window.transcripts.trash.copy.cancel.cancel = cancelar
 
@@ -3880,11 +3880,11 @@ journal.window.transcripts.trash.copy.eraseother.this.wasn.t.erased.try.again = 
 
 journal.window.transcripts.trash.copy.importing.this.wasn.t.moved.because.it = esto no se movió porque todavía se está importando. vuelve a intentarlo cuando termine.
 
-journal.window.transcripts.trash.copy.message.it.may.already.be.back.in = puede que ya haya vuelto a tu diario. vuelve a cargar para revisar.
+journal.window.transcripts.trash.copy.message.it.may.already.be.back.in = puede que ya haya vuelto a tu diario. recarga para revisar.
 
-journal.window.transcripts.trash.copy.message.it.may.already.be.erased.reload = puede que ya se haya borrado. vuelve a cargar para revisar.
+journal.window.transcripts.trash.copy.message.it.may.already.be.erased.reload = puede que ya se haya borrado. recarga para revisar.
 
-journal.window.transcripts.trash.copy.message.it.may.already.be.in.the = puede que ya esté en la papelera. vuelve a cargar para revisar.
+journal.window.transcripts.trash.copy.message.it.may.already.be.in.the = puede que ya esté en la papelera. recarga para revisar.
 
 journal.window.transcripts.trash.copy.message.it.s.back.in.your.journal = volvió a tu diario.
 
@@ -3894,11 +3894,11 @@ journal.window.transcripts.trash.copy.message.it.s.still.in.the.trash = sigue en
 
 journal.window.transcripts.trash.copy.message.it.s.still.in.your.journal = sigue en tu diario.
 
-journal.window.transcripts.trash.copy.message.they.may.already.be.back.in = puede que ya hayan vuelto a tu diario. vuelve a cargar para revisar.
+journal.window.transcripts.trash.copy.message.they.may.already.be.back.in = puede que ya hayan vuelto a tu diario. recarga para revisar.
 
-journal.window.transcripts.trash.copy.message.they.may.already.be.erased.reload = puede que ya se hayan borrado. vuelve a cargar para revisar.
+journal.window.transcripts.trash.copy.message.they.may.already.be.erased.reload = puede que ya se hayan borrado. recarga para revisar.
 
-journal.window.transcripts.trash.copy.message.they.may.already.be.in.the = puede que ya estén en la papelera. vuelve a cargar para revisar.
+journal.window.transcripts.trash.copy.message.they.may.already.be.in.the = puede que ya estén en la papelera. recarga para revisar.
 
 journal.window.transcripts.trash.copy.message.they.re.back.in.your.journal = volvieron a tu diario.
 
@@ -4112,7 +4112,7 @@ journal.window.transcripts.visible.text.show.less.output = mostrar menos de la s
 
 journal.window.transcripts.visible.text.sleep = sueño
 
-journal.window.transcripts.visible.text.still.working = sigue trabajando…
+journal.window.transcripts.visible.text.still.working = todavía trabajando…
 
 journal.window.transcripts.visible.text.transcripts = transcripciones
 

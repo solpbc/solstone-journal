@@ -493,7 +493,7 @@ journal.window.entities.copy.grid.show.all = mostrar todos los { $slot1 } { $slo
 
 journal.window.entities.copy.grid.title = momentos a lo largo del tiempo
 
-journal.window.entities.copy.grid.unit.none = todavía nada
+journal.window.entities.copy.grid.unit.none = todavía no hay nada
 
 journal.window.entities.copy.grid.unit.one = momento
 
@@ -521,7 +521,7 @@ journal.window.entities.copy.scope.facet.missing = esa faceta ya no está en tu 
 
 journal.window.entities.copy.scope.showing = mostrando
 
-journal.window.entities.copy.scope.whole.journal = todo tu diario
+journal.window.entities.copy.scope.whole.journal = tu diario completo
 
 journal.window.entities.copy.trust.action.failed = ese cambio de entidad no terminó.
 
@@ -830,7 +830,7 @@ journal.window.entities.entity.delete.copy.again.many.any.of.them.your.journal.f
 
 journal.window.entities.entity.delete.copy.back.back = atrás
 
-journal.window.entities.entity.delete.copy.busy.something.else.is.changing.it.right = otra cosa la está cambiando ahora mismo. vuelve a intentarlo en un minuto.
+journal.window.entities.entity.delete.copy.busy.something.else.is.changing.it.right = algo más la está cambiando en este momento. vuelve a intentarlo en un minuto.
 
 journal.window.entities.entity.delete.copy.busy.something.else.is.changing.this.right = otra cosa está cambiando esto ahora mismo, así que esto no se movió. vuelve a intentarlo en un minuto.
 
@@ -1400,7 +1400,7 @@ journal.window.entities.message.it.may.already.be.erased.reload = puede que ya s
 
 journal.window.entities.message.it.may.already.be.in.the = puede que ya esté en la papelera. recarga para revisar.
 
-journal.window.entities.message.it.s.back.in.your.journal = ya volvió a tu diario.
+journal.window.entities.message.it.s.back.in.your.journal = volvió a tu diario.
 
 journal.window.entities.message.it.s.in.the.trash.you = está en la papelera. puedes volver a intentarlo desde ahí.
 
@@ -1414,7 +1414,7 @@ journal.window.entities.message.they.may.already.be.erased.reload = puede que ya
 
 journal.window.entities.message.they.may.already.be.in.the = puede que ya estén en la papelera. recarga para revisar.
 
-journal.window.entities.message.they.re.back.in.your.journal = ya volvieron a tu diario.
+journal.window.entities.message.they.re.back.in.your.journal = volvieron a tu diario.
 
 journal.window.entities.message.they.re.still.in.the.trash = siguen en la papelera. puedes volver a intentarlo desde ahí.
 
@@ -1803,7 +1803,7 @@ journal.window.entities.response.operation.id.invalid = id de operación no vál
 
 journal.window.entities.response.operation.limit.invalid = límite no válido: { $limit }
 
-journal.window.entities.response.photo.entity.not.found = no se encontró esa persona.
+journal.window.entities.response.photo.entity.not.found = no se pudo encontrar a esa persona.
 
 journal.window.entities.response.photo.face.action.changed = esto cambió desde que se cargó la página. recarga la página.
 
@@ -1882,13 +1882,13 @@ journal.window.entities.tidy.id.count =
        *[other] { $entities } parecen un ID
     }
 
-journal.window.entities.title.couldn.t.erase.those = no se pudieron borrar
+journal.window.entities.title.couldn.t.erase.those = no se pudieron borrar esos
 
 journal.window.entities.title.couldn.t.move.that.to.the = no se pudo mover eso a la papelera
 
-journal.window.entities.title.couldn.t.move.those.to.the = no se pudieron mover a la papelera
+journal.window.entities.title.couldn.t.move.those.to.the = no se pudieron mover esos a la papelera
 
-journal.window.entities.title.couldn.t.recover.those = no se pudieron recuperar
+journal.window.entities.title.couldn.t.recover.those = no se pudieron recuperar esos
 
 journal.window.entities.title.delete.this.entity = ¿eliminar esta entidad?
 
@@ -2456,7 +2456,7 @@ journal.window.facets.activities.response.error.detail.activities.couldn.t.be.up
 
 journal.window.facets.activities.response.error.detail.day.must.not.be.after.today = el día no debe ser posterior a hoy
 
-journal.window.facets.activities.response.error.detail.day.not.found = no se encontró el día
+journal.window.facets.activities.response.error.detail.day.not.found = No se encontró el día
 
 journal.window.facets.activities.response.error.detail.each.line.names.its.stream.segment = cada línea nombra su flujo, su segmento, su fuente y su sentence_id
 
@@ -3484,7 +3484,7 @@ journal.window.map.device.from.phone = de tu teléfono
 
 journal.window.map.device.from.phone.named = de tu teléfono ({ $device_name })
 
-journal.window.map.device.from.tablet = de tu tablet
+journal.window.map.device.from.tablet = de tu tableta
 
 journal.window.map.device.from.tablet.named = de tu tablet ({ $device_name })
 
@@ -4148,7 +4148,7 @@ journal.window.map.response.area.unavailable = no se pudieron leer los nombres d
 
 journal.window.map.response.day.invalid = no se pudo usar ese día.
 
-journal.window.map.response.day.invalid.detail = no se encontró el día
+journal.window.map.response.day.invalid.detail = No se encontró el día
 
 journal.window.map.response.edit.alias = { $slot1 } debe ser { $slot2 }, { $slot3 } o { $slot4 }
 

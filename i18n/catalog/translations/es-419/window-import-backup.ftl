@@ -204,7 +204,7 @@ journal.window.backup.copy.action.labels.cleanup.blocked = no se pudo confirmar 
 
 journal.window.backup.copy.action.labels.cleanup.checking = revisando la disponibilidad de la copia de seguridad
 
-journal.window.backup.copy.action.labels.cleanup.contended = intenta revisar de nuevo en un momento.
+journal.window.backup.copy.action.labels.cleanup.contended = vuelve a revisar en un momento.
 
 journal.window.backup.copy.action.labels.cleanup.waiting = las acciones de copia de seguridad están en espera
 
@@ -240,7 +240,7 @@ journal.window.backup.copy.action.labels.understand = entiendo
 
 journal.window.backup.copy.action.labels.view.key = ver la clave de recuperación
 
-journal.window.backup.copy.brand.lock = tu diario es siempre privado, solo para ti.
+journal.window.backup.copy.brand.lock = tu diario es siempre privado, solo tuyo.
 
 journal.window.backup.copy.confirm.escape = ver la clave otra vez
 
@@ -308,7 +308,7 @@ journal.window.backup.copy.destination.modes.hosted.desc = { $slot1 } opera por 
 
 journal.window.backup.copy.destination.modes.hosted.note = { $slot1 } solo guarda una copia cifrada que se cifró en tu dispositivo antes de salir.
 
-journal.window.backup.copy.destination.modes.hosted.title = a cargo de { $slot1 }
+journal.window.backup.copy.destination.modes.hosted.title = operado por { $slot1 }
 
 journal.window.backup.copy.destination.object.lock.summary = notas de configuración del bucket
 
@@ -448,7 +448,7 @@ journal.window.backup.copy.offload.actions.prepare = preparar copias
 
 journal.window.backup.copy.offload.actions.restore.day = restaurar este día
 
-journal.window.backup.copy.offload.actions.review.originals = revisar originales
+journal.window.backup.copy.offload.actions.review.originals = revisar los originales
 
 journal.window.backup.copy.offload.actions.save = guardar límites
 
@@ -642,7 +642,7 @@ journal.window.backup.copy.operation.reason.labels.broker.unreachable = no se pu
 
 journal.window.backup.copy.operation.reason.labels.cleanup.pending = no se pudo confirmar que la tarea de copia de seguridad se haya detenido. otras acciones de copia de seguridad están en espera.
 
-journal.window.backup.copy.operation.reason.labels.destination.unsupported = la configuración de tu copia de seguridad está incompleta, así que tu diario no puede alcanzarla, y no se hicieron cambios en la copia de seguridad.
+journal.window.backup.copy.operation.reason.labels.destination.unsupported = la configuración de tu copia de seguridad está incompleta, así que tu diario no puede conectar con ella, y no se hicieron cambios en la copia de seguridad.
 
 journal.window.backup.copy.operation.reason.labels.expired = la aprobación tardó demasiado. vuelve a intentarlo.
 
@@ -1184,7 +1184,7 @@ journal.window.backup.status.window.explanation.another.copy.of.your.journal.too
 
 journal.window.backup.status.window.explanation.backup.is.on.the.latest.attempt = la copia de seguridad está activada. no se conoce el último intento.
 
-journal.window.backup.status.window.explanation.backup.status.is.unavailable.right.now = el estado de la copia de seguridad no está disponible ahora.
+journal.window.backup.status.window.explanation.backup.status.is.unavailable.right.now = el estado de la copia de seguridad no está disponible ahora mismo.
 
 journal.window.backup.status.window.explanation.encrypted.backup.can.t.reach.storage = la copia de seguridad cifrada no puede alcanzar el almacenamiento desde esta computadora.
 
@@ -1297,7 +1297,7 @@ journal.window.handoff.spp.local.error = el procesamiento confidencial no está 
 
 journal.window.handoff.spp.malformed = el procesamiento confidencial no está activado. el portal de servicios envió una respuesta que tu diario no pudo leer. vuelve a activarlo. si sigue pasando, actualiza tu diario.
 
-journal.window.handoff.spp.network.error = el procesamiento confidencial no está activado. tu diario no pudo alcanzar el portal de servicios. revisa la conexión de la computadora en la que está tu diario y luego vuelve a activarlo.
+journal.window.handoff.spp.network.error = el procesamiento confidencial no está activado. tu diario no pudo conectar con el portal de servicios. revisa la conexión de la computadora en la que está tu diario y luego vuelve a activarlo.
 
 journal.window.handoff.spp.not.verified = La atestación de hardware todavía no está verificada. El razonamiento sigue bloqueado hasta que termine la verificación.
 
@@ -1331,7 +1331,7 @@ journal.window.import.body.facet.apple.ask.unmute = tu faceta del cuerpo está s
 
 journal.window.import.body.facet.apple.files.named = esto archiva todo lo de esta exportación bajo { $facet_name }, incluso lo que ya está en la página de actividades. la vista previa dice cuántos de esos podrían moverse, como máximo.
 
-journal.window.import.body.facet.apple.no.means = si dices que no, los entrenamientos nuevos y el sueño no aparecen en la página de actividades, y los agentes limitados a algunas facetas no los ven. la búsqueda y la app del cuerpo sí los muestran.
+journal.window.import.body.facet.apple.no.means = si dices que no, los entrenamientos nuevos y el sueño no se listan en la página de actividades, y los agentes limitados a algunas facetas no los verán. la búsqueda y la app del cuerpo siguen mostrándolos.
 
 journal.window.import.body.facet.apple.none.hint = los entrenamientos y el sueño nuevos de esta importación no aparecen en la página de actividades, y los agentes limitados a algunas facetas no los ven. la búsqueda y la app del cuerpo sí los muestran.
 
@@ -1349,7 +1349,7 @@ journal.window.import.body.facet.shared.heading = faceta
 
 journal.window.import.body.facet.shared.no = no
 
-journal.window.import.body.facet.shared.no.means = si dices que no, los entrenamientos nuevos no aparecen en la página de actividades, no salen personas ni cosas de ellos, y los agentes limitados a algunas facetas no los ven. la búsqueda y la app del cuerpo sí los muestran.
+journal.window.import.body.facet.shared.no.means = si dices que no, los entrenamientos nuevos no se listan en la página de actividades, no salen personas ni cosas de ellos, y los agentes limitados a algunas facetas no los verán. la búsqueda y la app del cuerpo siguen mostrándolos.
 
 journal.window.import.body.facet.shared.none.hint = los entrenamientos nuevos de esta importación no aparecen en la página de actividades, no salen personas ni cosas de ellos, y los agentes limitados a algunas facetas no los ven. la búsqueda y la app del cuerpo sí los muestran.
 
@@ -1503,15 +1503,15 @@ journal.window.import.consent.import.removal.sharedunknown.some.of.what.it.broug
 
 journal.window.import.consent.import.removal.stays.activities.made.from.it.drop.it = las actividades hechas a partir de esto lo sueltan ahora, y los relatos de sus días y semanas salen de la búsqueda. tu diario luego vuelve a escribirlos a partir de lo que queda, con el razonamiento que elegiste.
 
-journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from = las actividades, los resúmenes y las entidades hechas a partir de esto en otra parte de tu diario no se borran y pueden seguir mencionándolo.
+journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from = las actividades, los resúmenes y las entidades hechos a partir de esto en otra parte de tu diario no se borran y todavía pueden mencionarlo.
 
-journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from.variant2 = las actividades, los resúmenes y las entidades hechas a partir de esto en otra parte de tu diario se quedan donde están y pueden seguir mencionándolo.
+journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from.variant2 = las actividades, los resúmenes y las entidades hechos a partir de esto en otra parte de tu diario se quedan donde están y todavía pueden mencionarlo.
 
 journal.window.import.consent.import.removal.staysbodymany.activities.summaries.and.entities.made.from = las actividades, los resúmenes y las entidades hechas a partir de ellos en otra parte de tu diario no se borran y pueden seguir mencionándolos.
 
 journal.window.import.consent.import.removal.staysbodymany.activities.summaries.and.entities.made.from.variant2 = las actividades, los resúmenes y las entidades hechas a partir de ellos en otra parte de tu diario se quedan donde están y pueden seguir mencionándolos.
 
-journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them = las actividades hechas a partir de ellos los sueltan ahora, y los relatos de sus días y semanas salen de la búsqueda. tu diario luego vuelve a escribirlos a partir de lo que queda, con el razonamiento que elegiste.
+journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them = las actividades hechas a partir de ellos los sueltan ahora, y los relatos de sus días y semanas salen de la búsqueda. tu diario luego los reescribe desde lo que queda, con el razonamiento que elegiste.
 
 journal.window.import.consent.import.removal.title.delete.this.import = ¿eliminar esta importación?
 
@@ -1693,11 +1693,10 @@ journal.window.import.detail.duration.elapsed.short = menos de un minuto
 
 journal.window.import.detail.heading.timestamp = importación: { $date } · { $clock_time }
 
-journal.window.import.detail.merge.body.days.hidden =
-    { $quantity ->
-    [one] 1 día de datos del cuerpo estaba oculto en el paquete, así que también está oculto en este diario.
-    [many] { $count } días de datos del cuerpo estaban ocultos en el paquete, así que también están ocultos en este diario.
-   *[other] { $count } días de datos del cuerpo estaban ocultos en el paquete, así que también están ocultos en este diario.
+journal.window.import.detail.merge.body.days.hidden = { $quantity ->
+        [one] 1 día de datos del cuerpo estaba oculto en el archivo comprimido, así que también está oculto en este diario.
+        [many] { $count } días de datos del cuerpo estaban ocultos en el archivo comprimido, así que también están ocultos en este diario.
+       *[other] { $count } días de datos del cuerpo estaban ocultos en el archivo comprimido, así que también están ocultos en este diario.
     }
 
 journal.window.import.detail.merge.clock.hours =
@@ -1987,7 +1986,7 @@ journal.window.import.handoff.notebook = nombre del cuaderno (opcional)
 
 journal.window.import.handoff.origin.android = desde la app de solstone para android
 
-journal.window.import.handoff.origin.browser = desde tu navegador
+journal.window.import.handoff.origin.browser = de tu navegador
 
 journal.window.import.handoff.origin.cli = desde la línea de comandos
 
@@ -2160,13 +2159,13 @@ journal.window.import.import.delete.copy.select.select = seleccionar
 
 journal.window.import.import.delete.copy.selectall.select.all = seleccionar todo
 
-journal.window.import.import.delete.copy.title.couldn.t.erase.those = no se pudieron borrar
+journal.window.import.import.delete.copy.title.couldn.t.erase.those = no se pudieron borrar esos
 
 journal.window.import.import.delete.copy.title.couldn.t.move.that.to.the = no se pudo mover eso a la papelera
 
-journal.window.import.import.delete.copy.title.couldn.t.move.those.to.the = no se pudieron mover a la papelera
+journal.window.import.import.delete.copy.title.couldn.t.move.those.to.the = no se pudieron mover esos a la papelera
 
-journal.window.import.import.delete.copy.title.couldn.t.recover.those = no se pudieron recuperar
+journal.window.import.import.delete.copy.title.couldn.t.recover.those = no se pudieron recuperar esos
 
 journal.window.import.import.delete.copy.title.moved.to.the.trash = se movió a la papelera
 
@@ -2198,7 +2197,7 @@ journal.window.import.import.view.could.not.read.the.archive.size = no se pudo l
 
 journal.window.import.import.view.could.not.read.the.import.size = no se pudo leer el tamaño de la importación
 
-journal.window.import.import.view.import.failed = falló la importación
+journal.window.import.import.view.import.failed = no se pudo importar
 
 journal.window.import.import.view.import.status.unavailable = estado de la importación no disponible
 
@@ -2278,7 +2277,7 @@ journal.window.import.ox.detail.discard.confirm = descartar
 
 journal.window.import.ox.detail.discard.title = ¿descartar esta copia en espera?
 
-journal.window.import.ox.detail.expired.badge = caducada
+journal.window.import.ox.detail.expired.badge = vencida
 
 journal.window.import.ox.detail.expired.body = esta copia en espera se quitó después de una hora sin empezar.
 
@@ -2314,7 +2313,7 @@ journal.window.import.ox.discard.metadata.unverified = no se pueden verificar lo
 
 journal.window.import.ox.discard.not.waiting = la importación ya no está en espera de empezar
 
-journal.window.import.ox.history.review.link = revisar e iniciar
+journal.window.import.ox.history.review.link = revisar y confirmar
 
 journal.window.import.ox.status.ready.to.review = disponible para revisar
 
@@ -2334,7 +2333,7 @@ journal.window.import.ox.tray.in.journal.stage = en tu diario · { $stage }
 
 journal.window.import.ox.tray.review.action = revisar y confirmar
 
-journal.window.import.ox.tray.review.detail = se guardó en tu diario. abre la vista previa y confirma para empezar.
+journal.window.import.ox.tray.review.detail = se guardó en tu diario. previsualiza y confirma para empezar.
 
 journal.window.import.ox.tray.review.heading = en espera de tu revisión
 
@@ -2613,11 +2612,11 @@ journal.window.import.progress.thinking.waiting =
 
 journal.window.import.progress.time.elapsed = { $elapsed_time } transcurrido
 
-journal.window.import.progress.time.hours.minutes = { $hours }h { $minutes }m
+journal.window.import.progress.time.hours.minutes = { $hours } h { $minutes } min
 
 journal.window.import.progress.time.minutes.seconds = { $minutes }m { $seconds }s
 
-journal.window.import.progress.time.seconds = { $seconds }s
+journal.window.import.progress.time.seconds = { $seconds } s
 
 journal.window.import.progress.time.stage.total = { $stage_time } ({ $total_time } en total)
 
@@ -3157,7 +3156,7 @@ journal.window.import.status.conflict.already.started = esta importación ya se 
 
 journal.window.import.status.conflict.changed = esta importación cambió. actualiza la página y vuelve a intentarlo.
 
-journal.window.import.status.error.failed = falló la importación
+journal.window.import.status.error.failed = no se pudo importar
 
 journal.window.import.status.error.never.completed = La importación nunca se completó
 
@@ -3489,7 +3488,7 @@ journal.window.import.visible.text.the.zip.includes.your.settings.and = el ZIP i
 
 journal.window.import.visible.text.this.import.could.not.be.confirmed = no se pudo confirmar esta importación. revisa tus importaciones antes de elegirla otra vez.
 
-journal.window.import.visible.text.this.import.couldn.t.be.confirmed = no se pudo confirmar esta importación como terminada.
+journal.window.import.visible.text.this.import.couldn.t.be.confirmed = no se pudo confirmar que esta importación terminó.
 
 journal.window.import.visible.text.this.pdf.uses.its.own.dates = este { $slot1 } usa sus propias fechas. puedes elegir una fecha para este archivo.
 
@@ -4268,7 +4267,7 @@ journal.window.stored.event.rrule.yearly = Anual
 
 journal.window.stored.event.timed.duration = **{ $when }** ({ $minutes } min)
 
-journal.window.stored.event.where = Lugar: { $location }
+journal.window.stored.event.where = Dónde: { $location }
 
 journal.window.stored.event.with = Con: { $names }
 

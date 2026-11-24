@@ -140,7 +140,7 @@ journal.window.network.accessible.name.devices = dispositivos
 
 journal.window.network.accessible.name.how.your.devices.reach.your.journal = cómo llegan tus dispositivos a tu diario
 
-journal.window.network.address.home.address.hostname.unsupported = esto necesita una dirección ip — para llegar a tu diario por nombre desde cualquier lugar, activa tu red privada
+journal.window.network.address.home.address.hostname.unsupported = esto necesita una dirección ip — para conectar con tu diario por nombre desde cualquier lugar, activa tu red privada
 
 journal.window.network.address.home.invalid.port = usa la dirección en la que se puede alcanzar tu diario, con el puerto { $port }: una en tu propia red, como 192.168.1.44:{ $port }, o una dirección pública que hayas exportado.
 
@@ -150,7 +150,7 @@ journal.window.network.app.onoff.sub.byo = activada, se puede alcanzar en tu pro
 
 journal.window.network.app.onoff.sub.byo.closed = activada, cerrada a los dispositivos de tu red
 
-journal.window.network.app.onoff.sub.hosted = activada, se puede alcanzar desde cualquier lugar
+journal.window.network.app.onoff.sub.hosted = activada, se puede conectar desde cualquier lugar
 
 journal.window.network.brandlock.line = tu diario es siempre privado, solo tuyo.
 
@@ -356,23 +356,23 @@ journal.window.network.identity.id.label = id del diario
 
 journal.window.network.local.network.agents.closes.note = se les cierra cuando lo desactivas en agentes.
 
-journal.window.network.local.network.agents.note = tu diario sigue abierto a los dispositivos de tu red mientras "agentes en tu red" está activado.
+journal.window.network.local.network.agents.note = tu diario se queda abierto a los dispositivos en tu red mientras "agentes en tu red" está activado.
 
 journal.window.network.local.network.agents.on = tu diario sigue abierto a los dispositivos de tu red mientras "agentes en tu red" está activado. se les cierra cuando lo desactivas en agentes.
 
-journal.window.network.local.network.close.confirm = ¿cerrar tu diario a los dispositivos de tu red? cualquier dispositivo conectado por tu red ahora se desconectará.
+journal.window.network.local.network.close.confirm = ¿cerrar tu diario a los dispositivos en tu red? cualquier dispositivo conectado por tu red ahora se desconectará.
 
-journal.window.network.local.network.close.cta = cerrar a los dispositivos de tu red
+journal.window.network.local.network.close.cta = cerrar a los dispositivos en tu red
 
-journal.window.network.local.network.failed = no se pudo cambiar si tu diario está abierto a los dispositivos de tu red. vuelve a intentarlo.
+journal.window.network.local.network.failed = no se pudo cambiar si tu diario está abierto a los dispositivos en tu red. vuelve a intentarlo.
 
 journal.window.network.local.network.firewall.blocked = windows está impidiendo que los dispositivos de tu red lleguen a tu diario.
 
 journal.window.network.local.network.firewall.blocked.note = windows tiene una regla de bloqueo de entrada para journal, que puede permanecer después de elegir Cancelar. un administrador tiene que abrir { $windowsRules } y quitar las reglas de bloqueo de este diario para { $executable }, luego permitir journal en el firewall. después, vuelve a cargar esta página.
 
-journal.window.network.local.network.firewall.note = si windows no preguntó y un dispositivo todavía no puede llegar a tu diario, una elección anterior en windows puede estar bloqueando journal. un administrador puede permitirlo en { $windowsSecurity }, bajo { $windowsPath }.
+journal.window.network.local.network.firewall.note = si windows no preguntó y un dispositivo todavía no puede conectar con tu diario, una elección anterior en windows puede estar bloqueando journal. un administrador puede permitirlo en { $windowsSecurity }, bajo { $windowsPath }.
 
-journal.window.network.local.network.not.reachable = los dispositivos no pueden llegar a tu diario ahora.
+journal.window.network.local.network.not.reachable = los dispositivos no pueden conectar con tu diario en este momento.
 
 journal.window.network.local.network.open = abrir para los dispositivos de tu red
 
@@ -382,7 +382,7 @@ journal.window.network.local.network.open.note = los dispositivos en la misma re
 
 journal.window.network.local.network.other.devices.note = los dispositivos pueden vincularse por tu red privada cuando está activada. abre tu diario a los dispositivos de tu red para vincular directamente.
 
-journal.window.network.local.network.this.pc = cerrado a los dispositivos de tu red
+journal.window.network.local.network.this.pc = cerrado a los dispositivos en tu red
 
 journal.window.network.local.network.this.pc.note = la app de solstone en esta computadora todavía puede vincularse desde "vincular un dispositivo", y otro dispositivo también puede, una vez que tu red privada esté activada. para vincular un teléfono u otra computadora por tu propia red, abre tu diario a ella.
 
@@ -428,7 +428,7 @@ journal.window.network.pair.link.copy.success.toast = enlace de vinculación cop
 
 journal.window.network.pair.link.field.label = enlace de vinculación
 
-journal.window.network.pair.local.network.closed.body = tu diario está cerrado a los dispositivos de tu red, así que un teléfono u otra computadora todavía no puede alcanzarlo para vincularse. abrirlo permite que los dispositivos en el mismo wifi o VPN se vinculen directamente con tu diario. también puedes vincular la app de solstone en esta computadora, o configurar el servidor de retransmisión que { $company } opera para vincular desde cualquier lugar.
+journal.window.network.pair.local.network.closed.body = tu diario está cerrado a los dispositivos de tu red, así que un teléfono u otra computadora todavía no puede conectar con él para vincularse. abrirlo permite que los dispositivos en el mismo wifi o VPN se vinculen directamente con tu diario. también puedes vincular la app de solstone en esta computadora, o configurar el servidor de retransmisión que { $company } opera para vincular desde cualquier lugar.
 
 journal.window.network.pair.local.network.closed.without.local.body = tu diario está cerrado a los dispositivos de tu red. ábrelo para vincular dispositivos en el mismo wifi o VPN, o configura el servidor de retransmisión que { $company } opera para vincular desde cualquier lugar.
 
@@ -442,7 +442,7 @@ journal.window.network.pair.start.fail.body = no se pudo empezar a vincular. vue
 
 journal.window.network.pair.start.paired.device.body = la vinculación no empezó. termina de vincular este dispositivo primero.
 
-journal.window.network.pair.success.named.device = "{ $device_name }" ahora puede llegar a tu diario
+journal.window.network.pair.success.named.device = "{ $device_name }" ahora puede conectar con tu diario
 
 journal.window.network.pair.this.computer.cta = vincular la app de solstone en esta computadora
 
@@ -474,9 +474,9 @@ journal.window.network.phone.step.one = abre la app de solstone en tu teléfono 
 
 journal.window.network.phone.step.two = o apunta la cámara de tu teléfono hacia él y toca el enlace
 
-journal.window.network.private.link.disable.confirm = ¿desactivar tu red privada? tus dispositivos van a llegar a tu diario solo por tu propia red, en el mismo wifi o tu propia VPN, hasta que la vuelvas a activar.
+journal.window.network.private.link.disable.confirm = ¿desactivar tu red privada? tus dispositivos solo van a conectar con tu diario por tu propia red, en el mismo wifi o tu propia VPN, hasta que la vuelvas a activar.
 
-journal.window.network.private.link.disable.confirm.closed = ¿desactivar tu red privada? tu diario está cerrado a los dispositivos de tu red, así que tus otros dispositivos no pueden alcanzarlo hasta que lo abras a tu red o vuelvas a activar la red privada.
+journal.window.network.private.link.disable.confirm.closed = ¿desactivar tu red privada? tu diario está cerrado a los dispositivos de tu red, así que tus otros dispositivos no pueden conectar con él hasta que lo abras a tu red o vuelvas a activar la red privada.
 
 journal.window.network.private.link.disable.cta = desactivar tu red privada
 
@@ -484,7 +484,7 @@ journal.window.network.private.link.disable.failed = no se pudo desactivar tu re
 
 journal.window.network.private.link.disable.success = tu red privada está desactivada. los dispositivos vuelven a conectar directamente.
 
-journal.window.network.private.link.disable.success.closed = tu red privada está desactivada. tu diario está cerrado a los dispositivos de tu red, así que tus otros dispositivos no pueden alcanzarlo.
+journal.window.network.private.link.disable.success.closed = tu red privada está desactivada. tu diario está cerrado a los dispositivos de tu red, así que tus otros dispositivos no pueden conectar con él.
 
 journal.window.network.private.link.needs.repair = tu red privada necesita configurarse de nuevo.
 
@@ -502,7 +502,7 @@ journal.window.network.private.link.setting.up = configurando tu red privada…
 
 journal.window.network.private.link.setup.failed = no se pudo terminar de configurar tu red privada.
 
-journal.window.network.private.link.setup.success = tu red privada está activada. tus dispositivos pueden llegar a tu diario desde cualquier lugar.
+journal.window.network.private.link.setup.success = tu red privada está activada. tus dispositivos pueden conectar con tu diario desde cualquier lugar.
 
 journal.window.network.private.link.timeout.body = tu red privada no respondió a tiempo. vuelve a intentarlo.
 
@@ -512,7 +512,7 @@ journal.window.network.reach.device.address.vpn = VPN
 
 journal.window.network.reach.device.addresses.label = direcciones que usan tus dispositivos
 
-journal.window.network.reach.home.address.label = la dirección de tu diario
+journal.window.network.reach.home.address.label = dirección de tu diario
 
 journal.window.network.reach.home.address.unusable = esta dirección guardada no se puede usar para vincular.
 
@@ -558,9 +558,9 @@ journal.window.network.status.direct.online = tu diario se puede alcanzar en tu 
 
 journal.window.network.status.direct.online.vpn = tu diario se puede alcanzar en tu red y por tu VPN.
 
-journal.window.network.status.lan.unreachable = tu diario está funcionando, pero los dispositivos todavía no pueden alcanzarlo para vincularse.
+journal.window.network.status.lan.unreachable = tu diario está funcionando, pero los dispositivos todavía no pueden conectar con él para vincularse.
 
-journal.window.network.status.offline = no se puede alcanzar tu diario ahora.
+journal.window.network.status.offline = no se puede conectar con tu diario ahora.
 
 journal.window.network.status.reconnecting = volviendo a conectar con tu diario…
 
@@ -588,17 +588,17 @@ journal.window.network.status.text.try.again = reintentar
 
 journal.window.network.success.done = listo
 
-journal.window.network.success.heading.unnamed = un dispositivo nuevo ahora puede llegar a tu diario
+journal.window.network.success.heading.unnamed = un dispositivo nuevo ahora puede conectar con tu diario
 
 journal.window.network.success.remove.fail = no se pudo desvincular este dispositivo. vuelve a intentarlo, o desvincúlalo en dispositivos.
 
 journal.window.network.success.remove.label = desvincular este dispositivo
 
-journal.window.network.success.removed = desvinculado. el dispositivo no puede llegar a tu diario hasta que se vuelva a vincular.
+journal.window.network.success.removed = desvinculado. el dispositivo no puede conectar con tu diario hasta que se vuelva a vincular.
 
 journal.window.network.success.verify.note = en ese dispositivo, revisa que muestre esta misma marca y responde ahí. ¿no lo vinculaste?
 
-journal.window.network.success.verify.note.anywhere = en ese dispositivo, revisa que muestre esta misma marca y responde ahí. puede llegar a tu diario desde cualquier lugar. ¿no lo vinculaste?
+journal.window.network.success.verify.note.anywhere = en ese dispositivo, revisa que muestre esta misma marca y responde ahí. puede conectar con tu diario desde cualquier lugar. ¿no lo vinculaste?
 
 journal.window.network.success.verify.note.this.computer = si la app de solstone pregunta, revisa que muestre esta misma marca y responde ahí. ¿no lo vinculaste?
 
@@ -1188,11 +1188,11 @@ journal.window.settings.consent.trash.copy.settingmore.how.this.works = cómo fu
 
 journal.window.settings.consent.trash.copy.settingmorelines.each.backup.that.holds.it.is = cada copia de seguridad que lo guarda se reescribe sin eso, después se libera el almacenamiento que ocupaba, donde tu almacenamiento lo permite. no se pierde ninguna copia de seguridad, y todavía puedes restaurar tu diario a cualquiera de ellas.
 
-journal.window.settings.consent.trash.copy.settingmorelines.erase.always.happens.on.time.in = el borrado siempre ocurre a tiempo en tu diario. si la copia de seguridad está en pausa o no se puede alcanzar tu almacenamiento, tus copias de seguridad siguen el borrado cuando pueden.
+journal.window.settings.consent.trash.copy.settingmorelines.erase.always.happens.on.time.in = el borrado siempre ocurre a tiempo en tu diario. si la copia de seguridad está en pausa o no se puede conectar con tu almacenamiento, tus copias de seguridad siguen el borrado cuando pueden.
 
 journal.window.settings.consent.trash.copy.settingmorelines.if.something.you.kept.is.identical = si algo que conservaste es idéntico a lo que borraste, como una copia del mismo archivo, esa parte se queda, como parte de lo que conservaste.
 
-journal.window.settings.consent.trash.copy.settingmorelines.it.doesn.t.reach.a.place = no alcanza un lugar donde tu copia de seguridad estuvo antes, las copias de seguridad que tu diario hizo mientras estaba en otra carpeta, el contenido multimedia que tu diario archivó antes de anotar dónde está cada archivo, las copias que hicieron tus otros dispositivos, ni lo que se borró antes de que tu diario pudiera hacer esto.
+journal.window.settings.consent.trash.copy.settingmorelines.it.doesn.t.reach.a.place = no llega a un lugar donde tu copia de seguridad estuvo antes, las copias de seguridad que tu diario hizo mientras estaba en otra carpeta, el contenido multimedia que tu diario archivó antes de anotar dónde está cada archivo, las copias que hicieron tus otros dispositivos, ni lo que se borró antes de que tu diario pudiera hacer esto.
 
 journal.window.settings.consent.trash.copy.settingmorelines.lines.your.journal.wrote.about.it = las líneas que tu diario escribió sobre eso dentro de cosas que conservas, como los detalles de una persona, pueden quedarse en copias de seguridad de antes del borrado.
 
@@ -1368,7 +1368,7 @@ journal.window.settings.field.label.description = descripción
 
 journal.window.settings.field.label.device = dispositivo
 
-journal.window.settings.field.label.email.addresses = direcciones de correo electrónico
+journal.window.settings.field.label.email.addresses = correos electrónicos
 
 journal.window.settings.field.label.erase.after = borrar después de
 
@@ -1588,7 +1588,7 @@ journal.window.settings.http.activity.settings.unavailable.those.activity.settin
 
 journal.window.settings.http.config.busy.settings.configuration.is.busy = la configuración está ocupada
 
-journal.window.settings.http.config.busy.those.settings.couldn.t.be.saved = no se pudo guardar esa configuración en este momento porque estaba ocupada. vuelve a intentarlo en un momento.
+journal.window.settings.http.config.busy.those.settings.couldn.t.be.saved = no se pudo guardar esa configuración ahora mismo porque estaba ocupada. vuelve a intentarlo en un momento.
 
 journal.window.settings.http.detail.something.went.wrong.try.again.and = algo salió mal — vuelve a intentarlo, y si persiste, revisa el panel de estado
 
@@ -1852,7 +1852,7 @@ journal.window.settings.redaction.many = { $count }{ $slot1 }reglas
 
 journal.window.settings.redaction.one = { $count }{ $slot1 }regla
 
-journal.window.settings.removal.backup.operated.storage.sol.pbc.operates = almacenamiento { $slot1 } opera
+journal.window.settings.removal.backup.operated.storage.sol.pbc.operates = almacenamiento que opera { $slot1 }
 
 journal.window.settings.removal.backup.own.your.own.storage = tu propio almacenamiento
 
@@ -2810,7 +2810,7 @@ journal.window.settings.removal.response.unavailable = no se pudo cambiar tu pap
 
 journal.window.settings.removal.response.unreadable = no se pudo leer tu papelera.
 
-journal.window.settings.removal.source.audio.archive.audio.archive = archivo de audio
+journal.window.settings.removal.source.audio.archive.audio.archive = paquete de audio
 
 journal.window.settings.removal.source.audio.audio = audio
 
@@ -2824,7 +2824,7 @@ journal.window.settings.removal.source.journal.archive.journal = diario
 
 journal.window.settings.removal.source.quick.quick.import = importación rápida
 
-journal.window.settings.removal.source.recording.meeting.audio = audio de la reunión
+journal.window.settings.removal.source.recording.meeting.audio = audio de reunión
 
 journal.window.settings.removal.source.text.text = texto
 
@@ -3954,7 +3954,7 @@ journal.window.settings.visible.text.pronouns.for.use.in.templates.subject = pro
 
 journal.window.settings.visible.text.raw.media = contenido multimedia sin procesar
 
-journal.window.settings.visible.text.reach.your.journal.from.your.other = llega a tu diario desde tus otros dispositivos
+journal.window.settings.visible.text.reach.your.journal.from.your.other = conecta con tu diario desde tus otros dispositivos
 
 journal.window.settings.visible.text.recent.actions.and.changes.to.this = acciones recientes y cambios en esta faceta.
 
@@ -4034,7 +4034,7 @@ journal.window.settings.visible.text.you.can.change.all.of.these.later = puedes 
 
 journal.window.settings.visible.text.you.can.change.both.later = puedes cambiar las dos cosas después.
 
-journal.window.settings.visible.text.your.browser.your.programs.and.the = tu navegador, tus programas y los agentes que conectaste siguen funcionando. los programas que corren como servicio, como otra cuenta o dentro de WSL no van a llegar a tu diario.
+journal.window.settings.visible.text.your.browser.your.programs.and.the = tu navegador, tus programas y los agentes que conectaste siguen funcionando. los programas que corren como servicio, como otra cuenta o dentro de WSL no van a conectar con tu diario.
 
 journal.window.settings.visible.text.your.choice.could.not.be.saved = no se pudo guardar tu elección. vuelve a intentarlo, por favor.
 
@@ -4224,7 +4224,7 @@ journal.window.system.health.backlog.day.this.day.s.remaining.content.still.will
 
 journal.window.system.health.backlog.day.waiting.to.retry.automatically.no.action.needed.yet = en espera de reintentar automáticamente. todavía no hace falta ninguna acción
 
-journal.window.system.health.backlog.day.your.ai.provider.turned.down.your.key.check.it.on.the.thinking.page = tu proveedor de AI rechazó tu clave. revísala en la página de razonamiento
+journal.window.system.health.backlog.day.your.ai.provider.turned.down.your.key.check.it.on.the.thinking.page = tu proveedor de IA rechazó tu clave. revísala en la página de razonamiento
 
 journal.window.system.health.backlog.verdict.age.unknown = sin una hora confiable de su última actualización de estado, tu diario no puede saber si está al día.
 
@@ -4276,7 +4276,7 @@ journal.window.system.health.backlog.verdict.stuck = { $quantity ->
    *[other] al día, excepto { $count } días que necesitan ayuda.
 }
 
-journal.window.system.health.backlog.verdict.unclear.now = no está claro si tu diario está al día en este momento.
+journal.window.system.health.backlog.verdict.unclear.now = no está claro si tu diario está al día ahora mismo.
 
 journal.window.system.health.index.behind.count = { $quantity ->
     [one] la búsqueda se está poniendo al día con 1 cambio en tu diario.
