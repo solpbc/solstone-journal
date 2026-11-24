@@ -21,8 +21,7 @@
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, OpenOptions};
-use std::io::{Seek as _, SeekFrom, Write as _};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -1528,19 +1527,6 @@ impl Run<'_, '_> {
             .join("imports")
             .join(&state.import_id)
             .join(LISTING_FILE);
-        // Not append mode: Windows refuses to cut a file opened that way.
-        let mut file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(&path)
-            .map_err(|error| error.to_string())?;
-        // A run that stopped after appending and before its checkpoint wrote this
-        // day already: cut back to the length the state knows.
-        file.set_len(state.listing_len)
-            .map_err(|error| error.to_string())?;
-        file.seek(SeekFrom::Start(state.listing_len))
-            .map_err(|error| error.to_string())?;
         let mut entry = serde_json::json!({
             "day": pending.day,
             "windows": pending.listing,
@@ -1549,12 +1535,12 @@ impl Run<'_, '_> {
         if !pending.moved.is_empty() {
             entry["moved"] = serde_json::json!(pending.moved);
         }
-        let mut line = serde_json::to_string(&entry).map_err(|error| error.to_string())?;
-        line.push('\n');
-        file.write_all(line.as_bytes())
-            .map_err(|error| error.to_string())?;
-        file.sync_all().map_err(|error| error.to_string())?;
-        state.listing_len += line.len() as u64;
+        // A run that stopped after appending and before its checkpoint wrote this
+        // day already: the shared writer cuts back to the length the state knows,
+        // under the listing's lock, and syncs before the state records the new end.
+        state.listing_len =
+            solstone_core_journal_io::append_jsonl_at_checkpoint(&path, state.listing_len, &entry)
+                .map_err(|error| error.to_string())?;
         Ok(())
     }
 

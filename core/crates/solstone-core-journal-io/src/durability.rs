@@ -809,84 +809,129 @@ pub fn read_json_durable_validated<T: DeserializeOwned>(
 
 /// Read a record-framed JSONL artifact, setting aside any malformed lines and
 /// rewriting the clean lines in place.
+///
+/// Lines are split from raw bytes, so one line of invalid UTF-8, stray NUL
+/// bytes or a write cut short never hides the valid lines around it. The
+/// rewrite happens only under the file's canonical lock, reused when this
+/// thread already holds it, and re-reads the file under that lock first. When
+/// another writer holds the lock past a short wait, the valid records are still
+/// returned and the damaged lines are left for a later read to set aside.
+/// Owner transcripts are not read through here: they are never rewritten by a
+/// passive read.
 pub fn read_jsonl_durable<T: DeserializeOwned>(
     _id: ArtifactId,
     path: &Path,
 ) -> io::Result<DurableJsonl<T>> {
-    let content = match fs::read_to_string(path).map_err(|error| classify_absence(path, error)) {
-        Ok(content) => content,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            return Ok(DurableJsonl {
-                records: Vec::new(),
-                malformed_line_count: 0,
-                aside_paths: Vec::new(),
-            });
-        }
-        Err(error) => return Err(error),
+    let Some(bytes) = read_jsonl_bytes(path)? else {
+        return Ok(DurableJsonl::empty());
     };
-
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_secs())
-        .unwrap_or_default();
-    let stem = path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("artifact");
-    let extension = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map(|extension| format!(".{extension}"))
-        .unwrap_or_else(|| ".jsonl".to_owned());
-
-    let mut good_records = Vec::new();
-    let mut good_lines = Vec::new();
+    let first = parse_jsonl_records::<T>(&bytes);
+    if first.damaged.is_empty() {
+        return Ok(first.into_read(Vec::new()));
+    }
+    let lock = match crate::hold_or_reuse_lock(path, heal_lock_options()) {
+        Ok(lock) => lock,
+        Err(_) => return Ok(first.into_read(Vec::new())),
+    };
+    let Some(bytes) = read_jsonl_bytes(path)? else {
+        return Ok(DurableJsonl::empty());
+    };
+    let parsed = parse_jsonl_records::<T>(&bytes);
+    if parsed.damaged.is_empty() {
+        return Ok(parsed.into_read(Vec::new()));
+    }
+    let stamp = crate::jsonl_integrity::set_aside_stamp();
     let mut aside_paths = Vec::new();
-    let mut malformed_line_count = 0;
+    for (line_number, line) in &parsed.damaged {
+        let suffix = format!("-line-{line_number}");
+        let mut sequence = 0;
+        let aside = loop {
+            let candidate = crate::jsonl_integrity::aside_name(path, stamp, &suffix, sequence);
+            if !candidate.exists() {
+                break candidate;
+            }
+            sequence += 1;
+        };
+        fs::write(&aside, line)?;
+        aside_paths.push(aside);
+    }
+    let mut kept = Vec::with_capacity(bytes.len());
+    for line in &parsed.good_lines {
+        kept.extend_from_slice(line);
+        kept.push(b'\n');
+    }
+    atomic_replace(path, &kept, AtomicWriteOptions::default())
+        .map_err(|e| io::Error::other(e.to_string()))?;
+    drop(lock);
+    Ok(parsed.into_read(aside_paths))
+}
 
-    for (line_idx, line) in content.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
+/// How long a durable read waits for a writer before leaving a heal for later.
+fn heal_lock_options() -> crate::LockOptions {
+    crate::LockOptions {
+        timeout: std::time::Duration::from_secs(1),
+        mode: Some(0o600),
+        ..crate::LockOptions::default()
+    }
+}
+
+fn read_jsonl_bytes(path: &Path) -> io::Result<Option<Vec<u8>>> {
+    match fs::read(path).map_err(|error| classify_absence(path, error)) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+struct ParsedJsonl<'a, T> {
+    records: Vec<T>,
+    good_lines: Vec<&'a [u8]>,
+    /// Line number and the line's bytes as they were, without the newline.
+    damaged: Vec<(usize, &'a [u8])>,
+}
+
+impl<T> ParsedJsonl<'_, T> {
+    fn into_read(self, aside_paths: Vec<PathBuf>) -> DurableJsonl<T> {
+        DurableJsonl {
+            records: self.records,
+            malformed_line_count: self.damaged.len(),
+            aside_paths,
+        }
+    }
+}
+
+impl<T> DurableJsonl<T> {
+    fn empty() -> Self {
+        Self {
+            records: Vec::new(),
+            malformed_line_count: 0,
+            aside_paths: Vec::new(),
+        }
+    }
+}
+
+fn parse_jsonl_records<T: DeserializeOwned>(bytes: &[u8]) -> ParsedJsonl<'_, T> {
+    let mut parsed = ParsedJsonl {
+        records: Vec::new(),
+        good_lines: Vec::new(),
+        damaged: Vec::new(),
+    };
+    for line in crate::jsonl_integrity::jsonl_lines(bytes) {
+        if line.is_blank() {
             continue;
         }
-        match serde_json::from_str::<T>(trimmed) {
+        match serde_json::from_slice::<T>(line.content()) {
             Ok(record) => {
-                good_records.push(record);
-                good_lines.push(trimmed);
+                parsed.records.push(record);
+                parsed.good_lines.push(line.content());
             }
-            Err(_) => {
-                malformed_line_count += 1;
-                let line_num = line_idx + 1;
-                let mut aside = path
-                    .with_file_name(format!("{stem}.wedged-{stamp}-line-{line_num}{extension}"));
-                let mut sequence = 1;
-                while aside.exists() {
-                    aside = path.with_file_name(format!(
-                        "{stem}.wedged-{stamp}-line-{line_num}-{sequence}{extension}"
-                    ));
-                    sequence += 1;
-                }
-                fs::write(&aside, line.as_bytes())?;
-                aside_paths.push(aside);
-            }
+            Err(_) => parsed.damaged.push((
+                line.number,
+                line.bytes.strip_suffix(b"\r").unwrap_or(line.bytes),
+            )),
         }
     }
-
-    if malformed_line_count > 0 {
-        let new_content = if good_lines.is_empty() {
-            String::new()
-        } else {
-            format!("{}\n", good_lines.join("\n"))
-        };
-        atomic_replace(path, new_content.as_bytes(), AtomicWriteOptions::default())
-            .map_err(|e| io::Error::other(e.to_string()))?;
-    }
-
-    Ok(DurableJsonl {
-        records: good_records,
-        malformed_line_count,
-        aside_paths,
-    })
+    parsed
 }
 
 /// Move an artifact beside itself as `<stem>.wedged-<unix seconds><ext>` and
@@ -1133,6 +1178,75 @@ mod tests {
         assert_eq!(second.malformed_line_count, 0);
         assert_eq!(second.aside_paths.len(), 0);
         assert_eq!(second.records.len(), 3);
+    }
+
+    #[test]
+    fn jsonl_durable_keeps_valid_lines_around_invalid_utf8_and_nul_bytes() {
+        let directory = TempDir::new().expect("temporary root");
+        let path = directory.path().join("records.jsonl");
+        fs::write(
+            &path,
+            b"{\"n\":1}\n{\"s\":\"\xff\xfe\"}\n\x00\x00\x00\n{\"n\":2}\n{\"n\":",
+        )
+        .expect("write");
+        let result = read_jsonl_durable::<serde_json::Value>(ArtifactId::OperationalLog, &path)
+            .expect("byte-safe read");
+        assert_eq!(result.records.len(), 2);
+        assert_eq!(result.malformed_line_count, 3);
+        assert_eq!(fs::read(&path).unwrap(), b"{\"n\":1}\n{\"n\":2}\n");
+        assert_eq!(
+            fs::read(&result.aside_paths[0]).unwrap(),
+            b"{\"s\":\"\xff\xfe\"}"
+        );
+        assert_eq!(fs::read(&result.aside_paths[2]).unwrap(), b"{\"n\":");
+    }
+
+    #[test]
+    fn jsonl_durable_heals_under_a_lock_its_caller_already_holds() {
+        let directory = TempDir::new().expect("temporary root");
+        let path = directory.path().join("review-candidates.jsonl");
+        fs::write(&path, b"{\"n\":1}\n{bad}\n").expect("write");
+        let _outer = crate::hold_lock(
+            &path,
+            crate::LockOptions {
+                timeout: std::time::Duration::from_millis(1),
+                ..crate::LockOptions::default()
+            },
+        )
+        .expect("outer lock");
+        let result = read_jsonl_durable::<serde_json::Value>(ArtifactId::OperationalLog, &path)
+            .expect("read under the caller's lock");
+        assert_eq!(result.records.len(), 1);
+        assert_eq!(result.aside_paths.len(), 1);
+        assert_eq!(fs::read(&path).unwrap(), b"{\"n\":1}\n");
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn jsonl_durable_leaves_the_file_alone_while_another_writer_holds_its_lock() {
+        let directory = TempDir::new().expect("temporary root");
+        let path = directory.path().join("records.jsonl");
+        let damaged = b"{\"n\":1}\n{bad}\n{\"n\":2}\n";
+        fs::write(&path, damaged).expect("write");
+        let (held, release) = std::sync::mpsc::channel();
+        let (done, finished) = std::sync::mpsc::channel::<()>();
+        let writer = {
+            let path = path.clone();
+            std::thread::spawn(move || {
+                let _lock = crate::hold_lock(&path, crate::LockOptions::default()).unwrap();
+                held.send(()).unwrap();
+                finished.recv().unwrap();
+            })
+        };
+        release.recv().unwrap();
+        let result = read_jsonl_durable::<serde_json::Value>(ArtifactId::OperationalLog, &path)
+            .expect("read while locked elsewhere");
+        done.send(()).unwrap();
+        writer.join().unwrap();
+        assert_eq!(result.records.len(), 2);
+        assert_eq!(result.malformed_line_count, 1);
+        assert!(result.aside_paths.is_empty());
+        assert_eq!(fs::read(&path).unwrap(), damaged);
     }
 
     #[test]

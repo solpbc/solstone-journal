@@ -4,10 +4,12 @@
 //! Durable append-only text and JSONL writers.
 
 use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use serde::Serialize;
+
+use crate::LockOptions;
 
 #[cfg(unix)]
 use crate::atomic::{fsync_dir, sync_file};
@@ -42,7 +44,13 @@ pub fn append_text_checked(
     let mut contents = Vec::with_capacity(text.len() + 1);
     contents.extend_from_slice(text.as_bytes());
     contents.push(b'\n');
-    append_record(path.as_ref(), &contents, checkpoint)
+    append_record(
+        path.as_ref(),
+        &contents,
+        checkpoint,
+        None,
+        CutTail::StartNewLine,
+    )
 }
 
 #[cfg(unix)]
@@ -212,17 +220,122 @@ fn bound_append_open_barrier() {
     });
 }
 
+/// How a canonical JSONL append creates its file.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct JsonlAppendOptions {
+    /// Unix mode for a file this append creates. Windows has no equivalent.
+    pub mode: Option<u32>,
+}
+
 /// Serialize and append one newline-terminated JSON record through a single raw write.
+///
+/// The append holds the path's canonical lock ([`crate::hold_lock`]), or reuses
+/// it when this thread already holds it, so it never interleaves with another
+/// writer or with a healing reader's rewrite. The record always starts on a
+/// line of its own: a last line without a newline keeps its place when it is
+/// valid JSON, and is otherwise moved into a dated `.wedged` side file beside
+/// the log (a stopped write's remains, quietly healed). Every complete line
+/// stays as it is. For operational logs, never an owner transcript.
 ///
 /// A successful return means exactly one complete record was appended and
 /// synced. A returned error can still leave a partial write on disk when the
 /// underlying single write reports a short byte count.
 pub fn append_jsonl<T: Serialize>(path: impl AsRef<Path>, record: &T) -> Result<(), AppendError> {
+    append_jsonl_with_options(path, record, JsonlAppendOptions::default())
+}
+
+/// [`append_jsonl`], creating a missing file with `options`.
+pub fn append_jsonl_with_options<T: Serialize>(
+    path: impl AsRef<Path>,
+    record: &T,
+    options: JsonlAppendOptions,
+) -> Result<(), AppendError> {
     let path = path.as_ref();
     let mut contents = serde_json::to_vec(record)
         .map_err(|source| io_error(path, io::Error::new(io::ErrorKind::InvalidData, source)))?;
     contents.push(b'\n');
-    append_record(path, &contents, &|| Ok(()))
+    append_record(
+        path,
+        &contents,
+        &|| Ok(()),
+        options.mode,
+        CutTail::SetAsideIfDamaged,
+    )
+}
+
+/// Append complete JSONL lines to a file that must already exist, never creating it.
+///
+/// Returns `Ok(false)` when the file is missing. For a target no lock sidecar
+/// may sit beside and no durable reader rewrites: writers coordinate through
+/// this process's path gate ([`crate::hold_path_gate`]) and one write. A last
+/// line cut short gets a newline first; `lines` gets a final newline if it
+/// lacks one.
+pub fn append_lines_to_existing(path: impl AsRef<Path>, lines: &[u8]) -> Result<bool, AppendError> {
+    let path = path.as_ref();
+    if lines.is_empty() {
+        return Ok(path.exists());
+    }
+    let mut contents = lines.to_vec();
+    if contents.last() != Some(&b'\n') {
+        contents.push(b'\n');
+    }
+    let _gate = crate::hold_path_gate(path);
+    let file = match OpenOptions::new().read(true).append(true).open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(io_error(path, error)),
+    };
+    // A side file would be a leaf a namespace census counts: keep the line.
+    write_after_line_boundary_and_sync(path, file, &contents, CutTail::StartNewLine)?;
+    Ok(true)
+}
+
+/// Cut a file back to the length a caller's checkpoint recorded, then append
+/// one record there, under the path's canonical lock.
+///
+/// For a writer that checkpoints how much of its own log it has written and
+/// must drop what a stopped run appended after that point. A file shorter than
+/// the checkpoint is not padded: the record goes at its end, after a newline if
+/// its last line was cut short. Returns the file's new length.
+pub fn append_jsonl_at_checkpoint<T: Serialize>(
+    path: impl AsRef<Path>,
+    checkpoint_len: u64,
+    record: &T,
+) -> Result<u64, AppendError> {
+    let path = path.as_ref();
+    let mut contents = serde_json::to_vec(record)
+        .map_err(|source| io_error(path, io::Error::new(io::ErrorKind::InvalidData, source)))?;
+    contents.push(b'\n');
+    let parent = parent_dir(path);
+    fs::create_dir_all(parent).map_err(|source| io_error(path, source))?;
+    let _lock =
+        crate::hold_or_reuse_lock(path, append_lock_options()).map_err(|e| lock_error(path, e))?;
+    // Not append mode: Windows refuses to cut a file opened that way.
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .map_err(|source| io_error(path, source))?;
+    let length = file
+        .metadata()
+        .map_err(|source| io_error(path, source))?
+        .len();
+    if length > checkpoint_len {
+        file.set_len(checkpoint_len)
+            .map_err(|source| io_error(path, source))?;
+    }
+    let end = length.min(checkpoint_len);
+    if end > 0 && last_byte_at(&mut file, end).map_err(|source| io_error(path, source))? != b'\n' {
+        contents.insert(0, b'\n');
+    }
+    file.seek(SeekFrom::Start(end))
+        .map_err(|source| io_error(path, source))?;
+    file.write_all(&contents)
+        .map_err(|source| io_error(path, source))?;
+    file.sync_all().map_err(|source| io_error(path, source))?;
+    Ok(end + contents.len() as u64)
 }
 
 #[cfg(unix)]
@@ -254,6 +367,7 @@ pub fn append_jsonl_no_follow_checked<T: Serialize>(
 #[cfg(unix)]
 fn open_no_follow(path: &Path) -> io::Result<fs::File> {
     OpenOptions::new()
+        .read(true)
         .append(true)
         .create(true)
         .custom_flags(nix::libc::O_NOFOLLOW)
@@ -264,11 +378,12 @@ fn open_no_follow(path: &Path) -> io::Result<fs::File> {
 fn open_no_follow(path: &Path) -> io::Result<fs::File> {
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_APPEND_DATA, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_OPEN_REPARSE_POINT,
-        FILE_READ_ATTRIBUTES, OPEN_ALWAYS, SYNCHRONIZE,
+        FILE_READ_ATTRIBUTES, FILE_READ_DATA, OPEN_ALWAYS, SYNCHRONIZE,
     };
+    // Read access lets the append look at the last byte before it writes.
     let file = crate::locking::open_windows_path(
         path,
-        FILE_APPEND_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        FILE_APPEND_DATA | FILE_READ_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
         OPEN_ALWAYS,
         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
     )?;
@@ -280,6 +395,98 @@ fn open_no_follow(path: &Path) -> io::Result<fs::File> {
         ));
     }
     Ok(file)
+}
+
+/// The options every canonical append takes the path's lock with: a private
+/// sidecar and the ordinary bounded wait.
+fn append_lock_options() -> LockOptions {
+    LockOptions {
+        mode: Some(0o600),
+        ..LockOptions::default()
+    }
+}
+
+fn lock_error(path: &Path, error: crate::LockError) -> AppendError {
+    let source = match error {
+        crate::LockError::Io { source, .. } => source,
+        timeout @ crate::LockError::Timeout(_) => {
+            io::Error::new(io::ErrorKind::TimedOut, timeout.to_string())
+        }
+    };
+    io_error(path, source)
+}
+
+/// The byte just before `end`, which must be at least one.
+fn last_byte_at(file: &mut fs::File, end: u64) -> io::Result<u8> {
+    file.seek(SeekFrom::Start(end - 1))?;
+    let mut last = [0_u8];
+    file.read_exact(&mut last)?;
+    Ok(last[0])
+}
+
+/// What an append does with a last line that has no newline after it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CutTail {
+    /// End it with a newline and keep it where it is.
+    StartNewLine,
+    /// Keep it if it is one valid JSON value; otherwise a write stopped part
+    /// way, so move it into a `<stem>.wedged-<stamp>-line-<n><ext>` side file
+    /// beside the log (a quiet heal, counted by
+    /// [`crate::operational_heals_since`]) and append where it began.
+    SetAsideIfDamaged,
+}
+
+/// Append `contents` in one write so it begins on a line of its own. `file` is
+/// open for reading and appending; the caller holds whatever excludes other
+/// writers. Every complete line already in the file stays as it is.
+fn write_after_line_boundary_and_sync(
+    path: &Path,
+    mut file: fs::File,
+    contents: &[u8],
+    cut_tail: CutTail,
+) -> Result<(), AppendError> {
+    let io = |source| io_error(path, source);
+    let length = file.metadata().map_err(io)?.len();
+    if length == 0 || last_byte_at(&mut file, length).map_err(io)? == b'\n' {
+        return write_and_sync(path, file, contents);
+    }
+    if cut_tail == CutTail::SetAsideIfDamaged {
+        let mut bytes = Vec::new();
+        file.seek(SeekFrom::Start(0)).map_err(io)?;
+        file.read_to_end(&mut bytes).map_err(io)?;
+        let tail_start = bytes
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+            .map_or(0, |newline| newline + 1);
+        let tail = crate::jsonl_integrity::JsonlLine {
+            number: bytes[..tail_start]
+                .iter()
+                .filter(|byte| **byte == b'\n')
+                .count()
+                + 1,
+            bytes: &bytes[tail_start..],
+            terminated: false,
+        };
+        if crate::jsonl_integrity::classify_line(&tail).is_some() {
+            crate::jsonl_integrity::write_new_aside(
+                path,
+                &format!("-line-{}", tail.number),
+                tail.bytes,
+            )
+            .map_err(io)?;
+            let cutter = OpenOptions::new().write(true).open(path).map_err(io)?;
+            cutter.set_len(tail_start as u64).map_err(io)?;
+            sync_file(&cutter).map_err(io)?;
+            return write_and_sync(path, file, contents);
+        }
+    }
+    if contents.first() == Some(&b'\n') {
+        return write_and_sync(path, file, contents);
+    }
+    let mut bounded = Vec::with_capacity(contents.len() + 1);
+    bounded.push(b'\n');
+    bounded.extend_from_slice(contents);
+    write_and_sync(path, file, &bounded)
 }
 
 fn write_and_sync(path: &Path, mut file: fs::File, contents: &[u8]) -> Result<(), AppendError> {
@@ -309,6 +516,9 @@ fn append_record_no_follow(
             .map_err(|detail| io_error(path, io::Error::new(io::ErrorKind::Interrupted, detail)))
     };
     check()?;
+    // These targets include segment directories, where no lock sidecar may go,
+    // and nothing rewrites them: this process's writers take turns instead.
+    let _gate = crate::hold_path_gate(path);
     // A newly created file's directory entry is made durable too, as `append_record`
     // does. `symlink_metadata` does not follow the leaf, so a link is not "new".
     #[cfg(unix)]
@@ -318,7 +528,8 @@ fn append_record_no_follow(
     );
     let file = open_no_follow(path).map_err(|source| io_error(path, source))?;
     check()?;
-    write_and_sync(path, file, contents)?;
+    // A side file in a segment directory would read as content: keep the line.
+    write_after_line_boundary_and_sync(path, file, contents, CutTail::StartNewLine)?;
     #[cfg(unix)]
     if is_new {
         fsync_dir(parent_dir(path));
@@ -330,6 +541,8 @@ fn append_record(
     path: &Path,
     contents: &[u8],
     checkpoint: &dyn Fn() -> Result<(), String>,
+    mode: Option<u32>,
+    cut_tail: CutTail,
 ) -> Result<(), AppendError> {
     let check = || {
         checkpoint()
@@ -338,16 +551,24 @@ fn append_record(
     check()?;
     let parent = parent_dir(path);
     fs::create_dir_all(parent).map_err(|source| io_error(path, source))?;
+    let _lock = crate::hold_or_reuse_lock_checked(path, append_lock_options(), checkpoint)
+        .map_err(|error| lock_error(path, error))?;
     #[cfg(unix)]
     let is_new = !path.exists();
     check()?;
-    let file = OpenOptions::new()
-        .append(true)
-        .create(true)
+    let mut options = OpenOptions::new();
+    options.read(true).append(true).create(true);
+    #[cfg(unix)]
+    if let Some(mode) = mode {
+        options.mode(mode);
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
+    let file = options
         .open(path)
         .map_err(|source| io_error(path, source))?;
     check()?;
-    write_and_sync(path, file, contents)?;
+    write_after_line_boundary_and_sync(path, file, contents, cut_tail)?;
     #[cfg(unix)]
     if is_new {
         fsync_dir(parent);
@@ -720,6 +941,152 @@ mod tests {
             vec!["first", r#"{"second":true}"#]
         );
         assert!(contents.ends_with('\n'));
+    }
+
+    #[test]
+    fn a_jsonl_append_sets_a_cut_last_line_aside_and_keeps_every_complete_line() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        fs::write(&path, b"{\"kept\":1}\n{\"cut\":").unwrap();
+        append_jsonl(&path, &serde_json::json!({"next": 2})).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"{\"kept\":1}\n{\"next\":2}\n");
+        let asides = fs::read_dir(temporary.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .filter(|name| name.contains(".wedged-"))
+            .collect::<Vec<_>>();
+        assert_eq!(asides.len(), 1);
+        assert!(asides[0].starts_with("records.wedged-") && asides[0].ends_with("-line-2.jsonl"));
+        assert_eq!(
+            fs::read(temporary.path().join(&asides[0])).unwrap(),
+            b"{\"cut\":"
+        );
+        let heals = crate::operational_heals_since(temporary.path(), std::time::UNIX_EPOCH);
+        assert!(
+            heals.unwrap().is_empty(),
+            "an unregistered file is not counted"
+        );
+    }
+
+    #[test]
+    fn a_valid_last_line_without_a_newline_keeps_its_place() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        fs::write(&path, b"{\"kept\":1}").unwrap();
+        append_jsonl(&path, &serde_json::json!({"next": 2})).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"{\"kept\":1}\n{\"next\":2}\n");
+        assert_eq!(fs::read_dir(temporary.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn a_text_or_segment_append_after_a_cut_line_starts_a_new_line_in_place() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("events.jsonl");
+        fs::write(&path, b"{\"kept\":1}\n{\"cut\":").unwrap();
+        append_jsonl_no_follow(&path, &serde_json::json!({"next": 2})).unwrap();
+        append_text(&path, "\nalready-led").unwrap();
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            b"{\"kept\":1}\n{\"cut\":\n{\"next\":2}\n\nalready-led\n"
+        );
+        assert!(fs::read_dir(temporary.path()).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".wedged-")
+        }));
+    }
+
+    #[test]
+    fn append_reuses_the_lock_its_caller_already_holds() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        let _outer = crate::hold_lock(
+            &path,
+            LockOptions {
+                timeout: std::time::Duration::from_millis(1),
+                ..LockOptions::default()
+            },
+        )
+        .unwrap();
+        append_jsonl(&path, &serde_json::json!({"inside": true})).unwrap();
+        append_text_checked(&path, "also", &|| Ok(())).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"{\"inside\":true}\nalso\n");
+    }
+
+    #[test]
+    fn concurrent_appenders_each_land_one_whole_line() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        std::thread::scope(|scope| {
+            for writer in 0..8 {
+                let path = &path;
+                scope.spawn(move || {
+                    for row in 0..25 {
+                        append_jsonl(path, &serde_json::json!({"writer": writer, "row": row}))
+                            .unwrap();
+                    }
+                });
+            }
+        });
+        let bytes = fs::read(&path).unwrap();
+        let (valid, damaged) = crate::inspect_jsonl_bytes(&bytes);
+        assert_eq!((valid, damaged.len()), (200, 0));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn append_with_a_mode_creates_a_private_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let temporary = TempDir::new();
+        let path = temporary.path().join("private.jsonl");
+        append_jsonl_with_options(&path, &1, JsonlAppendOptions { mode: Some(0o600) }).unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    #[test]
+    fn appending_to_an_existing_file_never_creates_one() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("123_active.jsonl");
+        assert!(!append_lines_to_existing(&path, b"{\"late\":true}\n").unwrap());
+        assert!(!path.exists());
+        assert_eq!(fs::read_dir(temporary.path()).unwrap().count(), 0);
+        fs::write(&path, b"{\"start\":1}").unwrap();
+        assert!(append_lines_to_existing(&path, b"{\"a\":1}\n{\"b\":2}").unwrap());
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            b"{\"start\":1}\n{\"a\":1}\n{\"b\":2}\n"
+        );
+        assert_eq!(fs::read_dir(temporary.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn a_checkpointed_append_drops_what_a_stopped_run_wrote_after_the_checkpoint() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("body-touched.jsonl");
+        let first = append_jsonl_at_checkpoint(&path, 0, &serde_json::json!({"day": 1})).unwrap();
+        fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(b"{\"day\":2}\n")
+            .unwrap();
+        let second =
+            append_jsonl_at_checkpoint(&path, first, &serde_json::json!({"day": 2})).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"{\"day\":1}\n{\"day\":2}\n");
+        assert_eq!(second, fs::metadata(&path).unwrap().len());
+        // A file shorter than its checkpoint is never padded with zeros.
+        fs::write(&path, b"{\"day\":1}\n{\"da").unwrap();
+        let third = append_jsonl_at_checkpoint(&path, 400, &serde_json::json!({"day": 3})).unwrap();
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            b"{\"day\":1}\n{\"da\n{\"day\":3}\n"
+        );
+        assert_eq!(third, fs::metadata(&path).unwrap().len());
     }
 
     #[test]

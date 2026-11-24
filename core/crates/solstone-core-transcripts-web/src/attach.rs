@@ -29,6 +29,10 @@ pub(crate) struct TranscriptSegment {
     pub(crate) item: Option<DashboardImportItem>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) conversation_items: Vec<ConversationItem>,
+    /// Why a recording or screen settled `empty`, `failed` or `failed_final`,
+    /// by modality, as the segment detail's `processing_reason_code` says it.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) processing_reason_code: BTreeMap<String, String>,
 }
 
 #[derive(Serialize)]
@@ -139,6 +143,70 @@ pub(crate) fn normalize_markdown_only_segments(
             segment.types = vec!["markdown".to_owned()];
             segment.data_state = BTreeMap::from([("markdown".to_owned(), "analyzed".to_owned())]);
         }
+    }
+}
+
+/// Read the processing record's reason for each recording or screen whose
+/// state an owner sees as settled without a transcript. Only those segments'
+/// sidecar headers are read, a bounded first row each.
+pub(crate) fn attach_processing_reason_codes(
+    journal_root: &Path,
+    day: &str,
+    segments: &mut [TranscriptSegment],
+) {
+    for segment in segments {
+        let modalities = ["audio", "screen"]
+            .into_iter()
+            .filter(|modality| {
+                segment
+                    .data_state
+                    .get(*modality)
+                    .is_some_and(|state| crate::segment::reason_code_explains(state))
+            })
+            .collect::<Vec<_>>();
+        if modalities.is_empty() {
+            continue;
+        }
+        let directory = crate::segment_media::physical_segment_dir(
+            journal_root,
+            day,
+            &segment.stream,
+            &segment.key,
+        );
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        let mut paths = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .collect::<Vec<_>>();
+        paths.sort();
+        for modality in modalities {
+            let code = paths
+                .iter()
+                .filter(|path| sidecar_of(modality, path))
+                .filter_map(|path| {
+                    solstone_core_processing_record::read_processing_record_header(path)
+                })
+                .find_map(|record| crate::segment::record_reason_code(&record));
+            if let Some(code) = code {
+                segment
+                    .processing_reason_code
+                    .insert(modality.to_owned(), code);
+            }
+        }
+    }
+}
+
+fn sidecar_of(modality: &str, path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    match modality {
+        "audio" => solstone_core_system_health::is_audio_jsonl(path),
+        "screen" => name == "screen.jsonl" || name.ends_with("_screen.jsonl"),
+        _ => false,
     }
 }
 

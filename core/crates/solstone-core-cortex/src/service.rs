@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fs::OpenOptions;
 use std::future::Future;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
@@ -178,17 +176,23 @@ fn execute_callable_with_store(
     }
 
     if !writer.is_empty() {
-        let mut file = OpenOptions::new()
-            .append(true)
-            .open(&active_path)
-            .map_err(|e| e.to_string())?;
         if cancel() {
             return Ok(CallableUse {
                 use_id,
                 completed: false,
             });
         }
-        file.write_all(&writer).map_err(|e| e.to_string())?;
+        // The talent's rows and the terminal rows land in one write, after any
+        // row a timeout or cancel appended, and never recreate a finished use.
+        if !crate::storage::append_active_lines(&active_path, &writer).map_err(|e| e.to_string())? {
+            return Err(format!(
+                "{}: the active use file is missing",
+                active_path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            ));
+        }
     }
 
     if cancel() {

@@ -422,19 +422,13 @@ mod tests {
                     for detail in details {
                         if let Some(detail) = detail.as_object_mut() {
                             detail.insert("ts".into(), Value::String("<TODAY_TIMESTAMP>".into()));
-                            if let Some(Value::String(file)) = detail.get_mut("file")
-                                && let Ok(relative) = Path::new(file).strip_prefix(root)
-                            {
-                                let parts = relative
-                                    .components()
-                                    .map(|part| match part {
-                                        std::path::Component::Normal(name) => name.to_str(),
-                                        _ => None,
-                                    })
-                                    .collect::<Option<Vec<_>>>();
-                                if let Some(parts) = parts {
-                                    *file = format!("<JOURNAL_ROOT>/{}", parts.join("/"));
-                                }
+                            // Warning files are journal-relative: no host path to mask.
+                            if let Some(Value::String(file)) = detail.get("file") {
+                                assert!(
+                                    !Path::new(file).is_absolute()
+                                        && !file.contains(&*root.to_string_lossy()),
+                                    "a warning names a host path: {file}"
+                                );
                             }
                         }
                     }
@@ -510,8 +504,11 @@ mod tests {
                     "warning_details".into(),
                     "warnings".into(),
                 ]);
-                if actual.as_object().unwrap().contains_key("reason_code") {
-                    expected_keys.insert("reason_code".into());
+                // Conditional keys: present only when the segment carries them.
+                for key in ["reason_code", "processing_reason_code", "damaged_lines"] {
+                    if actual.as_object().unwrap().contains_key(key) {
+                        expected_keys.insert(key.into());
+                    }
                 }
                 assert_eq!(
                     actual
@@ -531,8 +528,10 @@ mod tests {
                 && status == StatusCode::OK
             {
                 // `reason_code` is operator-emitted for diagnostics and has no frontend reader in workspace.html yet.
-                if !expected.as_object().unwrap().contains_key("reason_code") {
-                    actual.as_object_mut().unwrap().remove("reason_code");
+                for key in ["reason_code", "processing_reason_code"] {
+                    if !expected.as_object().unwrap().contains_key(key) {
+                        actual.as_object_mut().unwrap().remove(key);
+                    }
                 }
                 if !expected.as_object().unwrap().contains_key("media_removal") {
                     let audio_purged = actual["media_purged"]["audio"].as_bool().unwrap_or(false);
@@ -1640,6 +1639,7 @@ mod tests {
             think: None,
             item: None,
             conversation_items: Vec::new(),
+            processing_reason_code: BTreeMap::new(),
         };
         let value = serde_json::to_value(attach_visible_streams_to_ranges(
             &[("09:00".into(), "09:15".into())],
@@ -2102,6 +2102,7 @@ mod tests {
             think: None,
             item: None,
             conversation_items: Vec::new(),
+            processing_reason_code: BTreeMap::new(),
         };
 
         let ranges = attach_visible_streams_to_ranges(

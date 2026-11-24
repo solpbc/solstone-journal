@@ -627,15 +627,8 @@ mod tests {
             thinking_seen: false,
         });
         assert!(assessment.token_log_error.is_none());
-        let token_log = fs::read_to_string(
-            fs::read_dir(journal.join("tokens"))
-                .unwrap()
-                .next()
-                .unwrap()
-                .unwrap()
-                .path(),
-        )
-        .unwrap();
+        let token_log =
+            fs::read_to_string(&crate::token_log::token_log_files(&journal)[0]).unwrap();
         assert!(!token_log.contains("override-secret"));
 
         let diagnostic = encode_one_shot_response(&GenerateResponse::Refused(refusal_for(

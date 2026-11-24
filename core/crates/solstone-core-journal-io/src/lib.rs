@@ -45,6 +45,8 @@ pub mod inventory_budget;
 pub mod journal_directory;
 pub mod journal_root;
 #[cfg(any(unix, windows))]
+pub mod jsonl_integrity;
+#[cfg(any(unix, windows))]
 pub mod lease;
 pub mod legacy_log_alias;
 #[cfg(any(unix, windows))]
@@ -54,6 +56,7 @@ pub mod name_admission;
 pub mod observation;
 #[cfg(any(unix, windows))]
 pub mod operational_log;
+pub mod path_ownership;
 pub mod paths;
 #[cfg(feature = "test-hooks")]
 pub mod read_test_hook;
@@ -94,6 +97,11 @@ pub use append::append_jsonl_no_follow;
 pub use append::append_text;
 #[cfg(any(test, feature = "test-hooks"))]
 pub use append::run_with_bound_append_open_barrier;
+#[cfg(any(unix, windows))]
+pub use append::{
+    JsonlAppendOptions, append_jsonl_at_checkpoint, append_jsonl_with_options,
+    append_lines_to_existing,
+};
 #[cfg(any(unix, windows))]
 pub use append::{append_text_bound_checked, append_text_checked};
 #[cfg(any(unix, windows))]
@@ -203,6 +211,13 @@ pub use journal_root::{
     WindowsAcquisitionPrimitive, WindowsAcquisitionTrace, run_with_windows_acquisition_fault,
     run_with_windows_acquisition_trace,
 };
+#[cfg(any(unix, windows))]
+pub use jsonl_integrity::{
+    DamagedJsonlLine, JsonlDamageKind, JsonlInspection, JsonlQuarantine,
+    OPERATIONAL_HEAL_RECURRENCE, OPERATIONAL_HEAL_WINDOW, OperationalHeal,
+    OperationalHealRecurrence, inspect_jsonl, inspect_jsonl_bytes, journal_relative_path,
+    operational_heal_recurrence, operational_heals_since, quarantine_damaged_jsonl_lines,
+};
 #[cfg(unix)]
 pub use lease::probe_exclusive_flock_no_release;
 #[cfg(any(unix, windows))]
@@ -230,7 +245,7 @@ pub use locking::{
 pub use locking::{
     DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, ExistingParentLock, FileLock, LockOptions,
     acquire_existing_parent_lock, hold_daily_location_admission, hold_existing_lock, hold_lock,
-    hold_lock_checked,
+    hold_lock_checked, hold_or_reuse_lock, hold_or_reuse_lock_checked,
 };
 pub use media::publish_directory_noreplace;
 pub use name_admission::{
@@ -238,6 +253,7 @@ pub use name_admission::{
     NoFollowEntryKind, StreamName, check_portable_component,
 };
 pub use observation::{FileObservation, FlatDirectoryEntry, NativeMtime};
+pub use path_ownership::{PathGateGuard, current_thread_holds_lock, hold_path_gate};
 pub use paths::{
     DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, RecordIdentity, Segment, SegmentLayout,
     SegmentLocatorIdentity, StreamLocation, check_record_identities, check_unique_record_keys,

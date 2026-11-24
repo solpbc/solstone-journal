@@ -1139,8 +1139,7 @@ mod tests {
             thinking_seen: false,
         });
         assert!(assessment.token_log_error.is_none());
-        let files = fs::read_dir(journal.join("tokens")).unwrap().count();
-        assert_eq!(files, 1);
+        assert_eq!(crate::token_log::token_log_files(&journal).len(), 1);
         let _ = fs::remove_dir_all(journal);
     }
 

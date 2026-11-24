@@ -650,6 +650,8 @@ impl Default for LockOptions {
 /// An exclusive advisory-lock guard. Dropping it releases the lock.
 #[derive(Debug)]
 pub struct FileLock {
+    // Declared first: the holder is forgotten before the advisory lock releases.
+    _ownership: Option<crate::path_ownership::OwnershipToken>,
     #[cfg(unix)]
     _guard: Flock<File>,
     #[cfg(windows)]
@@ -662,6 +664,37 @@ impl FileLock {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    fn owned_by_this_thread(mut self, path: &Path) -> Self {
+        self._ownership = Some(crate::path_ownership::register_exclusive(path));
+        self
+    }
+}
+
+/// Hold `path`'s exclusive canonical lock unless this thread already holds it.
+///
+/// `None` means the caller's own outer [`hold_lock`] already excludes every
+/// other writer, so taking it again (which would wait on itself) is skipped.
+#[cfg(any(unix, windows))]
+pub fn hold_or_reuse_lock(
+    path: impl AsRef<Path>,
+    options: LockOptions,
+) -> Result<Option<FileLock>, LockError> {
+    hold_or_reuse_lock_checked(path, options, &|| Ok(()))
+}
+
+/// [`hold_or_reuse_lock`] with [`hold_lock_checked`]'s authority checkpoint.
+#[cfg(any(unix, windows))]
+pub fn hold_or_reuse_lock_checked(
+    path: impl AsRef<Path>,
+    options: LockOptions,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<Option<FileLock>, LockError> {
+    let path = path.as_ref();
+    if crate::path_ownership::current_thread_holds_lock(path) {
+        return Ok(None);
+    }
+    hold_lock_checked(path, options, checkpoint).map(Some)
 }
 
 /// An exclusive persistent lock entry beneath an existing parent directory.
@@ -1105,12 +1138,9 @@ pub fn hold_lock_checked(
     options: LockOptions,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<FileLock, LockError> {
-    hold_sidecar_lock(
-        path.as_ref(),
-        options,
-        FlockArg::LockExclusiveNonblock,
-        checkpoint,
-    )
+    let path = path.as_ref();
+    hold_sidecar_lock(path, options, FlockArg::LockExclusiveNonblock, checkpoint)
+        .map(|lock| lock.owned_by_this_thread(path))
 }
 
 /// Hold the same sidecar as `hold_lock`, allowing concurrent Unix readers while
@@ -1180,6 +1210,7 @@ fn hold_file_lock_unix(
             Ok(guard) => {
                 check()?;
                 return Ok(FileLock {
+                    _ownership: None,
                     _guard: guard,
                     path: path.to_path_buf(),
                 });
@@ -1377,6 +1408,7 @@ pub fn hold_existing_lock(
         match Flock::lock(file, FlockArg::LockSharedNonblock) {
             Ok(guard) => {
                 return Ok(Some(FileLock {
+                    _ownership: None,
                     _guard: guard,
                     path: path.to_path_buf(),
                 }));
@@ -2205,7 +2237,9 @@ pub fn hold_lock_checked(
     options: LockOptions,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<FileLock, LockError> {
-    hold_sidecar_lock_windows(path.as_ref(), options, checkpoint, false)
+    let path = path.as_ref();
+    hold_sidecar_lock_windows(path, options, checkpoint, false)
+        .map(|lock| lock.owned_by_this_thread(path))
 }
 
 /// Hold a stable sidecar for concurrent readers, excluding generation removal.
@@ -2283,6 +2317,7 @@ fn hold_file_lock_windows(
             Ok(guard) => {
                 check()?;
                 return Ok(FileLock {
+                    _ownership: None,
                     _guard: guard,
                     path: path.to_path_buf(),
                 });
@@ -2460,6 +2495,7 @@ pub fn hold_existing_lock(
         match try_lock_exclusive(file) {
             Ok(guard) => {
                 return Ok(Some(FileLock {
+                    _ownership: None,
                     _guard: guard,
                     path: path.to_path_buf(),
                 }));

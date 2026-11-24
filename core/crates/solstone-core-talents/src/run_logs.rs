@@ -112,21 +112,15 @@ pub fn migrate_agent_run_logs(
             continue;
         }
         let index = agents.join(format!("{day}.jsonl"));
+        // Read what the index holds and add to it under its lock, so two
+        // migrations never both add the same run.
+        let _lock = solstone_core_journal_io::hold_or_reuse_lock(&index, Default::default())
+            .map_err(|error| TalentStorageError(error.to_string()))?;
         let existing = existing_ids(&index);
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&index)
-            .map_err(io)?;
-        use std::io::Write;
         for entry in entries {
             if !existing.contains(entry.get("agent_id").and_then(Value::as_str).unwrap_or("")) {
-                writeln!(
-                    file,
-                    "{}",
-                    serde_json::to_string(&entry).map_err(|e| TalentStorageError(e.to_string()))?
-                )
-                .map_err(io)?;
+                solstone_core_journal_io::append_jsonl(&index, &entry)
+                    .map_err(|error| TalentStorageError(error.to_string()))?;
             }
         }
     }
@@ -173,11 +167,13 @@ fn day_from_id(id: &str) -> String {
         .unwrap_or_default()
 }
 fn existing_ids(path: &Path) -> HashSet<String> {
-    let Ok(text) = fs::read_to_string(path) else {
+    // Byte by byte: one damaged line must not hide the runs the others list.
+    let Ok(bytes) = fs::read(path) else {
         return HashSet::new();
     };
-    text.lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+    bytes
+        .split(|byte| *byte == b'\n')
+        .filter_map(|line| serde_json::from_slice::<Value>(line.trim_ascii()).ok())
         .filter_map(|value| {
             value
                 .get("agent_id")

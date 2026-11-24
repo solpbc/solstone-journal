@@ -325,6 +325,35 @@ mod tests {
     }
 
     #[test]
+    fn writers_holding_the_store_lock_heal_and_append_without_waiting_on_themselves() {
+        let journal = temporary_journal("held-lock");
+        let path = review_candidates_path(journal.path());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"{\"source_id\":\"x\"}\n{cut\n").unwrap();
+        // The record holds the store's lock and reads through the healing reader.
+        let (_, created, _) = record_name_variant_candidate(journal.path(), &detection()).unwrap();
+        assert!(created);
+        assert_eq!(load_candidates(journal.path()).unwrap().len(), 2);
+        // Keep-separate holds its log's lock and appends to it.
+        crate::keep_separate::record_keep_separate_assertion(
+            journal.path(),
+            "alice",
+            "alicia",
+            "review",
+            Some("operation"),
+            1,
+        )
+        .unwrap();
+        let removed = crate::keep_separate::remove_operation_sources(
+            journal.path(),
+            "operation",
+            &[crate::keep_separate::pair_key("alice", "alicia")],
+        )
+        .unwrap();
+        assert_eq!(removed, 1);
+    }
+
+    #[test]
     fn keep_separate_watermark_expires_but_owner_terminal_choices_never_reopen() {
         let journal = temporary_journal("suppression");
         crate::keep_separate::record_keep_separate_assertion(
