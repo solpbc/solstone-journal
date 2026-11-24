@@ -19,7 +19,7 @@ pub(crate) fn run_self_heal(journal: &Path, day: &str) {
     suggest_duplicates(journal, day);
 }
 
-/// Possible duplicate people found by shared email, shared alias or a similar
+/// Possible duplicate entities found by shared email, shared alias or a similar
 /// name across facets become open suggestions for the owner to review. This
 /// never merges anything.
 fn suggest_duplicates(journal: &Path, day: &str) {

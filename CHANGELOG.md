@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- your journal now suggests possible duplicates among the people, companies and other entities in your journal when two share an email address or another name, or have similar names in different facets. they wait in entities under possible duplicates, and nothing is merged unless you choose it.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -19,6 +20,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- accepting a suggested merge now keeps the merged name as another name, the way a merge you start yourself already did.
+- an entity you move to the trash no longer appears in possible duplicates.
+- if your journal's search index is missing, search now rebuilds it right away instead of waiting for the next daily check, and drops results from days that are no longer in your journal's folder. if many days disappear at once, for example when a drive isn't connected, search keeps their results instead of dropping them.
+- calendar events now show on the right day after you change your home timezone in settings.
 - this is a security fix. when your journal's web app read or saved settings, its reply also included credentials saved in your journal: your backup keys and any credentials for your own backup storage, your Oura connection credentials and tokens, any saved key for your own endpoint kept when you turned on confidential processing, and an older voice API key if an upgraded journal still carried one. anything that could reach your journal's web app (a paired device, a browser with access to your journal, another program running as you on the same computer, or any program on it when local access is open) could have read those credentials. settings replies no longer include them, and your saved connections and backups keep working as before. your journal keeps no log of requests, so it can't tell whether any of those credentials were ever read this way. please install this update. if any paired device, browser, browser extension, program or other account on that computer you don't trust could have reached your journal's web app, replace any backup storage credentials, that saved own-endpoint key and any older voice API key, and revoke or replace your Oura app credentials and authorization at Oura. for encrypted backups, regenerating your recovery key replaces only that key and leaves the daily backup key active; to replace both keys, restore any days kept only in backup first, turn off and delete the backup (clearing the old location or choosing a new one if you use your own backup storage), and set up a new backup.
 - when you type a request to an agent in a tmux session you've listed in `output_sessions`, your journal now keeps the request as yours and usually describes the work that follows as the agent's, so it is less likely to credit that work to you. thanks @dvanduzer for the retest (#424).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
