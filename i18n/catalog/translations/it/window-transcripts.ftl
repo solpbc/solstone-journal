@@ -2138,50 +2138,50 @@ journal.window.speakers.owner.status.error = non è stato possibile caricare lo 
 
 journal.window.speakers.owner.teaching.exhausted.progress = { $statements_quantity ->
         [one] { $statements } di { $required_quantity ->
-        [one] { $required } dichiarazione più lunga insegnata
-       [many] { $required } di dichiarazioni più lunghe insegnate
-       *[other] { $required } dichiarazioni più lunghe insegnate
+        [one] { $required } frase più lunga insegnata
+       [many] { $required } di frasi più lunghe insegnate
+       *[other] { $required } frasi più lunghe insegnate
     }
        [many] { $statements } di { $required_quantity ->
-        [one] { $required } dichiarazione più lunga insegnata
-       [many] { $required } di dichiarazioni più lunghe insegnate
-       *[other] { $required } dichiarazioni più lunghe insegnate
+        [one] { $required } frase più lunga insegnata
+       [many] { $required } di frasi più lunghe insegnate
+       *[other] { $required } frasi più lunghe insegnate
     }
        *[other] { $statements } di { $required_quantity ->
-        [one] { $required } dichiarazione più lunga insegnata
-       [many] { $required } di dichiarazioni più lunghe insegnate
-       *[other] { $required } dichiarazioni più lunghe insegnate
+        [one] { $required } frase più lunga insegnata
+       [many] { $required } di frasi più lunghe insegnate
+       *[other] { $required } frasi più lunghe insegnate
     }
     }
 
 journal.window.speakers.owner.teaching.progress = { $statements_quantity ->
         [one] { $statements } di { $required_quantity ->
-        [one] { $required } dichiarazione più lunga
-       [many] { $required } di dichiarazioni più lunghe
-       *[other] { $required } dichiarazioni più lunghe
+        [one] { $required } frase più lunga
+       [many] { $required } di frasi più lunghe
+       *[other] { $required } frasi più lunghe
     }
        [many] { $statements } di { $required_quantity ->
-        [one] { $required } dichiarazione più lunga
-       [many] { $required } di dichiarazioni più lunghe
-       *[other] { $required } dichiarazioni più lunghe
+        [one] { $required } frase più lunga
+       [many] { $required } di frasi più lunghe
+       *[other] { $required } frasi più lunghe
     }
        *[other] { $statements } di { $required_quantity ->
-        [one] { $required } dichiarazione più lunga
-       [many] { $required } di dichiarazioni più lunghe
-       *[other] { $required } dichiarazioni più lunghe
+        [one] { $required } frase più lunga
+       [many] { $required } di frasi più lunghe
+       *[other] { $required } frasi più lunghe
     }
     }
 
 journal.window.speakers.owner.teaching.statements = { $statements_quantity ->
-        [one] { $statements } dichiarazione insegnata
-       [many] { $statements } di dichiarazioni insegnate
-       *[other] { $statements } dichiarazioni insegnate
+        [one] { $statements } frase insegnata
+       [many] { $statements } di frasi insegnate
+       *[other] { $statements } frasi insegnate
     }
 
 journal.window.speakers.owner.voice.sample.count = { $statements_quantity ->
-        [one] questa voce è in { $statements } dichiarazione nel tuo diario. riproduci un campione prima di decidere.
-       [many] questa voce è in { $statements } di dichiarazioni nel tuo diario. riproduci alcuni campioni prima di decidere.
-       *[other] questa voce è in { $statements } dichiarazioni nel tuo diario. riproduci alcuni campioni prima di decidere.
+        [one] questa voce è in { $statements } frase nel tuo diario. riproduci un campione prima di decidere.
+       [many] questa voce è in { $statements } di frasi nel tuo diario. riproduci alcuni campioni prima di decidere.
+       *[other] questa voce è in { $statements } frasi nel tuo diario. riproduci alcuni campioni prima di decidere.
     }
 
 journal.window.speakers.owner.write.owner.voice.error.detail.audio.sha256.must.be.a.non = audio_sha256 deve essere un hash esadecimale non vuoto
@@ -2253,15 +2253,15 @@ journal.window.speakers.owner.write.owner.voice.response.there.s.no.saved.voice.
 journal.window.speakers.quality.buckets.empty = niente in questo momento: { $empty_categories }
 
 journal.window.speakers.quality.progress.statements = { $count_quantity ->
-        [one] { $count } dichiarazione più lunga
-       [many] { $count } di dichiarazioni più lunghe
-       *[other] { $count } dichiarazioni più lunghe
+        [one] { $count } frase più lunga
+       [many] { $count } di frasi più lunghe
+       *[other] { $count } frasi più lunghe
     }
 
 journal.window.speakers.quality.statement.denominator = { $count_quantity ->
-        [one] su { $count } dichiarazione
-       [many] su { $count } di dichiarazioni
-       *[other] su { $count } dichiarazioni
+        [one] su { $count } frase
+       [many] su { $count } di frasi
+       *[other] su { $count } frasi
     }
 
 journal.window.speakers.quality.teaching.count = { $count_quantity ->
@@ -2491,17 +2491,17 @@ journal.window.speakers.who.keep.separate.heading = diversa da { $person_name }?
 journal.window.speakers.who.keep.separate.reason = { $person_name } è già nel tuo diario. se è un'altra persona, resterà a parte e non ci sarà mai una mescolanza.
 
 journal.window.speakers.who.preview.fact.count = { $statements_quantity ->
-        [one] { $statements } dichiarazione su { $conversations_quantity ->
+        [one] { $statements } frase su { $conversations_quantity ->
         [one] { $conversations } conversazione
        [many] { $conversations } di conversazioni
        *[other] { $conversations } conversazioni
     }, tutta nel tuo diario. puoi annullarlo.
-       [many] { $statements } di dichiarazioni su { $conversations_quantity ->
+       [many] { $statements } di frasi su { $conversations_quantity ->
         [one] { $conversations } conversazione
        [many] { $conversations } di conversazioni
        *[other] { $conversations } conversazioni
     }, tutte nel tuo diario. puoi annullarlo.
-       *[other] { $statements } dichiarazioni su { $conversations_quantity ->
+       *[other] { $statements } frasi su { $conversations_quantity ->
         [one] { $conversations } conversazione
        [many] { $conversations } di conversazioni
        *[other] { $conversations } conversazioni
