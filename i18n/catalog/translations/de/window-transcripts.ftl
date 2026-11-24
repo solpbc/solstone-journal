@@ -408,7 +408,7 @@ journal.window.health.heading.no.devices.are.linked.to.your = es sind noch keine
 
 journal.window.health.history.caught.up.since = Verlauf ist zurück bis { $day } auf dem neuesten Stand
 
-journal.window.health.history.cost.consent = das Fertigstellen von { $recordings } älteren Aufnahmen, { $day_outputs } Tagesergebnissen und { $activities } Aktivitäten nutzt dein gewähltes Modell und kann Gebühren von deinem Anbieter hinzufügen. die Arbeit von heute geht zuerst.
+journal.window.health.history.cost.consent = das Fertigstellen von { $recordings } älteren Aufnahmen, { $day_outputs } Tagesergebnissen und { $activities } Aktivitäten nutzt dein gewähltes Modell und kann Gebühren von deinem Anbieter hinzufügen. heutige Arbeit geht zuerst.
 
 journal.window.health.history.counts = { $recording_quantity ->
         [one] { $recordings } Aufnahme und { $output_quantity ->
@@ -900,7 +900,7 @@ journal.window.health.visible.text.errors.today = Fehler heute
 
 journal.window.health.visible.text.everything.is.idle = alles ist im Leerlauf
 
-journal.window.health.visible.text.finishing.older.recordings.and.day.updates = ältere Aufnahmen und Tagesaktualisierungen abzuschließen nutzt dein gewähltes Modell und kann Gebühren deines Anbieters hinzufügen. heutige Arbeit kommt zuerst.
+journal.window.health.visible.text.finishing.older.recordings.and.day.updates = ältere Aufnahmen und Tagesaktualisierungen abzuschließen nutzt dein gewähltes Modell und kann Gebühren deines Anbieters hinzufügen. heutige Arbeit geht zuerst.
 
 journal.window.health.visible.text.health = Zustand
 
@@ -926,7 +926,7 @@ journal.window.health.visible.text.none.since.this.journal.started = nichts seit
 
 journal.window.health.visible.text.ok = ok
 
-journal.window.health.visible.text.older.work.is.allowed.to.use = ältere Arbeit darf dein gewähltes Modell nutzen, das Gebühren von deinem Anbieter hinzufügen kann. die Arbeit von heute kommt zuerst.
+journal.window.health.visible.text.older.work.is.allowed.to.use = ältere Arbeit darf dein gewähltes Modell nutzen, das Gebühren von deinem Anbieter hinzufügen kann. heutige Arbeit geht zuerst.
 
 journal.window.health.visible.text.on.the.computer.running.your.journal = auf dem Computer, auf dem dein Journal läuft:
 
