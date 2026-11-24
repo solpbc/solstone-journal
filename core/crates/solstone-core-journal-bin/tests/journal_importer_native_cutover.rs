@@ -384,7 +384,7 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
                     args: vec![path(&inputs.audio), "20260311_120000".to_owned()],
                     exit: 0,
                     stream: Stream::Stdout,
-                    contains: "day: \"20260311\"",
+                    contains: "Generic audio import complete: segments=1 files_created=1\n",
                 },
                 Case {
                     args: vec![path(&inputs.text), "20260311_120000".to_owned()],

@@ -103,7 +103,7 @@ const MODE_CASES: &[ModeCase] = &[
                 Expected {
                     exit: 0,
                     stream: Stream::Stdout,
-                    identifies: "day: \"20260311\"",
+                    identifies: "Generic audio import complete: segments=1 files_created=1\n",
                 },
             ),
             (
