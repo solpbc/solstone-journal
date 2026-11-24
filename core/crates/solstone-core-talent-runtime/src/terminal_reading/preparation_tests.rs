@@ -393,9 +393,10 @@ fn a_session_taken_in_on_output_alone_is_read_as_nobody_at_its_keyboard() {
 }
 
 #[test]
-fn a_listed_session_a_client_used_is_still_nobodys_when_nothing_was_typed() {
+fn a_listed_session_is_the_agents_work_and_what_was_typed_there_is_the_owners_request() {
     // A capture on output alone shows the owner listed the session; a later
-    // capture with the cursor only means a client used it. Typing decides.
+    // capture with the cursor only means a client used it. Typing decides
+    // which line it gets, never whether the agent's work is labelled.
     let frame = |time: f64, content: &str, cursor: Option<(usize, usize)>| -> String {
         let mut pane = json!({"id":"%0","active":true,"content":content,"alternate_on":true,"pane_in_mode":false});
         if let Some((x, y)) = cursor {
@@ -419,7 +420,7 @@ fn a_listed_session_a_client_used_is_still_nobodys_when_nothing_was_typed() {
             "⏺ Ran five replays\n❯ now score them\n⏺ Scoring\n",
             None,
         );
-    for (frames, labelled) in [(untyped, true), (typed, false)] {
+    for (frames, typed_at) in [(untyped, false), (typed, true)] {
         let (_root, paths, context, request) = setup("");
         fs::write(
             context
@@ -438,8 +439,20 @@ fn a_listed_session_a_client_used_is_still_nobodys_when_nothing_was_typed() {
         let text = source_text(&prepared);
         assert_eq!(
             text.contains(&super::sample::output_only_line("qa")),
-            labelled,
+            !typed_at,
             "{frames}: {text}"
         );
+        assert_eq!(
+            text.contains(&super::sample::typed_line("qa")),
+            typed_at,
+            "{frames}: {text}"
+        );
+        assert!(
+            text.contains("new text from the agent in qa\n```\n⏺ "),
+            "{frames}: {text}"
+        );
+        if typed_at {
+            assert!(text.contains("· typed\n❯ now score them"), "{text}");
+        }
     }
 }

@@ -19,6 +19,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- when you type a request to an agent in a tmux session you've listed in `output_sessions`, your journal now keeps the request as yours and usually describes the work that follows as the agent's, so it is less likely to credit that work to you. thanks @dvanduzer for the retest (#424).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
