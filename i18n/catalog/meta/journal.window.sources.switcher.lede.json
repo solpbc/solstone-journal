@@ -1,0 +1,16 @@
+{
+  "description": "Subtitle inside the framed switcher header on the sources view.",
+  "context": "Journal window, sources view. Short line explaining that this page shows when paired devices and connected syncs last added something to the journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "60ce31adbf6aaf4904624f46521e173258215cf136b2c6850d552654e77c7d85",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

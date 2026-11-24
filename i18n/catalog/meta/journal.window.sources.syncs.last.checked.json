@@ -1,0 +1,21 @@
+{
+  "description": "Relative time a connected sync was last checked for new items.",
+  "context": "Journal window, sources view. Secondary status text on a connected sync row (for example, 'last checked 2 min ago').",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "when",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8dc34efda6b105b953909ebf098aacd25cf2f85cfa562cd62ea7bffe7338368a",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

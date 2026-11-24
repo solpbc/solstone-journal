@@ -22600,3 +22600,34 @@ journal.window.agents.ideas.uses.places = uses places
 journal.window.agents.ideas.uses.photos = uses photos
 
 journal.window.agents.ideas.uses.transcripts = uses transcripts
+
+journal.window.sources.switcher.aria.label = sources and imports
+
+journal.window.sources.switcher.tab.imports = imports
+
+journal.window.sources.switcher.lede = when your devices and syncs last added something to your journal.
+
+journal.window.import.switcher.lede = files and exports you chose to bring in.
+
+journal.window.import.switcher.review.sr = ({ $count } ready to review)
+
+journal.window.sources.syncs.heading = syncs
+
+journal.window.sources.syncs.manage = manage syncs in settings
+
+journal.window.sources.syncs.empty.hint = { $plaud } and { $granola } show up here once connected in settings.
+
+journal.window.sources.syncs.provider.plaud = { $provider }
+
+journal.window.sources.syncs.provider.granola = { $provider }
+
+journal.window.sources.syncs.last.added = last added { $when }
+
+journal.window.sources.syncs.last.checked = last checked { $when }
+
+journal.window.sources.syncs.state.syncing = syncing
+
+journal.window.sources.syncs.state.paused = hourly sync off
+
+journal.window.sources.syncs.unavailable = couldn't load status
+

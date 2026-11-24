@@ -479,7 +479,18 @@ pub(crate) async fn sources(
         value
     }).collect();
     let total = items.len();
-    json_response(StatusCode::OK, json!({"items": items, "total": total}))
+    json_response(
+        StatusCode::OK,
+        json!({
+            "items": items,
+            "total": total,
+            "resumable": {
+                "threshold_bytes": crate::uploads::RESUMABLE_THRESHOLD_BYTES,
+                "chunk_bytes": crate::uploads::RESUMABLE_CHUNK_BYTES,
+                "max_file_bytes": crate::uploads::MAX_UPLOAD_FILE_BYTES,
+            },
+        }),
+    )
 }
 
 pub(crate) async fn list(
@@ -497,10 +508,11 @@ pub(crate) async fn list(
         .filter(|value| !value.is_empty());
     let imports_dir = state.root.join("imports");
     crate::lifecycle::maybe_sweep_abandoned_uploads(&state.root);
+    let active_uploads = crate::uploads::list_active_upload_values(&state.root);
     let Ok(entries) = fs::read_dir(&imports_dir) else {
         return json_response(
             StatusCode::OK,
-            json!({"imports": [], "source_options": [], "total": 0, "page": 1, "per_page": 25, "pages": 0, "total_entries_written": 0, "total_entities_seeded": 0}),
+            json!({"imports": [], "active_uploads": active_uploads, "source_options": [], "total": 0, "page": 1, "per_page": 25, "pages": 0, "total_entries_written": 0, "total_entities_seeded": 0}),
         );
     };
     let mut rows = Vec::new();
@@ -629,7 +641,7 @@ pub(crate) async fn list(
         .collect();
     json_response(
         StatusCode::OK,
-        json!({"imports": page_rows, "source_options": source_options, "total": total, "page": page, "per_page": per_page, "pages": if total == 0 { 0 } else { total.div_ceil(per_page) }, "total_entries_written": total_entries_written, "total_entities_seeded": total_entities_seeded}),
+        json!({"imports": page_rows, "active_uploads": active_uploads, "source_options": source_options, "total": total, "page": page, "per_page": per_page, "pages": if total == 0 { 0 } else { total.div_ceil(per_page) }, "total_entries_written": total_entries_written, "total_entities_seeded": total_entities_seeded}),
     )
 }
 

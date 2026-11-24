@@ -1285,19 +1285,79 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(p.clock.live() === 0, 'no timer');
   });
 
-  await test('the cards carry a link to sources, which a guide hides and the grid shows again', async () => {
+  await test('the framed switcher links sources and imports, hides on a guide, and shows again on the grid', async () => {
     const p = await boot(env);
+    const switcher = p.byId('importModeSwitcher');
+    assert.ok(switcher && switcher.tagName === 'HEADER', 'the framed switcher is there');
+    assert.ok(switcher.style.display === '', 'it shows with the cards');
     const link = p.byId('importSourcesLink');
-    assert.ok(link && link.tagName === 'A', 'the link is there');
+    assert.ok(link && link.tagName === 'A', 'the sources link is there');
     assert.strictEqual(link.getAttribute('href'), '/app/sources/');
-    assert.strictEqual(link.textContent, JournalI18n.render('journal.window.import.link.label.see.when.your.devices.last.added.something'));
-    assert.ok(link.style.display === '', 'it shows with the cards');
+    assert.strictEqual(link.getAttribute('aria-current'), null);
+    assert.strictEqual(link.textContent, JournalI18n.render('journal.window.sources.copy.title.sources'));
+    const current = p.byId('importCurrentLink');
+    assert.ok(current && current.tagName === 'A', 'the imports link is there');
+    assert.strictEqual(current.getAttribute('href'), '/app/import/');
+    assert.strictEqual(current.getAttribute('aria-current'), 'page');
+    assert.strictEqual(current.textContent, JournalI18n.render('journal.window.sources.switcher.tab.imports'));
+    assert.ok(p.byId('importReviewCount').hidden, 'review pill hidden when no pending review rows');
+    assert.strictEqual(switcher.querySelector('.intake-switcher-lede').textContent, JournalI18n.render('journal.window.import.switcher.lede'));
     const guided = await boot(env, '/app/import/#guide/chatgpt');
-    const hidden = guided.byId('importSourcesLink');
-    assert.ok(hidden.style.display === 'none', 'a guide hides it');
+    const hidden = guided.byId('importModeSwitcher');
+    assert.ok(hidden.style.display === 'none', 'a guide hides the switcher');
     guided.press(guided.q('.import-back-link'));
     await settle();
     assert.ok(hidden.style.display === '', 'back on the cards it shows again');
+  });
+
+  await test('the imports pending-review pill counts needsReview rows on unfiltered loads and survives source filtering', async () => {
+    let unfilteredRows = [
+      importRow('20261101_101500', 'success'),
+      importRow('20261102_110000', 'pending', { needs_review: true, source_type: 'apple_health', source_display: 'Apple Health' }),
+      importRow('20261103_120000', 'pending', { source_hint: 'apple_health', source_type: 'apple_health', source_display: 'Apple Health' }),
+      importRow('20261104_130000', 'pending', { needs_review: false, source_type: 'chatgpt', source_display: 'ChatGPT' }),
+    ];
+    const p = makePage(env, '/app/import/', {
+      answers: journal({
+        'GET /app/import/api/list': (u) => {
+          const src = u.searchParams.get('source') || '';
+          const rows = src ? unfilteredRows.filter((r) => r.source_type === src) : unfilteredRows;
+          return {
+            imports: rows,
+            source_options: ['apple_health', 'chatgpt'],
+            total: rows.length,
+            page: 1,
+            pages: 1,
+            total_entries_written: 5,
+          };
+        },
+      }),
+    });
+    p.loadScripts();
+    p.place();
+    await p.mount();
+    await settle();
+    const pill = p.byId('importReviewCount');
+    assert.strictEqual(pill.hidden, false, 'pill shows on unfiltered load with review rows');
+    assert.strictEqual(pill.querySelector('[aria-hidden="true"]').textContent, '2');
+    assert.strictEqual(pill.querySelector('.sr-only').textContent.trim(), JournalI18n.render('journal.window.import.switcher.review.sr', [['count', '2']]));
+
+    // Filtering history to chatgpt (0 needsReview rows) must NOT erase the top-level badge.
+    const filter = p.byId('importSourceFilter');
+    filter.value = 'chatgpt';
+    filter.fire({ type: 'change', target: filter });
+    await settle();
+    assert.strictEqual(pill.hidden, false, 'pill persists when filtered to another source');
+    assert.strictEqual(pill.querySelector('[aria-hidden="true"]').textContent, '2');
+
+    // Returning to unfiltered when review rows are resolved clears and hides the pill.
+    unfilteredRows = [importRow('20261101_101500', 'success')];
+    const filterAgain = p.byId('importSourceFilter');
+    filterAgain.value = '';
+    filterAgain.fire({ type: 'change', target: filterAgain });
+    await settle();
+    assert.strictEqual(pill.hidden, true, 'pill hides when unfiltered load has zero review rows');
+    assert.strictEqual(pill.textContent, '');
   });
 
   await test("each markup handler acts by its own event after an in-page mount, and the router's press stays out of it", async () => {

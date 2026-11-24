@@ -11,7 +11,9 @@
 
   const COPY = {
     title: global.JournalI18n.render('journal.window.sources.copy.title.sources'),
-    lede: global.JournalI18n.render('journal.window.sources.lede.when.your.devices.last.added.something'),
+    lede: global.JournalI18n.render('journal.window.sources.switcher.lede'),
+    switcherLabel: global.JournalI18n.render('journal.window.sources.switcher.aria.label'),
+    switcherImports: global.JournalI18n.render('journal.window.sources.switcher.tab.imports'),
     empty: global.JournalI18n.render('journal.window.sources.copy.empty.no.devices.are.paired.yet'),
     pair: global.JournalI18n.render('journal.window.sources.copy.pair.pair.a.device'),
     manage: global.JournalI18n.render('journal.window.sources.copy.manage.manage.devices'),
@@ -19,11 +21,38 @@
     nothing: global.JournalI18n.render('journal.window.sources.copy.nothing.nothing.added.yet'),
     error: global.JournalI18n.render('journal.window.sources.copy.error.this.didn.t.load'),
     retry: global.JournalI18n.render('journal.window.sources.copy.retry.try.again'),
+    syncsHeading: global.JournalI18n.render('journal.window.sources.syncs.heading'),
+    syncsManage: global.JournalI18n.render('journal.window.sources.syncs.manage'),
+    syncsEmpty: global.JournalI18n.render('journal.window.sources.syncs.empty.hint'),
+    plaud: global.JournalI18n.render('journal.window.sources.syncs.provider.plaud'),
+    granola: global.JournalI18n.render('journal.window.sources.syncs.provider.granola'),
+    syncSyncing: global.JournalI18n.render('journal.window.sources.syncs.state.syncing'),
+    syncPaused: global.JournalI18n.render('journal.window.sources.syncs.state.paused'),
+    syncUnavailable: global.JournalI18n.render('journal.window.sources.syncs.unavailable'),
   };
 
+  const SOURCES_HREF = '/app/sources/';
   const NETWORK = '/app/network/';
   const IMPORT = '/app/import/';
+  const SYNC_SETTINGS = '/app/settings/#sync';
   const CLIENTS = '/app/network/api/clients';
+  const PLAUD = '/app/settings/api/plaud';
+  const GRANOLA = '/app/settings/api/granola';
+
+  const DEFAULT_SYNC = { status: 200, body: { connected: false, syncing: false } };
+
+  const GRANOLA_ATTENTION_KEYS = {
+    invalid_key: 'journal.window.settings.granola.response.invalidkey',
+    key: 'journal.window.settings.granola.response.key',
+    access: 'journal.window.settings.granola.response.access',
+    limited: 'journal.window.settings.granola.response.limited',
+    unavailable: 'journal.window.settings.granola.response.unavailable',
+    response: 'journal.window.settings.granola.response.response',
+    transcript: 'journal.window.settings.granola.response.transcript',
+    storage: 'journal.window.settings.granola.response.storage',
+    busy: 'journal.window.settings.granola.response.busy',
+    stopped: 'journal.window.settings.granola.response.stopped',
+  };
 
   const NAMED = [
     { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.audio'), keys: ['audio'], carried: 'audio' },
@@ -187,6 +216,38 @@
     });
   }
 
+  function syncFailed(entry) {
+    if (!entry || entry.status !== 200) return true;
+    if (!entry.body || typeof entry.body !== 'object') return true;
+    return typeof entry.body.connected !== 'boolean';
+  }
+
+  function syncAttention(id, data) {
+    if (!data) return '';
+    if (id === 'granola') {
+      const code = typeof data.attention_code === 'string' ? data.attention_code.trim() : '';
+      if (code && Object.prototype.hasOwnProperty.call(GRANOLA_ATTENTION_KEYS, code)) {
+        return global.JournalI18n.render(GRANOLA_ATTENTION_KEYS[code]);
+      }
+    }
+    return typeof data.attention === 'string' ? data.attention.trim() : '';
+  }
+
+  function unpackPayload(payload) {
+    if (payload && payload.clients && typeof payload.clients === 'object') {
+      return {
+        clients: payload.clients,
+        plaud: payload.plaud || DEFAULT_SYNC,
+        granola: payload.granola || DEFAULT_SYNC,
+      };
+    }
+    return {
+      clients: payload || { status: 0, body: null },
+      plaud: (payload && payload.plaud) || DEFAULT_SYNC,
+      granola: (payload && payload.granola) || DEFAULT_SYNC,
+    };
+  }
+
   function el(doc, tag, className) {
     const node = doc.createElement(tag);
     if (className) node.className = className;
@@ -205,14 +266,6 @@
     return node;
   }
 
-  // The device link, then the way to import files from other apps.
-  function links(doc, deviceLink) {
-    const row = el(doc, 'div', 'sources-links');
-    row.appendChild(deviceLink);
-    row.appendChild(link(doc, 'sources-import', COPY.importFiles, IMPORT));
-    return row;
-  }
-
   function fillDevice(doc, box, client, rows, opts) {
     const name = heading(client);
     const nameNode = text(doc, box.tagName === 'ARTICLE' ? 'h2' : 'span', 'sources-name', name);
@@ -226,53 +279,45 @@
     }
   }
 
-  // The controls a draw makes. A redraw takes out whichever one held focus,
-  // so focus goes to the same control drawn again, or else to the view's
-  // root, which ships with the page and is never redrawn.
-  const CONTROLS = ['sources-retry', 'sources-manage', 'sources-pair', 'sources-import'];
-
-  function focusedControl(doc, root) {
-    const active = doc.activeElement;
-    if (!active || active === root || !root.contains(active)) return active === root ? 'root' : null;
-    const name = CONTROLS.find((value) => (active.className || '').split(/\s+/).indexOf(value) !== -1);
-    return name || 'root';
+  function paintSwitcher(doc, showManageDevices) {
+    const header = el(doc, 'header', 'intake-switcher');
+    header.appendChild(text(doc, 'h1', 'sr-only', COPY.title));
+    const top = el(doc, 'div', 'intake-switcher-top');
+    const nav = el(doc, 'nav', 'intake-switcher-nav');
+    nav.setAttribute('aria-label', COPY.switcherLabel);
+    const sourcesTab = link(doc, 'intake-switcher-tab sources-current', COPY.title, SOURCES_HREF);
+    sourcesTab.setAttribute('aria-current', 'page');
+    const importsTab = link(doc, 'intake-switcher-tab sources-import', COPY.switcherImports, IMPORT);
+    nav.appendChild(sourcesTab);
+    nav.appendChild(importsTab);
+    top.appendChild(nav);
+    if (showManageDevices) {
+      top.appendChild(link(doc, 'sources-manage', COPY.manage, NETWORK));
+    }
+    header.appendChild(top);
+    header.appendChild(text(doc, 'p', 'intake-switcher-lede', COPY.lede));
+    return header;
   }
 
-  function refocus(doc, root, held) {
-    if (!held) return;
-    const again = held === 'root' ? null : root.querySelector('.' + held);
-    const target = again || root;
-    if (doc.activeElement !== target && typeof target.focus === 'function') target.focus();
-  }
-
-  function render(doc, root, payload, opts) {
-    const held = focusedControl(doc, root);
-    paint(doc, root, payload, opts);
-    refocus(doc, root, held);
-  }
-
-  function paint(doc, root, payload, opts) {
-    root.textContent = '';
-    root.appendChild(text(doc, 'h1', null, COPY.title));
-    root.appendChild(text(doc, 'p', 'sources-lede', COPY.lede));
-    const status = payload ? payload.status : 0;
-    const body = payload && payload.body;
+  function paintDevices(doc, root, clientsEntry, opts) {
+    const band = el(doc, 'section', 'sources-devices-band');
+    const status = clientsEntry ? clientsEntry.status : 0;
+    const body = clientsEntry && clientsEntry.body;
     if (failed(status, body)) {
-      root.appendChild(text(doc, 'p', 'sources-error', COPY.error));
+      band.appendChild(text(doc, 'p', 'sources-error', COPY.error));
       const button = text(doc, 'button', 'sources-retry', COPY.retry);
       button.setAttribute('type', 'button');
       button.setAttribute('data-retry', 'true');
-      button.addEventListener('click', () => load(doc, root, opts));
-      root.appendChild(button);
-      return;
+      button.addEventListener('click', () => load(doc, root, opts, true));
+      band.appendChild(button);
+      return band;
     }
     const clients = body.clients;
     if (clients.length === 0) {
-      root.appendChild(text(doc, 'p', 'sources-empty', COPY.empty));
-      root.appendChild(links(doc, link(doc, 'sources-pair', COPY.pair, NETWORK)));
-      return;
+      band.appendChild(text(doc, 'p', 'sources-empty', COPY.empty));
+      band.appendChild(link(doc, 'sources-pair', COPY.pair, NETWORK));
+      return band;
     }
-    root.appendChild(links(doc, link(doc, 'sources-manage', COPY.manage, NETWORK)));
     const rows = rowsFor(clients);
     const cards = opts.layout === 'cards';
     if (!cards && rows.length > 0) {
@@ -304,8 +349,8 @@
         tbody.appendChild(row);
       });
       table.appendChild(tbody);
-      root.appendChild(table);
-      return;
+      band.appendChild(table);
+      return band;
     }
     const list = el(doc, cards ? 'div' : 'ul', cards ? 'sources-cards' : 'sources-devices');
     clients.forEach((client) => {
@@ -326,38 +371,189 @@
       }
       list.appendChild(box);
     });
-    root.appendChild(list);
+    band.appendChild(list);
+    return band;
+  }
+
+  function paintSyncs(doc, plaudEntry, granolaEntry, opts) {
+    const section = el(doc, 'section', 'sources-syncs');
+    const head = el(doc, 'div', 'sources-syncs-head');
+    head.appendChild(text(doc, 'h2', 'sources-syncs-title', COPY.syncsHeading));
+    head.appendChild(link(doc, 'sources-syncs-manage', COPY.syncsManage, SYNC_SETTINGS));
+    section.appendChild(head);
+
+    const plaudFailed = syncFailed(plaudEntry);
+    const granolaFailed = syncFailed(granolaEntry);
+    const plaudConnected = !plaudFailed && plaudEntry.body.connected === true;
+    const granolaConnected = !granolaFailed && granolaEntry.body.connected === true;
+
+    if (!plaudFailed && !granolaFailed && !plaudConnected && !granolaConnected) {
+      section.appendChild(text(doc, 'p', 'sources-syncs-empty', COPY.syncsEmpty));
+      return section;
+    }
+
+    const list = el(doc, 'ul', 'sources-sync-list');
+    [
+      ['plaud', COPY.plaud, plaudEntry, plaudFailed, plaudConnected],
+      ['granola', COPY.granola, granolaEntry, granolaFailed, granolaConnected],
+    ].forEach((spec) => {
+      const id = spec[0];
+      const providerName = spec[1];
+      const entry = spec[2];
+      const isFailed = spec[3];
+      const isConnected = spec[4];
+      if (!isFailed && !isConnected) return;
+
+      const row = el(doc, 'li', isFailed ? 'sources-sync-row sources-sync-unavailable' : 'sources-sync-row');
+      row.setAttribute('data-sync', id);
+
+      if (isFailed) {
+        const unavailable = el(doc, 'a', 'sources-sync-link sources-sync-unavailable-' + id);
+        unavailable.setAttribute('href', SYNC_SETTINGS);
+        unavailable.appendChild(text(doc, 'strong', 'sources-sync-name', providerName));
+        unavailable.appendChild(text(doc, 'span', 'sources-sync-sep', ' · '));
+        unavailable.appendChild(text(doc, 'span', 'sources-sync-status', COPY.syncUnavailable));
+        row.appendChild(unavailable);
+        list.appendChild(row);
+        return;
+      }
+
+      const data = entry.body;
+      const main = el(doc, 'div', 'sources-sync-main');
+      const primary = el(doc, 'span', 'sources-sync-primary');
+      primary.appendChild(text(doc, 'strong', 'sources-sync-name', providerName));
+      primary.appendChild(text(doc, 'span', 'sources-sync-sep', ' · '));
+      const addedMs = parseTime(data.last_added);
+      const primaryWords = addedMs !== null
+        ? global.JournalI18n.render('journal.window.sources.syncs.last.added', [['when', relative(addedMs, opts.now, opts.timeZone)]])
+        : COPY.nothing;
+      primary.appendChild(text(doc, 'span', 'sources-sync-status', primaryWords));
+      main.appendChild(primary);
+
+      let secondaryWords = '';
+      if (data.syncing === true) {
+        secondaryWords = COPY.syncSyncing;
+      } else if (id === 'plaud' && data.enabled === false) {
+        secondaryWords = COPY.syncPaused;
+      } else {
+        const checkedMs = parseTime(data.last_sync);
+        if (checkedMs !== null) {
+          secondaryWords = global.JournalI18n.render('journal.window.sources.syncs.last.checked', [['when', relative(checkedMs, opts.now, opts.timeZone)]]);
+        }
+      }
+      if (secondaryWords !== '') {
+        main.appendChild(text(doc, 'span', 'sources-sync-secondary', secondaryWords));
+      }
+      row.appendChild(main);
+
+      const attentionWords = syncAttention(id, data);
+      if (attentionWords !== '') {
+        row.appendChild(link(doc, 'sources-sync-attention sources-sync-attention-' + id, attentionWords, SYNC_SETTINGS));
+      }
+      list.appendChild(row);
+    });
+    section.appendChild(list);
+    return section;
+  }
+
+  // The controls a draw makes. A redraw takes out whichever one held focus,
+  // so focus goes to the same control drawn again, or else to the view's
+  // root, which ships with the page and is never redrawn.
+  const CONTROLS = [
+    'sources-retry',
+    'sources-manage',
+    'sources-pair',
+    'sources-current',
+    'sources-import',
+    'sources-syncs-manage',
+    'sources-sync-unavailable-plaud',
+    'sources-sync-unavailable-granola',
+    'sources-sync-attention-plaud',
+    'sources-sync-attention-granola',
+  ];
+
+  function focusedControl(doc, root) {
+    const active = doc.activeElement;
+    if (!active || active === root || !root.contains(active)) return active === root ? 'root' : null;
+    const name = CONTROLS.find((value) => (active.className || '').split(/\s+/).indexOf(value) !== -1);
+    return name || 'root';
+  }
+
+  function refocus(doc, root, held) {
+    if (!held) return;
+    const again = held === 'root' ? null : root.querySelector('.' + held);
+    const target = again || root;
+    if (doc.activeElement !== target && typeof target.focus === 'function') target.focus();
+  }
+
+  function render(doc, root, payload, opts) {
+    const held = focusedControl(doc, root);
+    paint(doc, root, payload, opts);
+    refocus(doc, root, held);
+  }
+
+  function paint(doc, root, payload, opts) {
+    root.textContent = '';
+    const unpacked = unpackPayload(payload);
+    const clientsEntry = unpacked.clients;
+    const clientsOk = !failed(clientsEntry ? clientsEntry.status : 0, clientsEntry && clientsEntry.body);
+    const hasPairedDevices = clientsOk && clientsEntry.body.clients.length > 0;
+    root.appendChild(paintSwitcher(doc, hasPairedDevices));
+    root.appendChild(paintDevices(doc, root, clientsEntry, opts));
+    root.appendChild(paintSyncs(doc, unpacked.plaud, unpacked.granola, opts));
   }
 
   // The state a drawn payload reports as the view's readiness.
-  function readiness(payload) {
-    if (failed(payload.status, payload.body)) return 'error';
-    return payload.body.clients.length === 0 ? 'empty' : 'content';
+  function readiness(clientsEntry) {
+    if (failed(clientsEntry.status, clientsEntry.body)) return 'error';
+    return clientsEntry.body.clients.length === 0 ? 'empty' : 'content';
+  }
+
+  async function fetchEndpoint(fetchFn, url, ended) {
+    try {
+      const response = await fetchFn(url, { method: 'GET' });
+      if (ended()) return null;
+      if (!response || typeof response.json !== 'function') {
+        return { status: response ? response.status : 0, body: null };
+      }
+      const status = response.status;
+      const body = await response.json();
+      if (ended()) return null;
+      return { status: status, body: body };
+    } catch (error) {
+      return ended() ? null : { status: 0, body: null };
+    }
   }
 
   // A view that has gone draws nothing: `opts.ended` says so, after the read
   // and after its body, since either can answer once the view is gone.
-  async function load(doc, root, opts) {
+  async function load(doc, root, opts, isRetry) {
     const ended = () => typeof opts.ended === 'function' && opts.ended();
-    let status = 0;
-    let body = null;
-    try {
-      const response = await opts.fetch(CLIENTS, { method: 'GET' });
-      if (ended()) return null;
-      status = response.status;
-      body = await response.json();
-    } catch (error) {
-      status = 0;
-      body = null;
-    }
-    if (ended()) return null;
-    const payload = { status: status, body: body };
+    const prev = isRetry ? opts.last : null;
+    const needPlaud = !prev || !prev.plaud || syncFailed(prev.plaud);
+    const needGranola = !prev || !prev.granola || syncFailed(prev.granola);
+    const results = await Promise.all([
+      fetchEndpoint(opts.fetch, CLIENTS, ended),
+      needPlaud ? fetchEndpoint(opts.fetch, PLAUD, ended) : Promise.resolve(prev.plaud),
+      needGranola ? fetchEndpoint(opts.fetch, GRANOLA, ended) : Promise.resolve(prev.granola),
+    ]);
+    if (ended() || !results[0] || !results[1] || !results[2]) return null;
+    const clients = results[0];
+    const plaud = results[1];
+    const granola = results[2];
+    const payload = {
+      status: clients.status,
+      body: clients.body,
+      clients: clients,
+      plaud: plaud,
+      granola: granola,
+    };
     opts.last = payload;
     render(doc, root, payload, opts);
     // The view's first draw is its readiness; a retry draws again, quietly.
     if (typeof opts.ready === 'function' && !opts.reported) {
       opts.reported = true;
-      opts.ready(readiness(payload));
+      opts.ready(readiness(clients));
     }
     return payload;
   }
@@ -380,8 +576,8 @@
     };
   }
 
-  // Sources on the view contract. Everything is the mount's: its read is the
-  // view's (`ctx.fetch`, adopted from the page's early read), and the layout
+  // Sources on the view contract. Everything is the mount's: its reads are the
+  // view's (`ctx.fetch`, adopted from the page's early reads), and the layout
   // listener goes with it.
   function mount(ctx) {
     const doc = global.document;
@@ -392,7 +588,7 @@
     state.ended = () => ctx.disposed;
     state.ready = ctx.ready;
     ctx.on(media, 'change', onLayout(doc, root, media, state));
-    load(doc, root, state).catch((error) => {
+    load(doc, root, state, false).catch((error) => {
       if (!ctx.disposed) global.logError?.(error, { context: 'sources' });
     });
   }

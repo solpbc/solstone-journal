@@ -428,12 +428,12 @@ const ENTRY_TABLE = {
       reads: [{ route: '/app/speakers/', urls: ['/app/speakers/api/state'] }, { route: '/app/speakers/{day}', urls: ['/app/speakers/api/state'] }],
       contract: true,
     },
-    // Sources' one read is named by a first-read line; support reads nothing.
+    // Sources' reads are named by its first-read line; support reads nothing.
     sources: {
       fragment: '/app/sources/workspace',
       scripts: [],
       styles: [],
-      reads: [{ route: '/app/sources/', urls: ['/app/network/api/clients'] }],
+      reads: [{ route: '/app/sources/', urls: ['/app/network/api/clients', '/app/settings/api/plaud', '/app/settings/api/granola'] }],
       contract: true,
     },
     support: {
@@ -644,7 +644,11 @@ const SOURCES_CODE = `
         const views = window.__views.sources;
         views.mounts += 1;
         const root = document.getElementById('sources-root');
-        ctx.fetch('/app/network/api/clients', { method: 'GET' }).then(() => {
+        Promise.all([
+          ctx.fetch('/app/network/api/clients', { method: 'GET' }),
+          ctx.fetch('/app/settings/api/plaud', { method: 'GET' }),
+          ctx.fetch('/app/settings/api/granola', { method: 'GET' }),
+        ]).then(() => {
           const heading = document.createElement('h1');
           heading.textContent = 'sources';
           root.appendChild(heading);
@@ -1177,6 +1181,8 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       server.answers.set('/app/entities/api/state', server.json({}));
       server.answers.set('/app/speakers/api/state', server.json({}));
       server.answers.set('/app/network/api/clients', server.json({ clients: [] }));
+      server.answers.set('/app/settings/api/plaud', server.json({ connected: false, syncing: false }));
+      server.answers.set('/app/settings/api/granola', server.json({ connected: false, syncing: false }));
       server.answers.set('/app/network/api/state', server.json({ posture: 'direct' }));
       server.answers.set('/app/agents/api/state', server.json({ connections: [] }));
       server.answers.set('/app/agents/api/memories', server.json({ agents: [] }));
@@ -3577,17 +3583,21 @@ function bootAllViews(page) {
 
 const CONTRACT_HREFS = ['/app/home/', '/app/transcripts/', '/app/more/', '/app/body/', '/app/activities/', '/app/map/', '/app/search/', '/app/entities/', '/app/speakers/'];
 
-asyncCase('sources: to and from every other contract view in the page, its one read started at the move and taken once, its arrival focus on the workspace', async () => {
+asyncCase('sources: to and from every other contract view in the page, its declared reads started at the move and taken once, its arrival focus on the workspace', async () => {
   const page = makePage();
   bootAllViews(page);
   await page.boot('home');
   const others = [...CONTRACT_HREFS, '/app/support/'];
   for (const href of others) {
     const before = page.server.of('/app/network/api/clients').length;
+    const beforePlaud = page.server.of('/app/settings/api/plaud').length;
+    const beforeGranola = page.server.of('/app/settings/api/granola').length;
     page.click('/app/sources/');
     await page.clock.advance(400);
     assert.ok(page.view('sources'), `sources in the page (before ${href})`);
     assert.strictEqual(page.server.of('/app/network/api/clients').length, before + 1, 'one read of the clients a move');
+    assert.strictEqual(page.server.of('/app/settings/api/plaud').length, beforePlaud + 1, 'one read of plaud a move');
+    assert.strictEqual(page.server.of('/app/settings/api/granola').length, beforeGranola + 1, 'one read of granola a move');
     const active = page.document.activeElement;
     assert.ok(active === page.main(), `focus on the workspace: the heading sources draws is passed over (it is on ${active && active.tagName})`);
     assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'sources');

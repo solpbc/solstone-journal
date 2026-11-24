@@ -44,6 +44,13 @@ pub(crate) fn request_required(root: &Path, task_id: &str, cmd: &[String]) -> Re
     send(root, request(task_id, cmd))
 }
 
+/// Best-effort Callosum emission on the `importer` tract for live upload events.
+pub(crate) fn emit_importer_event(root: &Path, event: &str, mut fields: Map<String, Value>) {
+    fields.insert("tract".to_owned(), json!("importer"));
+    fields.insert("event".to_owned(), json!(event));
+    let _ = send(root, Value::Object(fields));
+}
+
 /// A bus subscription that requests a task and then hears how it ended. The supervisor
 /// reports every requested task's end as `supervisor/stopped` with its `ref` and
 /// `exit_code`, a failed spawn included.

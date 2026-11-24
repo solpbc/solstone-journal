@@ -1,0 +1,16 @@
+{
+  "description": "Accessible label for the navigation bar switching between sources and imports.",
+  "context": "Journal window, sources and import views. Accessible name on the switcher navigation bar linking /app/sources/ and /app/import/.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b2d34d3c5921112400df7403da080b88a45749a6fd0f478197f989331f1a4b21",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

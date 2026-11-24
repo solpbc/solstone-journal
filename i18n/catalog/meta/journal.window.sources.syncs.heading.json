@@ -1,0 +1,16 @@
+{
+  "description": "Heading for the third-party syncs section on the sources view.",
+  "context": "Journal window, sources view. Section heading above connected sync services such as Plaud and Granola.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "608116d9a0b019471efc9c992939ede05726974b704c115465823ab39c3a15d7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

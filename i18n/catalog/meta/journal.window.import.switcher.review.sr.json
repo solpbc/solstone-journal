@@ -1,0 +1,21 @@
+{
+  "description": "Screen-reader count of pending imports ready to review on the imports switcher tab.",
+  "context": "Journal window, import view. Screen-reader text appended to the imports switcher tab when one or more pending imports need review.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1efe405e451dd7b9e5bcc679fa94f31b0355bbfa422b551f8355ba159d914dbd",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

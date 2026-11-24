@@ -95,16 +95,107 @@
   color: var(--ink);
 }
 
-.import-sources-link {
-  display: inline-block;
+.intake-switcher {
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  padding: 14px 18px;
   margin-bottom: 1rem;
-  color: var(--orange-text-aa);
-  text-decoration: none;
-  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--ink);
 }
 
-.import-sources-link:hover {
-  text-decoration: underline;
+.intake-switcher .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.intake-switcher-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.intake-switcher-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--cream);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.intake-switcher-tab {
+  min-height: 44px;
+  padding: 7px 14px;
+  border-radius: 7px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  box-sizing: border-box;
+}
+
+.intake-switcher-tab:hover {
+  color: var(--ink);
+}
+
+.intake-switcher-tab[aria-current="page"] {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+.intake-switcher-tab:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.intake-switcher-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--orange-wash);
+  border: 1px solid var(--orange-ink);
+  color: var(--ink);
+  font-family: var(--font-body, inherit);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.intake-switcher-pill[hidden] {
+  display: none;
+}
+
+.intake-switcher-lede {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  max-width: 52rem;
 }
 
 .import-step {
@@ -905,7 +996,15 @@
 </style>
 <div id="importListView">
 <div class="workspace-content-wide">
-  <a href="/app/sources/" id="importSourcesLink" class="import-sources-link">{{journal.window.import.link.label.see.when.your.devices.last.added.something}}</a>
+  <header id="importModeSwitcher" class="intake-switcher">
+    <div class="intake-switcher-top">
+      <nav class="intake-switcher-nav" aria-label="{{journal.window.sources.switcher.aria.label}}">
+        <a href="/app/sources/" id="importSourcesLink" class="intake-switcher-tab">{{journal.window.sources.copy.title.sources}}</a>
+        <a href="/app/import/" id="importCurrentLink" class="intake-switcher-tab" aria-current="page"><span>{{journal.window.sources.switcher.tab.imports}}</span><span id="importReviewCount" class="intake-switcher-pill" hidden></span></a>
+      </nav>
+    </div>
+    <p class="intake-switcher-lede">{{journal.window.import.switcher.lede}}</p>
+  </header>
   <div id="importGrid" class="import-source-grid"></div>
 
   <div id="importGuide" class="import-guided-flow" style="display:none">
@@ -1562,7 +1661,7 @@ async function navigateTo(view, options = {}) {
   const held = options.held !== undefined ? options.held : importHeld();
   const leftSource = options.leftSource !== undefined ? options.leftSource : currentGuideSource;
   const grid = document.getElementById('importGrid');
-  const sourcesLink = document.getElementById('importSourcesLink');
+  const modeSwitcher = document.getElementById('importModeSwitcher');
   const guide = document.getElementById('importGuide');
   const cleanView = view ? String(view).replace(/^#/, '') : '';
   const nextHash = cleanView === 'grid' || !cleanView ? '' : `#${cleanView}`;
@@ -1574,9 +1673,9 @@ async function navigateTo(view, options = {}) {
   if (grid) {
     grid.style.display = cleanView === 'grid' || !cleanView ? '' : 'none';
   }
-  // The link to sources shows and hides with the cards.
-  if (sourcesLink) {
-    sourcesLink.style.display = cleanView === 'grid' || !cleanView ? '' : 'none';
+  // The framed switcher header shows and hides with the cards.
+  if (modeSwitcher) {
+    modeSwitcher.style.display = cleanView === 'grid' || !cleanView ? '' : 'none';
   }
   if (guide) {
     guide.style.display = cleanView === 'grid' || !cleanView ? 'none' : '';
@@ -2087,6 +2186,26 @@ function bodyStateLabel(state) {
     failed: window.JournalI18n.render('journal.window.import.body.label.failed'),
     didnt_start: window.JournalI18n.render('journal.window.import.body.label.didnt.start'),
   }[state];
+}
+
+function importRowNeedsReview(imp) {
+  return Boolean(imp && imp.status === 'pending' && (
+    imp.needs_review === true || (imp.source_hint === 'apple_health' && imp.needs_review !== false)
+  ));
+}
+
+function updateImportReviewPill(rows) {
+  const pill = document.getElementById('importReviewCount');
+  if (!pill) return;
+  const count = Array.isArray(rows) ? rows.filter(importRowNeedsReview).length : 0;
+  if (count > 0) {
+    const sr = window.JournalI18n.render('journal.window.import.switcher.review.sr', [['count', String(count)]]);
+    drawMarkup(pill, `<span aria-hidden="true">${escapeHtml(String(count))}</span><span class="sr-only"> ${escapeHtml(sr)}</span>`);
+    if (pill.hidden) pill.hidden = false;
+  } else {
+    if (pill.textContent !== '') pill.textContent = '';
+    if (!pill.hidden) pill.hidden = true;
+  }
 }
 
 function renderImportRow(imp, picking = false) {
@@ -2969,6 +3088,9 @@ async function loadImports() {
     totalImports = data.total;
     const container = document.getElementById('importListContent');
     clearImportListErrors();
+    if (!currentSourceFilter && typeof updateImportReviewPill === 'function') {
+      updateImportReviewPill(importsCache);
+    }
 
     if (imports.length === 0 && !currentSourceFilter) {
       drawMarkup(container, window.SurfaceState.empty({
@@ -3100,6 +3222,9 @@ async function loadMoreImports() {
     currentPage = data.page;
     importSourceOptions = data.source_options;
     importsCache = importsCache.concat(data.imports);
+    if (!currentSourceFilter && typeof updateImportReviewPill === 'function') {
+      updateImportReviewPill(importsCache);
+    }
     const sourceFilter = document.getElementById('importSourceFilter');
     if (sourceFilter) sourceFilter.innerHTML = sourceFilterOptionsHtml();
     const existingError = document.getElementById('importLoadMoreError');

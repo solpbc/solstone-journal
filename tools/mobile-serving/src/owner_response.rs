@@ -193,14 +193,17 @@ fn admit(method: &str, uri: &str, headers: &[(String, String)]) -> Result<Admitt
         if !matches!(
             key.to_ascii_lowercase().as_str(),
             "content-type"
+                | "content-length"
                 | "accept"
                 | "range"
                 | "if-none-match"
                 | "if-modified-since"
                 | "last-event-id"
-                // Owner intent is checked by the destination route. Authority
-                // still comes from this private embedding boundary, not a header.
+                // Owner intent and chunk integrity are checked by the destination
+                // route. Authority still comes from this private embedding boundary,
+                // not a header.
                 | "x-solstone-actor"
+                | "x-chunk-sha256"
         ) {
             return Err("owner request header not admitted".into());
         }
@@ -727,6 +730,23 @@ mod tests {
         .unwrap();
         assert_eq!(streamed.uri.path(), "/app/import/api/save");
         assert_eq!(streamed.headers[0].1, "multipart/form-data");
+        let chunked = upload_admission(
+            "PUT",
+            "/app/import/api/uploads/550e8400-e29b-41d4-a716-446655440000?offset=0",
+            &[
+                ("content-type".into(), "application/octet-stream".into()),
+                ("content-length".into(), "4194304".into()),
+                (
+                    "x-chunk-sha256".into(),
+                    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+                ),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            chunked.uri.path(),
+            "/app/import/api/uploads/550e8400-e29b-41d4-a716-446655440000"
+        );
     }
 
     #[test]

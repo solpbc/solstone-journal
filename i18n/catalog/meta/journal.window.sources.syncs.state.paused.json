@@ -1,0 +1,16 @@
+{
+  "description": "Secondary state label shown on a connected Plaud sync row when automatic hourly sync is turned off.",
+  "context": "Journal window, sources view. Secondary status words on a connected Plaud sync row when the hourly sync toggle in settings is off (manual 'check now' remains available).",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1851febe4ff8144ce5d2c06531e95349acfa7e262371525ef00f4b70b1377a61",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Relative time a connected sync last added an item to the journal.",
+  "context": "Journal window, sources view. Primary status text beside a connected sync name (for example, 'last added 14 min ago').",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "when",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b543a12b664397633953bef671f025e5080a9f7fff22bf8a48e6f81adee07c4f",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

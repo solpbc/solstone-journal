@@ -302,8 +302,9 @@ fn strip_permanent_status_capabilities_addition_from_actual(actual: &mut Value) 
     assert!(
         capabilities
             .as_array()
-            .is_some_and(|names| names.iter().any(|name| name == "calendar_notes")),
-        "system status lists calendar notes"
+            .is_some_and(|names| names.iter().any(|name| name == "calendar_notes")
+                && names.iter().any(|name| name == "resumable_import_uploads")),
+        "system status lists calendar notes and resumable import uploads"
     );
 }
 
