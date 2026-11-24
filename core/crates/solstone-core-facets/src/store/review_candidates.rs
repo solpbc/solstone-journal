@@ -250,3 +250,38 @@ fn update_evidence_samples(object: &mut Map<String, Value>, samples: Value) {
         *evidence = json!({"samples": samples});
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recording_heals_a_damaged_store_under_the_lock_it_already_holds() {
+        let journal = tempfile::tempdir().unwrap();
+        let path = review_candidates_path(journal.path()).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            b"{\"name_key\":\"kept\",\"status\":\"open\"}\n{cut\n",
+        )
+        .unwrap();
+        let candidate = SpeculativeFacetCandidate {
+            name: "Garden".to_owned(),
+            name_key: "garden".to_owned(),
+            count: 3,
+            window_days: 14,
+            samples: Vec::new(),
+        };
+        assert_eq!(
+            record_facet_candidates(journal.path(), "20260810", &[candidate]).unwrap(),
+            1
+        );
+        let rows = load_candidates(journal.path()).unwrap();
+        assert_eq!(
+            rows.iter()
+                .map(|row| row["name_key"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["kept", "garden"]
+        );
+    }
+}

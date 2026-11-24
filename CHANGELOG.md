@@ -19,6 +19,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- this is a security fix. when your journal's web app read or saved settings, its reply also included credentials saved in your journal: your backup keys and any credentials for your own backup storage, your Oura connection credentials and tokens, any saved key for your own endpoint kept when you turned on confidential processing, and an older voice API key if an upgraded journal still carried one. anything that could reach your journal's web app (a paired device, a browser with access to your journal, another program running as you on the same computer, or any program on it when local access is open) could have read those credentials. settings replies no longer include them, and your saved connections and backups keep working as before. your journal keeps no log of requests, so it can't tell whether any of those credentials were ever read this way. please install this update. if any paired device, browser, browser extension, program or other account on that computer you don't trust could have reached your journal's web app, replace any backup storage credentials, that saved own-endpoint key and any older voice API key, and revoke or replace your Oura app credentials and authorization at Oura. for encrypted backups, regenerating your recovery key replaces only that key and leaves the daily backup key active; to replace both keys, restore any days kept only in backup first, turn off and delete the backup (clearing the old location or choosing a new one if you use your own backup storage), and set up a new backup.
 - when you type a request to an agent in a tmux session you've listed in `output_sessions`, your journal now keeps the request as yours and usually describes the work that follows as the agent's, so it is less likely to credit that work to you. thanks @dvanduzer for the retest (#424).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
@@ -55,6 +56,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on windows, a single slow status check during setup no longer leaves the journal window saying "the journal isn't answering". the window checks once more first.
 - importing an audio file the journal can't read with `solstone journal importer` now prints one plain line, without the media library's extra log lines or an internal error dump.
 - `solstone call` before first-run setup is finished now says your journal isn't set up yet, instead of saying the journal returned an unreadable error.
+- a transcript with one damaged line now shows the rest of its lines instead of nothing, and the journal no longer drops an entry it was adding to a day when two of its parts write at once.
 
 ### Removed
 

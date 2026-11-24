@@ -4,8 +4,7 @@
 use crate::window_catalog;
 use solstone_core_convey_http::coalesce::ResponseLocale;
 use std::collections::BTreeSet;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -438,12 +437,9 @@ pub async fn dismiss(
     {
         return command(locale, error.to_string(), StatusCode::SERVICE_UNAVAILABLE);
     };
-    if let Err(error) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .and_then(|mut file| writeln!(file, "{}", event))
-    {
+    // Synced, on a line of its own, under the lock held above: the fold reads
+    // every row strictly, so a row may never tear or run onto a cut one.
+    if let Err(error) = solstone_core_journal_io::append_jsonl(&path, &event) {
         return command(locale, error.to_string(), StatusCode::SERVICE_UNAVAILABLE);
     };
     Json(json!({"status":"dismissed","dismiss_event_id":id,"disposition":disposition,"member_count":members.len()})).into_response()

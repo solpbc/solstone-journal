@@ -2523,7 +2523,10 @@
                 "think": null,
                 "types": [
                   "audio"
-                ]
+                ],
+                "processing_reason_code": {
+                  "audio": "analysis_failed"
+                }
               },
               {
                 "data_state": {
@@ -2775,7 +2778,10 @@
                 "think": null,
                 "types": [
                   "audio"
-                ]
+                ],
+                "processing_reason_code": {
+                  "audio": "analysis_failed"
+                }
               },
               {
                 "data_state": {
@@ -4609,7 +4615,7 @@
             "video_files": {},
             "warning_details": [
               {
-                "file": "<JOURNAL_ROOT>/chronicle/20260731/speakers/134000_60/talents/speaker_labels.json",
+                "file": "chronicle/20260731/speakers/134000_60/talents/speaker_labels.json",
                 "message": "speaker label source is ambiguous for this segment",
                 "ts": "<TODAY_TIMESTAMP>",
                 "type": "speaker_labels"
@@ -4781,13 +4787,13 @@
             "video_files": {},
             "warning_details": [
               {
-                "file": "<JOURNAL_ROOT>/chronicle/20260731/speakers/135000_60/talents/speaker_labels.json",
+                "file": "chronicle/20260731/speakers/135000_60/talents/speaker_labels.json",
                 "message": "speaker label source is ambiguous for this segment",
                 "ts": "<TODAY_TIMESTAMP>",
                 "type": "speaker_labels"
               },
               {
-                "file": "<JOURNAL_ROOT>/chronicle/20260731/speakers/135000_60/talents/speaker_labels.json",
+                "file": "chronicle/20260731/speakers/135000_60/talents/speaker_labels.json",
                 "message": "speaker labels are unavailable for this segment",
                 "ts": "<TODAY_TIMESTAMP>",
                 "type": "speaker_labels"
@@ -4929,7 +4935,7 @@
             "video_files": {},
             "warning_details": [
               {
-                "file": "<JOURNAL_ROOT>/chronicle/20260731/speakers/141000_60/talents/speaker_labels.json",
+                "file": "chronicle/20260731/speakers/141000_60/talents/speaker_labels.json",
                 "message": "speaker labels are unavailable for this segment",
                 "ts": "<TODAY_TIMESTAMP>",
                 "type": "speaker_labels"

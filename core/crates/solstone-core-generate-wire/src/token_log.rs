@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::io;
 use std::path::Path;
-use std::sync::Mutex;
 
 use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_journal_config::owner_zone;
-
-static TOKEN_LOG_LOCK: Mutex<()> = Mutex::new(());
 
 struct UsageRecord<'a> {
     journal_path: &'a Path,
@@ -72,7 +68,6 @@ pub fn record_usage(
 }
 
 fn record_usage_at(record: UsageRecord<'_>, now: Timestamp) -> io::Result<()> {
-    let _lock = TOKEN_LOG_LOCK.lock().expect("token log lock poisoned");
     let mut entry = serde_json::Map::from_iter([
         (
             "timestamp".into(),
@@ -86,26 +81,34 @@ fn record_usage_at(record: UsageRecord<'_>, now: Timestamp) -> io::Result<()> {
         entry.insert("segment".into(), json!(segment));
     }
     entry.insert("type".into(), json!(record.entry_type));
-    let mut line = serde_json::to_vec(&Value::Object(entry)).expect("token log values serialize");
-    line.push(b'\n');
-    let directory = record.journal_path.join("tokens");
-    fs::create_dir_all(&directory)?;
     let zone = owner_zone(record.journal_path);
-    let path =
-        directory.join(solstone_core_time::day_key(now.to_zoned_datetime(zone).date()) + ".jsonl");
-    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-    let written = file.write(&line)?;
-    if written == line.len() {
-        Ok(())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::WriteZero,
-            format!(
-                "token log short write: wrote {written} of {} bytes",
-                line.len()
-            ),
-        ))
-    }
+    let path = record
+        .journal_path
+        .join("tokens")
+        .join(solstone_core_time::day_key(now.to_zoned_datetime(zone).date()) + ".jsonl");
+    // Generate runs in the supervisor and in CLI processes alike: the shared
+    // append holds the day file's lock across processes, starts on a fresh
+    // line after a cut-short one, and syncs the row.
+    solstone_core_journal_io::append_jsonl(&path, &Value::Object(entry)).map_err(
+        |error| match error {
+            solstone_core_journal_io::AppendError::Io { source, .. } => source,
+        },
+    )
+}
+
+/// The day logs under `tokens/`, without the lock sidecars beside them.
+#[cfg(test)]
+pub(crate) fn token_log_files(journal: &Path) -> Vec<std::path::PathBuf> {
+    let mut files = std::fs::read_dir(journal.join("tokens"))
+        .expect("tokens directory")
+        .map(|entry| entry.expect("tokens entry").path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "jsonl")
+        })
+        .collect::<Vec<_>>();
+    files.sort();
+    files
 }
 
 pub fn usage_for_log(usage: &Value) -> Value {
@@ -156,6 +159,8 @@ pub fn usage_for_log(usage: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use serde_json::json;
 
     use super::*;

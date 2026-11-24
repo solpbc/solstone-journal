@@ -650,23 +650,19 @@ fn append_day_record_with_sources(
         .join(day)
         .join("talents")
         .join(format!("{agent}.jsonl"));
-    // Pulse is a read/replace accumulator. Its ordinal and receipt belong to
-    // the same publication, including when a raw writer appends literal text.
-    let _pulse_lock = if agent == "pulse" {
-        Some(
-            solstone_core_journal_io::hold_lock_checked(
-                &path,
-                solstone_core_journal_io::LockOptions {
-                    mode: Some(0o600),
-                    ..Default::default()
-                },
-                &|| check_cancellation(cancellation),
-            )
-            .map_err(|error| stage_error(agent, error.to_string()))?,
-        )
-    } else {
-        None
-    };
+    // Every day accumulator is a read/replace: two talents finishing at once
+    // would each rewrite the file without the other's row. The lock covers the
+    // read, the durable heal inside it and the replace; Pulse's ordinal and
+    // receipt belong to the same publication.
+    let _accumulator_lock = solstone_core_journal_io::hold_or_reuse_lock_checked(
+        &path,
+        solstone_core_journal_io::LockOptions {
+            mode: Some(0o600),
+            ..Default::default()
+        },
+        &|| check_cancellation(cancellation),
+    )
+    .map_err(|error| stage_error(agent, error.to_string()))?;
     let mut records: Vec<Value> =
         solstone_core_journal_io::durability::read_jsonl_durable::<Value>(
             solstone_core_journal_io::durability::ArtifactId::TalentDayAccumulator,
@@ -1252,6 +1248,33 @@ mod tests {
                 assert!(receipt.is_none());
             }
         }
+    }
+
+    #[test]
+    fn concurrent_writers_of_any_day_accumulator_keep_every_row() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root
+            .path()
+            .join("chronicle/20260101/talents/activity.jsonl");
+        let start = std::sync::Barrier::new(8);
+        std::thread::scope(|scope| {
+            for n in 0..8 {
+                let (root, start) = (root.path(), &start);
+                scope.spawn(move || {
+                    let mut row = Map::from_iter([("n".to_owned(), json!(n))]);
+                    start.wait();
+                    append_day_record(root, "20260101", "activity", &mut row).unwrap();
+                });
+            }
+        });
+        let rows: Vec<Map<String, Value>> =
+            read_jsonl(&path, Vec::new(), MalformedPolicy::Skip).unwrap();
+        let mut seen = rows
+            .iter()
+            .map(|row| row["n"].as_u64().unwrap())
+            .collect::<Vec<_>>();
+        seen.sort_unstable();
+        assert_eq!(seen, (0..8).collect::<Vec<_>>());
     }
 
     #[test]

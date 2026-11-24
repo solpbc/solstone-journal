@@ -277,6 +277,7 @@ fn prepare_segment_localized(
         warnings.extend(crate::audio_capture::warnings(locale, capture, now));
     }
     let mut chunks = Vec::<Value>::new();
+    let mut damaged_files = Vec::<FileDamage>::new();
     let mut conversation_turns = Vec::new();
     let mut conversation_items = Vec::new();
     let relative = crate::segment_media::segment_rel(day, stream, key);
@@ -312,7 +313,7 @@ fn prepare_segment_localized(
         let is_audio = offered_format == Some(FileFormat::Raw(RawPerceptFamily::Audio));
         if is_audio && !written {
             has_jsonl.insert("audio".into(), true);
-            match read_entries(path) {
+            match read_segment_entries(root, "audio", path, &mut damaged_files) {
                 Ok(entries) => {
                     if records["audio"].is_none() {
                         records.insert("audio".into(), processing_record(&entries));
@@ -331,7 +332,7 @@ fn prepare_segment_localized(
                 Err(error) => warnings.push(warning("audio", path, error, now)),
             }
         } else if written || offered_format == Some(FileFormat::Content(Family::AiChat)) {
-            match read_entries(path) {
+            match read_segment_entries(root, "transcript", path, &mut damaged_files) {
                 Ok(entries) => conversation_turns.extend(imported_conversation_turns(
                     &context, name, written, &entries,
                 )),
@@ -339,7 +340,7 @@ fn prepare_segment_localized(
             }
         } else if offered_format == Some(FileFormat::Raw(RawPerceptFamily::RawScreen)) {
             has_jsonl.insert("screen".into(), true);
-            match read_entries(path) {
+            match read_segment_entries(root, "screen", path, &mut damaged_files) {
                 Ok(entries) => {
                     if records["screen"].is_none() {
                         records.insert("screen".into(), processing_record(&entries));
@@ -349,7 +350,7 @@ fn prepare_segment_localized(
                 Err(error) => warnings.push(warning("screen", path, error, now)),
             }
         } else if offered_format == Some(FileFormat::Content(Family::Browser)) {
-            match read_entries(path) {
+            match read_segment_entries(root, "browser", path, &mut damaged_files) {
                 Ok(entries) => browser_chunks(&mut chunks, &zone, name, &entries, locale),
                 Err(error) => warnings.push(warning("browser", path, error, now)),
             }
@@ -432,7 +433,7 @@ fn prepare_segment_localized(
         };
         let jsonl_path = raw_path.with_extension("jsonl");
         if jsonl_path.is_file() {
-            match read_entries(&jsonl_path) {
+            match read_segment_entries(root, "image", &jsonl_path, &mut damaged_files) {
                 Ok(entries) => {
                     let record = processing_record(&entries);
                     let is_failed = record
@@ -557,9 +558,9 @@ fn prepare_segment_localized(
     chunks.extend(conversation_turns);
     let warning_types = warnings
         .iter()
-        .filter_map(|warning| {
-            matches!(warning.kind.as_str(), "audio" | "screen").then_some(warning.kind.as_str())
-        })
+        .map(|warning| warning.kind.as_str())
+        .chain(damaged_files.iter().map(|damage| damage.kind.as_str()))
+        .filter(|kind| matches!(*kind, "audio" | "screen"))
         .collect::<Vec<_>>();
     let mut data_state = BTreeMap::new();
     for modality in ["audio", "screen"] {
@@ -687,6 +688,8 @@ fn prepare_segment_localized(
         md_files.remove("screen");
     }
     let reason_code = extract_modality_reason_codes(&records);
+    let processing_reason_code = processing_reason_codes(&records, &data_state);
+    relative_warning_files(root, &mut warnings);
     let mut payload = json!({
         "chunks": chunks,
         "audio_file": media.audio_file,
@@ -740,6 +743,12 @@ fn prepare_segment_localized(
         && let Some(obj) = payload.as_object_mut()
     {
         obj.insert("reason_code".to_owned(), Value::Object(reason_code));
+    }
+    if !processing_reason_code.is_empty() {
+        payload["processing_reason_code"] = json!(processing_reason_code);
+    }
+    if !damaged_files.is_empty() {
+        payload["damaged_lines"] = json!(damaged_files);
     }
     if solstone_core_system_health::holds_location_file(&dir)
         && let Some(obj) = payload.as_object_mut()
@@ -1184,6 +1193,41 @@ fn extract_modality_reason_codes(
     if map.is_empty() { None } else { Some(map) }
 }
 
+/// Why each recording or screen ended without a transcript, for the states an
+/// owner sees as settled: `empty` (`no_decodable_audio`, `no_speech`, …),
+/// `failed` and `failed_final` (`corrupt_input`, `no_audio_stream`, …). Keyed
+/// by modality; a state the record gives no reason for is left out.
+pub(crate) fn processing_reason_codes(
+    records: &BTreeMap<String, Option<Value>>,
+    data_state: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    records
+        .iter()
+        .filter(|(modality, _)| {
+            data_state
+                .get(*modality)
+                .is_some_and(|state| reason_code_explains(state))
+        })
+        .filter_map(|(modality, record)| {
+            Some((modality.clone(), record_reason_code(record.as_ref()?)?))
+        })
+        .collect()
+}
+
+/// Whether a modality's `data_state` is one whose processing record names why.
+pub(crate) fn reason_code_explains(state: &str) -> bool {
+    matches!(state, "empty" | "failed" | "failed_final")
+}
+
+/// A processing record's reason, unless it is the success code.
+pub(crate) fn record_reason_code(record: &Value) -> Option<String> {
+    record
+        .get("reason_code")
+        .and_then(Value::as_str)
+        .filter(|code| !code.is_empty() && *code != vocab::REASON_OK)
+        .map(str::to_owned)
+}
+
 fn imported_conversation_turns<'a>(
     context: &'a SegmentContext<'_>,
     file: &'a str,
@@ -1600,7 +1644,7 @@ fn browser_chunks(
 fn signals(dir: &Path, zone: &TimeZone, locale: &str) -> Value {
     let path = dir.join("signals.jsonl");
     let empty = || json!({"events":[],"counts":{},"calendar":{"total":0,"unique":0,"events":[]}});
-    let Ok(entries) = read_entries(&path) else {
+    let Ok(ReadEntries { rows: entries, .. }) = read_entries(&path) else {
         return empty();
     };
     let mut events = Vec::new();
@@ -1695,20 +1739,92 @@ fn signals(dir: &Path, zone: &TimeZone, locale: &str) -> Value {
     json!({"events":events,"counts":counts,"calendar":{"total":counts.get("calendar_event").copied().unwrap_or(0),"unique":calendar.len(),"events":calendar}})
 }
 
-fn read_entries(path: &Path) -> Result<Vec<Map<String, Value>>, std::io::Error> {
-    let text = fs::read_to_string(path)?;
-    text.lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str::<Value>(line).map_err(std::io::Error::other))
-        .map(|value| {
-            value.and_then(|value| {
-                value
-                    .as_object()
-                    .cloned()
-                    .ok_or_else(|| std::io::Error::other("JSONL row is not an object"))
-            })
+/// Every readable row of a JSONL file, and what damage kept other lines out.
+///
+/// Lines are read from raw bytes one at a time: a write cut short at the end,
+/// a line of invalid UTF-8 or malformed JSON never hides the rows around it.
+/// Nothing is changed on disk; setting damaged lines aside is the owner's call.
+struct ReadEntries {
+    rows: Vec<Map<String, Value>>,
+    damage: Option<FileDamage>,
+}
+
+/// Damaged lines in one segment file. `file` is journal-relative, never a host path.
+#[derive(Clone, Serialize)]
+pub(crate) struct FileDamage {
+    #[serde(rename = "type")]
+    kind: String,
+    file: String,
+    /// How many lines can't be read.
+    damaged: usize,
+    /// Whether the last line was cut short at the end of the file.
+    truncated_tail: bool,
+    /// Damaged lines other than a cut-short last line.
+    interior: usize,
+}
+
+fn read_entries(path: &Path) -> Result<ReadEntries, std::io::Error> {
+    let bytes = fs::read(path)?;
+    let (_, damaged) = solstone_core_journal_io::inspect_jsonl_bytes(&bytes);
+    let rows = bytes
+        .split(|byte| *byte == b'\n')
+        .filter_map(|line| serde_json::from_slice::<Value>(line.trim_ascii()).ok())
+        .filter_map(|value| match value {
+            Value::Object(row) => Some(row),
+            _ => None,
         })
-        .collect()
+        .collect();
+    let damage = (!damaged.is_empty()).then(|| {
+        let truncated_tail = damaged
+            .iter()
+            .any(|line| line.kind == solstone_core_journal_io::JsonlDamageKind::TruncatedTail);
+        FileDamage {
+            kind: String::new(),
+            file: String::new(),
+            damaged: damaged.len(),
+            truncated_tail,
+            interior: damaged.len() - usize::from(truncated_tail),
+        }
+    });
+    Ok(ReadEntries { rows, damage })
+}
+
+/// Read one segment file's rows, noting its damage under `kind`.
+fn read_segment_entries(
+    root: &Path,
+    kind: &str,
+    path: &Path,
+    damage: &mut Vec<FileDamage>,
+) -> Result<Vec<Map<String, Value>>, std::io::Error> {
+    let read = read_entries(path)?;
+    if let Some(mut found) = read.damage {
+        found.kind = kind.to_owned();
+        found.file = journal_relative_file(root, path);
+        damage.push(found);
+    }
+    Ok(read.rows)
+}
+
+/// A path as the journal names it, `/`-separated from its root. Anything that
+/// is not inside the journal is named by its last component alone, so no host
+/// path ever reaches a response.
+pub(crate) fn journal_relative_file(root: &Path, path: &Path) -> String {
+    solstone_core_journal_io::journal_relative_path(root, path).unwrap_or_else(|| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    })
+}
+
+/// Name every warning's file the way the journal does: relative to its root.
+/// Warning files that are not paths (a source id) are left as they are.
+fn relative_warning_files(root: &Path, warnings: &mut [WarningDetail]) {
+    for warning in warnings {
+        let path = Path::new(&warning.file);
+        if path.is_absolute() {
+            warning.file = journal_relative_file(root, path);
+        }
+    }
 }
 fn processing_record(entries: &[Map<String, Value>]) -> Option<Value> {
     entries
@@ -2672,6 +2788,150 @@ mod tests {
         .unwrap();
 
         assert_eq!(value.get("reason_code"), None);
+    }
+
+    #[test]
+    fn prepare_segment_names_why_a_recording_settled_without_a_transcript() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("audio.jsonl"),
+            format!(
+                "{{\"_solstone_processing\":{{\"handler\":\"{}\",\"state\":\"{}\",\"reason_code\":\"{}\"}}}}\n",
+                vocab::HANDLER_TRANSCRIBE,
+                vocab::STATE_EMPTY,
+                vocab::REASON_NO_SPEECH
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("screen.jsonl"),
+            format!(
+                "{{\"_solstone_processing\":{{\"handler\":\"{}\",\"state\":\"{}\",\"reason_code\":\"{}\",\"attempts\":1}}}}\n",
+                vocab::HANDLER_DESCRIBE,
+                vocab::STATE_FAILED,
+                vocab::REASON_NO_DECODABLE_FRAMES
+            ),
+        )
+        .unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "_default",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
+        assert_eq!(value["data_state"]["audio"], "empty");
+        assert_eq!(
+            value["processing_reason_code"],
+            json!({"audio": "no_speech", "screen": "no_decodable_frames"})
+        );
+        // The failure-only field keeps its shape for the readers that have it.
+        assert_eq!(
+            value["reason_code"],
+            json!({"screen": "no_decodable_frames"})
+        );
+
+        let day = crate::day::prepare_day(root, "20260101", jiff::Timestamp::now()).unwrap();
+        let segment = serde_json::to_value(&day.segments).unwrap();
+        assert_eq!(segment[0]["processing_reason_code"]["audio"], "no_speech");
+    }
+
+    #[test]
+    fn prepare_segment_keeps_every_valid_turn_around_damaged_lines_and_names_no_host_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        let mut audio = Vec::new();
+        audio.extend_from_slice(
+            format!(
+                "{{\"_solstone_processing\":{{\"handler\":\"{}\",\"state\":\"{}\"}}}}\n",
+                vocab::HANDLER_TRANSCRIBE,
+                vocab::STATE_ANALYZED
+            )
+            .as_bytes(),
+        );
+        audio.extend_from_slice(b"{\"start\":\"00:00:01\",\"text\":\"first turn\"}\n");
+        audio.extend_from_slice(b"{\"start\":\"00:00:02\",\"text\":\"\xff\xfe\"}\n");
+        audio.extend_from_slice(b"{\"start\":\"00:00:03\",\"text\":\"second turn\"}\n");
+        audio.extend_from_slice(b"{\"start\":\"00:00:04\",\"te");
+        std::fs::write(segment_dir.join("audio.jsonl"), &audio).unwrap();
+        // An unreadable speaker file names its path in a warning.
+        std::fs::create_dir_all(segment_dir.join("talents")).unwrap();
+        std::fs::write(
+            segment_dir.join("talents/speaker_labels.json"),
+            b"{not json",
+        )
+        .unwrap();
+
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "_default",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
+        let texts = value["chunks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|chunk| chunk["type"] == "audio")
+            .map(|chunk| chunk["markdown"].as_str().unwrap_or_default().to_owned())
+            .collect::<Vec<_>>();
+        assert!(
+            texts.iter().any(|text| text.contains("first turn")),
+            "{texts:?}"
+        );
+        assert!(
+            texts.iter().any(|text| text.contains("second turn")),
+            "{texts:?}"
+        );
+        assert_eq!(
+            value["damaged_lines"],
+            json!([{
+                "type": "audio",
+                "file": "chronicle/20260101/120000_60/audio.jsonl",
+                "damaged": 2,
+                "truncated_tail": true,
+                "interior": 1,
+            }])
+        );
+        assert_eq!(value["data_state"]["audio"], "analyzed");
+        let serialized = value.to_string();
+        assert!(
+            !serialized.contains(&*root.to_string_lossy()),
+            "the response names a host path"
+        );
+        // Reading never changes the owner's transcript.
+        assert_eq!(
+            std::fs::read(segment_dir.join("audio.jsonl")).unwrap(),
+            audio
+        );
+    }
+
+    #[test]
+    fn prepare_segment_counts_a_wholly_damaged_recording_as_failed_not_pending() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(segment_dir.join("audio.jsonl"), b"\x00\x00\x00\x00").unwrap();
+        std::fs::write(segment_dir.join("audio.flac"), b"raw").unwrap();
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "_default",
+            "120000_60",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
+        assert_eq!(value["damaged_lines"][0]["truncated_tail"], true);
+        assert_eq!(value["data_state"]["audio"], "failed");
     }
 
     #[test]

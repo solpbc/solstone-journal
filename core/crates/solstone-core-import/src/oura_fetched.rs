@@ -17,8 +17,7 @@
 //! it from the Oura rows it holds.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fs::{self, OpenOptions};
-use std::io::Write as _;
+use std::fs;
 use std::path::Path;
 
 use serde_json::{Value, json};
@@ -131,8 +130,17 @@ impl Fetched {
                 fetched.marks.entry(mark).or_default().insert(day.clone());
             }
         }
+        let path = journal.join(FETCHED_REL);
+        let _lock = solstone_core_journal_io::hold_or_reuse_lock(
+            &path,
+            solstone_core_journal_io::LockOptions {
+                mode: Some(0o600),
+                ..Default::default()
+            },
+        )
+        .map_err(|error| format!("{FETCHED_REL}: {error}"))?;
         solstone_core_journal_io::atomic_replace(
-            journal.join(FETCHED_REL),
+            &path,
             text.as_bytes(),
             solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
         )
@@ -172,21 +180,15 @@ impl Fetched {
         if new.is_empty() {
             return Ok(());
         }
-        let path = journal.join(FETCHED_REL);
-        let mut options = OpenOptions::new();
-        options.create(true).append(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt as _;
-            options.mode(0o600);
-        }
-        let mut file = options
-            .open(&path)
-            .map_err(|error| format!("{}: {error}", path.display()))?;
-        let line = format!("{}\n", json!({"day": day, "ids": new}));
-        file.write_all(line.as_bytes())
-            .and_then(|()| file.sync_data())
-            .map_err(|error| format!("{}: {error}", path.display()))?;
+        // Under the record's lock, on a line of its own even after a stop cut
+        // the last one short: appending onto a cut line would make it a damaged
+        // line in the middle, and the next load would refuse the whole record.
+        solstone_core_journal_io::append_jsonl_with_options(
+            journal.join(FETCHED_REL),
+            &json!({"day": day, "ids": new}),
+            solstone_core_journal_io::JsonlAppendOptions { mode: Some(0o600) },
+        )
+        .map_err(|error| format!("{FETCHED_REL}: {error}"))?;
         for mark in new {
             self.marks.entry(mark).or_default().insert(day.to_owned());
         }
@@ -225,6 +227,31 @@ mod tests {
         let broken = text.replacen('{', "{x", 1);
         fs::write(root.join(FETCHED_REL), broken).unwrap();
         assert!(Fetched::load(root).is_err());
+    }
+
+    #[test]
+    fn a_record_after_a_cut_last_line_keeps_the_record_readable() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = journal.path();
+        fs::create_dir_all(root.join("imports")).unwrap();
+        let mut fetched = Fetched::load(root).unwrap();
+        fetched.record(root, "20261001", ["a"]).unwrap();
+        let mut cut = fs::read_to_string(root.join(FETCHED_REL)).unwrap();
+        cut.push_str("{\"day\":\"2026");
+        fs::write(root.join(FETCHED_REL), &cut).unwrap();
+        let mut fetched = Fetched::load(root).unwrap();
+        fetched.record(root, "20261002", ["b"]).unwrap();
+        let again = Fetched::load(root).expect("the cut line stays its own line");
+        assert!(again.contains("a") && again.contains("b"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = fs::metadata(root.join(FETCHED_REL))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
     }
 
     #[test]

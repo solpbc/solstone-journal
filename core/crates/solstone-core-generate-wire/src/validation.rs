@@ -189,6 +189,12 @@ mod tests {
         }
     }
 
+    fn only_token_log(journal: &std::path::Path) -> std::path::PathBuf {
+        let files = crate::token_log::token_log_files(journal);
+        assert_eq!(files.len(), 1);
+        files[0].clone()
+    }
+
     #[test]
     fn normalizes_all_usage_keys_and_python_compatibility_rules() {
         assert_eq!(
@@ -226,15 +232,7 @@ mod tests {
             })
         );
         assert!(assessment.token_log_error.is_none());
-        let text = fs::read_to_string(
-            fs::read_dir(journal.join("tokens"))
-                .unwrap()
-                .next()
-                .unwrap()
-                .unwrap()
-                .path(),
-        )
-        .unwrap();
+        let text = fs::read_to_string(only_token_log(&journal)).unwrap();
         let line: Value = serde_json::from_str(text.trim()).unwrap();
         assert_eq!(line["usage"]["input_tokens"], 2);
         let _ = fs::remove_dir_all(journal);
@@ -246,12 +244,7 @@ mod tests {
         let usage = json!({"input_tokens": 2, "output_tokens": 3, "reasoning_tokens": 5});
         let assessment = assess_provider_result(view(&journal, "useful output", "stop", &usage));
         assert!(assessment.token_log_error.is_none());
-        let token_file = fs::read_dir(journal.join("tokens"))
-            .unwrap()
-            .next()
-            .unwrap()
-            .unwrap()
-            .path();
+        let token_file = only_token_log(&journal);
         let line: Value =
             serde_json::from_str(fs::read_to_string(token_file).unwrap().trim()).unwrap();
         assert_eq!(line["usage"]["reasoning_tokens"], 5);

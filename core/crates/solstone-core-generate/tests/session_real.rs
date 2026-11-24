@@ -321,9 +321,14 @@ fn assert_unconsulted_journal(journal: &Journal, stub: &LocalStub, config: &[u8]
 }
 
 fn token_log_lines(journal: &Journal) -> Vec<String> {
+    // The day log's lock sidecar sits beside it.
     let entries = fs::read_dir(journal.path.join("tokens"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "jsonl")
+        })
         .collect::<Vec<_>>();
     assert_eq!(entries.len(), 1, "exactly one daily token log is expected");
     let name = entries[0]

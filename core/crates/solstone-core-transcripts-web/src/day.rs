@@ -18,8 +18,8 @@ use solstone_core_convey_http::{
 use solstone_core_system_health::{DaySegment, FilesystemSegmentSource, TimeRange, scan_day};
 
 use crate::attach::{
-    TranscriptSegment, attach_think_to_segments, attach_visible_streams_to_ranges,
-    normalize_markdown_only_segments,
+    TranscriptSegment, attach_processing_reason_codes, attach_think_to_segments,
+    attach_visible_streams_to_ranges, normalize_markdown_only_segments,
 };
 use crate::{AppState, TranscriptError, legacy_error_response};
 
@@ -138,6 +138,7 @@ pub(crate) fn prepare_day(
             .map(|(s, _)| s.key.as_str()),
     );
     attach_think_to_segments(journal_root, day, &mut segments)?;
+    attach_processing_reason_codes(journal_root, day, &mut segments);
     Ok(PreparedDay {
         audio,
         display_audio,
@@ -181,6 +182,7 @@ pub(crate) fn from_native(segment: DaySegment) -> TranscriptSegment {
         think: None,
         item: None,
         conversation_items: Vec::new(),
+        processing_reason_code: std::collections::BTreeMap::new(),
     }
 }
 #[allow(clippy::result_large_err)]

@@ -2,8 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fmt;
-use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use jiff::Timestamp;
@@ -98,18 +98,11 @@ impl CortexStore {
         path: &Path,
         event: &Map<String, Value>,
     ) -> io::Result<bool> {
-        // One write per row: the output thread and a timeout or cancel can append
-        // to the same file at once, and a separate newline write lets rows tear.
+        // One write per row, taking turns with the output thread and a timeout or
+        // cancel appending to the same file, so rows never tear or interleave.
         let mut line = serde_json::to_vec(&Value::Object(event.clone()))?;
         line.push(b'\n');
-        match OpenOptions::new().append(true).open(path) {
-            Ok(mut file) => {
-                file.write_all(&line)?;
-                Ok(true)
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-            Err(error) => Err(error),
-        }
+        append_active_lines(path, &line)
     }
 
     pub(crate) fn recover(&self) -> Result<RecoveryReport, CortexUseFatal> {
@@ -580,6 +573,16 @@ fn recover_collision_without_reason(
     }
 }
 
+/// Append whole rows to an active use's file without ever creating it.
+///
+/// No lock sidecar goes beside it (the namespace census counts every leaf) and
+/// nothing rewrites it, so writers take turns through this process's path gate.
+pub(crate) fn append_active_lines(path: &Path, lines: &[u8]) -> io::Result<bool> {
+    solstone_core_journal_io::append_lines_to_existing(path, lines).map_err(|error| match error {
+        solstone_core_journal_io::AppendError::Io { source, .. } => source,
+    })
+}
+
 pub(crate) fn synthesized_error(use_id: &str, error: impl Into<String>) -> Map<String, Value> {
     Map::from_iter([
         ("event".into(), Value::String("error".into())),
@@ -688,6 +691,7 @@ fn is_day_key(day: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::OpenOptions;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
