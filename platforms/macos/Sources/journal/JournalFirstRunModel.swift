@@ -105,7 +105,7 @@ final class JournalFirstRunModel {
     var route: JournalFirstRunRoute = .deciding
     /// Set by back from the folder step so returning to it keeps the owner's chosen folder.
     private var keepsChosenRootOnReturn = false
-    @ObservationIgnored private var launchAtLoginApplied = false
+    @ObservationIgnored private(set) var launchAtLoginTask: Task<Void, Never>?
     var journalRoot: URL {
         didSet { noteSelectedRootChange(from: oldValue) }
     }
@@ -836,19 +836,22 @@ final class JournalFirstRunModel {
         handoffError = nil
         windowModel?.applyFirstRunLanding()
         route = .home
+        startLaunchAtLoginOnce()
         await windowModel?.fetchIdentityIfNeeded()
-        await applyLaunchAtLoginOnce()
     }
 
     /// The login item starts the journal after the owner signs in, so it follows the
     /// choice they make in setup: a launch applies it only once its journal is set up,
-    /// never on a first launch that is still showing setup.
-    private func applyLaunchAtLoginOnce() async {
-        guard !launchAtLoginApplied else { return }
-        launchAtLoginApplied = true
-        await config.applyLaunchAtLoginPreference()
-        windowModel?.noteLaunchAtLoginApplied()
-        loginFailure = config.launchAtLoginFailureSentence
+    /// never on a first launch that is still showing setup. It runs beside home, so a
+    /// slow unregister never holds the window.
+    private func startLaunchAtLoginOnce() {
+        guard launchAtLoginTask == nil else { return }
+        launchAtLoginTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.config.applyLaunchAtLoginPreference()
+            self.windowModel?.noteLaunchAtLoginApplied()
+            self.loginFailure = self.config.launchAtLoginFailureSentence
+        }
     }
 
     private func applySetupEvent(_ event: JournalSetupProgressEvent) {
