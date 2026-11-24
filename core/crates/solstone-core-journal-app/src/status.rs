@@ -189,6 +189,9 @@ mod tests {
             ..status(false, false, false)
         };
         let mut reads = vec![Ok(not_set_up)];
-        assert_eq!(bound_port(|| reads.pop().unwrap(), || panic!("no pause")), None);
+        assert_eq!(
+            bound_port(|| reads.pop().unwrap(), || panic!("no pause")),
+            None
+        );
     }
 }
