@@ -452,7 +452,8 @@ fn run_register(args: &[String]) -> Result<u8, String> {
 
 /// The verifier's own reason for refusing: a rejection prints its JSON result
 /// (`link`, `reason`) on stdout, and unreadable input prints `reason` on
-/// stderr. Only a short code-shaped value is echoed back.
+/// stderr. Only a short code-shaped value is echoed back, plus, when the
+/// verifier says where a fetch stopped, its https URL and byte counts.
 fn verifier_refusal(stdout: &[u8], stderr: &[u8]) -> String {
     let code = |value: &serde_json::Value, key: &str| {
         value
@@ -472,13 +473,36 @@ fn verifier_refusal(stdout: &[u8], stderr: &[u8]) -> String {
             continue;
         };
         if let Some(reason) = code(&value, "reason") {
-            return match code(&value, "link") {
+            let refusal = match code(&value, "link") {
                 Some(link) => format!("{link}/{reason}"),
                 None => reason,
+            };
+            return match value.get("detail").and_then(retrieval_detail) {
+                Some(detail) => format!("{refusal} {detail}"),
+                None => refusal,
             };
         }
     }
     "it gave no reason".to_owned()
+}
+
+/// Where the verifier's fetch stopped, echoed only when the URL is a short
+/// printable https URL and the counts are whole numbers.
+fn retrieval_detail(detail: &serde_json::Value) -> Option<String> {
+    let url = detail
+        .get("url")
+        .and_then(serde_json::Value::as_str)
+        .filter(|url| {
+            url.starts_with("https://")
+                && url.len() <= 300
+                && url.chars().all(|c| c.is_ascii_graphic())
+        })?;
+    let received = detail.get("received").and_then(serde_json::Value::as_u64)?;
+    let of = match detail.get("announced").and_then(serde_json::Value::as_u64) {
+        Some(announced) => format!(" of {announced}"),
+        None => String::new(),
+    };
+    Some(format!("at {url}: {received}{of} bytes received"))
 }
 
 pub fn run_cli(command: &str, args: &[String]) -> Result<u8, String> {
@@ -513,6 +537,37 @@ mod tests {
             verifier_refusal(br#"{"reason": "not a code\u001b[2J"}"#, b"boom"),
             "it gave no reason"
         );
+    }
+
+    #[test]
+    fn a_verifier_refusal_names_where_a_fetch_stopped() {
+        assert_eq!(
+            verifier_refusal(
+                br#"{"ok": false, "link": "artifact", "reason": "retrieval-failed", "detail": {"url": "https://delivery.example/a.nupkg", "received": 220, "announced": 1236, "error": "TypeError terminated"}}"#,
+                b""
+            ),
+            "artifact/retrieval-failed at https://delivery.example/a.nupkg: 220 of 1236 bytes received"
+        );
+        assert_eq!(
+            verifier_refusal(
+                br#"{"ok": false, "link": "artifact", "reason": "length-mismatch", "detail": {"url": "https://delivery.example/a.nupkg", "received": 220}}"#,
+                b""
+            ),
+            "artifact/length-mismatch at https://delivery.example/a.nupkg: 220 bytes received"
+        );
+        for detail in [
+            r#"{"url": "http://delivery.example/a", "received": 1}"#,
+            r#"{"url": "https://delivery.example/\u001b[2J", "received": 1}"#,
+            r#"{"url": "https://delivery.example/a", "received": -1}"#,
+        ] {
+            let stdout = format!(
+                r#"{{"ok": false, "link": "artifact", "reason": "retrieval-failed", "detail": {detail}}}"#
+            );
+            assert_eq!(
+                verifier_refusal(stdout.as_bytes(), b""),
+                "artifact/retrieval-failed"
+            );
+        }
     }
 
     fn fixture_pin() -> ToolPin {
