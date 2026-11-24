@@ -37,7 +37,7 @@ use crate::{
     Kind, SegmentDir, SegmentError, is_safe_stream_component, owner_deleted, project_stream_name,
 };
 
-const REGISTRY_LOCK_NAME: &str = ".registry";
+pub(crate) const REGISTRY_LOCK_NAME: &str = ".registry";
 
 /// Audit-only record of the pairing-derived inputs consumed at first-binding
 /// allocation time. Never consulted by lookup_stream, bind retry, or reopen —

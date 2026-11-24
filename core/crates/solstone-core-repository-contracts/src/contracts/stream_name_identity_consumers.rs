@@ -11,6 +11,7 @@ const TARGETS: &[&str] = &[
     "delete_stream_record",
     "read_stream_record",
     "repair_stream_tail_from_markers",
+    "self_heal_stream_tails",
     "set_stream_tail_unconditionally",
     "rebuild_stream_state",
     "backfill_stream_records",
@@ -371,6 +372,12 @@ fn expected_consumers() -> BTreeSet<(String, String)> {
         (
             "solstone-core-segment/src/stream_repair.rs",
             "repair_stream_tail_from_markers",
+        ),
+        // marker-keyed tail rewind and missing-record rebuild; names come from
+        // the markers and stream directories, never from a device binding
+        (
+            "solstone-core-segment/src/stream_repair.rs",
+            "self_heal_stream_tails",
         ),
         // name-keyed tail write; no production caller today
         (

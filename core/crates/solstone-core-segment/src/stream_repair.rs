@@ -18,8 +18,13 @@ use solstone_core_journal_io::{
     bump_stream_marker, hold_lock, read_json, write_json,
 };
 
-use crate::stream_record::{registry_json_paths, stream_record_path, write_stream_record};
-use crate::{SegmentError, StreamRecord, is_reserved_name, is_safe_stream_component, list_days};
+use crate::stream_record::{
+    REGISTRY_LOCK_NAME, registry_json_paths, stream_record_path, write_stream_record,
+};
+use crate::{
+    Kind, OwnerDeletionState, SegmentDir, SegmentError, StreamRecord, is_reserved_name,
+    is_safe_stream_component, list_days, owner_deletion_state,
+};
 
 /// The tail derived from validated segment markers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -128,15 +133,21 @@ pub fn repair_stream_tail_from_markers(
         return RepairOutcome::Unchanged(UnchangedReason::AlreadyCurrent);
     }
     let mut value = value;
-    let object = value.as_object_mut().expect("object checked above");
-    object.remove("last_marker");
-    object.insert("last_day".to_owned(), json!(marker_tail.last_day));
-    object.insert("last_segment".to_owned(), json!(marker_tail.last_segment));
-    object.insert("seq".to_owned(), json!(marker_tail.max_seq));
+    set_tail_fields(&mut value, marker_tail);
     match write_stream_record(&path, &value) {
         Ok(()) => RepairOutcome::Repaired,
         Err(_) => RepairOutcome::WriteFailed,
     }
+}
+
+/// Point a raw registry object at a marker-derived tail, dropping the exact
+/// marker kept for the previous tail. Every other field is left as written.
+fn set_tail_fields(value: &mut Value, tail: &MarkerTail<'_>) {
+    let object = value.as_object_mut().expect("registry record is an object");
+    object.remove("last_marker");
+    object.insert("last_day".to_owned(), json!(tail.last_day));
+    object.insert("last_segment".to_owned(), json!(tail.last_segment));
+    object.insert("seq".to_owned(), json!(tail.max_seq));
 }
 
 /// Set a registry tail after prune has already determined that its recorded
@@ -218,6 +229,322 @@ fn default_stream_record(
         allocation: None,
         last_marker: None,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Stream-tail self-heal.
+//
+// `streams/<name>.json` is a tail index over the `stream.json` markers in the
+// stream's segments. Two states leave every writer of a stream wedged and are
+// resolved here from the markers alone: a record whose tail names a segment
+// directory that is no longer on disk, and a stream whose record is gone while
+// its markers remain. Anything else that does not match is reported and left.
+// ---------------------------------------------------------------------------
+
+/// Why the stream-tail self-heal left a stream as it was.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StreamTailHold {
+    /// The record is ahead of every marker, but the segment directory its tail
+    /// names (or an owner removal of it) is still on disk.
+    TailPresent,
+    /// The record is ahead and its tail is gone, but no marker of the stream
+    /// survives to move the tail back to.
+    NoMarker,
+    /// More than one segment holds the newest marker sequence, or a marker that
+    /// belongs to the stream could not be read.
+    Ambiguous,
+    /// The newest marker sits outside the directory the stream's writers
+    /// resolve its segments in.
+    Misplaced,
+    /// A connection-memory stream, whose chain only its own writer moves.
+    MemoryStream,
+    /// The registry record could not be read as a stream record, or its tail
+    /// could not be inspected.
+    Malformed,
+    /// The record's lock could not be acquired.
+    Locked,
+    /// The newest marker changed between the scan and the lock.
+    Changed,
+    /// The record could not be written.
+    WriteFailed,
+}
+
+/// What one stream-tail self-heal changed and what it left alone.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct StreamTailHealReport {
+    /// Streams whose dangling tail was moved back to the newest marker still
+    /// on disk.
+    pub rewound: Vec<String>,
+    /// Streams whose missing registry record was recreated from its markers.
+    pub backfilled: Vec<String>,
+    /// Streams that needed one of those repairs but were left as they were.
+    pub held: Vec<(String, StreamTailHold)>,
+}
+
+impl StreamTailHealReport {
+    /// True when the run wrote nothing.
+    pub fn unchanged(&self) -> bool {
+        self.rewound.is_empty() && self.backfilled.is_empty()
+    }
+}
+
+/// Repair the two stream-tail states that block every writer of a stream:
+///
+/// - a registry record whose sequence is ahead of every marker of the stream
+///   and whose tail segment directory is absent (not tombstoned, not mid
+///   removal) is moved back to the newest marker still on disk;
+/// - a stream with markers but no `streams/<name>.json` gets a record whose
+///   tail is its newest marker. The record carries no device binding, the same
+///   shape a prune-time tail rebuild writes.
+///
+/// The newest marker must be the only one at its sequence, every marker of
+/// the stream must read, and it must sit where the stream's writers resolve
+/// its segments; otherwise the stream is reported and left. A rewind holds the
+/// record lock every stream writer holds; a backfill also holds the registry
+/// lock, in the order binding takes them. Segment content and markers are only
+/// read. Running it again on its own result changes nothing.
+///
+/// `Err` means the chronicle or the registry could not be listed, so no stream
+/// was judged.
+pub fn self_heal_stream_tails(
+    journal: &Path,
+    lock_options: LockOptions,
+) -> Result<StreamTailHealReport, SegmentError> {
+    let mut chains = scan_marker_chains(journal)?;
+    let mut report = StreamTailHealReport::default();
+    for path in registry_json_paths(journal)? {
+        let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        let chain = chains.remove(name);
+        let ahead = match read_stream_record_value(&path) {
+            Ok(Some(value)) => serde_json::from_value::<StreamRecord>(value)
+                .is_ok_and(|record| record.seq > chain.as_ref().map_or(0, |c| c.max_seq)),
+            Ok(None) | Err(_) => false,
+        };
+        if !ahead {
+            continue;
+        }
+        match rewind_dangling_tail(journal, name, &path, chain.as_ref(), lock_options) {
+            Ok(true) => report.rewound.push(name.to_owned()),
+            Ok(false) => {}
+            Err(hold) => report.held.push((name.to_owned(), hold)),
+        }
+    }
+    for (name, chain) in &chains {
+        let path = stream_record_path(journal, name);
+        if !is_safe_stream_component(name) || path_present(&path) {
+            continue;
+        }
+        match backfill_missing_record(journal, name, &path, chain, lock_options) {
+            Ok(true) => report.backfilled.push(name.clone()),
+            Ok(false) => {}
+            Err(hold) => report.held.push((name.clone(), hold)),
+        }
+    }
+    Ok(report)
+}
+
+/// The newest markers of one stream, as one scan of the chronicle found them.
+#[derive(Debug, Default)]
+struct MarkerChain {
+    max_seq: u64,
+    newest: Vec<NewestMarker>,
+    unreadable: bool,
+}
+
+#[derive(Debug)]
+struct NewestMarker {
+    day: String,
+    segment: String,
+    marker: PathBuf,
+    in_place: bool,
+}
+
+impl MarkerChain {
+    /// The single newest marker the tail can move to, or why there is none.
+    fn tail(&self) -> Result<&NewestMarker, StreamTailHold> {
+        match self.newest.as_slice() {
+            _ if self.unreadable => Err(StreamTailHold::Ambiguous),
+            [] => Err(StreamTailHold::NoMarker),
+            [newest] if newest.in_place => Ok(newest),
+            [_] => Err(StreamTailHold::Misplaced),
+            _ => Err(StreamTailHold::Ambiguous),
+        }
+    }
+}
+
+/// Read every segment marker once, without repairing or setting aside any of
+/// them. A marker that cannot be read is charged to the stream it names, or
+/// failing that to the stream directory it sits in.
+fn scan_marker_chains(journal: &Path) -> Result<BTreeMap<String, MarkerChain>, SegmentError> {
+    let mut chains: BTreeMap<String, MarkerChain> = BTreeMap::new();
+    for (day, _) in list_days(journal)? {
+        for segment in crate::list_segments(journal, &day)? {
+            let marker = segment.path().join("stream.json");
+            let value = match fs::read(&marker) {
+                Ok(bytes) => serde_json::from_slice::<Value>(&bytes).ok(),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(_) => None,
+            };
+            let named = value
+                .as_ref()
+                .and_then(|value| value.get("stream"))
+                .and_then(Value::as_str)
+                .filter(|stream| !stream.is_empty());
+            let Some(stream) = named.or_else(|| {
+                segment
+                    .stream()
+                    .directory()
+                    .and_then(std::ffi::OsStr::to_str)
+            }) else {
+                continue;
+            };
+            let chain = chains.entry(stream.to_owned()).or_default();
+            let seq = value
+                .as_ref()
+                .and_then(|value| value.get("seq"))
+                .and_then(Value::as_u64)
+                .filter(|seq| *seq > 0);
+            let (Some(_), Some(seq), Some(name)) = (named, seq, segment.name().to_str()) else {
+                chain.unreadable = true;
+                continue;
+            };
+            if seq < chain.max_seq {
+                continue;
+            }
+            if seq > chain.max_seq {
+                chain.max_seq = seq;
+                chain.newest.clear();
+            }
+            chain.newest.push(NewestMarker {
+                day: day.clone(),
+                segment: name.to_owned(),
+                marker,
+                in_place: segment.stream().matches(stream)
+                    && is_safe_stream_component(stream)
+                    && is_safe_stream_component(name),
+            });
+        }
+    }
+    Ok(chains)
+}
+
+fn rewind_dangling_tail(
+    journal: &Path,
+    name: &str,
+    path: &Path,
+    chain: Option<&MarkerChain>,
+    lock_options: LockOptions,
+) -> Result<bool, StreamTailHold> {
+    let _lock = hold_lock(path, lock_options).map_err(|_| StreamTailHold::Locked)?;
+    let mut value = match read_stream_record_value(path) {
+        Ok(Some(value)) if value.is_object() => value,
+        Ok(_) | Err(_) => return Err(StreamTailHold::Malformed),
+    };
+    let record: StreamRecord =
+        serde_json::from_value(value.clone()).map_err(|_| StreamTailHold::Malformed)?;
+    let max_seq = chain.map_or(0, |chain| chain.max_seq);
+    if record.seq <= max_seq {
+        return Ok(false);
+    }
+    if record.name != name {
+        return Err(StreamTailHold::Malformed);
+    }
+    let (Some(day), Some(segment)) = (record.last_day.as_deref(), record.last_segment.as_deref())
+    else {
+        return Err(StreamTailHold::Malformed);
+    };
+    let recorded =
+        SegmentDir::resolve(journal, day, segment, name).map_err(|_| StreamTailHold::Malformed)?;
+    if !tail_directory_absent(recorded.path())? {
+        return Err(StreamTailHold::TailPresent);
+    }
+    if is_memory_stream(name, &record.kind) {
+        return Err(StreamTailHold::MemoryStream);
+    }
+    let chain = chain.ok_or(StreamTailHold::NoMarker)?;
+    let tail = confirmed_tail(name, chain)?;
+    set_tail_fields(&mut value, &tail);
+    write_stream_record(path, &value).map_err(|_| StreamTailHold::WriteFailed)?;
+    Ok(true)
+}
+
+fn backfill_missing_record(
+    journal: &Path,
+    name: &str,
+    path: &Path,
+    chain: &MarkerChain,
+    lock_options: LockOptions,
+) -> Result<bool, StreamTailHold> {
+    if is_memory_stream(name, "") {
+        return Err(StreamTailHold::MemoryStream);
+    }
+    chain.tail()?;
+    let registry = journal.join("streams").join(REGISTRY_LOCK_NAME);
+    let _registry_lock = hold_lock(registry, lock_options).map_err(|_| StreamTailHold::Locked)?;
+    let _record_lock = hold_lock(path, lock_options).map_err(|_| StreamTailHold::Locked)?;
+    if path_present(path) {
+        return Ok(false);
+    }
+    let tail = confirmed_tail(name, chain)?;
+    let record = default_stream_record(
+        name,
+        Some(tail.last_day),
+        Some(tail.last_segment),
+        tail.max_seq,
+    );
+    write_stream_record(path, &record).map_err(|_| StreamTailHold::WriteFailed)?;
+    Ok(true)
+}
+
+/// The chain's newest marker, re-read under the caller's lock so a segment
+/// moved or rewritten since the scan is not adopted as the tail.
+fn confirmed_tail<'a>(
+    name: &str,
+    chain: &'a MarkerChain,
+) -> Result<MarkerTail<'a>, StreamTailHold> {
+    let newest = chain.tail()?;
+    let current = fs::read(&newest.marker)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+    let unchanged = current.as_ref().is_some_and(|marker| {
+        marker.get("stream").and_then(Value::as_str) == Some(name)
+            && marker.get("seq").and_then(Value::as_u64) == Some(chain.max_seq)
+    });
+    if !unchanged {
+        return Err(StreamTailHold::Changed);
+    }
+    Ok(MarkerTail {
+        last_day: &newest.day,
+        last_segment: &newest.segment,
+        max_seq: chain.max_seq,
+    })
+}
+
+/// Whether a recorded tail directory is simply gone: not on disk, and not
+/// part-way through an owner removal. A path that cannot be inspected is
+/// reported rather than taken for gone.
+fn tail_directory_absent(path: &Path) -> Result<bool, StreamTailHold> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            match owner_deletion_state(path) {
+                Ok(OwnerDeletionState::Live) => Ok(true),
+                Ok(_) => Ok(false),
+                Err(_) => Err(StreamTailHold::Malformed),
+            }
+        }
+        Err(_) => Err(StreamTailHold::Malformed),
+    }
+}
+
+fn is_memory_stream(name: &str, kind: &str) -> bool {
+    name.starts_with("agent-memory-") || kind == Kind::AgentMemory.compat_label()
+}
+
+fn path_present(path: &Path) -> bool {
+    !matches!(fs::symlink_metadata(path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
 }
 
 // ---------------------------------------------------------------------------
@@ -1840,5 +2167,218 @@ mod backfill_tests {
         assert_eq!(segment_key("143022_300abc"), None);
         assert_eq!(segment_key("invalid"), None);
         assert_eq!(segment_key("workstation"), None);
+    }
+
+    fn place_marker(root: &Path, stream: &str, segment: &str, seq: u64) -> PathBuf {
+        let dir = root.join("chronicle/20260101").join(stream).join(segment);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("stream.json"),
+            json!({"stream": stream, "prev_day": null, "prev_segment": null, "seq": seq})
+                .to_string(),
+        )
+        .unwrap();
+        dir
+    }
+
+    fn place_record(root: &Path, stream: &str, last_segment: &str, seq: u64) -> PathBuf {
+        let path = record_path(root, stream);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            json!({
+                "name": stream,
+                "type": "import",
+                "host": null,
+                "platform": null,
+                "created_at": 1,
+                "last_day": "20260101",
+                "last_segment": last_segment,
+                "seq": seq,
+                "last_marker": {"prev_day": "20260101", "prev_segment": "100000_300", "seq": seq},
+                "legacy": "kept",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        path
+    }
+
+    fn read_value(path: &Path) -> Value {
+        serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+    }
+
+    fn heal(root: &Path) -> StreamTailHealReport {
+        self_heal_stream_tails(root, LockOptions::default()).unwrap()
+    }
+
+    #[test]
+    fn dangling_tail_rewinds_to_the_newest_surviving_marker_and_writers_resume() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        place_marker(root, "import.text", "090000_300", 1);
+        place_marker(root, "import.text", "100000_300", 2);
+        // The segment the record names as its tail is gone from disk.
+        let path = place_record(root, "import.text", "110000_300", 3);
+
+        let report = heal(root);
+        assert_eq!(report.rewound, vec!["import.text".to_owned()]);
+        assert!(report.backfilled.is_empty() && report.held.is_empty());
+        let value = read_value(&path);
+        assert_eq!(value["last_day"], "20260101");
+        assert_eq!(value["last_segment"], "100000_300");
+        assert_eq!(value["seq"], 2);
+        assert!(value.get("last_marker").is_none());
+        assert_eq!(value["type"], "import");
+        assert_eq!(value["legacy"], "kept");
+
+        fs::create_dir_all(root.join("chronicle/20260101/import.text/120000_300")).unwrap();
+        let advance = crate::advance_unbound_stream(
+            root,
+            "import.text",
+            "20260101",
+            "120000_300",
+            crate::StreamHints::default(),
+        )
+        .unwrap();
+        assert_eq!(advance.seq, 3);
+        assert_eq!(advance.prev_segment.as_deref(), Some("100000_300"));
+    }
+
+    #[test]
+    fn record_ahead_with_its_tail_directory_present_is_untouched() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        place_marker(root, "import.text", "090000_300", 1);
+        fs::create_dir_all(root.join("chronicle/20260101/import.text/110000_300")).unwrap();
+        let path = place_record(root, "import.text", "110000_300", 2);
+        let before = fs::read(&path).unwrap();
+
+        let report = heal(root);
+        assert!(report.unchanged());
+        assert_eq!(
+            report.held,
+            vec![("import.text".to_owned(), StreamTailHold::TailPresent)]
+        );
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn tombstoned_tail_is_not_taken_for_gone() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        place_marker(root, "import.text", "090000_300", 1);
+        let tail = root.join("chronicle/20260101/import.text/110000_300");
+        fs::create_dir_all(&tail).unwrap();
+        fs::write(tail.join("tombstone.json"), b"{}").unwrap();
+        let path = place_record(root, "import.text", "110000_300", 2);
+        let before = fs::read(&path).unwrap();
+
+        assert!(heal(root).unchanged());
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn newest_sequence_held_twice_is_left_alone() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        place_marker(root, "import.text", "090000_300", 2);
+        place_marker(root, "import.text", "100000_300", 2);
+        let path = place_record(root, "import.text", "110000_300", 3);
+        let before = fs::read(&path).unwrap();
+
+        let report = heal(root);
+        assert_eq!(
+            report.held,
+            vec![("import.text".to_owned(), StreamTailHold::Ambiguous)]
+        );
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn missing_record_is_backfilled_from_markers_and_writers_resume() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        place_marker(root, "import.text", "090000_300", 1);
+        place_marker(root, "import.text", "100000_300", 2);
+
+        let report = heal(root);
+        assert_eq!(report.backfilled, vec!["import.text".to_owned()]);
+        assert!(report.rewound.is_empty() && report.held.is_empty());
+        let value = read_value(&record_path(root, "import.text"));
+        assert_eq!(value["name"], "import.text");
+        assert_eq!(value["last_day"], "20260101");
+        assert_eq!(value["last_segment"], "100000_300");
+        assert_eq!(value["seq"], 2);
+        assert!(value.get("cid").is_none());
+
+        fs::create_dir_all(root.join("chronicle/20260101/import.text/120000_300")).unwrap();
+        let advance = crate::advance_unbound_stream(
+            root,
+            "import.text",
+            "20260101",
+            "120000_300",
+            crate::StreamHints::default(),
+        )
+        .unwrap();
+        assert_eq!(advance.seq, 3);
+        assert_eq!(advance.prev_segment.as_deref(), Some("100000_300"));
+    }
+
+    #[test]
+    fn segments_without_markers_create_no_record() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        fs::create_dir_all(root.join("chronicle/20260101/import.text/090000_300")).unwrap();
+        fs::create_dir_all(root.join("chronicle/20260101/090000_300")).unwrap();
+
+        assert_eq!(heal(root), StreamTailHealReport::default());
+        assert!(!root.join("streams").exists());
+    }
+
+    #[test]
+    fn second_heal_is_a_no_op() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        place_marker(root, "import.text", "090000_300", 1);
+        let dangling = place_record(root, "import.text", "110000_300", 2);
+        place_marker(root, "import.audio", "090000_300", 1);
+
+        let first = heal(root);
+        assert_eq!(first.rewound, vec!["import.text".to_owned()]);
+        assert_eq!(first.backfilled, vec!["import.audio".to_owned()]);
+        let healed = fs::read(&dangling).unwrap();
+        let backfilled = fs::read(record_path(root, "import.audio")).unwrap();
+
+        assert_eq!(heal(root), StreamTailHealReport::default());
+        assert_eq!(fs::read(&dangling).unwrap(), healed);
+        assert_eq!(
+            fs::read(record_path(root, "import.audio")).unwrap(),
+            backfilled
+        );
+    }
+
+    #[test]
+    fn heal_reports_a_held_record_lock() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        place_marker(root, "import.text", "090000_300", 1);
+        let path = place_record(root, "import.text", "110000_300", 2);
+        let before = fs::read(&path).unwrap();
+        let _held = hold_lock(&path, LockOptions::default()).unwrap();
+
+        let report = self_heal_stream_tails(
+            root,
+            LockOptions {
+                timeout: Duration::from_millis(10),
+                ..LockOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            report.held,
+            vec![("import.text".to_owned(), StreamTailHold::Locked)]
+        );
+        assert_eq!(fs::read(&path).unwrap(), before);
     }
 }

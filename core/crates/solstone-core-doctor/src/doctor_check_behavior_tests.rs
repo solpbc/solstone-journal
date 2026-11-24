@@ -1059,6 +1059,64 @@ fn orphan_pdf_depth_transcript_and_dot_entry_matrix() {
     assert_eq!(status("orphan_segment_pdf", &c), Status::Warn);
 }
 #[test]
+fn orphan_pdf_is_found_in_a_default_stream_segment() {
+    let c = fixture();
+    let p = c
+        .journal_path
+        .join("chronicle/20260101/090000_300/original.pdf");
+    fs::create_dir_all(p.parent().unwrap()).unwrap();
+    fs::write(&p, b"pdf").unwrap();
+    let found = result("orphan_segment_pdf", &c);
+    assert_eq!(found.status, Status::Warn);
+    let expected: PathBuf = ["chronicle", "20260101", "090000_300", "original.pdf"]
+        .iter()
+        .collect();
+    assert!(
+        found.detail.contains(&expected.display().to_string()),
+        "{}",
+        found.detail
+    );
+}
+#[test]
+fn orphan_pdf_is_found_in_a_stream_segment() {
+    let c = fixture();
+    let p = c
+        .journal_path
+        .join("chronicle/20260101/import.document/090000_300/original.pdf");
+    fs::create_dir_all(p.parent().unwrap()).unwrap();
+    fs::write(&p, b"pdf").unwrap();
+    let found = result("orphan_segment_pdf", &c);
+    assert_eq!(found.status, Status::Warn);
+    let expected: PathBuf = [
+        "chronicle",
+        "20260101",
+        "import.document",
+        "090000_300",
+        "original.pdf",
+    ]
+    .iter()
+    .collect();
+    assert!(
+        found.detail.contains(&expected.display().to_string()),
+        "{}",
+        found.detail
+    );
+}
+#[test]
+fn extracted_pdf_is_not_reported_in_either_layout() {
+    let c = fixture();
+    for segment in [
+        "chronicle/20260101/090000_300",
+        "chronicle/20260101/import.document/100000_300",
+    ] {
+        let dir = c.journal_path.join(segment);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("original.pdf"), b"pdf").unwrap();
+        fs::write(dir.join("document_transcript.md"), b"# doc\n").unwrap();
+    }
+    assert_eq!(status("orphan_segment_pdf", &c), Status::Ok);
+}
+#[test]
 fn no_enabled_clients_skip_client_delivery_and_ingest_checks() {
     let c = fixture();
     for name in [

@@ -118,9 +118,10 @@ pub use stream_record::{
 pub use stream_record::bind_stream;
 pub use stream_repair::{
     MarkerTail, RepairOutcome, StreamBackfillReport, StreamBackfillSignal, StreamClassification,
-    StreamRecordAnomaly, StreamRepairError, TolerantStreamRecords, UnchangedReason,
-    backfill_stream_records, list_stream_records_tolerant, read_stream_record,
-    repair_stream_tail_from_markers, set_stream_tail_unconditionally, touch_stream_health_marker,
+    StreamRecordAnomaly, StreamRepairError, StreamTailHealReport, StreamTailHold,
+    TolerantStreamRecords, UnchangedReason, backfill_stream_records, list_stream_records_tolerant,
+    read_stream_record, repair_stream_tail_from_markers, self_heal_stream_tails,
+    set_stream_tail_unconditionally, touch_stream_health_marker,
 };
 pub use supervisor::{
     SUPERVISOR_MESSAGE, SupervisorRefusal, is_solstone_up, read_convey_port, require_solstone,

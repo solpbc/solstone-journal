@@ -17,9 +17,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             None::<String>,
         ));
     }
-    let mut files = Vec::new();
-    visit(&chronicle, 0, &mut files);
-    let mut orphans = files
+    let mut orphans = segment_files(&context.journal_path, &chronicle)
         .into_iter()
         .filter(|path| {
             path.extension()
@@ -57,16 +55,50 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         ))
     }
 }
-fn visit(root: &Path, depth: usize, files: &mut Vec<PathBuf>) {
+/// Files held directly in a chronicle segment, in both layouts: a segment
+/// under a stream directory (`<day>/<stream>/<segment>/`) and a default-stream
+/// segment that sits directly in the day (`<day>/<segment>/`).
+fn segment_files(journal: &Path, chronicle: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    visit(chronicle, 0, &mut files);
+    for day in sorted_entries(chronicle) {
+        if !day.is_dir() {
+            continue;
+        }
+        let Ok(segments) = solstone_core_journal_io::iter_segments_skipping_unreadable_streams(
+            journal,
+            solstone_core_journal_io::PathOrDay::Directory(&day),
+        ) else {
+            continue;
+        };
+        for segment in segments
+            .iter()
+            .filter(|segment| segment.stream().is_direct())
+        {
+            files.extend(
+                sorted_entries(segment.path())
+                    .into_iter()
+                    .filter(|entry| entry.is_file()),
+            );
+        }
+    }
+    files.sort();
+    files.dedup();
+    files
+}
+fn sorted_entries(root: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(root) else {
-        return;
+        return Vec::new();
     };
     let mut entries = entries
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .collect::<Vec<_>>();
     entries.sort();
-    for entry in entries {
+    entries
+}
+fn visit(root: &Path, depth: usize, files: &mut Vec<PathBuf>) {
+    for entry in sorted_entries(root) {
         if depth == 3 {
             if entry.is_file() {
                 files.push(entry);
