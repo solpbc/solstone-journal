@@ -23,12 +23,13 @@ EXCLUDED_REASONS = frozenset(
 )
 RESTRICTED_RISKS = frozenset({"legal", "statutory"})
 DEFAULT_FIXED_TERMS = ("sol pbc", "solstone", "vit", "solstone.me")
+LATIN_LETTER_CLASS = r"A-Za-z\u00C0-\u024F"
 
 
 def resolve_fixed_terms(args: argparse.Namespace, manifest: dict) -> list[str]:
     if args.no_fixed_terms:
         return []
-    if args.fixed_terms:
+    if args.fixed_terms is not None:
         return [t.strip() for t in args.fixed_terms.split(",") if t.strip()]
     if isinstance(manifest.get("fixed_terms"), list):
         return [str(t).strip() for t in manifest["fixed_terms"] if str(t).strip()]
@@ -104,22 +105,37 @@ def check_fixed_terms(
         dst_body = strip_ftl_header_and_placeables(dst_raw)
 
         for term in ordered:
-            # Match whole brand tokens without matching inside domains (solstone.app) or hyphenated slugs (solstone-app),
-            # while still matching sentence-final punctuation like "con la app de solstone."
-            pattern = re.compile(
-                rf"(?<![A-Za-z0-9_-])(?<![A-Za-z0-9]\.){re.escape(term)}(?![A-Za-z0-9_-])(?!\.[A-Za-z0-9])",
+            # Match whole brand tokens in English without matching inside domains
+            # (solstone.app), hyphenated slugs (solstone-app), or accented Latin
+            # words (vità). In draft prose, allow hyphenated capitalized compounds
+            # (German solstone-App) and non-Latin postpositions (Telugu solstoneలో)
+            # while still rejecting lowercase slugs and domains.
+            src_pattern = re.compile(
+                rf"(?<![{LATIN_LETTER_CLASS}0-9_-])(?<![A-Za-z0-9]\.){re.escape(term)}"
+                rf"(?![{LATIN_LETTER_CLASS}0-9_-])(?!\.[A-Za-z0-9])",
                 re.IGNORECASE,
             )
-            src_matches = pattern.findall(src_body)
+            dst_pattern = re.compile(
+                rf"(?<![{LATIN_LETTER_CLASS}0-9_-])(?<![A-Za-z0-9]\.){re.escape(term)}"
+                rf"(?![{LATIN_LETTER_CLASS}0-9_])(?!(?-i:-[a-z0-9_-]))(?!\.[A-Za-z0-9])",
+                re.IGNORECASE,
+            )
+            src_matches = src_pattern.findall(src_body)
             if not src_matches:
                 continue
-            exact_in_src = any(m == term for m in src_matches)
-            dst_matches = pattern.findall(dst_body)
+            all_exact_in_src = all(m == term for m in src_matches)
+            any_exact_in_src = any(m == term for m in src_matches)
+            dst_matches = dst_pattern.findall(dst_body)
             if not dst_matches:
                 violations.append(
                     f"{msg_id}: fixed term '{term}' present in source but missing in draft"
                 )
-            elif exact_in_src and not all(m == term for m in dst_matches):
+            elif all_exact_in_src and not all(m == term for m in dst_matches):
+                bad = sorted({m for m in dst_matches if m != term})
+                violations.append(
+                    f"{msg_id}: fixed term '{term}' changed casing to {bad}"
+                )
+            elif any_exact_in_src and not any(m == term for m in dst_matches):
                 bad = sorted({m for m in dst_matches if m != term})
                 violations.append(
                     f"{msg_id}: fixed term '{term}' changed casing to {bad}"
@@ -295,14 +311,15 @@ def run_cmd(
 
 def check_source_revisions(
     catalog_dir: Path, manifest: dict, drafted_ids: list[str]
-) -> list[str]:
-    """Return drafted IDs whose on-disk meta source_revision differs from manifest."""
+) -> tuple[list[str], list[str]]:
+    """Return (drifted_ids, missing_meta_ids) compared against manifest source_revision."""
     expected = {
         m["id"]: m.get("source_revision")
         for m in manifest["messages"]
         if m.get("source_revision")
     }
     drifted: list[str] = []
+    missing_meta: list[str] = []
     meta_dir = catalog_dir / "meta"
     for mid in drafted_ids:
         exp_rev = expected.get(mid)
@@ -310,14 +327,14 @@ def check_source_revisions(
             continue
         meta_path = meta_dir / f"{mid}.json"
         if not meta_path.is_file():
-            drifted.append(f"{mid} (missing meta)")
+            missing_meta.append(mid)
             continue
         cur_rev = json.loads(meta_path.read_text(encoding="utf-8")).get(
             "source_revision"
         )
         if cur_rev != exp_rev:
             drifted.append(mid)
-    return drifted
+    return drifted, missing_meta
 
 
 def apply_draft_to_catalog(
@@ -352,7 +369,13 @@ def apply_draft_to_catalog(
                 "Fixed-terms check failed:\n  " + "\n  ".join(term_errors)
             )
 
-    drifted = check_source_revisions(catalog_dir, manifest, drafted_ids)
+    drifted, missing_meta = check_source_revisions(catalog_dir, manifest, drafted_ids)
+    if missing_meta:
+        raise RuntimeError(
+            f"Catalog no longer contains {len(missing_meta)} drafted IDs "
+            "(retired since manifest freeze; remove them from your manifest, "
+            "FTL, and drafts.jsonl): " + ", ".join(missing_meta[:10])
+        )
     if drifted and not allow_drifted_source:
         raise RuntimeError(
             "English source_revision changed on disk since manifest freeze for "
@@ -405,6 +428,16 @@ def apply_draft_to_catalog(
                 ]
             )
             status_data = json.loads(status_proc.stdout)
+            if (
+                status_data.get("stale")
+                or status_data.get("invalid")
+                or len(status_data.get("fresh", [])) != len(ack_ids)
+            ):
+                raise RuntimeError(
+                    f"Post-ack status verification failed for {locale}: "
+                    f"expected {len(ack_ids)} fresh, got fresh={len(status_data.get('fresh', []))}, "
+                    f"stale={status_data.get('stale')}, invalid={status_data.get('invalid')}"
+                )
         finally:
             ids_file.unlink(missing_ok=True)
     else:
@@ -518,6 +551,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
                 str(scratch_cat),
                 "--channel",
                 "development",
+                "--locale",
+                args.locale,
                 "--out",
                 str(dev_out),
             ]
@@ -781,11 +816,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     def add_common(p: argparse.ArgumentParser) -> None:
         p.add_argument("--compiler", required=True, help="Path to i18n-catalog binary")
-        p.add_argument("--locale", default="es-419", help="Draft locale tag")
+        p.add_argument(
+            "--locale",
+            required=True,
+            help="Draft locale tag (for example es-419, de, it, te)",
+        )
         p.add_argument(
             "--fixed-terms",
-            default=",".join(DEFAULT_FIXED_TERMS),
-            help="Comma-separated fixed brand terms checked for verbatim preservation",
+            default=None,
+            help="Comma-separated fixed brand terms checked for verbatim preservation (defaults to manifest fixed_terms or built-in defaults)",
         )
         p.add_argument(
             "--no-fixed-terms",

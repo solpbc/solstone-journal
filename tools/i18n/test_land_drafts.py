@@ -241,6 +241,8 @@ class LandDraftsTests(unittest.TestCase):
                     "verify",
                     "--compiler",
                     str(self.compiler),
+                    "--locale",
+                    "es-419",
                     "--catalog",
                     str(clone_a / "i18n/catalog"),
                     "--manifest",
@@ -270,6 +272,8 @@ class LandDraftsTests(unittest.TestCase):
                     str(clone_a),
                     "--compiler",
                     str(self.compiler),
+                    "--locale",
+                    "es-419",
                     "--entry",
                     f"i18n/catalog:{manifest_a}:{ftl_a}:{jsonl_a}:unit-a",
                     "--message",
@@ -287,6 +291,8 @@ class LandDraftsTests(unittest.TestCase):
                     str(clone_b),
                     "--compiler",
                     str(self.compiler),
+                    "--locale",
+                    "es-419",
                     "--entry",
                     f"i18n/catalog:{manifest_b}:{ftl_b}:{jsonl_b}:unit-b",
                     "--message",
@@ -392,6 +398,8 @@ class LandDraftsTests(unittest.TestCase):
                     "verify",
                     "--compiler",
                     str(self.compiler),
+                    "--locale",
+                    "es-419",
                     "--catalog",
                     str(seed / "i18n/catalog"),
                     "--manifest",
@@ -416,6 +424,8 @@ class LandDraftsTests(unittest.TestCase):
                     "verify",
                     "--compiler",
                     str(self.compiler),
+                    "--locale",
+                    "es-419",
                     "--catalog",
                     str(seed / "i18n/catalog"),
                     "--manifest",
@@ -429,6 +439,56 @@ class LandDraftsTests(unittest.TestCase):
             )
             self.assertNotEqual(proc2.returncode, 0)
             self.assertIn("changed casing", proc2.stderr)
+
+            # 3. Rejects missing --locale (no implicit es-419 default)
+            proc3 = run(
+                [
+                    "python3",
+                    str(LAND_DRAFTS),
+                    "verify",
+                    "--compiler",
+                    str(self.compiler),
+                    "--catalog",
+                    str(seed / "i18n/catalog"),
+                    "--manifest",
+                    str(manifest),
+                    "--ftl",
+                    str(ftl_case),
+                    "--drafts-jsonl",
+                    str(jsonl),
+                ],
+                check=False,
+            )
+            self.assertNotEqual(proc3.returncode, 0)
+            self.assertIn("--locale", proc3.stderr)
+
+            # 4. Rejects retired IDs (missing meta) even when --allow-drifted-source is set
+            ftl_valid = tmp / "valid.ftl"
+            ftl_valid.write_text("link.test.a1 = abre solstone en tu teléfono\n", encoding="utf-8")
+            (seed / "i18n/catalog/meta/link.test.a1.json").unlink()
+            proc4 = run(
+                [
+                    "python3",
+                    str(LAND_DRAFTS),
+                    "verify",
+                    "--compiler",
+                    str(self.compiler),
+                    "--locale",
+                    "es-419",
+                    "--catalog",
+                    str(seed / "i18n/catalog"),
+                    "--manifest",
+                    str(manifest),
+                    "--ftl",
+                    str(ftl_valid),
+                    "--drafts-jsonl",
+                    str(jsonl),
+                    "--allow-drifted-source",
+                ],
+                check=False,
+            )
+            self.assertNotEqual(proc4.returncode, 0)
+            self.assertIn("retired since manifest freeze", proc4.stderr)
 
     def test_parallel_push_race_retries_and_preserves_all_shards(self) -> None:
         from concurrent.futures import ThreadPoolExecutor
@@ -478,6 +538,8 @@ class LandDraftsTests(unittest.TestCase):
                         str(clone),
                         "--compiler",
                         str(self.compiler),
+                        "--locale",
+                        "es-419",
                         "--entry",
                         f"i18n/catalog:{manifest}:{ftl}:{jsonl}:{shard}",
                         "--message",
@@ -508,36 +570,268 @@ class LandDraftsTests(unittest.TestCase):
             self.assertEqual(st["stale"], [])
             self.assertEqual(st["excluded_restricted"], ["link.test.statute", "link.test.terms"])
 
+    def test_parallel_multi_locale_push_race_and_scoped_verify_over_en_xa_bundle(self) -> None:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with tempfile.TemporaryDirectory(prefix="test-land-multilocale-") as tmp_str:
+            tmp = Path(tmp_str)
+            remote, seed, revs = init_sample_repo(self.compiler, tmp)
+
+            # Land de (sharded x2), it (sharded x2), and te (single file) simultaneously into the same catalog
+            jobs = [
+                (
+                    "de",
+                    "s1",
+                    "link.test.a1",
+                    "routine",
+                    "link.test.a1 = öffne die solstone-App auf deinem Handy\n",
+                ),
+                (
+                    "de",
+                    "s2",
+                    "link.test.b1",
+                    "routine",
+                    "link.test.b1 = { $count ->\n    [one] { $count } Gerät gekoppelt\n   *[other] { $count } Geräte gekoppelt\n}\n",
+                ),
+                (
+                    "it",
+                    "s1",
+                    "link.test.a1",
+                    "routine",
+                    "link.test.a1 = apri solstone sul tuo telefono\n",
+                ),
+                (
+                    "it",
+                    "s2",
+                    "link.test.b1",
+                    "routine",
+                    "link.test.b1 = { $count ->\n    [one] { $count } dispositivo associato\n    [many] { $count } dispositivi associati\n   *[other] { $count } dispositivi associati\n}\n",
+                ),
+                (
+                    "te",
+                    None,
+                    "link.test.a1",
+                    "routine",
+                    "link.test.a1 = మీ ఫోన్‌లో solstoneను తెరవండి\n",
+                ),
+            ]
+
+            def launch(spec: tuple[str, str | None, str, str, str]) -> dict:
+                locale, shard, mid, risk, ftl_body = spec
+                tag = f"{locale}-{shard or 'single'}"
+                clone = tmp / f"clone-{tag}"
+                run(["git", "clone", str(remote), str(clone)])
+                run(["git", "config", "user.name", tag], cwd=clone)
+                run(["git", "config", "user.email", f"{tag}@example.invalid"], cwd=clone)
+                manifest = tmp / f"m-{tag}.json"
+                manifest.write_text(
+                    json.dumps(
+                        {"unit": tag, "messages": [{"id": mid, "risk": risk, "source_revision": revs[mid]}]}
+                    ),
+                    encoding="utf-8",
+                )
+                ftl = tmp / f"{tag}.ftl"
+                ftl.write_text(ftl_body, encoding="utf-8")
+                jsonl = tmp / f"{tag}.jsonl"
+                jsonl.write_text(
+                    json.dumps({"id": mid, "status": "drafted", "reason": None, "flags": [], "note": ""}) + "\n",
+                    encoding="utf-8",
+                )
+                entry = f"i18n/catalog:{manifest}:{ftl}:{jsonl}" + (f":{shard}" if shard else "")
+                proc = run(
+                    [
+                        "python3",
+                        str(LAND_DRAFTS),
+                        "land",
+                        "--repo",
+                        str(clone),
+                        "--compiler",
+                        str(self.compiler),
+                        "--locale",
+                        locale,
+                        "--entry",
+                        entry,
+                        "--message",
+                        f"i18n({locale}): land {tag}",
+                    ]
+                )
+                return json.loads(proc.stdout)
+
+            with ThreadPoolExecutor(max_workers=5) as pool:
+                outcomes = list(pool.map(launch, jobs))
+
+            self.assertEqual(len(outcomes), 5)
+            for out in outcomes:
+                self.assertEqual(out["status"], "pushed")
+
+            run(["git", "pull", "--ff-only", "origin", "main"], cwd=seed)
+            self.assertTrue((seed / "i18n/catalog/translations/de/s1.ftl").is_file())
+            self.assertTrue((seed / "i18n/catalog/translations/de/s2.ftl").is_file())
+            self.assertTrue((seed / "i18n/catalog/translations/it/s1.ftl").is_file())
+            self.assertTrue((seed / "i18n/catalog/translations/it/s2.ftl").is_file())
+            self.assertTrue((seed / "i18n/catalog/translations/te.ftl").is_file())
+
+            for locale, expected_fresh in [
+                ("de", ["link.test.a1", "link.test.b1"]),
+                ("it", ["link.test.a1", "link.test.b1"]),
+                ("te", ["link.test.a1"]),
+            ]:
+                st = json.loads(
+                    run(
+                        [str(self.compiler), "status", str(seed / "i18n/catalog"), "--locale", locale, "--json"]
+                    ).stdout
+                )
+                self.assertEqual(st["fresh"], expected_fresh, locale)
+                self.assertEqual(st["stale"], [], locale)
+
+            # Verify --check-targets passes on a bundle containing en-XA (journal-window) without en-XA.ftl
+            en_xa_cat = tmp / "en-xa-cat"
+            (en_xa_cat / "source").mkdir(parents=True)
+            (en_xa_cat / "meta").mkdir(parents=True)
+            (en_xa_cat / "translations").mkdir(parents=True)
+            (en_xa_cat / "catalog.json").write_text(
+                json.dumps({"catalog_version": 1, "label": "en-XA test", "history": False, "source_locale": "en-US"}) + "\n",
+                encoding="utf-8",
+            )
+            (en_xa_cat / "source/en-US.ftl").write_text(
+                "journal.window.test.hello = open solstone\n",
+                encoding="utf-8",
+            )
+            (en_xa_cat / "meta/journal.window.test.hello.json").write_text(
+                json.dumps(
+                    {
+                        "description": "test",
+                        "context": "test",
+                        "surfaces": ["journal-window"],
+                        "bundles": ["journal-window"],
+                        "arguments": [],
+                        "format_intent": "text",
+                        "max_length": 60,
+                        "source_revision": "0" * 64,
+                        "risk": "routine",
+                        "auto_merge": True,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            run([str(self.compiler), "lock", str(en_xa_cat)])
+            rev = json.loads((en_xa_cat / "source-lock.json").read_text(encoding="utf-8"))["messages"][0]["source"]
+            m_path = en_xa_cat / "meta/journal.window.test.hello.json"
+            m_data = json.loads(m_path.read_text(encoding="utf-8"))
+            m_data["source_revision"] = rev
+            m_path.write_text(json.dumps(m_data, indent=2) + "\n", encoding="utf-8")
+            run([str(self.compiler), "history", str(en_xa_cat)])
+            cfg = json.loads((en_xa_cat / "catalog.json").read_text(encoding="utf-8"))
+            cfg["history"] = True
+            (en_xa_cat / "catalog.json").write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+
+            m_enxa = tmp / "m-enxa.json"
+            m_enxa.write_text(
+                json.dumps({"unit": "w1", "messages": [{"id": "journal.window.test.hello", "risk": "routine", "source_revision": rev}]}),
+                encoding="utf-8",
+            )
+            ftl_enxa = tmp / "w1.ftl"
+            ftl_enxa.write_text("journal.window.test.hello = öffne solstone\n", encoding="utf-8")
+            jsonl_enxa = tmp / "w1.jsonl"
+            jsonl_enxa.write_text(
+                json.dumps({"id": "journal.window.test.hello", "status": "drafted", "reason": None, "flags": [], "note": ""}) + "\n",
+                encoding="utf-8",
+            )
+            v_enxa = run(
+                [
+                    "python3",
+                    str(LAND_DRAFTS),
+                    "verify",
+                    "--compiler",
+                    str(self.compiler),
+                    "--locale",
+                    "de",
+                    "--catalog",
+                    str(en_xa_cat),
+                    "--manifest",
+                    str(m_enxa),
+                    "--ftl",
+                    str(ftl_enxa),
+                    "--drafts-jsonl",
+                    str(jsonl_enxa),
+                    "--shard",
+                    "w1",
+                    "--check-targets",
+                    "rust,classic",
+                ]
+            )
+            self.assertTrue(json.loads(v_enxa.stdout)["production_byte_identical"])
+
     def test_fixed_terms_allow_sentence_final_period_and_catch_casing(self):
         import importlib.util
 
         spec = importlib.util.spec_from_file_location("land_drafts", LAND_DRAFTS)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        terms = ["sol pbc", "solstone", "vit", "solstone.me"]
+        terms = list(mod.DEFAULT_FIXED_TERMS)
+
+        # Manifest fixed_terms takes effect when --fixed-terms is omitted
+        parser = mod.build_parser()
+        parsed = parser.parse_args(
+            [
+                "verify",
+                "--compiler",
+                "/bin/true",
+                "--locale",
+                "de",
+                "--catalog",
+                "/tmp/c",
+                "--manifest",
+                "/tmp/m",
+                "--ftl",
+                "/tmp/f",
+                "--drafts-jsonl",
+                "/tmp/j",
+            ]
+        )
+        self.assertEqual(mod.resolve_fixed_terms(parsed, {"fixed_terms": ["custom-mark"]}), ["custom-mark"])
+
         self.assertEqual(
             mod.check_fixed_terms(
                 {
                     "a": "a = open with the solstone app.",
                     "b": "b = open in sol pbc's apps.",
                     "c": "c = visit solstone.app/install",
+                    "d": "d = open the solstone app",
+                    "e": "e = open solstone on your phone",
+                    "f": "f = activity summary",
+                    "g": "g = in writing: [1]solstone[/1] is always lowercase; never Solstone or SOLSTONE.",
                 },
                 {
                     "a": "a = abre con la app de solstone.",
                     "b": "b = se abre en las apps de sol pbc.",
                     "c": "c = visita solstone.app/install",
+                    "d": "d = öffne die solstone-App",
+                    "e": "e = మీ ఫోన్‌లో solstoneను తెరవండి",
+                    "f": "f = riepilogo delle attività",
+                    "g": "g = schriftlich: [1]solstone[/1] ist immer kleingeschrieben; nie Solstone oder SOLSTONE.",
                 },
                 terms,
             ),
             [],
         )
         violations = mod.check_fixed_terms(
-            {"a": "a = open with the solstone app."},
-            {"a": "a = abre con la app de Solstone."},
+            {
+                "a": "a = open with the solstone app.",
+                "b": "b = open the solstone app",
+                "c": "c = open solstone on your phone",
+            },
+            {
+                "a": "a = abre con la app de Solstone.",
+                "b": "b = öffne die Solstone-App",
+                "c": "c = మీ ఫోన్‌లో Solstoneను తెరవండి",
+            },
             terms,
         )
-        self.assertEqual(len(violations), 1)
-        self.assertIn("changed casing", violations[0])
+        self.assertEqual(len(violations), 3)
+        for v in violations:
+            self.assertIn("changed casing", v)
 
 
 if __name__ == "__main__":

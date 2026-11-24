@@ -487,7 +487,7 @@ literal fragments, or filling tokens afterward.
 Give new messages stable IDs and sidecars in `i18n/catalog/meta/`. Register them with
 `cargo run --locked --manifest-path tools/i18n/Cargo.toml -- history i18n/catalog`.
 Follow the [catalog compiler guide](tools/i18n/README.md) to refresh source
-revisions. When you edit English prose, run `lock` without `--acknowledge` for draft locales such as `es-419` so existing draft translations stay marked stale until updated; production targets exclude draft locales and keep passing. Run
+revisions. When you edit English prose, run `lock` without `--acknowledge` for any draft locale so existing draft translations stay marked stale until updated; production targets exclude draft locales and keep passing. Run
 `make journal-window-catalog` and commit the generated resources.
 
 Use the window catalog for stored backup diagnostics and for notices about backup, agent access, device access and updates. Render the English text when writing a backup record or broadcasting a notice on Callosum. Keep the English detail in saved agent service and activity records for older readers. On the OAuth authorization page, render consent and status messages in the language of the request.

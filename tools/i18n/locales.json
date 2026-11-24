@@ -138,6 +138,39 @@
       "android_qualifier": "b+es+419",
       "webextension_folder": "es_419",
       "description": "Spanish (Latin America) draft translation; excluded from production."
+    },
+    {
+      "tag": "de",
+      "tier": "draft",
+      "purpose": "ordinary",
+      "development": "released",
+      "production": "withheld",
+      "cardinal": "en",
+      "android_qualifier": "de",
+      "webextension_folder": "de",
+      "description": "German draft translation; excluded from production."
+    },
+    {
+      "tag": "it",
+      "tier": "draft",
+      "purpose": "ordinary",
+      "development": "released",
+      "production": "withheld",
+      "cardinal": "one-many",
+      "android_qualifier": "it",
+      "webextension_folder": "it",
+      "description": "Italian draft translation; excluded from production."
+    },
+    {
+      "tag": "te",
+      "tier": "draft",
+      "purpose": "ordinary",
+      "development": "released",
+      "production": "withheld",
+      "cardinal": "en",
+      "android_qualifier": "te",
+      "webextension_folder": "te",
+      "description": "Telugu draft translation; excluded from production."
     }
   ],
   "namespaces": [
@@ -211,7 +244,10 @@
       "id": "account",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
@@ -259,98 +295,140 @@
       "locales": [
         "en-US",
         "en-GB",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
       "id": "link-host",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
       "id": "browser",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
       "id": "support",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
       "id": "transparency",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
       "id": "solpbc-org",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
       "id": "windows",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
       "id": "macos",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
       "id": "android-wear",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
       "id": "android-phone",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
       "id": "ios",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
       "id": "linux",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
       "id": "website",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
       "id": "journal-mac",
       "locales": [
         "en-US",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
@@ -358,7 +436,10 @@
       "locales": [
         "en-US",
         "en-XA",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
@@ -366,7 +447,10 @@
       "locales": [
         "en-US",
         "en-XA",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     },
     {
@@ -374,7 +458,10 @@
       "locales": [
         "en-US",
         "en-XA",
-        "es-419"
+        "es-419",
+        "de",
+        "it",
+        "te"
       ]
     }
   ]

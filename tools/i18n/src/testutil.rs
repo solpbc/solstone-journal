@@ -2409,18 +2409,37 @@ link.test.statute = cancel contracts here
 #[test]
 fn test_es_419_registry_and_formatting_locale() {
     let reg = LocaleRegistry::embedded().unwrap();
-    let es = reg
-        .locales
-        .iter()
-        .find(|l| l.tag == "es-419")
-        .expect("es-419 registered");
-    assert_eq!(es.tier, crate::vocab::LocaleTier::Draft);
-    assert_eq!(es.development, crate::vocab::ReleaseState::Released);
-    assert_eq!(es.production, crate::vocab::ReleaseState::Withheld);
-    assert_eq!(es.cardinal.as_deref(), Some("one-many"));
-    assert_eq!(es.android_qualifier.as_deref(), Some("b+es+419"));
-    assert_eq!(es.webextension_folder.as_deref(), Some("es_419"));
-    assert!(crate::locale::is_standard_formatting_locale("es-419"));
+    for (tag, cardinal, android_qual, webext) in [
+        ("es-419", "one-many", "b+es+419", "es_419"),
+        ("de", "en", "de", "de"),
+        ("it", "one-many", "it", "it"),
+        ("te", "en", "te", "te"),
+    ] {
+        let entry = reg
+            .locales
+            .iter()
+            .find(|l| l.tag == tag)
+            .unwrap_or_else(|| panic!("{tag} registered"));
+        assert_eq!(entry.tier, crate::vocab::LocaleTier::Draft, "{tag}");
+        assert_eq!(
+            entry.development,
+            crate::vocab::ReleaseState::Released,
+            "{tag}"
+        );
+        assert_eq!(
+            entry.production,
+            crate::vocab::ReleaseState::Withheld,
+            "{tag}"
+        );
+        assert_eq!(entry.cardinal.as_deref(), Some(cardinal), "{tag}");
+        assert_eq!(
+            entry.android_qualifier.as_deref(),
+            Some(android_qual),
+            "{tag}"
+        );
+        assert_eq!(entry.webextension_folder.as_deref(), Some(webext), "{tag}");
+        assert!(crate::locale::is_standard_formatting_locale(tag), "{tag}");
+    }
     assert!(!crate::locale::is_standard_formatting_locale("en-x-synth"));
 
     for bundle_id in [
@@ -2451,11 +2470,130 @@ fn test_es_419_registry_and_formatting_locale() {
         let dev = reg
             .get_eligible_locales(Channel::Development, &bundles, None)
             .unwrap();
-        assert!(
-            dev.iter().any(|l| l == "es-419"),
-            "dev bundle {bundle_id} missing es-419: {dev:?}"
+        for tag in ["es-419", "de", "it", "te"] {
+            assert!(
+                dev.iter().any(|l| l == tag),
+                "dev bundle {bundle_id} missing {tag}: {dev:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_multi_draft_locales_plural_families_and_fallback() {
+    let cat = build_draft_test_catalog("multi_draft_locales");
+    let dev_out = unique_temp_dir("multi_draft_dev_out");
+    let _ = fs::remove_dir_all(&dev_out);
+
+    // German (`en` family) rejects `[many]`, while Italian (`one-many`) requires `[many]`.
+    fs::write(
+        cat.join("translations/de.ftl"),
+        "link.test.count = { $count ->\n    [one] { $count } Gerät\n    [many] { $count } Geräte\n   *[other] { $count } Geräte\n}\n",
+    )
+    .unwrap();
+    let de_bad =
+        LoadedCatalog::load_and_validate(&cat, Channel::Development, Some("de")).unwrap_err();
+    assert!(
+        de_bad
+            .iter()
+            .any(|f| f.locale == "de" && f.message_id == "link.test.count"),
+        "expected de to reject [many], got {de_bad:?}"
+    );
+
+    fs::write(
+        cat.join("translations/it.ftl"),
+        "link.test.count = { $count ->\n    [one] { $count } dispositivo\n   *[other] { $count } dispositivi\n}\n",
+    )
+    .unwrap();
+    let it_bad =
+        LoadedCatalog::load_and_validate(&cat, Channel::Development, Some("it")).unwrap_err();
+    assert!(
+        it_bad
+            .iter()
+            .any(|f| f.locale == "it" && f.message_id == "link.test.count"),
+        "expected it to require [many], got {it_bad:?}"
+    );
+
+    // Valid drafts for `de` (sharded) and `it` (single file), while `te` stays absent (falls back to English).
+    fs::remove_file(cat.join("translations/de.ftl")).unwrap();
+    let de_dir = cat.join("translations/de");
+    fs::create_dir_all(&de_dir).unwrap();
+    fs::write(
+        de_dir.join("unit-a.ftl"),
+        "link.test.hello = hallo welt\nlink.test.count = { $count ->\n    [one] { $count } Gerät\n   *[other] { $count } Geräte\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        cat.join("translations/it.ftl"),
+        "link.test.hello = ciao mondo\nlink.test.count = { $count ->\n    [one] { $count } dispositivo\n    [many] { $count } dispositivi\n   *[other] { $count } dispositivi\n}\n",
+    )
+    .unwrap();
+
+    for loc in ["de", "it"] {
+        assert_eq!(
+            crate::cli::run(vec![
+                "i18n-catalog".into(),
+                "lock".into(),
+                cat.to_str().unwrap().into(),
+                "--acknowledge".into(),
+                loc.into(),
+            ]),
+            0
         );
     }
+
+    // All three new draft locales lower together on development; `te` falls back cleanly to English.
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "targets".into(),
+            cat.to_str().unwrap().into(),
+            "--channel".into(),
+            "development".into(),
+            "--target".into(),
+            "esm".into(),
+            "--target".into(),
+            "android".into(),
+            "--target".into(),
+            "apple".into(),
+            "--out".into(),
+            dev_out.to_str().unwrap().into(),
+        ]),
+        0
+    );
+    assert!(
+        fs::read_to_string(dev_out.join("esm/link-host/de.ftl"))
+            .unwrap()
+            .contains("hallo welt")
+    );
+    assert!(
+        fs::read_to_string(dev_out.join("esm/link-host/it.ftl"))
+            .unwrap()
+            .contains("ciao mondo")
+    );
+    assert!(
+        fs::read_to_string(dev_out.join("esm/link-host/te.ftl"))
+            .unwrap()
+            .contains("hello world")
+    );
+    assert!(
+        dev_out
+            .join("android/link-host/values-de/strings.xml")
+            .is_file()
+    );
+    assert!(
+        dev_out
+            .join("android/link-host/values-it/strings.xml")
+            .is_file()
+    );
+    assert!(
+        dev_out
+            .join("android/link-host/values-te/strings.xml")
+            .is_file()
+    );
+
+    let _ = fs::remove_dir_all(&cat);
+    let _ = fs::remove_dir_all(&dev_out);
 }
 
 #[test]
