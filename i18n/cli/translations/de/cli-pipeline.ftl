@@ -758,9 +758,9 @@ journal.cli.importer.audio.archive.left.out.header = ausgelassen:
 
 journal.cli.importer.audio.archive.left.out.inline = ausgelassen: { $counts }
 
-journal.cli.importer.audio.archive.members.failed = Audio-Archiv-Mitglieder sind fehlgeschlagen: { $error }
+journal.cli.importer.audio.archive.members.failed = Audio-Archiv-Einträge sind fehlgeschlagen: { $error }
 
-journal.cli.importer.audio.archive.members.summary = Audio-Archiv-Mitglieder: run_id={ $run_id } offset={ $offset } count={ $count }
+journal.cli.importer.audio.archive.members.summary = Audio-Archiv-Einträge: run_id={ $run_id } offset={ $offset } count={ $count }
 
 journal.cli.importer.audio.archive.preview.line1 = Audio-Archiv-Vorschau: { $members }, { $source_bytes }, { $days }, { $tiles }
 
@@ -929,8 +929,8 @@ journal.cli.importer.count.logged.entry = { $quantity ->
 }
 
 journal.cli.importer.count.member = { $quantity ->
-    [one] 1 Mitglied
-   *[other] { $count } Mitglieder
+    [one] 1 Eintrag
+   *[other] { $count } Einträge
 }
 
 journal.cli.importer.count.message = { $quantity ->
@@ -1038,7 +1038,7 @@ journal.cli.importer.generic.text.untimed.line1 = keine Zeiten für Redebeiträg
 
 journal.cli.importer.generic.text.untimed.line2 = wenn deine Transkripte Zeiten auf eine Art markieren, die das Journal noch nicht liest, frag uns, das zu ergänzen: { $url }
 
-journal.cli.importer.help.opt.archive.members = { $indent }Mitglieder eines Audio-Archiv-Laufs auflisten (mit --offset und --limit)
+journal.cli.importer.help.opt.archive.members = { $indent }Einträge eines Audio-Archiv-Laufs auflisten (mit --offset und --limit)
 
 journal.cli.importer.help.opt.archive.status = { $indent }Kompakten Status eines Audio-Archiv-Laufs ausgeben
 
@@ -1048,7 +1048,7 @@ journal.cli.importer.help.opt.audio.archive.line2 = { $indent }Ordner: Limitless
 
 journal.cli.importer.help.opt.audio.archive.line3 = { $indent }Das Manifest: { $example }
 
-journal.cli.importer.help.opt.audio.archive.line4 = { $indent }Oder nutze local_civil und source_zone für die Zeit eines Mitglieds.
+journal.cli.importer.help.opt.audio.archive.line4 = { $indent }Oder nutze local_civil und source_zone für die Zeit eines Eintrags.
 
 journal.cli.importer.help.opt.audio.archive.line5 = { $indent }Pfade sind absolut oder relativ zum Manifest.
 
@@ -1086,7 +1086,7 @@ journal.cli.importer.help.opt.json.line1 = { $indent }--json                Erge
 
 journal.cli.importer.help.opt.json.line2 = { $indent }und ein Endergebnis aus, ein JSON-Objekt pro Zeile.
 
-journal.cli.importer.help.opt.limit = { $indent }--limit LIMIT         Höchstzahl aufzulistender Mitglieder (Vorgabe 100, höchstens 1000)
+journal.cli.importer.help.opt.limit = { $indent }--limit LIMIT         Höchstzahl aufzulistender Einträge (Vorgabe 100, höchstens 1000)
 
 journal.cli.importer.help.opt.list.importers = { $indent }--list-importers      Verfügbare Datei-Importer auflisten
 
@@ -1094,7 +1094,7 @@ journal.cli.importer.help.opt.no.facet.line1 = { $indent }--no-facet            
 
 journal.cli.importer.help.opt.no.facet.line2 = { $indent }Vorgabe ist
 
-journal.cli.importer.help.opt.offset = { $indent }--offset OFFSET       Anfangs-Offset für das Auflisten der Mitglieder
+journal.cli.importer.help.opt.offset = { $indent }--offset OFFSET       Anfangs-Offset für das Auflisten der Einträge
 
 journal.cli.importer.help.opt.resume = { $indent }--resume IMPORT_ID    Nicht gespeicherte Teile des eingefrorenen Plans eines Audio-Archivs füllen
 
@@ -2803,33 +2803,33 @@ journal.cli.transcribe.error.windows.executable.unavailable = Programmdatei des 
 
 journal.cli.transcribe.error.windows.input.limit.exceeded = Eingabe des begrenzten Helfers überschreitet das angegebene Byte-Limit
 
-journal.cli.transcribe.error.windows.input.write.failed = Eingabeschreiber des begrenzten Helpers ist fehlgeschlagen
+journal.cli.transcribe.error.windows.input.write.failed = Eingabeschreiber des begrenzten Helfers ist fehlgeschlagen
 
-journal.cli.transcribe.error.windows.io.worker.start.failed = { $stream }-{ $code_i_o }-Worker des begrenzten Helpers konnte nicht gestartet werden
+journal.cli.transcribe.error.windows.io.worker.start.failed = { $stream }-{ $code_i_o }-Worker des begrenzten Helfers konnte nicht gestartet werden
 
-journal.cli.transcribe.error.windows.job.not.quiescent = Abschluss des begrenzten Helpers hat keine Job-Ruhe hergestellt
+journal.cli.transcribe.error.windows.job.not.quiescent = Abschluss des begrenzten Helfers hat keine Job-Ruhe hergestellt
 
-journal.cli.transcribe.error.windows.launch.failed = begrenzter Helper ist fehlgeschlagen, bevor eine Identität des eigenen Kindprozesses verfügbar war
+journal.cli.transcribe.error.windows.launch.failed = begrenzter Helfer ist fehlgeschlagen, bevor eine Identität des eigenen Kindprozesses verfügbar war
 
 journal.cli.transcribe.error.windows.launch.finalization.failed = nativer Startabschluss ist fehlgeschlagen: { $detail }
 
-journal.cli.transcribe.error.windows.missing.system.root = Umgebung des begrenzten Helpers muss { $code_systemroot } enthalten, und das darf nicht leer sein
+journal.cli.transcribe.error.windows.missing.system.root = Umgebung des begrenzten Helfers muss { $code_systemroot } enthalten, und das darf nicht leer sein
 
-journal.cli.transcribe.error.windows.output.limit.exceeded = Ausgabe { $stream } des begrenzten Helpers hat das angegebene Bytelimit überschritten
+journal.cli.transcribe.error.windows.output.limit.exceeded = Ausgabe { $stream } des begrenzten Helfers hat das angegebene Bytelimit überschritten
 
-journal.cli.transcribe.error.windows.output.read.failed = Ausgabeleser { $stream } des begrenzten Helpers ist fehlgeschlagen
+journal.cli.transcribe.error.windows.output.read.failed = Ausgabeleser { $stream } des begrenzten Helfers ist fehlgeschlagen
 
-journal.cli.transcribe.error.windows.package.root.unavailable = Paketwurzel des begrenzten Helpers konnte nicht kanonisiert werden
+journal.cli.transcribe.error.windows.package.root.unavailable = Paketwurzel des begrenzten Helfers konnte nicht kanonisiert werden
 
-journal.cli.transcribe.error.windows.path.environment.refused = Umgebung des begrenzten Helpers darf { $code_path } nicht enthalten
+journal.cli.transcribe.error.windows.path.environment.refused = Umgebung des begrenzten Helfers darf { $code_path } nicht enthalten
 
-journal.cli.transcribe.error.windows.path.not.representable = Pfad des begrenzten Helpers kann von der verwalteten Windows-Befehlsgrenze nicht dargestellt werden
+journal.cli.transcribe.error.windows.path.not.representable = Pfad des begrenzten Helfers kann von der verwalteten Windows-Befehlsgrenze nicht dargestellt werden
 
-journal.cli.transcribe.error.windows.process.observation.failed = Prozessbeobachtung des begrenzten Helpers ist fehlgeschlagen
+journal.cli.transcribe.error.windows.process.observation.failed = Prozessbeobachtung des begrenzten Helfers ist fehlgeschlagen
 
-journal.cli.transcribe.error.windows.zero.limit = Bytelimit { $stream } des begrenzten Helpers muss ungleich null sein
+journal.cli.transcribe.error.windows.zero.limit = Bytelimit { $stream } des begrenzten Helfers muss ungleich null sein
 
-journal.cli.transcribe.error.windows.zero.timeout = Zeitüberschreitung des begrenzten Helpers muss ungleich null sein
+journal.cli.transcribe.error.windows.zero.timeout = Zeitüberschreitung des begrenzten Helfers muss ungleich null sein
 
 journal.cli.transcribe.error.writer.base.time.us.of.day.is.outside.a.day = { $code_base_time_us_of_day } liegt außerhalb eines Tages
 
@@ -2877,15 +2877,15 @@ journal.cli.transcribe.error.writer.noisy.s.is.required.when.noisy.rms.is.presen
 
 journal.cli.transcribe.error.writer.npz.cancelled = abgebrochen
 
-journal.cli.transcribe.error.writer.npz.count = { $code_npz } hat eine unerwartete Anzahl an Mitgliedern
+journal.cli.transcribe.error.writer.npz.count = { $code_npz } hat eine unerwartete Anzahl an Einträgen
 
-journal.cli.transcribe.error.writer.npz.members = { $code_npz }-Mitglieder stimmen nicht mit dem sidecar-Vertrag des Transkripts überein
+journal.cli.transcribe.error.writer.npz.members = { $code_npz }-Einträge stimmen nicht mit dem sidecar-Vertrag des Transkripts überein
 
-journal.cli.transcribe.error.writer.npz.missing = { $code_npz }-Mitglied { $name } fehlt
+journal.cli.transcribe.error.writer.npz.missing = { $code_npz }-Eintrag { $name } fehlt
 
 journal.cli.transcribe.error.writer.npz.parent = npz-Ziel hat kein übergeordnetes Verzeichnis
 
-journal.cli.transcribe.error.writer.npz.readback = { $code_npz }-Mitglied { $name } hat den Roundtrip nicht bestanden
+journal.cli.transcribe.error.writer.npz.readback = { $code_npz }-Eintrag { $name } hat den Roundtrip nicht bestanden
 
 journal.cli.transcribe.error.writer.output.path.has.no.parent = Ausgabepfad hat kein übergeordnetes Verzeichnis
 
@@ -3011,7 +3011,7 @@ journal.cli.transcribe.error.writer.zip.local.signature.at.header.start = lokale
 
 journal.cli.transcribe.error.writer.zip.raw.and.exposed.central.populations.disagree = rohe und offengelegte zentrale Populationen stimmen nicht überein
 
-journal.cli.transcribe.error.writer.zip.raw.central.member.was.lost.from.the.zip = rohes zentrales Mitglied ging aus dem ZIP-Index verloren
+journal.cli.transcribe.error.writer.zip.raw.central.member.was.lost.from.the.zip = roher zentraler Eintrag ging aus dem ZIP-Index verloren
 
 journal.cli.transcribe.error.writer.zip.repeated.exposed.central.coordinate = wiederholte offengelegte zentrale Koordinate
 
@@ -3021,11 +3021,11 @@ journal.cli.transcribe.error.writer.zip.unicode.path.extra.is.not.utf8 = Unicode
 
 journal.cli.transcribe.error.writer.zip.unicode.path.extra.too.small = Unicode-Pfad-Extra zu klein
 
-journal.cli.transcribe.error.writer.zip.unproved = zip-Mitglied { $index }: Name nicht nachgewiesen: { $detail }
+journal.cli.transcribe.error.writer.zip.unproved = zip-Eintrag { $index }: Name nicht nachgewiesen: { $detail }
 
 journal.cli.transcribe.error.writer.zip.unreadable = zip-Archiv nicht lesbar: { $detail }
 
-journal.cli.transcribe.error.writer.zip.zip.member.name.collision.name = Kollision beim Namen des zip-Mitglieds: { $name }
+journal.cli.transcribe.error.writer.zip.zip.member.name.collision.name = Kollision beim Namen des zip-Eintrags: { $name }
 
 journal.cli.transcribe.feed.failure = Einspeisung des Sprecher-Kandidatenpools ist für { $path } fehlgeschlagen: { $detail }
 
@@ -3095,25 +3095,25 @@ journal.cli.transcribe.sound.engine.absent = ced-Engine ist nicht installiert
 
 journal.cli.transcribe.sound.failed = Klangmarkierung ist fehlgeschlagen: { $error }
 
-journal.cli.transcribe.sound.helper.executable = ced-Helper-Binärdatei ist nicht ausführbar: { $path }
+journal.cli.transcribe.sound.helper.executable = ced-Helfer-Binärdatei ist nicht ausführbar: { $path }
 
-journal.cli.transcribe.sound.helper.exit = ced-Helper wurde mit { $code } beendet: { $stderr }
+journal.cli.transcribe.sound.helper.exit = ced-Helfer wurde mit { $code } beendet: { $stderr }
 
-journal.cli.transcribe.sound.helper.io = I/O des ced-Helpers ist fehlgeschlagen: { $detail }
+journal.cli.transcribe.sound.helper.io = I/O des ced-Helfers ist fehlgeschlagen: { $detail }
 
 journal.cli.transcribe.sound.helper.large = ced-Antwort hat 64 MiB überschritten
 
-journal.cli.transcribe.sound.helper.missing = ced-Helper-Binärdatei fehlt: { $path }
+journal.cli.transcribe.sound.helper.missing = ced-Helfer-Binärdatei fehlt: { $path }
 
 journal.cli.transcribe.sound.helper.parent = aktuelle Programmdatei hat kein übergeordnetes Verzeichnis
 
-journal.cli.transcribe.sound.helper.response = Antwort des ced-Helpers war kein gültiges JSON: { $detail }
+journal.cli.transcribe.sound.helper.response = Antwort des ced-Helfers war kein gültiges JSON: { $detail }
 
-journal.cli.transcribe.sound.helper.spawn = ced-Helper konnte nicht gestartet werden: { $detail }
+journal.cli.transcribe.sound.helper.spawn = ced-Helfer konnte nicht gestartet werden: { $detail }
 
-journal.cli.transcribe.sound.helper.timeout = ced-Helper wurde nicht innerhalb von { $timeout } beendet
+journal.cli.transcribe.sound.helper.timeout = ced-Helfer wurde nicht innerhalb von { $timeout } beendet
 
-journal.cli.transcribe.sound.helper.unresolved = ced-Helper nicht aufgelöst: { $detail }
+journal.cli.transcribe.sound.helper.unresolved = ced-Helfer nicht aufgelöst: { $detail }
 
 journal.cli.transcribe.sound.helper.windows = CED erfordert den Windows-Host als Aufrufer
 
@@ -3123,9 +3123,9 @@ journal.cli.transcribe.sound.package.windows.runtime = Windows-CED-Paketprüfung
 
 journal.cli.transcribe.sound.prepare = Klangmarkierung konnte Audio nicht vorbereiten: { $error }
 
-journal.cli.transcribe.sound.probe.helper.exit = ced-Sonden-Helper wurde mit { $code } beendet: { $stderr }
+journal.cli.transcribe.sound.probe.helper.exit = ced-Sonden-Helfer wurde mit { $code } beendet: { $stderr }
 
-journal.cli.transcribe.sound.probe.helper.unexpected = ced-Sonden-Helper hat eine unerwartete Antwort zurückgegeben: { $response }
+journal.cli.transcribe.sound.probe.helper.unexpected = ced-Sonden-Helfer hat eine unerwartete Antwort zurückgegeben: { $response }
 
 journal.cli.transcribe.sound.probe.unexpected = ced-Sonde hat eine unerwartete Antwort zurückgegeben: { $response }
 
@@ -3137,7 +3137,7 @@ journal.cli.transcribe.sound.window.count = Klangmarkierung hat eine unerwartete
 
 journal.cli.transcribe.sound.window.ok = Klangmarkierung hat ein Fenster zurückgegeben, dem das Feld { $field } fehlt
 
-journal.cli.transcribe.sound.windows.launch = Start des CED-Helpers ist fehlgeschlagen: { $error }
+journal.cli.transcribe.sound.windows.launch = Start des CED-Helfers ist fehlgeschlagen: { $error }
 
 journal.cli.transcribe.sound.windows.library = CED-Anfragebibliothek stimmt nicht mit dem signierten Paket überein
 
@@ -3149,11 +3149,11 @@ journal.cli.transcribe.sound.windows.package.parent = laufende Programmdatei hat
 
 journal.cli.transcribe.sound.windows.package.root = Paket-bin-Verzeichnis hat keine Paketwurzel
 
-journal.cli.transcribe.sound.windows.probe = CED-Helper hat eine ungültige Sondenantwort zurückgegeben
+journal.cli.transcribe.sound.windows.probe = CED-Helfer hat eine ungültige Sondenantwort zurückgegeben
 
 journal.cli.transcribe.sound.windows.root = { $variable } ist nicht gesetzt
 
-journal.cli.transcribe.sound.windows.signed = Windows-CED erfordert den signierten Paket-Helper und seinen angegebenen Befehl
+journal.cli.transcribe.sound.windows.signed = Windows-CED erfordert den signierten Paket-Helfer und seinen angegebenen Befehl
 
 journal.cli.transcribe.stage.confidential.cap = Audio ist { $seconds } s und würde { $bytes } Bytes senden; vertrauliche STT akzeptiert höchstens { $limit } Bytes
 
@@ -3171,7 +3171,7 @@ journal.cli.transcribe.stage.output.parent = Transkriptpfad hat kein übergeordn
 
 journal.cli.transcribe.stage.owner.deleted.unrecorded = Original nur mit Stimme gelöscht, aber das Löschereignis wurde nicht aufgezeichnet
 
-journal.cli.transcribe.stage.owner.helper.outdated = der Helper für die Sprecheranalyse ist älter als Überlappungsbereiche oder Sprecherwechsel
+journal.cli.transcribe.stage.owner.helper.outdated = der Helfer für die Sprecheranalyse ist älter als Überlappungsbereiche oder Sprecherwechsel
 
 journal.cli.transcribe.stage.owner.not.deleted = Original nur mit Stimme jetzt nicht gelöscht: { $outcome }
 
