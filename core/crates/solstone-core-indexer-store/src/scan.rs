@@ -94,6 +94,10 @@ pub struct ScanReport {
     /// A light scan found a large difference while a full pass is working
     /// through it, so it left the difference to that pass.
     pub deferred_to_full: bool,
+    /// The days this pass found indexed and gone from disk.
+    pub gone_days: GoneDays,
+    /// A light pass kept the rows of gone days because too many went at once.
+    pub retained_prune_guarded: bool,
 }
 
 /// What a light scan says when it leaves a large difference to a full pass.
@@ -171,7 +175,7 @@ fn discovered_days(files: &BTreeMap<String, PathBuf>) -> HashSet<&str> {
 fn removal_candidates(
     stored: &BTreeMap<String, i64>,
     files: &BTreeMap<String, PathBuf>,
-    full: bool,
+    prune_gone_days: bool,
 ) -> (Vec<String>, BTreeMap<String, usize>) {
     let discovered = files.keys().collect::<BTreeSet<_>>();
     let days = discovered_days(files);
@@ -181,13 +185,51 @@ fn removal_candidates(
         if discovered.contains(rel) {
             continue;
         }
-        if full || day_of(rel).is_none_or(|day| days.contains(day)) {
+        if prune_gone_days || day_of(rel).is_none_or(|day| days.contains(day)) {
             removed.push(rel.clone());
         } else if let Some(day) = day_of(rel) {
             *retained_days.entry(day.to_string()).or_default() += 1;
         }
     }
     (removed, retained_days)
+}
+
+/// The days the index holds rows for, and how many of them discovery no
+/// longer finds, as one pass saw them.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct GoneDays {
+    /// Days with a search or connections row.
+    pub indexed: usize,
+    /// Of those, days with no file left on disk.
+    pub gone: usize,
+}
+
+impl GoneDays {
+    pub(crate) fn measure<'a>(
+        stored: impl IntoIterator<Item = &'a str>,
+        discovered: impl Fn(&str) -> bool,
+    ) -> Self {
+        let indexed = stored
+            .into_iter()
+            .filter_map(day_of)
+            .collect::<BTreeSet<_>>();
+        Self {
+            indexed: indexed.len(),
+            gone: indexed.iter().filter(|&&day| !discovered(day)).count(),
+        }
+    }
+
+    /// Whether a light pass keeps the rows of gone days instead of removing
+    /// them. Every indexed day gone (the chronicle missing, unmounted or
+    /// emptied), or a quarter or more of them gone at once, reads as a disk
+    /// that went away rather than days the owner removed, so nothing is
+    /// pruned. A single gone day is never that, so a small journal can lose a
+    /// day: it takes two, and a quarter of the days indexed.
+    #[must_use]
+    pub fn guarded(self) -> bool {
+        self.gone > 0
+            && (self.gone == self.indexed || (self.gone >= 2 && self.gone * 4 >= self.indexed))
+    }
 }
 
 fn retained_day_warning(day: &str, count: usize) -> solstone_core_cli_copy::MessageDetail {
@@ -569,7 +611,7 @@ fn record_failed_scan(
     if locked || matches!(error, StoreError::IndexGenerationNewer { .. }) {
         return;
     }
-    let receipt = ScanReceipt {
+    let mut receipt = ScanReceipt {
         finished_at_ms: now_ms(),
         full,
         error: Some(error.to_string()),
@@ -581,6 +623,13 @@ fn record_failed_scan(
         .and_then(|mut conn| {
             conn.execute_batch("PRAGMA busy_timeout=5000;")?;
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            // A pass that stopped found nothing out about gone days: what the
+            // last one found stands.
+            if let Ok(Some(last)) = crate::generation::read_last_scan(&tx) {
+                receipt.retained_prune_guarded = last.retained_prune_guarded;
+                receipt.gone_days = last.gone_days;
+                receipt.indexed_days = last.indexed_days;
+            }
             crate::generation::record_scan_with_detail(&tx, &receipt, Some(&error.diagnostic()))?;
             if let Err(cause) = checkpoint() {
                 drop(tx);
@@ -719,7 +768,28 @@ fn scan_journal_pass(
         return Ok(report);
     }
 
-    let (removed, retained_days) = removal_candidates(&db_mtimes, &files, full);
+    // A light pass removes the rows of days that are gone, as a full one does,
+    // unless so many went at once that the disk is the likelier cause.
+    let edge_mtimes = edge_file_mtimes(&conn)?;
+    let discovered = discovered_days(&files);
+    report.gone_days = GoneDays::measure(
+        db_mtimes
+            .keys()
+            .chain(edge_mtimes.keys())
+            .map(String::as_str),
+        |day| discovered.contains(day),
+    );
+    report.retained_prune_guarded = !full && report.gone_days.guarded();
+    let prune_gone_days = !report.retained_prune_guarded;
+    if report.retained_prune_guarded {
+        log::warn!(
+            target: "solstone::indexer",
+            "{} of {} indexed day(s) are gone from disk at once; their rows are kept until the days return or a full rescan",
+            report.gone_days.gone,
+            report.gone_days.indexed
+        );
+    }
+    let (removed, retained_days) = removal_candidates(&db_mtimes, &files, prune_gone_days);
     let mut pending_chunks = PendingChunkRows::new(
         to_index
             .iter()
@@ -891,8 +961,13 @@ fn scan_journal_pass(
         &mut conn, journal, checkpoint,
     )?);
 
-    let edge_report =
-        reconcile_and_queue_edges(&mut conn, journal, full, hand_off_edges, checkpoint)?;
+    let edge_report = reconcile_and_queue_edges(
+        &mut conn,
+        journal,
+        prune_gone_days,
+        hand_off_edges,
+        checkpoint,
+    )?;
     report.edges_indexed = edge_report.indexed;
     report.edges_removed = edge_report.removed;
     report.edge_rows_inserted = edge_report.rows_inserted;
@@ -957,6 +1032,9 @@ fn record_scan_receipt(
             failures: report.failures.clone(),
             error: None,
             writer_version: WRITER_VERSION.to_owned(),
+            retained_prune_guarded: report.retained_prune_guarded,
+            gone_days: report.gone_days.gone,
+            indexed_days: report.gone_days.indexed,
         },
     )?;
     if let Err(cause) = checkpoint() {
@@ -1683,14 +1761,17 @@ fn reconcile_edges(
     reconcile_and_queue_edges(conn, journal, full, false, checkpoint)
 }
 
+/// `prune_gone_days` removes the rows of days discovery found nothing for, as
+/// a full pass does; without it they are kept.
 fn reconcile_and_queue_edges(
     conn: &mut Connection,
     journal: &Path,
-    full: bool,
+    prune_gone_days: bool,
     hand_off_edges: bool,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<EdgeScanReport, StoreError> {
-    let report = reconcile_edges_handing_off(conn, journal, full, hand_off_edges, checkpoint)?;
+    let report =
+        reconcile_edges_handing_off(conn, journal, prune_gone_days, hand_off_edges, checkpoint)?;
     if report.remaining > 0
         && let Err(error) = solstone_core_indexer_todo::enqueue_token(
             journal,
@@ -1716,7 +1797,7 @@ fn reconcile_edges_with(
 fn reconcile_edges_handing_off(
     conn: &mut Connection,
     journal: &Path,
-    full: bool,
+    prune_gone_days: bool,
     hand_off_edges: bool,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<EdgeScanReport, StoreError> {
@@ -1825,7 +1906,7 @@ fn reconcile_edges_handing_off(
     });
 
     report.failures.extend(unreadable);
-    let (removed, retained_days) = removal_candidates(&db_mtimes, &files, full);
+    let (removed, retained_days) = removal_candidates(&db_mtimes, &files, prune_gone_days);
     report.retained = retained_days.values().sum::<usize>();
     report.warnings.extend(
         retained_days
@@ -6336,6 +6417,217 @@ mod tests {
         let full = scan_journal(&root, true).expect("full removal scan");
         assert_eq!(full.removed, 1);
         fs::remove_dir_all(root).expect("cleanup undiscoverable day root");
+    }
+
+    /// A journal of `count` indexed days, one note each, and the days.
+    fn indexed_days(name: &str, count: usize) -> (PathBuf, Vec<String>) {
+        let root = temp_root(name);
+        let days = (1..=count)
+            .map(|day| format!("202607{day:02}"))
+            .collect::<Vec<_>>();
+        for day in &days {
+            write(
+                &root,
+                &format!("chronicle/{day}/talents/flow.md"),
+                &format!("# Flow\n\n{day}"),
+            );
+        }
+        scan_journal(&root, true).expect("full populate");
+        (root, days)
+    }
+
+    /// A connection row filed under a source on `day`.
+    fn seed_day_edge(root: &Path, day: &str) {
+        let rel = format!("{day}/default/090000_300/talents/speaker_labels.json");
+        let conn = Connection::open(db_path(root)).expect("open db");
+        conn.execute(
+            "INSERT INTO edges(src, dst, kind, directed, source, path, weight) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params!["alice", "bob", "spoke-with", 0_i64, "speaker-labels", rel, 1_i64],
+        )
+        .expect("seed edge");
+        conn.execute(
+            "REPLACE INTO edge_files(path, mtime) VALUES (?, ?)",
+            params![rel, 1_i64],
+        )
+        .expect("seed edge file");
+    }
+
+    /// Search files, chunks, connection files and connections filed under `day`.
+    fn day_rows(root: &Path, day: &str) -> [i64; 4] {
+        let conn = Connection::open(db_path(root)).expect("open db");
+        let like = format!("{day}/%");
+        ["files", "chunks", "edge_files", "edges"].map(|table| {
+            conn.query_row(
+                &format!("SELECT count(*) FROM {table} WHERE path LIKE ?"),
+                [&like],
+                |row| row.get(0),
+            )
+            .expect("count day rows")
+        })
+    }
+
+    fn retained_warning(report: &ScanReport) -> bool {
+        report
+            .warnings
+            .iter()
+            .any(|warning| warning.to_string().starts_with("light scan retained"))
+    }
+
+    #[test]
+    fn gone_days_are_guarded_from_two_and_a_quarter_or_all_of_them() {
+        let guarded = |indexed, gone| GoneDays { indexed, gone }.guarded();
+        assert!(!guarded(0, 0));
+        assert!(!guarded(8, 0));
+        // A single day is never a disk going away, unless it was the only one.
+        assert!(!guarded(2, 1));
+        assert!(!guarded(4, 1));
+        assert!(guarded(1, 1));
+        assert!(guarded(8, 2));
+        assert!(!guarded(9, 2));
+        assert!(guarded(3, 2));
+        assert!(guarded(40, 10));
+        assert!(!guarded(40, 9));
+    }
+
+    #[test]
+    fn one_day_gone_out_of_many_has_its_search_and_connection_rows_pruned_by_a_light_scan() {
+        let (root, days) = indexed_days("prune-one-day", 8);
+        seed_day_edge(&root, &days[0]);
+        fs::remove_dir_all(root.join("chronicle").join(&days[0])).expect("remove a day");
+
+        let report = scan_journal(&root, false).expect("light scan");
+        assert!(!report.retained_prune_guarded);
+        assert_eq!(
+            report.gone_days,
+            GoneDays {
+                indexed: 8,
+                gone: 1
+            }
+        );
+        assert_eq!((report.removed, report.edges_removed), (1, 1));
+        assert!(!retained_warning(&report), "{:?}", report.warnings);
+        assert_eq!(day_rows(&root, &days[0]), [0, 0, 0, 0]);
+        assert_eq!(day_rows(&root, &days[1])[0], 1);
+
+        let status = crate::status::inspect_index(&root).expect("status");
+        assert!(status.retained.is_empty() && status.orphaned.is_empty());
+        let receipt = status.last_scan.expect("receipt");
+        assert!(!receipt.retained_prune_guarded);
+        assert_eq!((receipt.gone_days, receipt.indexed_days), (1, 8));
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn a_quarter_of_the_days_gone_at_once_prunes_nothing_until_they_come_back() {
+        let (root, days) = indexed_days("prune-guarded", 8);
+        seed_day_edge(&root, &days[0]);
+        let saved = fs::read(root.join(format!("chronicle/{}/talents/flow.md", days[1])))
+            .expect("read a note");
+        for day in &days[..2] {
+            fs::remove_dir_all(root.join("chronicle").join(day)).expect("remove a day");
+        }
+
+        let report = scan_journal(&root, false).expect("guarded light scan");
+        assert!(report.retained_prune_guarded);
+        assert_eq!(
+            report.gone_days,
+            GoneDays {
+                indexed: 8,
+                gone: 2
+            }
+        );
+        assert_eq!((report.removed, report.edges_removed), (0, 0));
+        assert!(retained_warning(&report), "{:?}", report.warnings);
+        let [files, chunks, edge_files, edges] = day_rows(&root, &days[0]);
+        assert!(files == 1 && chunks > 0 && edge_files == 1 && edges == 1);
+        let [files, chunks, ..] = day_rows(&root, &days[1]);
+        assert!(files == 1 && chunks > 0);
+
+        let status = crate::status::inspect_index(&root).expect("status");
+        assert_eq!(status.retained.len(), 2);
+        assert!(status.orphaned.is_empty());
+        let json = status.to_json_value();
+        assert_eq!(json["last_scan"]["retained_prune_guarded"], true);
+        assert_eq!(json["last_scan"]["gone_days"], 2);
+        assert_eq!(json["last_scan"]["indexed_days"], 8);
+
+        // Asking again changes nothing while the days stay away.
+        let again = scan_journal(&root, false).expect("guarded again");
+        assert!(again.retained_prune_guarded);
+        assert_eq!(day_rows(&root, &days[0])[0], 1);
+
+        // One day comes back: one gone of eight is the owner's, so the next
+        // light scan prunes it and clears the signal.
+        write(
+            &root,
+            &format!("chronicle/{}/talents/flow.md", days[1]),
+            std::str::from_utf8(&saved).expect("utf-8 note"),
+        );
+        let report = scan_journal(&root, false).expect("light scan after a day came back");
+        assert!(!report.retained_prune_guarded);
+        assert_eq!(
+            report.gone_days,
+            GoneDays {
+                indexed: 8,
+                gone: 1
+            }
+        );
+        assert_eq!(day_rows(&root, &days[0]), [0, 0, 0, 0]);
+        assert_eq!(day_rows(&root, &days[1])[0], 1);
+        let status = crate::status::inspect_index(&root).expect("status after");
+        assert!(status.retained.is_empty());
+        assert!(!status.last_scan.expect("receipt").retained_prune_guarded);
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn a_small_journal_loses_a_day_but_a_missing_chronicle_keeps_every_row() {
+        let (root, days) = indexed_days("prune-small", 2);
+        fs::remove_dir_all(root.join("chronicle").join(&days[0])).expect("remove a day");
+        let report = scan_journal(&root, false).expect("light scan");
+        assert!(!report.retained_prune_guarded);
+        assert_eq!(report.removed, 1);
+
+        fs::remove_dir_all(root.join("chronicle")).expect("remove the chronicle");
+        let report = scan_journal(&root, false).expect("light scan without a chronicle");
+        assert!(report.retained_prune_guarded);
+        assert_eq!(
+            report.gone_days,
+            GoneDays {
+                indexed: 1,
+                gone: 1
+            }
+        );
+        assert_eq!(report.removed, 0);
+        assert_eq!(day_rows(&root, &days[1])[0], 1);
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn a_pass_that_stops_keeps_the_last_guard_finding() {
+        let (root, days) = indexed_days("prune-stopped", 4);
+        for day in &days[..2] {
+            fs::remove_dir_all(root.join("chronicle").join(day)).expect("remove a day");
+        }
+        assert!(
+            scan_journal(&root, false)
+                .expect("guarded scan")
+                .retained_prune_guarded
+        );
+        record_failed_scan(
+            &root,
+            false,
+            &StoreError::Io(std::io::Error::other("stopped")),
+            &|| Ok(()),
+        );
+        let receipt = crate::status::inspect_index(&root)
+            .expect("status")
+            .last_scan
+            .expect("receipt");
+        assert!(receipt.error.is_some());
+        assert!(receipt.retained_prune_guarded);
+        assert_eq!((receipt.gone_days, receipt.indexed_days), (2, 4));
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]

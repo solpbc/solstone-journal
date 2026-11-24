@@ -272,6 +272,14 @@ pub struct ScanReceipt {
     /// Why the scan stopped, when it did not finish.
     pub error: Option<String>,
     pub writer_version: String,
+    /// A light pass found too many indexed days gone at once and kept their
+    /// rows. The next pass that finds fewer gone prunes them and clears this;
+    /// a pass that stops keeps the last one's finding.
+    pub retained_prune_guarded: bool,
+    /// Indexed days with no file left on disk, as the pass counted them.
+    pub gone_days: usize,
+    /// Days the index held rows for, as the pass counted them.
+    pub indexed_days: usize,
 }
 
 /// The most failed paths one receipt names; the count is always exact.
@@ -308,6 +316,9 @@ pub(crate) fn record_scan_with_detail(
             .collect::<Vec<_>>(),
         "error": receipt.error,
         "writer_version": receipt.writer_version,
+        "retained_prune_guarded": receipt.retained_prune_guarded,
+        "gone_days": receipt.gone_days,
+        "indexed_days": receipt.indexed_days,
     });
     if let Some((code, args)) =
         detail.and_then(solstone_core_cli_copy::MessageDetail::catalog_fields)
@@ -435,6 +446,9 @@ fn read_receipt(
             .unwrap_or_default(),
         error: receipt_error(&value, locale),
         writer_version: value["writer_version"].as_str().unwrap_or("").to_owned(),
+        retained_prune_guarded: value["retained_prune_guarded"].as_bool().unwrap_or(false),
+        gone_days: count("gone_days"),
+        indexed_days: count("indexed_days"),
     }))
 }
 

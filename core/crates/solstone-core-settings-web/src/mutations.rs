@@ -341,6 +341,32 @@ async fn identity_timezone_accepts_real_zones_and_refuses_the_rest() {
     assert_eq!(after["identity"]["timezone"], "");
 }
 
+#[tokio::test]
+async fn a_zone_change_queues_a_search_pass_and_other_identity_edits_do_not() {
+    use solstone_core_indexer_store::todo::{Token, listed_attempts};
+    let root = crate::test_support::phase_root("rich");
+    let queued = || listed_attempts(root.path(), Token::ScanFull).unwrap();
+    assert_eq!(queued(), None);
+    let (status, _) = request(
+        crate::test_support::shell_router(root.path()),
+        "POST",
+        "/app/settings/api/config",
+        Some(&json!({"section":"identity","data":{"bio":"a different bio"}})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(queued(), None);
+    let (status, _) = request(
+        crate::test_support::shell_router(root.path()),
+        "POST",
+        "/app/settings/api/config",
+        Some(&json!({"section":"identity","data":{"timezone":"Pacific/Chatham"}})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(queued(), Some(0));
+}
+
 fn fixture_tree_file<'a>(corpus: &'a Value, path: &str) -> &'a str {
     corpus["phases"]["populated"]["_journal_tree"]["files"][path]
         .as_str()

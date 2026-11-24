@@ -511,6 +511,11 @@ pub(crate) fn check_index_todo(
         return;
     }
     *last_scan = Some(tick);
+    // A missing index is built by a queued full pass, which this same check
+    // then finds due.
+    if let Err(error) = solstone_core_indexer_store::todo::queue_build_if_absent(journal) {
+        log::warn!(target: "solstone::indexer", "could not check for a missing search index: {error}");
+    }
     match solstone_core_indexer_store::todo::has_due(journal, now_ms) {
         Ok(true) if !queue.contains_reference("index-todo") => {
             submit_task(
@@ -1636,6 +1641,31 @@ mod tests {
             Duration::from_secs(30),
         );
         assert!(!delayed_state.queue.contains_reference("index-todo"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_missing_search_index_over_indexable_days_is_built_without_any_queued_save() {
+        let journal = TempDir::new().unwrap();
+        let state = queue_only_state(journal.path()).await;
+        let note = journal.path().join("chronicle/20260101/talents/flow.md");
+        fs::create_dir_all(note.parent().unwrap()).unwrap();
+        fs::write(&note, "# Flow\n\nthe kestrel came back").unwrap();
+        check_index_todo(
+            journal.path(),
+            &state.queue,
+            &mut None,
+            Instant::now(),
+            u64::MAX,
+            Duration::from_secs(30),
+        );
+        assert!(state.queue.contains_reference("index-todo"));
+        assert_eq!(
+            solstone_core_indexer_store::todo::inspect(journal.path())
+                .unwrap()
+                .keys,
+            [solstone_core_indexer_store::todo::Token::ScanFull.key()]
+        );
     }
 
     #[cfg(unix)]

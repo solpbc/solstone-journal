@@ -16,8 +16,8 @@
 //! rebuild yields the same listing.
 //!
 //! Timed events are listed in the journal's time zone as it is when they are
-//! indexed. If the owner changes the zone, timed events keep their old days
-//! until the search index is rebuilt.
+//! indexed. When the zone changes, the next scan lists every calendar file
+//! again (`reindex_calendar_if_owner_changed`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -696,7 +696,7 @@ fn refresh_recorded(
 }
 
 /// The `index_meta` key holding the owner's addresses calendar text was
-/// written with.
+/// written with, and the zone timed events were listed in.
 const OWNER_ADDRESSES_META: &str = "calendar_owner_addresses";
 
 /// Which rule for finding the owner the calendar text was written with,
@@ -705,18 +705,23 @@ const OWNER_ADDRESSES_META: &str = "calendar_owner_addresses";
 const OWNER_RULE: &str = "2";
 
 /// Which attendee is "you" in calendar text, and who is left off an event's
-/// people, follows the owner's addresses. When they or the rule differ from
-/// the ones the index was written with, or the index predates this mark, every calendar
+/// people, follows the owner's addresses; the days timed events are listed on
+/// follow the owner's zone. When either or the rule differ from the ones the
+/// index was written with, or the index predates this mark, every calendar
 /// file is left for this scan to index again, and the mark moves on. An
 /// unreadable settings file leaves everything as it is.
 pub(crate) fn reindex_calendar_if_owner_changed(
     conn: &Connection,
     journal: &Path,
 ) -> Result<bool, StoreError> {
-    let Ok(owner) = owner_addresses(journal) else {
+    let (Ok(owner), Ok(zone)) = (owner_addresses(journal), listing_zone(journal)) else {
         return Ok(false);
     };
-    let stamp = format!("{OWNER_RULE}\n{}", owner.stamp());
+    let stamp = format!(
+        "{OWNER_RULE}\n{}\nzone:{}",
+        owner.stamp(),
+        zone.iana_name().unwrap_or_default()
+    );
     let written: Option<String> = conn
         .query_row(
             "SELECT value FROM index_meta WHERE key=?",

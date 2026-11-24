@@ -169,6 +169,44 @@ fn chunks(journal: &Path, path: &str) -> Vec<String> {
 }
 
 #[test]
+fn a_missing_index_queues_the_full_pass_that_builds_it() {
+    let journal = Journal::new();
+    // Nothing to index: nothing is queued and no index is made.
+    assert!(!queue_build_if_absent(journal.path()).unwrap());
+    assert!(listed(journal.path()).is_empty());
+    journal.save(NOTE, "the kestrel came back");
+    journal.save(
+        "20260102/desktop/120000_300/talents/activity.md",
+        "a second day",
+    );
+    assert!(queue_build_if_absent(journal.path()).unwrap());
+    assert_eq!(
+        inspect(journal.path()).unwrap().keys,
+        [Token::ScanFull.key()]
+    );
+    // Listed once, however often it is asked.
+    assert!(!queue_build_if_absent(journal.path()).unwrap());
+    assert_eq!(listed(journal.path()).len(), 1);
+    assert!(has_due(journal.path(), now_ms()).unwrap());
+
+    assert_eq!(drain_now(journal.path()).unwrap().failed, 0);
+    assert!(listed(journal.path()).is_empty());
+    assert!(!chunks(journal.path(), NOTE).is_empty());
+    assert!(
+        !chunks(
+            journal.path(),
+            "20260102/desktop/120000_300/talents/activity.md"
+        )
+        .is_empty()
+    );
+    assert!(!queue_build_if_absent(journal.path()).unwrap());
+
+    // Gone again, it is built again.
+    fs::remove_file(db_path(journal.path())).unwrap();
+    assert!(queue_build_if_absent(journal.path()).unwrap());
+}
+
+#[test]
 fn enqueue_does_not_wait_on_sqlite_and_resaves_preserve_retry_state() {
     let journal = Journal::new();
     let source = journal.save(NOTE, "a kestrel meeting");

@@ -720,6 +720,32 @@ fn with_no_zone_configured_timed_events_use_the_fallback_zone() {
 }
 
 #[test]
+fn a_zone_change_moves_timed_events_to_their_new_days_at_the_next_light_scan() {
+    let journal = Journal::new(Some("America/Denver"));
+    // 17:30 on the 27th in Denver, 08:30 on the 28th in Tokyo.
+    let evening = timed(
+        MEETING,
+        "added",
+        "2026-10-19T09:42:00-06:00",
+        "2026-10-27T23:30:00Z",
+        "2026-10-28T00:30:00Z",
+    );
+    journal.save("20261019", "094000_300", &[&evening]);
+    scan_journal(journal.path(), true).unwrap();
+    assert_eq!(journal.listed(MEETING), ["20261027"]);
+
+    fs::write(
+        journal.path().join("config/journal.json"),
+        json!({"identity": {"timezone": "Asia/Tokyo"}}).to_string(),
+    )
+    .unwrap();
+    scan_journal(journal.path(), false).unwrap();
+    assert_eq!(journal.listed(MEETING), ["20261028"]);
+    // The listing is current for the new zone: the next scan leaves it be.
+    assert!(!super::reindex_calendar_if_owner_changed(&journal.conn(), journal.path()).unwrap());
+}
+
+#[test]
 fn day_rules_buckets_and_the_366_day_bound_reach_the_listing() {
     let journal = Journal::new(Some("America/Denver"));
     let overnight = timed(

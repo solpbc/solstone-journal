@@ -827,6 +827,32 @@ fn process(
     }
 }
 
+/// Queue the full pass that builds the search index when its file is gone and
+/// the journal has something to index. Saves only queue their own paths, so
+/// without this nothing builds the rest before the daily check. Opens no
+/// index and takes no lease; the walk runs only while the file is absent and
+/// no full pass is listed. Returns whether it queued one.
+///
+/// # Errors
+///
+/// The index file can't be looked at, the journal can't be walked, or the
+/// pass can't be queued.
+pub fn queue_build_if_absent(journal: &Path) -> Result<bool, StoreError> {
+    match fs::symlink_metadata(crate::db::db_path(journal)) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Ok(_) => return Ok(false),
+        Err(error) => return Err(error.into()),
+    }
+    if listed_attempts(journal, Token::ScanFull)?.is_some()
+        || solstone_core_indexer::discovery::discover_indexable_files(journal)?.is_empty()
+    {
+        return Ok(false);
+    }
+    enqueue_token(journal, Token::ScanFull)?;
+    log::info!(target: "solstone::indexer", "search index is absent; queued a full pass to build it");
+    Ok(true)
+}
+
 /// How long an owner's trash change waits for the index writer before it
 /// leaves its paths to the queued drain.
 pub const REFRESH_NOW_WAIT: Duration = Duration::from_secs(3);

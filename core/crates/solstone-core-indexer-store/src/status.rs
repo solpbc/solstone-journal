@@ -73,8 +73,11 @@ pub struct IndexStatus {
     pub missing: BTreeSet<String>,
     /// Indexed, no longer on disk; the next scan removes these.
     pub orphaned: BTreeSet<String>,
-    /// Indexed, no longer on disk, on a day where nothing else was found. A
-    /// light scan keeps these rows, so only a full rescan removes them.
+    /// Indexed, no longer on disk, on a day where nothing else was found,
+    /// while so many indexed days are gone at once that a light scan keeps
+    /// their rows (see [`crate::scan::GoneDays::guarded`]). Only those days
+    /// returning, or a full rescan, removes them. Fewer gone days are
+    /// `orphaned`: the next scan removes them.
     pub retained: BTreeSet<String>,
     /// Named failed by the last scan receipt and unchanged since: discovered
     /// files at the modification time they failed at (or one that cannot be
@@ -143,6 +146,9 @@ impl IndexStatus {
                 "warnings": scan.warnings,
                 "error": scan.error,
                 "writer_version": scan.writer_version,
+                "retained_prune_guarded": scan.retained_prune_guarded,
+                "gone_days": scan.gone_days,
+                "indexed_days": scan.indexed_days,
             })
         });
         json!({
@@ -429,6 +435,7 @@ pub fn inspect_index_in(journal: &Path, locale: &str) -> Result<IndexStatus, Sto
     };
 
     let path = db_path(journal);
+    let mut edge_paths = Vec::new();
     let stored = if path.is_file() && !has_sqlite_header(&path) {
         // Opening a file that is not a database, even read-only, can leave
         // sidecars beside it; a status never does.
@@ -439,7 +446,7 @@ pub fn inspect_index_in(journal: &Path, locale: &str) -> Result<IndexStatus, Sto
         ));
         BTreeMap::new()
     } else if path.is_file() {
-        match read_index(&path, &mut status, locale) {
+        match read_index(&path, &mut status, locale, &mut edge_paths) {
             Ok(stored) => {
                 status.database = IndexDatabase::Present;
                 stored
@@ -503,17 +510,25 @@ pub fn inspect_index_in(journal: &Path, locale: &str) -> Result<IndexStatus, Sto
             None => status.ineligible += 1,
         }
     }
-    // The scan's own removal rule: a light scan removes an undiscovered row
-    // only when its day still has a discovered file.
+    // The scan's own removal rule: a light scan keeps an undiscovered row of
+    // a day with no discovered file only while too many days are gone at once.
     let days = files
         .keys()
         .filter_map(|rel| day_of(rel))
         .collect::<BTreeSet<_>>();
+    let guarded = crate::scan::GoneDays::measure(
+        stored
+            .keys()
+            .map(String::as_str)
+            .chain(edge_paths.iter().map(String::as_str)),
+        |day| days.contains(day),
+    )
+    .guarded();
     for rel in stored.keys() {
         if files.contains_key(rel) {
             continue;
         }
-        if day_of(rel).is_none_or(|day| days.contains(day)) {
+        if !guarded || day_of(rel).is_none_or(|day| days.contains(day)) {
             status.orphaned.insert(rel.clone());
         } else {
             status.retained.insert(rel.clone());
@@ -549,6 +564,7 @@ fn read_index(
     path: &Path,
     status: &mut IndexStatus,
     locale: &str,
+    edge_paths: &mut Vec<String>,
 ) -> Result<BTreeMap<String, i64>, StoreError> {
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=5000;")?;
@@ -571,6 +587,13 @@ fn read_index(
         Some(backfill) if backfill.completed => ClassificationProgress::Complete,
         Some(_) => ClassificationProgress::Incomplete,
     };
+    if crate::db::sqlite_table_exists(&conn, "edge_files")? {
+        let mut statement =
+            conn.prepare("SELECT path FROM edge_files WHERE path NOT LIKE 'edges:%'")?;
+        *edge_paths = statement
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+    }
     if !crate::db::sqlite_table_exists(&conn, "files")? {
         return Ok(BTreeMap::new());
     }
@@ -702,10 +725,11 @@ mod tests {
         .expect("make the row older than the file");
         drop(row);
 
-        // A removed day: a light scan keeps its rows. A file the scan could not
-        // index: named by the receipt. A row whose file is no longer indexable.
+        // A removed day: one gone of two is not a disk going away, so a light
+        // scan removes its rows. A file the scan could not index: named by the
+        // receipt. A row whose file is no longer indexable.
         fs::remove_file(journal.0.join("chronicle/20260718/talents/solo.md")).expect("remove");
-        scan_journal(&journal.0, false).expect("light scan keeps the day's rows");
+        scan_journal(&journal.0, false).expect("light scan removes the day's rows");
         journal.write(
             "chronicle/20260717/default/090000_300/talents/shape.json",
             "not json",
@@ -719,10 +743,7 @@ mod tests {
         drop(conn);
 
         let status = inspect_index(&journal.0).expect("status");
-        assert_eq!(
-            status.retained.iter().collect::<Vec<_>>(),
-            ["20260718/talents/solo.md"]
-        );
+        assert!(status.retained.is_empty());
         assert!(status.orphaned.is_empty());
         assert_eq!(
             status.failed.iter().collect::<Vec<_>>(),

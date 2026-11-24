@@ -476,6 +476,16 @@ pub async fn update(
     {
         return settings_operation_failed(locale);
     }
+    // Calendar days and connection times follow the zone: a full pass brings
+    // them current now rather than at the daily check.
+    if changed_fields.contains_key("timezone")
+        && let Err(error) = solstone_core_indexer_store::todo::enqueue_token(
+            &journal_root,
+            solstone_core_indexer_store::todo::Token::ScanFull,
+        )
+    {
+        log::warn!(target: "solstone::indexer", "search pass after a zone change not queued: {error}");
+    }
     if !changed_fields.is_empty() {
         let owner_voice_enabled = changed_fields
             .get("owner_voice_only")
