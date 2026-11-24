@@ -1,13 +1,53 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::HashSet;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use axum::extract::multipart::{Field, MultipartError};
 use axum::http::StatusCode;
 use tempfile::{NamedTempFile, TempPath};
 use tokio::io::AsyncWriteExt;
+
+fn active_save_paths() -> &'static Mutex<HashSet<PathBuf>> {
+    static ACTIVE: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+    ACTIVE.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+#[derive(Debug)]
+pub(crate) struct ActiveSaveGuard {
+    path: PathBuf,
+}
+
+impl Drop for ActiveSaveGuard {
+    fn drop(&mut self) {
+        let mut guard = match active_save_paths().lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        guard.remove(&self.path);
+    }
+}
+
+pub(crate) fn register_active_save_path(path: &Path) -> ActiveSaveGuard {
+    let owned = path.to_path_buf();
+    let mut guard = match active_save_paths().lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    guard.insert(owned.clone());
+    ActiveSaveGuard { path: owned }
+}
+
+pub(crate) fn is_active_save_path(path: &Path) -> bool {
+    let guard = match active_save_paths().lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    guard.contains(path)
+}
 
 #[derive(Debug)]
 pub(crate) enum SaveStreamError {
@@ -21,6 +61,7 @@ pub(crate) enum SaveStreamError {
 pub(crate) struct CountedTemp {
     bytes: u64,
     temp: TempPath,
+    active: ActiveSaveGuard,
 }
 
 impl CountedTemp {
@@ -32,8 +73,10 @@ impl CountedTemp {
         self.bytes
     }
 
-    pub(crate) fn keep(self) -> io::Result<PathBuf> {
-        self.temp.keep().map_err(io::Error::from)
+    pub(crate) fn keep(self) -> io::Result<(PathBuf, ActiveSaveGuard)> {
+        let Self { temp, active, .. } = self;
+        let path = temp.keep().map_err(io::Error::from)?;
+        Ok((path, active))
     }
 }
 
@@ -48,6 +91,7 @@ pub(crate) async fn stream_field(
 ) -> Result<CountedTemp, SaveStreamError> {
     let temporary = NamedTempFile::new_in(directory).map_err(SaveStreamError::Io)?;
     let (std_file, temp) = temporary.into_parts();
+    let active = register_active_save_path(&temp);
     let mut file = tokio::fs::File::from_std(std_file);
     let mut written = 0_u64;
     let result = async {
@@ -67,11 +111,16 @@ pub(crate) async fn stream_field(
     match result {
         Ok(bytes) => {
             drop(file);
-            Ok(CountedTemp { bytes, temp })
+            Ok(CountedTemp {
+                bytes,
+                temp,
+                active,
+            })
         }
         Err(error) => {
             drop(file);
             drop(temp);
+            drop(active);
             Err(error)
         }
     }

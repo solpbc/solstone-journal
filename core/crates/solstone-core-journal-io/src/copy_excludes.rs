@@ -82,6 +82,9 @@ pub const COPY_EXCLUDES: &[&str] = &[
     "imports/.oura-run/scan",
     "imports/.oura-run/placed",
     "imports/.oura-run/pages",
+    // Uncommitted upload staging is rebuilt or resumed from the sending device.
+    "imports/.save-tmp",
+    "imports/.uploads",
 ];
 
 /// Whether a slash-separated journal-relative path is operational copy state.
@@ -200,6 +203,19 @@ mod tests {
         assert!(!copy_excluded("imports/.oura-zone.json"));
         assert!(!copy_excluded("imports/.oura-coverage.json"));
         assert!(!copy_excluded("imports/oura.json"));
+    }
+
+    #[test]
+    fn uncommitted_import_upload_staging_is_left_out_and_committed_imports_stay() {
+        assert!(copy_excluded("imports/.save-tmp/.tmp12345"));
+        assert!(copy_excluded(
+            "imports/.uploads/550e8400-e29b-41d4-a716-446655440000/payload.part"
+        ));
+        assert!(copy_excluded(
+            "imports/.uploads/550e8400-e29b-41d4-a716-446655440000/meta.json"
+        ));
+        assert!(!copy_excluded("imports/20261124_120000/import.json"));
+        assert!(!copy_excluded("imports/20261124_120000/export.zip"));
     }
 
     #[test]

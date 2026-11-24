@@ -34,6 +34,7 @@ mod preview;
 mod progress;
 mod save_stream;
 pub(crate) mod start_lock;
+pub mod uploads;
 
 pub use embedded_route::{
     CapturedImport, ImportAdmission, ImportRouteRequest, ImportRouteSlot, RetainedImportRoute,
@@ -63,6 +64,7 @@ pub fn routes_with_embedded(journal_root: PathBuf, route: Arc<ImportRouteSlot>) 
 }
 
 fn router(journal_root: PathBuf, route: Option<Arc<ImportRouteSlot>>) -> Router {
+    uploads::sweep_startup_once(&journal_root);
     lifecycle::sweep_abandoned_strava_uploads(&journal_root);
     solstone_core_facets::queue_body_entries_once(&journal_root);
     Router::new()
@@ -91,6 +93,18 @@ fn router(journal_root: PathBuf, route: Option<Arc<ImportRouteSlot>>) -> Router 
                 solstone_core_convey_http::serve::REQUEST_BODY_LIMIT,
             )),
         )
+        .route(
+            uploads::UPLOAD_COLLECTION_PATH,
+            get(uploads::list_active).post(uploads::create),
+        )
+        .route(
+            uploads::UPLOAD_ITEM_PATH,
+            get(uploads::status)
+                .put(uploads::put_chunk)
+                .delete(uploads::abort)
+                .layer(DefaultBodyLimit::max(uploads::BRIDGE_DRAIN_CEILING_BYTES)),
+        )
+        .route(uploads::UPLOAD_COMMIT_PATH, post(uploads::commit))
         .route("/app/import/api/save-path", post(lifecycle::save_path))
         .route("/app/import/api/meta", post(lifecycle::meta))
         .route(

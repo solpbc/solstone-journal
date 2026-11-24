@@ -222,6 +222,7 @@ pub(crate) mod tests {
                     // Add that intentional field while retaining strict equality
                     // for every recorded field and all other response shapes.
                     if path == "/app/import/api/list" && matches!(phase, "empty" | "populated") {
+                        expected["active_uploads"] = json!([]);
                         expected["source_options"] = if phase == "populated" {
                             json!(["chatgpt"])
                         } else {
@@ -258,6 +259,13 @@ pub(crate) mod tests {
                                 )
                             );
                         }
+                    }
+                    if path == "/app/import/api/sources" && expected.get("items").is_some() {
+                        expected["resumable"] = json!({
+                            "threshold_bytes": crate::uploads::RESUMABLE_THRESHOLD_BYTES,
+                            "chunk_bytes": crate::uploads::RESUMABLE_CHUNK_BYTES,
+                            "max_file_bytes": crate::uploads::MAX_UPLOAD_FILE_BYTES,
+                        });
                     }
                     serde_json::from_slice::<Value>(&actual_body)
                         .map(|value| {
@@ -381,8 +389,18 @@ pub(crate) mod tests {
             .iter()
             .find(|case| case["path"] == "/app/import/api/sources")
             .unwrap();
-        // The platform's too-large words aren't in the recording (see ac4).
+        // The platform's too-large words and resumable upload limits aren't in
+        // the frozen recording (see ac4).
+        assert_eq!(
+            body["resumable"],
+            json!({
+                "threshold_bytes": crate::uploads::RESUMABLE_THRESHOLD_BYTES,
+                "chunk_bytes": crate::uploads::RESUMABLE_CHUNK_BYTES,
+                "max_file_bytes": crate::uploads::MAX_UPLOAD_FILE_BYTES,
+            })
+        );
         let mut recorded_shape = body.clone();
+        recorded_shape.as_object_mut().unwrap().remove("resumable");
         for item in recorded_shape["items"].as_array_mut().unwrap() {
             item.as_object_mut().unwrap().remove("too_big_words");
         }

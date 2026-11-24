@@ -16,6 +16,7 @@ use solstone_core_home::readers::get_capture_health;
 const CAPABILITIES: &[&str] = &[
     "calendar_notes",
     "obsidian_notes",
+    "resumable_import_uploads",
     "screenshots",
     "shared_sources",
 ];
@@ -870,7 +871,12 @@ mod tests {
         ] {
             let body = status_body(version.clone(), capture.clone(), Some("1".into()));
             let capabilities = body["capabilities"].as_array().unwrap();
-            for capability in ["calendar_notes", "obsidian_notes", "screenshots"] {
+            for capability in [
+                "calendar_notes",
+                "obsidian_notes",
+                "resumable_import_uploads",
+                "screenshots",
+            ] {
                 assert!(capabilities.iter().any(|value| value == capability));
             }
             assert_eq!(body["version"], version);

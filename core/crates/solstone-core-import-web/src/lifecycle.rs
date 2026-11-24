@@ -40,7 +40,7 @@ use crate::{
     multipart, save_stream,
 };
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock after epoch")
@@ -58,10 +58,10 @@ fn deterministic_timestamp(path: &Path, filename: &str, zone: &TimeZone) -> Opti
         .map(|ts| ts.as_str().to_owned())
 }
 
-const HEIC_REFUSAL_MESSAGE: &str =
+pub(crate) const HEIC_REFUSAL_MESSAGE: &str =
     "journal.window.import.response.error.your.journal.can.t.open.heic";
 
-fn is_heic_upload(filename: &str, content_type: Option<&str>) -> bool {
+pub(crate) fn is_heic_upload(filename: &str, content_type: Option<&str>) -> bool {
     let ext_heic = Path::new(filename)
         .extension()
         .and_then(|value| value.to_str())
@@ -156,7 +156,7 @@ fn clean_optional(value: Option<&Value>) -> Option<String> {
 /// The stored importer source hint. Earlier builds stored an absent hint as the literal
 /// string "null", which names no importer source, so it reads as absent too.
 /// The import card that brings in a Strava download.
-const STRAVA_SOURCE: &str = "strava";
+pub(crate) const STRAVA_SOURCE: &str = "strava";
 /// The import card that brings in an Apple Health export.
 pub(crate) const APPLE_SOURCE: &str = "apple_health";
 
@@ -280,6 +280,7 @@ pub(crate) fn maybe_sweep_abandoned_uploads(root: &Path) {
     };
     if should_run {
         sweep_abandoned_strava_uploads(root);
+        crate::uploads::sweep_expired_uploads(root);
     }
 }
 
@@ -547,12 +548,21 @@ fn source_for(filename: &str, content_type: Option<&str>) -> &'static str {
     source.as_wire()
 }
 
-fn safe_filename(filename: &str) -> Option<String> {
+pub(crate) fn safe_filename(filename: &str) -> Option<String> {
     Path::new(filename)
         .file_name()
         .and_then(|value| value.to_str())
         .filter(|value| !value.is_empty() && *value != "." && *value != "..")
         .map(ToOwned::to_owned)
+}
+
+pub(crate) fn allowlisted_device_noun(raw: Option<&str>) -> Option<String> {
+    let trimmed = raw?.trim();
+    matches!(
+        trimmed,
+        "iphone" | "ipad" | "phone" | "mac" | "PC" | "computer" | "browser"
+    )
+    .then(|| trimmed.to_owned())
 }
 
 fn failure(
@@ -692,7 +702,7 @@ fn manifest_exists(root: &Path, hash: &SourceHash) -> bool {
     imported_manifest(root, hash).is_some()
 }
 
-fn imported_manifest(root: &Path, hash: &SourceHash) -> Option<ManifestMatch> {
+pub(crate) fn imported_manifest(root: &Path, hash: &SourceHash) -> Option<ManifestMatch> {
     find_manifest_by_hash_where(root, hash, |found| {
         !is_failed_original_import(root, found)
             && !solstone_core_import::import_trash::reimport_brings_back(root, &found.path)
@@ -847,7 +857,7 @@ pub(crate) fn replay_summary(metadata: &ImportMetadata) -> Value {
     result
 }
 
-fn staged_by_client_item(root: &Path, client_item_id: &str) -> Option<ImportMetadata> {
+pub(crate) fn staged_by_client_item(root: &Path, client_item_id: &str) -> Option<ImportMetadata> {
     std::fs::read_dir(root.join("imports"))
         .ok()?
         .flatten()
@@ -859,7 +869,10 @@ fn staged_by_client_item(root: &Path, client_item_id: &str) -> Option<ImportMeta
         })
 }
 
-fn staged_by_source_hash(root: &Path, source_hash: &SourceHash) -> Option<ImportMetadata> {
+pub(crate) fn staged_by_source_hash(
+    root: &Path,
+    source_hash: &SourceHash,
+) -> Option<ImportMetadata> {
     std::fs::read_dir(root.join("imports"))
         .ok()?
         .flatten()
@@ -928,13 +941,410 @@ fn payload_too_large(detail: impl Into<String>) -> Response {
     )
 }
 
-fn evernote_upload_refusal(data: &Value, bytes: Option<u64>) -> Option<&'static str> {
+pub(crate) fn evernote_upload_refusal(data: &Value, bytes: Option<u64>) -> Option<&'static str> {
     if text_value(data, "source_hint").trim() != "evernote" {
         return None;
     }
     let bytes = bytes?;
     solstone_core_import_sources::evernote::exceeds_export_ceiling(bytes)
         .then_some(solstone_core_import_sources::evernote::copy::TOO_BIG)
+}
+
+pub(crate) fn parse_and_validate_context(
+    raw: Option<&Value>,
+) -> Result<Option<Map<String, Value>>, &'static str> {
+    let context = match raw {
+        None | Some(Value::Null) => None,
+        Some(Value::String(encoded)) if encoded.trim().is_empty() => None,
+        Some(Value::String(encoded)) if encoded.len() <= 16 * 1024 => {
+            match serde_json::from_str::<Map<String, Value>>(encoded) {
+                Ok(fields) => Some(fields),
+                Err(_) => return Err("import context must be a JSON object"),
+            }
+        }
+        Some(Value::String(_)) => return Err("import context is too large"),
+        Some(Value::Object(fields)) => {
+            let encoded_len = serde_json::to_vec(fields)
+                .map(|bytes| bytes.len())
+                .unwrap_or(usize::MAX);
+            if encoded_len > 16 * 1024 {
+                return Err("import context is too large");
+            }
+            Some(fields.clone())
+        }
+        Some(_) => return Err("import context must be a JSON object"),
+    };
+    if let Some(context) = &context {
+        for key in ["setting", "timestamp", "notebook"] {
+            if context.get(key).is_some_and(|value| !value.is_string()) {
+                return Err("invalid import choice");
+            }
+        }
+        if let Some(timestamp) = context.get("timestamp").and_then(Value::as_str)
+            && validate_timestamp(timestamp).is_err()
+        {
+            return Err("invalid import date");
+        }
+        if let Some(facet) = context.get(solstone_core_import::BODY_FACET_METADATA)
+            && !crate::body_facet::valid_import_facet(facet)
+        {
+            return Err("that isn't a facet choice");
+        }
+    }
+    Ok(context)
+}
+
+pub(crate) enum VerifiedSourceFile {
+    SaveTemp(save_stream::CountedTemp),
+    UploadPart(PathBuf),
+}
+
+impl VerifiedSourceFile {
+    fn path(&self) -> &Path {
+        match self {
+            Self::SaveTemp(counted) => counted.path(),
+            Self::UploadPart(path) => path,
+        }
+    }
+}
+
+pub(crate) struct VerifiedFileStageInput {
+    pub(crate) filename: String,
+    pub(crate) original_filename: String,
+    pub(crate) mime_type: Option<String>,
+    pub(crate) file_size: u64,
+    pub(crate) source_hash: SourceHash,
+    pub(crate) source_file: VerifiedSourceFile,
+    pub(crate) client_item_id: String,
+    pub(crate) data: Value,
+    pub(crate) context: Option<Map<String, Value>>,
+}
+
+pub(crate) struct StagedCommitOutcome {
+    pub(crate) response: Response,
+    pub(crate) import_id: Option<String>,
+}
+
+/// Shared staging pipeline for both `/app/import/api/save` (`Incoming::File`) and
+/// `/app/import/api/uploads/{id}/commit`, ensuring identical deduplication,
+/// source detection, timestamp placement, and `import.json` creation.
+pub(crate) fn stage_verified_upload_file(
+    state: &AppState,
+    input: VerifiedFileStageInput,
+) -> StagedCommitOutcome {
+    let VerifiedFileStageInput {
+        filename,
+        original_filename,
+        mime_type,
+        file_size,
+        source_hash,
+        source_file,
+        client_item_id,
+        mut data,
+        context,
+    } = input;
+    if let Some(sentence) = evernote_upload_refusal(&data, Some(file_size)) {
+        return StagedCommitOutcome {
+            response: error(
+                StatusCode::BAD_REQUEST,
+                "journal.window.import.response.error.this.export.is.over.gb.in",
+                "evernote_export_too_big",
+                sentence.to_owned(),
+                None,
+            ),
+            import_id: None,
+        };
+    }
+    if is_heic_upload(&original_filename, mime_type.as_deref()) {
+        return StagedCommitOutcome {
+            response: failure(
+                ImportReasonCode::UnsupportedImageFormat,
+                HEIC_REFUSAL_MESSAGE,
+                solstone_core_convey_http::window_catalog::text(
+                    solstone_core_convey_http::window_catalog::ENGLISH,
+                    HEIC_REFUSAL_MESSAGE,
+                ),
+                None,
+            ),
+            import_id: None,
+        };
+    }
+    let source_path = source_file.path().to_path_buf();
+    let is_strava = solstone_core_import_sources::strava::looks_like_strava_download(
+        &source_path,
+        Some(&original_filename),
+    );
+    if is_strava && text_value(&data, "source_hint").trim().is_empty() {
+        data["source_hint"] = json!(STRAVA_SOURCE);
+    }
+    let strava_card = text_value(&data, "source_hint").trim() == STRAVA_SOURCE;
+    if is_strava && !strava_card {
+        return StagedCommitOutcome {
+            response: failure(
+                ImportReasonCode::StravaDownload,
+                "journal.window.import.response.error.this.looks.like.a.strava.download",
+                "this looks like a Strava download, so your journal didn't keep it. use the Strava card so only your workouts are read.",
+                None,
+            ),
+            import_id: None,
+        };
+    }
+    if let Some(existing) = staged_by_client_item(&state.root, &client_item_id) {
+        if existing.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str()) {
+            let existing_id = recorded_directory_id(&existing).as_str().map(str::to_owned);
+            return StagedCommitOutcome {
+                response: json_response(
+                    StatusCode::OK,
+                    resolved_summary(
+                        replay_summary(&existing),
+                        &source_path,
+                        Some(original_filename.as_str()),
+                        &solstone_core_journal_config::owner_zone(&state.root),
+                    ),
+                ),
+                import_id: existing_id,
+            };
+        }
+        return StagedCommitOutcome {
+            response: invalid_state(
+                "client_item_id already staged for different content; use a new client_item_id or re-fetch the existing item",
+                Some(ImportErrorKind::ClientItemConflict),
+            ),
+            import_id: None,
+        };
+    }
+    let apple_upload = text_value(&data, "source_hint").trim() == APPLE_SOURCE
+        || (text_value(&data, "source_hint").trim().is_empty()
+            && state.route.is_none()
+            && solstone_core_import_sources::apple_export::detect_apple_zip_any_name(&source_path));
+    if !strava_card
+        && !apple_upload
+        && let Some(found) = imported_manifest(&state.root, &source_hash)
+    {
+        let mut response = invalid_state_body(
+            "content already imported",
+            Some(ImportErrorKind::AlreadyImported),
+        );
+        if let Some(id) = found
+            .path
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .filter(|id| validate_timestamp(id).is_ok())
+        {
+            response["import_id"] = json!(id);
+        }
+        return StagedCommitOutcome {
+            response: crate::http::refusal(
+                StatusCode::BAD_REQUEST,
+                response,
+                "journal.window.import.response.error.that.action.isn.t.available.in",
+            ),
+            import_id: None,
+        };
+    }
+    if let Some(existing) = staged_by_source_hash(&state.root, &source_hash) {
+        let existing_id = recorded_directory_id(&existing).as_str().map(str::to_owned);
+        return StagedCommitOutcome {
+            response: json_response(
+                StatusCode::OK,
+                resolved_summary(
+                    summary(&existing),
+                    &source_path,
+                    Some(original_filename.as_str()),
+                    &solstone_core_journal_config::owner_zone(&state.root),
+                ),
+            ),
+            import_id: existing_id,
+        };
+    }
+    let detected_source = source_for(&original_filename, mime_type.as_deref());
+    let zone = solstone_core_journal_config::owner_zone(&state.root);
+    let caption = clean_optional(data.get("caption"));
+    let captured_at = clean_optional(data.get("captured_at"));
+    let placed = if detected_source == SavedSource::Image.as_wire() {
+        photo_timestamp_for_upload(&source_path, captured_at.as_deref(), &zone)
+    } else {
+        let (semantic, method, no_match_reason) =
+            timestamp_for_upload(&source_path, &original_filename, &zone);
+        UploadTimestamp {
+            semantic,
+            method,
+            no_match_reason,
+            utc_offset_seconds: None,
+            tz: None,
+        }
+    };
+    let chosen = context
+        .as_ref()
+        .and_then(|fields| fields.get("timestamp"))
+        .and_then(Value::as_str);
+    let semantic = chosen.map_or(placed.semantic, str::to_owned);
+    let method = if chosen.is_some() {
+        "owner"
+    } else {
+        placed.method
+    };
+    let no_match_reason = placed.no_match_reason;
+    let import_id = match claim_import_directory(&state.root, &semantic) {
+        Ok(import_id) => import_id,
+        Err(error) => {
+            return StagedCommitOutcome {
+                response: metadata_failed(error),
+                import_id: None,
+            };
+        }
+    };
+    let target = match contained_import_file(&state.root, &import_id, &filename) {
+        Ok(target) => target,
+        Err(error) => {
+            return StagedCommitOutcome {
+                response: metadata_failed(error.to_string()),
+                import_id: None,
+            };
+        }
+    };
+    let directory = target.parent().expect("import target parent").to_owned();
+    if let Err(error) = create_directory_with_mode(&directory, 0o700) {
+        return StagedCommitOutcome {
+            response: metadata_failed(error.to_string()),
+            import_id: None,
+        };
+    }
+    match source_file {
+        VerifiedSourceFile::SaveTemp(counted) => {
+            let (kept, _active_guard) = match counted.keep() {
+                Ok(pair) => pair,
+                Err(error) => {
+                    return StagedCommitOutcome {
+                        response: metadata_failed(format!(
+                            "Failed to stage temporary file: {error}"
+                        )),
+                        import_id: None,
+                    };
+                }
+            };
+            if let Err(error) =
+                install_file(&kept, &target, AtomicWriteOptions { mode: Some(0o600) })
+            {
+                let _ = std::fs::remove_file(&kept);
+                return StagedCommitOutcome {
+                    response: metadata_failed(error.to_string()),
+                    import_id: None,
+                };
+            }
+        }
+        VerifiedSourceFile::UploadPart(part_path) => {
+            if let Err(error) = install_file(
+                &part_path,
+                &target,
+                AtomicWriteOptions { mode: Some(0o600) },
+            ) {
+                return StagedCommitOutcome {
+                    response: metadata_failed(error.to_string()),
+                    import_id: None,
+                };
+            }
+        }
+    }
+    let mut metadata = staged_metadata(StagedMetadata {
+        zone: &zone,
+        timestamp: &semantic,
+        original_filename: &original_filename,
+        file_path: target.display().to_string(),
+        source_hash,
+        source: detected_source,
+        mime_type,
+        client_item_id,
+        data: &data,
+        is_local_path: false,
+        method,
+    });
+    solstone_core_import::originals::record_staged_upload(&mut metadata, &target);
+    metadata.insert("import_id".to_owned(), json!(import_id));
+    metadata.insert("source_timestamp".to_owned(), json!(semantic));
+    if method == "deterministic" {
+        metadata.insert("detected_timestamp".to_owned(), json!(semantic));
+    }
+    if let Some(caption) = caption {
+        metadata.insert("caption".to_owned(), json!(caption));
+    }
+    if let Some(captured_at) = captured_at {
+        metadata.insert("captured_at".to_owned(), json!(captured_at));
+    }
+    if let Some(offset) = placed.utc_offset_seconds {
+        metadata.insert("capture_utc_offset_seconds".to_owned(), json!(offset));
+    }
+    if let Some(tz) = placed.tz {
+        metadata.insert("capture_tz".to_owned(), json!(tz));
+    }
+    if let Some(device_noun) =
+        allowlisted_device_noun(data.get("device_noun").and_then(Value::as_str))
+    {
+        metadata.insert("device_noun".to_owned(), json!(device_noun));
+    }
+    metadata.insert("file_size".to_owned(), json!(file_size));
+    if source_hint(&metadata).is_none()
+        && state.route.is_none()
+        && solstone_core_import_sources::apple_export::detect_apple_source(&target)
+            .is_ok_and(|apple| apple)
+    {
+        metadata.insert("source_hint".to_owned(), json!(APPLE_SOURCE));
+        metadata.insert("source_inference".to_owned(), json!(APPLE_SOURCE));
+    }
+    if let Some(area) = data
+        .get("area")
+        .and_then(Value::as_str)
+        .filter(|area| !area.is_empty() && area.len() <= 96)
+    {
+        metadata.insert("area".to_owned(), json!(area));
+    }
+    if let Some(context) = context {
+        let hint = source_hint(&metadata);
+        if hint.as_deref() == Some("evernote")
+            && let Some(name) = context.get("notebook").and_then(Value::as_str)
+            && !name.trim().is_empty()
+        {
+            metadata.insert("notebook".to_owned(), json!(name.trim()));
+        }
+        if matches!(hint.as_deref(), Some(STRAVA_SOURCE | APPLE_SOURCE))
+            && let Some(facet) = context.get(solstone_core_import::BODY_FACET_METADATA)
+        {
+            metadata.insert(
+                solstone_core_import::BODY_FACET_METADATA.into(),
+                facet.clone(),
+            );
+        }
+        metadata.insert("context".to_owned(), Value::Object(context));
+    }
+    metadata.insert(
+        "timestamp_detection_no_match_reason".to_owned(),
+        no_match_reason.map_or(Value::Null, |reason| json!(reason)),
+    );
+    if let Err(error) =
+        solstone_core_import::saved_start::initialize_saved_start(&mut metadata, &import_id)
+    {
+        return StagedCommitOutcome {
+            response: metadata_failed(error.to_string()),
+            import_id: None,
+        };
+    }
+    if let Err(error) = contained_import_file(&state.root, &import_id, "import.json") {
+        return StagedCommitOutcome {
+            response: metadata_failed(error.to_string()),
+            import_id: None,
+        };
+    }
+    if let Err(error) = write_import_metadata(&state.root, &import_id, &metadata) {
+        return StagedCommitOutcome {
+            response: metadata_failed(format!("Failed to write metadata: {error}")),
+            import_id: None,
+        };
+    }
+    StagedCommitOutcome {
+        response: json_response(StatusCode::OK, summary(&metadata)),
+        import_id: Some(import_id),
+    }
 }
 
 fn stream_error_response(error: save_stream::SaveStreamError) -> Response {
@@ -1185,155 +1595,84 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             .collect(),
     );
     // Keep extension fields nested. Only these owner choices affect import behavior.
-    let context = match data.get("context").and_then(Value::as_str) {
-        None => None,
-        Some(encoded) if encoded.len() <= 16 * 1024 => {
-            match serde_json::from_str::<Map<String, Value>>(encoded) {
-                Ok(fields) => Some(fields),
-                Err(_) => return invalid_state("import context must be a JSON object", None),
-            }
-        }
-        Some(_) => return invalid_state("import context is too large", None),
+    let context = match parse_and_validate_context(data.get("context")) {
+        Ok(context) => context,
+        Err(detail) => return invalid_state(detail, None),
     };
-    if let Some(context) = &context {
-        for key in ["setting", "timestamp", "notebook"] {
-            if context.get(key).is_some_and(|value| !value.is_string()) {
-                return invalid_state("invalid import choice", None);
-            }
-        }
-        if let Some(timestamp) = context.get("timestamp").and_then(Value::as_str)
-            && validate_timestamp(timestamp).is_err()
-        {
-            return invalid_state("invalid import date", None);
-        }
-        if let Some(facet) = context.get(solstone_core_import::BODY_FACET_METADATA)
-            && !crate::body_facet::valid_import_facet(facet)
-        {
-            return invalid_state("that isn't a facet choice", None);
-        }
-        if let Some(setting) = context.get("setting") {
-            data["setting"] = setting.clone();
-        }
+    if let Some(context) = &context
+        && let Some(setting) = context.get("setting")
+    {
+        data["setting"] = setting.clone();
     }
     let client_item_id = text_value(&data, "client_item_id");
     if client_item_id.is_empty() {
         return missing("Missing client_item_id");
     }
     let text = text_value(&data, "text");
-    enum Incoming {
-        File {
-            filename: String,
-            original_filename: String,
-            mime_type: Option<String>,
-            counted: save_stream::CountedTemp,
-        },
-        Paste {
-            bytes: Vec<u8>,
-            temporary: NamedTempFile,
-        },
-    }
-    let incoming = match upload {
-        Some(UploadedFile {
-            filename: Some(original),
-            content_type,
-            counted,
-        }) => {
-            let Some(filename) = safe_filename(&original) else {
-                return failure(
-                    ImportReasonCode::IngestNoFiles,
-                    "journal.window.import.response.error.there.are.no.files.to.bring",
-                    "No input",
-                    None,
-                );
-            };
-            Incoming::File {
-                filename,
-                original_filename: original,
-                mime_type: content_type,
-                counted,
-            }
-        }
-        _ if !text.is_empty() => {
-            let directory = match ensure_save_tmp(&state.root) {
-                Ok(directory) => directory,
-                Err(error) => return metadata_failed(error),
-            };
-            let mut temporary = match NamedTempFile::new_in(directory) {
-                Ok(temporary) => temporary,
-                Err(error) => {
-                    return metadata_failed(format!("Failed to stage temporary file: {error}"));
-                }
-            };
-            if let Err(error) = temporary
-                .write_all(text.as_bytes())
-                .and_then(|()| temporary.flush())
-            {
-                return metadata_failed(format!("Failed to stage temporary file: {error}"));
-            }
-            Incoming::Paste {
-                bytes: text.into_bytes(),
-                temporary,
-            }
-        }
-        _ => {
+    if let Some(UploadedFile {
+        filename: Some(original),
+        content_type,
+        counted,
+    }) = upload
+    {
+        let Some(filename) = safe_filename(&original) else {
             return failure(
                 ImportReasonCode::IngestNoFiles,
                 "journal.window.import.response.error.there.are.no.files.to.bring",
                 "No input",
                 None,
             );
-        }
-    };
-    let evernote_bytes = match &incoming {
-        Incoming::File { counted, .. } => Some(counted.bytes()),
-        Incoming::Paste { .. } => None,
-    };
-    if let Some(sentence) = evernote_upload_refusal(&data, evernote_bytes) {
-        return error(
-            StatusCode::BAD_REQUEST,
-            "journal.window.import.response.error.this.export.is.over.gb.in",
-            "evernote_export_too_big",
-            sentence.to_owned(),
-            None,
-        );
+        };
+        let file_size = counted.bytes();
+        let source_hash = match hash_source(counted.path()) {
+            Ok(source_hash) => source_hash,
+            Err(error) => {
+                return metadata_failed(format!("Failed to stage temporary file: {error}"));
+            }
+        };
+        return stage_verified_upload_file(
+            &state,
+            VerifiedFileStageInput {
+                filename,
+                original_filename: original,
+                mime_type: content_type,
+                file_size,
+                source_hash,
+                source_file: VerifiedSourceFile::SaveTemp(counted),
+                client_item_id,
+                data,
+                context,
+            },
+        )
+        .response;
     }
-    if let Incoming::File {
-        original_filename,
-        mime_type,
-        ..
-    } = &incoming
-        && is_heic_upload(original_filename, mime_type.as_deref())
-    {
+    if text.is_empty() {
         return failure(
-            ImportReasonCode::UnsupportedImageFormat,
-            HEIC_REFUSAL_MESSAGE,
-            solstone_core_convey_http::window_catalog::text(
-                solstone_core_convey_http::window_catalog::ENGLISH,
-                HEIC_REFUSAL_MESSAGE,
-            ),
+            ImportReasonCode::IngestNoFiles,
+            "journal.window.import.response.error.there.are.no.files.to.bring",
+            "No input",
             None,
         );
     }
-    let is_strava = match &incoming {
-        Incoming::File {
-            original_filename,
-            counted,
-            ..
-        } => solstone_core_import_sources::strava::looks_like_strava_download(
-            counted.path(),
-            Some(original_filename),
-        ),
-        Incoming::Paste { bytes, .. } => {
-            solstone_core_import_sources::strava::looks_like_strava_csv_bytes(bytes)
+    let directory = match ensure_save_tmp(&state.root) {
+        Ok(directory) => directory,
+        Err(error) => return metadata_failed(error),
+    };
+    let mut temporary = match NamedTempFile::new_in(directory) {
+        Ok(temporary) => temporary,
+        Err(error) => {
+            return metadata_failed(format!("Failed to stage temporary file: {error}"));
         }
     };
-    // Route an unhinted file through the same workout-only importer and cleanup.
-    if is_strava
-        && matches!(&incoming, Incoming::File { .. })
-        && text_value(&data, "source_hint").trim().is_empty()
+    let _paste_active_guard = save_stream::register_active_save_path(temporary.path());
+    if let Err(error) = temporary
+        .write_all(text.as_bytes())
+        .and_then(|()| temporary.flush())
     {
-        data["source_hint"] = json!(STRAVA_SOURCE);
+        return metadata_failed(format!("Failed to stage temporary file: {error}"));
     }
+    let bytes = text.into_bytes();
+    let is_strava = solstone_core_import_sources::strava::looks_like_strava_csv_bytes(&bytes);
     let strava_card = text_value(&data, "source_hint").trim() == STRAVA_SOURCE;
     if is_strava && !strava_card {
         return failure(
@@ -1343,10 +1682,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             None,
         );
     }
-    let source_path = match &incoming {
-        Incoming::File { counted, .. } => counted.path().to_path_buf(),
-        Incoming::Paste { temporary, .. } => temporary.path().to_path_buf(),
-    };
+    let source_path = temporary.path().to_path_buf();
     let source_hash = match hash_source(&source_path) {
         Ok(source_hash) => source_hash,
         Err(error) => return metadata_failed(format!("Failed to stage temporary file: {error}")),
@@ -1358,12 +1694,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
                 resolved_summary(
                     replay_summary(&existing),
                     &source_path,
-                    match &incoming {
-                        Incoming::File {
-                            original_filename, ..
-                        } => Some(original_filename.as_str()),
-                        Incoming::Paste { .. } => None,
-                    },
+                    None,
                     &solstone_core_journal_config::owner_zone(&state.root),
                 ),
             );
@@ -1373,14 +1704,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             Some(ImportErrorKind::ClientItemConflict),
         );
     }
-    // Importing the same Strava download again is how a deleted import is brought
-    // back, and it re-places only what is missing, so it is never refused as a repeat.
-    // An Apple Health export is the same: importing it again is how a stopped or
-    // partly saved import finishes, and the same data changes nothing.
-    let apple_upload = text_value(&data, "source_hint").trim() == APPLE_SOURCE
-        || (text_value(&data, "source_hint").trim().is_empty()
-            && state.route.is_none()
-            && solstone_core_import_sources::apple_export::detect_apple_zip_any_name(&source_path));
+    let apple_upload = text_value(&data, "source_hint").trim() == APPLE_SOURCE;
     if !strava_card
         && !apple_upload
         && let Some(found) = imported_manifest(&state.root, &source_hash)
@@ -1410,101 +1734,40 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             resolved_summary(
                 summary(&existing),
                 &source_path,
-                match &incoming {
-                    Incoming::File {
-                        original_filename, ..
-                    } => Some(original_filename.as_str()),
-                    Incoming::Paste { .. } => None,
-                },
+                None,
                 &solstone_core_journal_config::owner_zone(&state.root),
             ),
         );
     }
-    let (original_for_timestamp, incoming_mime) = match &incoming {
-        Incoming::File {
-            original_filename,
-            mime_type,
-            ..
-        } => (original_filename.as_str(), mime_type.as_deref()),
-        Incoming::Paste { .. } => ("paste.txt", Some("text/plain")),
-    };
-    let detected_source = source_for(original_for_timestamp, incoming_mime);
+    let detected_source = source_for("paste.txt", Some("text/plain"));
     let zone = solstone_core_journal_config::owner_zone(&state.root);
     let caption = clean_optional(data.get("caption"));
     let captured_at = clean_optional(data.get("captured_at"));
-    // A photo is dated by what it holds (EXIF or client-reported capture time),
-    // never by its filename, regardless of which door brought it in.
-    let placed = if detected_source == SavedSource::Image.as_wire() {
-        photo_timestamp_for_upload(&source_path, captured_at.as_deref(), &zone)
-    } else {
-        let (semantic, method, no_match_reason) =
-            timestamp_for_upload(&source_path, original_for_timestamp, &zone);
-        UploadTimestamp {
-            semantic,
-            method,
-            no_match_reason,
-            utc_offset_seconds: None,
-            tz: None,
-        }
-    };
+    let (placed_semantic, placed_method, no_match_reason) =
+        timestamp_for_upload(&source_path, "paste.txt", &zone);
     let chosen = context
         .as_ref()
         .and_then(|fields| fields.get("timestamp"))
         .and_then(Value::as_str);
-    let semantic = chosen.map_or(placed.semantic, str::to_owned);
+    let semantic = chosen.map_or(placed_semantic, str::to_owned);
     let method = if chosen.is_some() {
         "owner"
     } else {
-        placed.method
+        placed_method
     };
-    let no_match_reason = placed.no_match_reason;
     let import_id = match claim_import_directory(&state.root, &semantic) {
         Ok(import_id) => import_id,
         Err(error) => return metadata_failed(error),
     };
-    let (file_path, original_filename, mime_type, file_size) = match incoming {
-        Incoming::File {
-            filename,
-            original_filename,
-            mime_type,
-            counted,
-        } => {
-            let target = match contained_import_file(&state.root, &import_id, &filename) {
-                Ok(target) => target,
-                Err(error) => return metadata_failed(error.to_string()),
-            };
-            let directory = target.parent().expect("import target parent").to_owned();
-            if let Err(error) = create_directory_with_mode(&directory, 0o700) {
-                return metadata_failed(error.to_string());
-            }
-            let file_size = counted.bytes();
-            let kept = match counted.keep() {
-                Ok(kept) => kept,
-                Err(error) => {
-                    return metadata_failed(format!("Failed to stage temporary file: {error}"));
-                }
-            };
-            if let Err(error) =
-                install_file(kept, &target, AtomicWriteOptions { mode: Some(0o600) })
-            {
-                return metadata_failed(error.to_string());
-            }
-            (target, original_filename, mime_type, file_size)
-        }
-        Incoming::Paste { bytes, temporary } => {
-            let file_path = match stage_bytes(&state.root, &import_id, "paste.txt", &bytes) {
-                Ok(path) => path,
-                Err(error) => return metadata_failed(error.to_string()),
-            };
-            drop(temporary);
-            (
-                file_path,
-                "paste.txt".to_owned(),
-                Some("text/plain".to_owned()),
-                bytes.len() as u64,
-            )
-        }
+    let file_path = match stage_bytes(&state.root, &import_id, "paste.txt", &bytes) {
+        Ok(path) => path,
+        Err(error) => return metadata_failed(error.to_string()),
     };
+    drop(temporary);
+    drop(_paste_active_guard);
+    let original_filename = "paste.txt".to_owned();
+    let mime_type = Some("text/plain".to_owned());
+    let file_size = bytes.len() as u64;
     let mut metadata = staged_metadata(StagedMetadata {
         zone: &zone,
         timestamp: &semantic,
@@ -1530,23 +1793,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
     if let Some(captured_at) = captured_at {
         metadata.insert("captured_at".to_owned(), json!(captured_at));
     }
-    if let Some(offset) = placed.utc_offset_seconds {
-        metadata.insert("capture_utc_offset_seconds".to_owned(), json!(offset));
-    }
-    if let Some(tz) = placed.tz {
-        metadata.insert("capture_tz".to_owned(), json!(tz));
-    }
     metadata.insert("file_size".to_owned(), json!(file_size));
-    // An Apple Health export dropped anywhere but its own card goes to that card:
-    // it isn't dated like a document, and only the card can bring it in.
-    if source_hint(&metadata).is_none()
-        && state.route.is_none()
-        && solstone_core_import_sources::apple_export::detect_apple_source(&file_path)
-            .is_ok_and(|apple| apple)
-    {
-        metadata.insert("source_hint".to_owned(), json!(APPLE_SOURCE));
-        metadata.insert("source_inference".to_owned(), json!(APPLE_SOURCE));
-    }
     if let Some(area) = data
         .get("area")
         .and_then(Value::as_str)

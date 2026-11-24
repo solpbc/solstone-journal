@@ -32,6 +32,8 @@ mod create_only_retry;
 pub mod daily_error;
 pub mod daily_unit;
 pub mod deconflict;
+#[cfg(any(unix, windows))]
+pub mod disk_space;
 pub mod durability;
 pub mod entry;
 pub mod errors;
@@ -178,6 +180,8 @@ pub use daily_unit::{
 pub use deconflict::{
     SegmentDeconflictError, find_available_segment, find_available_segment_with_occupied,
 };
+#[cfg(any(unix, windows))]
+pub use disk_space::available_disk_bytes;
 #[cfg(unix)]
 pub use entry::sync_root;
 pub use entry::{Removed, remove_file, rename_within, sync_dir};
