@@ -1617,6 +1617,19 @@ fn brain_unconstructible_snapshot_is_an_explicit_warning() {
 }
 
 #[test]
+fn brain_missing_snapshot_renders_human_reason_not_raw_code() {
+    let context = fixture();
+    let row = result("brain", &context);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(row.detail, "unknown: not checked yet");
+    assert!(
+        !row.detail.contains("brain_record_missing"),
+        "{}",
+        row.detail
+    );
+}
+
+#[test]
 fn brain_ready_and_checking_records_are_healthy() {
     let ready = fixture();
     stage_brain_ready(&ready);

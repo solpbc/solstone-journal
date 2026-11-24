@@ -2236,8 +2236,6 @@ journal.window.import.link.label.download.this.journal = descargar este diario
 
 journal.window.import.link.label.import.another.source = importar otra fuente
 
-journal.window.import.link.label.plaud.connection.settings = configuración de conexión de { $slot1 }
-
 journal.window.import.link.label.see.it.in.the.body.app = verlo en la app del cuerpo →
 
 journal.window.import.link.label.see.when.your.devices.last.added.something = ver cuándo tus dispositivos agregaron algo por última vez →
@@ -3394,8 +3392,6 @@ journal.window.import.upload.saved.named = { $name }: se guardó
 journal.window.import.upload.saved.setup.unconfirmed = { $name }: se guardó, pero no se pudo confirmar la configuración de la importación. revisa tus importaciones antes de volver a elegir.
 
 journal.window.import.visible.text.a.short.note.about.what.this = una nota breve sobre qué es esto, para encontrarlo más fácil después
-
-journal.window.import.visible.text.add.your.plaud.token.in.settings = agrega tu token de { $slot1 } en la configuración para sincronizar grabaciones en tu diario.
 
 journal.window.import.visible.text.checking.import = revisando la importación…
 

@@ -850,8 +850,6 @@ journal.window.settings.button.label.add.custom.activity = + agregar actividad p
 
 journal.window.settings.button.label.add.variant2 = agregar
 
-journal.window.settings.button.label.api.keys = claves de API
-
 journal.window.settings.button.label.appearance = apariencia
 
 journal.window.settings.button.label.apply = aplicar
@@ -1434,8 +1432,6 @@ journal.window.settings.field.or.control.label.days = días
 
 journal.window.settings.field.or.control.label.detection.hints.and.level.guidance = pistas de detección y guía de nivel
 
-journal.window.settings.field.or.control.label.enter.api.key = ingresar la clave de API
-
 journal.window.settings.field.or.control.label.key.available.from.system.environment = clave disponible desde el entorno del sistema
 
 journal.window.settings.field.or.control.label.key.configured.enter.new.value.to = clave configurada (ingresa un valor nuevo para reemplazarla)
@@ -1618,10 +1614,6 @@ journal.window.settings.http.owner.voice.consent.required.only.the.journal.s.own
 
 journal.window.settings.http.owner.voice.consent.required.turn.on.leave.out.other.voices = activa "dejar fuera otras voces" en configuración, transcripción; pide confirmación.
 
-journal.window.settings.http.plaud.validation.unavailable.live.plaud.validation.is.not.available = la validación en vivo de { $slot1 } no está disponible en la superficie nativa de configuración
-
-journal.window.settings.http.plaud.validation.unavailable.that.plaud.token.can.t.be = ese token de { $slot1 } no se puede validar en esta versión.
-
 journal.window.settings.http.retired.facet.names.unreadable.run.solstone.journal.facet.doctor.fix = ejecuta `{ $slot1 }` en la computadora donde está tu diario y luego vuelve a intentarlo
 
 journal.window.settings.http.retired.facet.names.unreadable.your.journal.s.record.of.past = no se pudo leer el registro de nombres anteriores de facetas de tu diario, así que no se agregó ninguna faceta.
@@ -1637,8 +1629,6 @@ journal.window.settings.importance.labels.low.low.priority = prioridad baja
 journal.window.settings.importance.labels.normal.normal = normal
 
 journal.window.settings.link.label.confidential.setup = configuración inicial confidencial
-
-journal.window.settings.link.label.configure.in.api.keys = configurar en claves de API
 
 journal.window.settings.link.label.facets = facetas
 
@@ -1723,8 +1713,6 @@ journal.window.settings.logs.skipped.count = { $quantity ->
 journal.window.settings.option.label.about = acerca de
 
 journal.window.settings.option.label.all.streams = todos los flujos
-
-journal.window.settings.option.label.api.keys = claves de API
 
 journal.window.settings.option.label.auto.detect.best.available.runtime = auto - detectar el mejor entorno de ejecución disponible
 
@@ -1815,8 +1803,6 @@ journal.window.settings.plaud.disconnected.recordings = { $quantity ->
 journal.window.settings.plaud.fact.account = cuenta
 
 journal.window.settings.plaud.fact.recordings = grabaciones
-
-journal.window.settings.plaud.guide.token.link = configura tu token de { $provider } en { $keys_start }claves de API{ $keys_end } para activar la sincronización.
 
 journal.window.settings.plaud.load.failed = no se pudo cargar { $provider }. vuelve a abrir la configuración de sincronización para volver a intentarlo.
 
@@ -2924,8 +2910,6 @@ journal.window.settings.section.heading.add.a.facet = agregar una faceta
 
 journal.window.settings.section.heading.add.custom.activity = agregar actividad personalizada
 
-journal.window.settings.section.heading.api.keys = claves de API
-
 journal.window.settings.section.heading.appearance = apariencia
 
 journal.window.settings.section.heading.build.the.list = armar la lista
@@ -3710,8 +3694,6 @@ journal.window.settings.visible.text.anyone.using.this.computer.and.any = cualqu
 
 journal.window.settings.visible.text.api.access.comes.with.granola.business = El acceso a la API viene con { $slot1 } y Enterprise. { $slot2 } no lo incluye.
 
-journal.window.settings.visible.text.api.key.not.configured = Clave de API no configurada.
-
 journal.window.settings.visible.text.apps.that.have.their.own.settings = apps que tienen su propia configuración. abre una para configurarla o cambiar cómo funciona.
 
 journal.window.settings.visible.text.attached.activities = actividades adjuntas
@@ -3858,8 +3840,6 @@ journal.window.settings.visible.text.iana.timezone.identifier = { $slot1 } ident
 
 journal.window.settings.visible.text.identity = identidad
 
-journal.window.settings.visible.text.import.audio.from.plaud.recorder.paste = sincroniza el audio de tu { $slot1 } grabadora. pega el token de tu { $slot2 } sesión web. se guarda en tu diario y se usa solo para obtener tus grabaciones de { $slot3 }.
-
 journal.window.settings.visible.text.installed.parakeet.model.version.for.local = versión instalada del modelo { $slot1 } para la transcripción local
 
 journal.window.settings.visible.text.instructions.the.model.follows.when.describing = instrucciones que sigue el modelo al describir tus pantallas. estas reglas no se aplican al texto de la pantalla. el texto de la pantalla enmascara algunas contraseñas y otros secretos, pero puede pasarlos por alto. haz doble clic en una regla para editarla.
@@ -3993,8 +3973,6 @@ journal.window.settings.visible.text.saved = se guardó
 journal.window.settings.visible.text.see.in.health = ver en estado ›
 
 journal.window.settings.visible.text.segments = segmentos
-
-journal.window.settings.visible.text.sign.in.to.plaud.s.web = 1) inicia sesión en el portal web de { $slot1 }. 2) abre la consola de tu navegador. 3) copia el token que se muestra ahí en el campo de arriba.
 
 journal.window.settings.visible.text.speech.to.text.backend.and.processing = backend y configuración de procesamiento de habla a texto.
 

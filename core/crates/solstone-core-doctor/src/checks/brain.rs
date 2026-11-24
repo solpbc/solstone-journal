@@ -31,25 +31,28 @@ pub(crate) fn run_with_clock(
             now = clock();
             now
         });
+    let locale = solstone_core_window_catalog::cli_locale();
     if !matches!(inspection.status, solstone_core_brain::InspectionStatus::Ok) {
+        let reason = inspection.error.clone().or_else(|| {
+            inspection
+                .projection
+                .reason_code
+                .as_deref()
+                .map(|code| solstone_core_brain::brain_reason_text_in(Some(code), locale))
+        });
         return Ok(make_result(
             check,
             Status::Warn,
-            match inspection
-                .error
-                .as_deref()
-                .or(inspection.projection.reason_code.as_deref())
-            {
-                Some(error) => copy::strings(
+            match reason.as_deref() {
+                Some(reason) => copy::strings(
                     "journal.cli.doctor.brain.unknown.reason",
-                    [("reason", error)],
+                    [("reason", reason)],
                 ),
                 None => copy::text("journal.cli.doctor.brain.unknown"),
             },
             None::<String>,
         ));
     }
-    let locale = solstone_core_window_catalog::cli_locale();
     let view = solstone_core_brain::present_brain_inspection_in(&inspection, now, locale);
     let component = view
         .failing_component

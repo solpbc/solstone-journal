@@ -36,7 +36,7 @@
     },
     {
       "name": "syntax_5",
-      "value": "[--facet FACET ...]",
+      "value": "[--facet FACET ...] [--places-precision LEVEL]",
       "kind": "command"
     },
     {

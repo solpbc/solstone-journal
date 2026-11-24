@@ -36989,8 +36989,8 @@
       "resource": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7365742e68656c70",
       "namespace": "journal.cli.host.mcp.permission.set",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.cli.host.mcp.permission.set.help.v2",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -37121,6 +37121,104 @@
           "name": "line_break",
           "kind": "whitespace",
           "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.host.mcp.permission.set.help.v2",
+      "resource": "m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7365742e68656c702e7632",
+      "namespace": "journal.cli.host.mcp.permission.set.help",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal mcp permission set [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        },
+        {
+          "name": "spaces_43",
+          "kind": "whitespace",
+          "value": "                                           "
+        },
+        {
+          "name": "syntax_4",
+          "kind": "command",
+          "value": "--category CATEGORY [--category CATEGORY ...]"
+        },
+        {
+          "name": "syntax_5",
+          "kind": "command",
+          "value": "[--facet FACET ...] [--places-precision LEVEL]"
+        },
+        {
+          "name": "spaces_2",
+          "kind": "whitespace",
+          "value": "  "
+        },
+        {
+          "name": "option",
+          "kind": "command",
+          "value": "-h, --help"
+        },
+        {
+          "name": "spaces_11",
+          "kind": "whitespace",
+          "value": "           "
+        },
+        {
+          "name": "option_9",
+          "kind": "command",
+          "value": "--token LABEL"
+        },
+        {
+          "name": "spaces_8",
+          "kind": "whitespace",
+          "value": "        "
+        },
+        {
+          "name": "option_11",
+          "kind": "command",
+          "value": "--oauth CLIENT_ID"
+        },
+        {
+          "name": "spaces_4",
+          "kind": "whitespace",
+          "value": "    "
+        },
+        {
+          "name": "term",
+          "kind": "mark-word",
+          "value": "OAuth"
+        },
+        {
+          "name": "option_14",
+          "kind": "command",
+          "value": "--created TIMESTAMP"
+        },
+        {
+          "name": "flag",
+          "kind": "flag",
+          "value": "--oauth"
+        },
+        {
+          "name": "option_16",
+          "kind": "command",
+          "value": "--category CATEGORY"
+        },
+        {
+          "name": "option_17",
+          "kind": "command",
+          "value": "--facet FACET"
         }
       ],
       "selector": null

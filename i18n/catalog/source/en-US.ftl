@@ -4540,8 +4540,6 @@ journal.window.settings.logs.skipped.count = { $quantity ->
      *[other] { $count } skipped
     }
 
-journal.window.settings.plaud.guide.token.link = configure your { $provider } token in { $keys_start }API keys{ $keys_end } to enable sync.
-
 journal.window.settings.removal.history.action.backup.erase = { $presentation ->
        *[none-plain] removed from your backups
         [none-erasing] removed from your backups, erasing what was in the way
@@ -16357,8 +16355,6 @@ journal.window.settings.button.label.add.custom.activity = + add custom activity
 
 journal.window.settings.button.label.add.variant2 = add
 
-journal.window.settings.button.label.api.keys = API keys
-
 journal.window.settings.button.label.appearance = appearance
 
 journal.window.settings.button.label.apply.color = apply color
@@ -16899,8 +16895,6 @@ journal.window.settings.field.or.control.label.days = days
 
 journal.window.settings.field.or.control.label.detection.hints.and.level.guidance = detection hints and level guidance
 
-journal.window.settings.field.or.control.label.enter.api.key = enter API key
-
 journal.window.settings.field.or.control.label.key.available.from.system.environment = key available from system environment
 
 journal.window.settings.field.or.control.label.key.configured.enter.new.value.to = key configured (enter new value to replace)
@@ -17033,10 +17027,6 @@ journal.window.settings.http.owner.voice.consent.required.only.the.journal.s.own
 
 journal.window.settings.http.owner.voice.consent.required.turn.on.leave.out.other.voices = turn on "leave out other voices" in settings, transcription; it asks for confirmation.
 
-journal.window.settings.http.plaud.validation.unavailable.live.plaud.validation.is.not.available = live { $slot1 } validation is not available in the native settings surface
-
-journal.window.settings.http.plaud.validation.unavailable.that.plaud.token.can.t.be = that { $slot1 } token can't be validated in this version.
-
 journal.window.settings.http.retired.facet.names.unreadable.run.solstone.journal.facet.doctor.fix = run `{ $slot1 }` on the computer your journal is on, then try again
 
 journal.window.settings.http.retired.facet.names.unreadable.your.journal.s.record.of.past = your journal's record of past facet names couldn't be read, so no facet was added.
@@ -17053,8 +17043,6 @@ journal.window.settings.importance.labels.normal.normal = normal
 
 journal.window.settings.link.label.confidential.setup = confidential setup
 
-journal.window.settings.link.label.configure.in.api.keys = configure in API keys
-
 journal.window.settings.link.label.facets = facets
 
 journal.window.settings.link.label.set.up.your.voice.first = set up your voice first
@@ -17068,8 +17056,6 @@ journal.window.settings.logs.preview = preview
 journal.window.settings.option.label.about = about
 
 journal.window.settings.option.label.all.streams = all streams
-
-journal.window.settings.option.label.api.keys = API keys
 
 journal.window.settings.option.label.auto.detect.best.available.runtime = auto - detect best available runtime
 
@@ -17262,8 +17248,6 @@ journal.window.settings.section.heading.activity.log = activity log
 journal.window.settings.section.heading.add.a.facet = add a facet
 
 journal.window.settings.section.heading.add.custom.activity = add custom activity
-
-journal.window.settings.section.heading.api.keys = API keys
 
 journal.window.settings.section.heading.appearance = appearance
 
@@ -17565,8 +17549,6 @@ journal.window.settings.visible.text.anyone.using.this.computer.and.any = anyone
 
 journal.window.settings.visible.text.api.access.comes.with.granola.business = API access comes with { $slot1 } and Enterprise. { $slot2 } doesn't include it.
 
-journal.window.settings.visible.text.api.key.not.configured = API key not configured.
-
 journal.window.settings.visible.text.apps.that.have.their.own.settings = apps that have their own settings. open one to set it up or change how it works.
 
 journal.window.settings.visible.text.attached.activities = attached activities
@@ -17701,8 +17683,6 @@ journal.window.settings.visible.text.iana.timezone.identifier = { $slot1 } timez
 
 journal.window.settings.visible.text.identity = identity
 
-journal.window.settings.visible.text.import.audio.from.plaud.recorder.paste = sync audio from your { $slot1 } recorder. paste the token from your { $slot2 } web session. it's kept in your journal and used only to fetch your recordings from { $slot3 }.
-
 journal.window.settings.visible.text.installed.parakeet.model.version.for.local = installed { $slot1 } model version for local transcription
 
 journal.window.settings.visible.text.instructions.the.model.follows.when.describing = instructions the model follows when describing your screens. these rules do not apply to screen text. screen text masks some passwords and other secrets, but can miss them. double-click a rule to edit it.
@@ -17834,8 +17814,6 @@ journal.window.settings.visible.text.saved = saved
 journal.window.settings.visible.text.see.in.health = see in health ›
 
 journal.window.settings.visible.text.segments = segments
-
-journal.window.settings.visible.text.sign.in.to.plaud.s.web = 1) sign in to { $slot1 }'s web portal. 2) open your browser's console. 3) copy the token shown there into the field above.
 
 journal.window.settings.visible.text.speech.to.text.backend.and.processing = speech-to-text backend and processing settings.
 
@@ -19410,8 +19388,6 @@ journal.window.import.link.label.download.this.journal = download this journal
 
 journal.window.import.link.label.import.another.source = import another source
 
-journal.window.import.link.label.plaud.connection.settings = { $slot1 } connection settings
-
 journal.window.import.link.label.see.it.in.the.body.app = see it in the body app →
 
 journal.window.import.link.label.see.when.your.devices.last.added.something = see when your devices last added something →
@@ -19853,8 +19829,6 @@ journal.window.import.unit.record = record
 journal.window.import.unit.records = records
 
 journal.window.import.visible.text.a.short.note.about.what.this = a short note about what this is, so it's easier to find later
-
-journal.window.import.visible.text.add.your.plaud.token.in.settings = add your { $slot1 } token in settings to sync recordings into your journal.
 
 journal.window.import.visible.text.checking.import = checking import…
 
@@ -21285,7 +21259,7 @@ journal.window.import.ox.tray.attention.remove = open import in the solstone app
 
 journal.window.import.ox.status.ready.to.review = ready to review
 
-journal.window.import.ox.history.review.link = review and start
+journal.window.import.ox.history.review.link = review and confirm
 
 journal.window.import.ox.detail.checking = checking what's in { $name }…
 

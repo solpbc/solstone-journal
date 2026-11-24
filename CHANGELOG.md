@@ -28,6 +28,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
+- `solstone journal importer` now prints a short summary line when an audio import finishes instead of an internal debug dump.
+- the journal storage reference for your agents no longer lists a `social/` folder that isn't part of your journal.
+- `solstone journal doctor` now explains when thinking hasn't been checked yet instead of printing the raw code `brain_record_missing`.
+- the import page's tray and history now use the same "review and confirm" label for files waiting on your review.
+- `solstone journal mcp permission set --help` now includes `--places-precision LEVEL` in its usage line.
 - the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.
 - fixed a status check that left home and health unable to report unfinished daily work in the android development journal.
 - original screen recordings can now finish opening in the android development journal when the player seeks ahead in the video.

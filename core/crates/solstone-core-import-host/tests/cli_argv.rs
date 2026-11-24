@@ -1135,8 +1135,12 @@ fn wait_success_still_reports_complete() {
         },
     )));
     assert_eq!(run.exit_code, 0, "stderr={}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "Generic audio import complete: segments=1 files_created=1\n"
+    );
     assert!(
-        run.stdout.contains("Generic audio import complete"),
+        !run.stdout.contains("AudioImportComplete"),
         "stdout={}",
         run.stdout
     );
@@ -1186,8 +1190,12 @@ fn partial_remux_without_failed_or_stalled_wait_still_succeeds() {
         },
     )));
     assert_eq!(run.exit_code, 0, "stderr={}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "Generic audio import complete: segments=1 files_created=1 dropped_chunks=2\n"
+    );
     assert!(
-        run.stdout.contains("Generic audio import complete"),
+        !run.stdout.contains("AudioImportPartial"),
         "stdout={}",
         run.stdout
     );

@@ -754,7 +754,7 @@ fn mcp_subcommand_help(locale: &str, words: &[&str]) -> String {
         ["permission", "set", ..] => {
             let mut help = solstone_core_cli_copy::render_for(
                 locale,
-                "journal.cli.host.mcp.permission.set.help",
+                "journal.cli.host.mcp.permission.set.help.v2",
                 &[],
             );
             help.push_str(&solstone_core_cli_copy::render_for(
@@ -10620,5 +10620,21 @@ mod tests {
                 "{cmd:?}"
             );
         }
+    }
+
+    #[test]
+    fn mcp_permission_set_help_synopsis_includes_places_precision() {
+        let help = mcp_subcommand_help(solstone_core_cli_copy::ENGLISH, &["permission", "set"]);
+        let (synopsis, rest) = help
+            .split_once("\n\nSet what one connection may read.")
+            .expect("mcp permission set help splits into synopsis and body");
+        assert!(
+            synopsis.contains("[--places-precision LEVEL]"),
+            "synopsis omitted --places-precision: {synopsis}"
+        );
+        assert!(
+            rest.contains("--places-precision LEVEL"),
+            "options omitted --places-precision: {rest}"
+        );
     }
 }

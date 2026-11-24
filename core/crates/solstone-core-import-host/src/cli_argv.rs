@@ -2846,13 +2846,27 @@ pub fn audio_import_cli_run(
                     )
                 })
                 .collect::<Vec<_>>();
-            let outcome_debug = format!("{outcome:?}");
+            let created = outcome.created();
+            let dropped = outcome.dropped_chunks().len();
+            let summary = if dropped == 0 {
+                format!(
+                    "segments={} files_created={}",
+                    created.segments.len(),
+                    created.files_created.len(),
+                )
+            } else {
+                format!(
+                    "segments={} files_created={} dropped_chunks={dropped}",
+                    created.segments.len(),
+                    created.files_created.len(),
+                )
+            };
             let mut run = success(format!(
                 "{}\n",
                 solstone_core_cli_copy::display_for(
                     locale,
                     "journal.cli.importer.audio.complete",
-                    [("outcome", &outcome_debug)],
+                    [("outcome", &summary)],
                 )
             ));
             if !left_out.is_empty() {

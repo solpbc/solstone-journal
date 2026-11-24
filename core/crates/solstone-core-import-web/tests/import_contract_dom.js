@@ -2068,7 +2068,7 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(reviewRow.querySelector('.import-status.review')?.textContent.includes('ready to review'), 'review pill rendered');
     const reviewLink = reviewRow.querySelector('a.import-review-link');
     assert.ok(reviewLink && reviewLink.getAttribute('href') === '/app/import/20261122_143000', 'review link points directly to /app/import/<id>');
-    assert.ok(reviewLink.textContent.includes('review and start'), 'review link copy');
+    assert.ok(reviewLink.textContent.includes('review and confirm'), 'review link copy');
   });
 
   await test('live handoff tray lifecycle under import host: waiting -> uploading -> review_required (no focus steal) -> SSE delivered -> gone', async () => {

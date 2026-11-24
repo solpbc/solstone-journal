@@ -11972,17 +11972,17 @@
       "locales": []
     },
     {
-      "id": "journal.cli.host.mcp.permission.set.help",
-      "source": "6ebb979662e5f6df22a6601f713e0dc6cf5c5ff00096f3941c3b1220df21e569",
-      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
-      "protected": "f8e4a7c2159a249c0b32a3d09aba747d45b9e6843be03530a5b5026f1a060b3b",
-      "locales": []
-    },
-    {
       "id": "journal.cli.host.mcp.permission.set.help.places.precision",
       "source": "d66c517fb05c2a0a19e9ce546465d3382f82e9fd822b60dce195ccbe5df5e154",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "f04bc0047fab4446515daab8985564936a32a495d5e15eb1ebf59338434e266d",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.host.mcp.permission.set.help.v2",
+      "source": "6ebb979662e5f6df22a6601f713e0dc6cf5c5ff00096f3941c3b1220df21e569",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "15a5ea44ad78e76349b21eb8b76a78901fb2083adb8a83ba27a2ff2719eb695a",
       "locales": []
     },
     {
