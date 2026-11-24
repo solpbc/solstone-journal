@@ -3936,7 +3936,7 @@ journal.window.settings.visible.text.no.operational.logs.to.clean.up = no hay re
 
 journal.window.settings.visible.text.no.paired.devices = no hay dispositivos vinculados.
 
-journal.window.settings.visible.text.no.redaction.rules.configured = sin reglas para ocultar configuradas
+journal.window.settings.visible.text.no.redaction.rules.configured = sin reglas de ocultamiento configuradas
 
 journal.window.settings.visible.text.no.speech.left.out.today = hoy no quedó habla fuera
 
@@ -3978,7 +3978,7 @@ journal.window.settings.visible.text.reach.your.journal.from.your.other = llega 
 
 journal.window.settings.visible.text.recent.actions.and.changes.to.this = acciones recientes y cambios en esta faceta.
 
-journal.window.settings.visible.text.redaction.rules = reglas para ocultar
+journal.window.settings.visible.text.redaction.rules = reglas de ocultamiento
 
 journal.window.settings.visible.text.results = resultados
 
