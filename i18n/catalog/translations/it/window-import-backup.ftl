@@ -484,9 +484,9 @@ journal.window.backup.copy.offload.paused.note = il trasferimento dei contenuti 
 
 journal.window.backup.copy.offload.preparation.checking = controllo della preparazione…
 
-journal.window.backup.copy.offload.preparation.failed = la preparazione richiede attenzione. vedi l'ultimo risultato dello spostamento.
+journal.window.backup.copy.offload.preparation.failed = la preparazione richiede attenzione. vedi l'ultimo risultato del trasferimento.
 
-journal.window.backup.copy.offload.preparation.finished = vedi l'ultimo risultato dello spostamento e gli originali proposti.
+journal.window.backup.copy.offload.preparation.finished = vedi l'ultimo risultato del trasferimento e gli originali proposti.
 
 journal.window.backup.copy.offload.preparation.pending = un risultato finale non è disponibile. controlla di nuovo.
 
@@ -524,7 +524,7 @@ journal.window.backup.copy.offload.restore.reason.labels.repo.missing = non è s
 
 journal.window.backup.copy.offload.restore.reason.labels.restore.conflict = c'è già un file diverso dove dovrebbe stare parte di questi contenuti multimediali, quindi il file già presente è stato conservato e la copia di backup non è stata ripristinata.
 
-journal.window.backup.copy.offload.restore.reason.labels.restore.held = il ripristino dei file spostati è temporaneamente non disponibile.
+journal.window.backup.copy.offload.restore.reason.labels.restore.held = il ripristino dei file trasferiti è temporaneamente non disponibile.
 
 journal.window.backup.copy.offload.restore.reason.labels.restore.not.published = questa volta non è stato possibile rimettere alcuni contenuti multimediali nel tuo diario e non è stato messo niente al loro posto, quindi riprova più tardi.
 
@@ -582,11 +582,11 @@ journal.window.backup.copy.offload.stall.reason.labels.verification.missing = la
 
 journal.window.backup.copy.offload.stall.reason.labels.verification.overdue = la verifica del backup è in ritardo. il trasferimento dei contenuti multimediali aspetterà una nuova verifica.
 
-journal.window.backup.copy.offload.stalled.lead = non è stato possibile finire lo spostamento.
+journal.window.backup.copy.offload.stalled.lead = non è stato possibile finire il trasferimento.
 
 journal.window.backup.copy.offload.title = trasferimento dei contenuti multimediali
 
-journal.window.backup.copy.offload.unavailable.lead = non è possibile leggere lo stato dello spostamento ora.
+journal.window.backup.copy.offload.unavailable.lead = non è possibile leggere lo stato del trasferimento ora.
 
 journal.window.backup.copy.offload.unsupported = il trasferimento dei contenuti multimediali non è disponibile su questo dispositivo.
 
