@@ -154,7 +154,7 @@ journal.windows.error.step.save = no se pudo guardar este paso. vuelve a intenta
 
 journal.windows.error.terminal.open = no se pudo abrir una terminal: { $error }
 
-journal.windows.error.thinking.choice = opción de razonamiento desconocida
+journal.windows.error.thinking.choice = elección de razonamiento desconocida
 
 journal.windows.error.thinking.unavailable = el razonamiento local no está disponible en este dispositivo
 
@@ -198,11 +198,11 @@ journal.windows.mark.placeholder.words = your·journal
 
 journal.windows.mark.unavailable.name = la marca de tu diario, no disponible ahora
 
-journal.windows.mark.unavailable.words = mark·unavailable
+journal.windows.mark.unavailable.words = marca·no disponible
 
 journal.windows.models.downloading = descargando…
 
-journal.windows.models.missing = repara o vuelve a instalar la app del diario y luego reinicia tu diario.
+journal.windows.models.missing = repara o reinstala la app del diario y luego reinicia tu diario.
 
 journal.windows.network.close.confirm = ¿cerrar tu diario a los dispositivos en tu red? cualquier dispositivo conectado por tu red ahora se desconectará.
 
@@ -256,7 +256,7 @@ journal.windows.paired.done = listo
 
 journal.windows.paired.heading = "{ $label }" ya puede conectar con tu diario
 
-journal.windows.paired.heading.unnamed = un dispositivo nuevo ya puede conectar con tu diario
+journal.windows.paired.heading.unnamed = un dispositivo nuevo ahora puede conectar con tu diario
 
 journal.windows.paired.note = en ese dispositivo, revisa que muestre esta misma marca y responde ahí. ¿no lo vinculaste?
 

@@ -68,7 +68,7 @@ journal.mac.devices.paired.done = listo
 
 journal.mac.devices.paired.heading = "{ $label }" ya puede conectar con tu diario
 
-journal.mac.devices.paired.heading.unnamed = un dispositivo nuevo ya puede conectar con tu diario
+journal.mac.devices.paired.heading.unnamed = un dispositivo nuevo ahora puede conectar con tu diario
 
 journal.mac.devices.paired.note = en ese dispositivo, revisa que muestre esta misma marca y responde ahí. ¿no lo vinculaste?
 
@@ -254,7 +254,7 @@ journal.mac.runtime.journal.child.breaker.tripped = tu diario se detuvo de forma
 
 journal.mac.runtime.journal.child.containment.unresolved = tu diario se detuvo, y no se pudo confirmar que todos sus procesos estuvieran cerrados
 
-journal.mac.runtime.journal.drive.cannot.run = tu diario no puede ejecutarse en esta unidad porque la unidad no puede guardar archivos como tu diario lo necesita. usa una unidad con formato de mac para tu diario.
+journal.mac.runtime.journal.drive.cannot.run = tu diario no puede correr en esta unidad porque la unidad no puede guardar archivos como tu diario lo necesita. usa una unidad formateada para mac para tu diario.
 
 journal.mac.runtime.journal.materialize.failed = no se pudo preparar el entorno de ejecución del diario
 
