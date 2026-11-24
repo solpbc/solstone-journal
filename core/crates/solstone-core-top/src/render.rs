@@ -2050,7 +2050,7 @@ mod tests {
             120,
             &PlainTopStyle,
         );
-        assert!(rendered.contains(" 1 capture "), "{rendered}");
-        assert!(rendered.contains("1/1 agent\n"), "{rendered}");
+        assert!(rendered.contains(" 1 frame "), "{rendered}");
+        assert!(rendered.contains("1/1 run\n"), "{rendered}");
     }
 }

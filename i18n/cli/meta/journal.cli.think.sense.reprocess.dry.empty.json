@@ -5,7 +5,7 @@
     "journal-cli"
   ],
   "arguments": [],
-  "source_revision": "d09b36ef6dd1e71f15bff50a53b61a39374b58215b7615304c24fe1f0c1cc485",
+  "source_revision": "ba76ae686df0576f2eb0e40099c07c3683f1fec16c48f96a96f55b5fd514afde",
   "max_length": 120,
   "risk": "routine",
   "auto_merge": true,

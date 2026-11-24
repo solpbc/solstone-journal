@@ -21507,11 +21507,11 @@ journal.window.speakers.media.error.file.not.found = that file isn't available.
 
 journal.window.speakers.cli.suggest.import.linkable = { $meetings_quantity ->
     [one]
-        Import linkable: { $name } ({ $entity_id }) — mentioned in { $meetings } meeting
-          Days: { $days }
+        ready to link: { $name } ({ $entity_id }), mentioned in { $meetings } meeting
+          days: { $days }
    *[other]
-        Import linkable: { $name } ({ $entity_id }) — mentioned in { $meetings } meetings
-          Days: { $days }
+        ready to link: { $name } ({ $entity_id }), mentioned in { $meetings } meetings
+          days: { $days }
 }
 
 journal.setup.wrapper.provision.remedy = fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone directly from the runtime
@@ -22010,9 +22010,9 @@ journal.window.stored.event.where = Where: { $location }
 
 journal.window.stored.event.with = With: { $names }
 
-journal.window.stored.event.rrule.daily = Daily
+journal.window.stored.event.rrule.daily = daily
 
-journal.window.stored.event.rrule.weekly = Weekly
+journal.window.stored.event.rrule.weekly = weekly
 
 journal.window.stored.event.rrule.monthly = Monthly
 
@@ -22323,7 +22323,7 @@ journal.window.stored.body.summary.activities.refreshed =
 
 journal.window.stored.body.summary.activities.refused = Some workouts, nights of sleep or mindfulness sessions couldn't be shown under { $facets }. The next import tries again.
 
-journal.window.stored.body.summary.overlapping.nights = { $count } of Oura's nights in this import overlap another. Each is kept as Oura gave it, so if Oura filed a changed night as a new one, both show.
+journal.window.stored.body.summary.overlapping.nights = { $count } of Oura's nights in this import overlap another. each is kept as Oura gave it, so if Oura filed a changed night as a new one, both show.
 
 journal.window.stored.body.summary.entries.stayed.deleted =
     { $quantity ->

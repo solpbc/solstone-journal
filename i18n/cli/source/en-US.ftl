@@ -10163,7 +10163,7 @@ journal.cli.host.health.tasks = Tasks:{ $line_break }
 
 journal.cli.host.health.tasks.empty = Tasks: none{ $line_break }
 
-journal.cli.host.health.timeout = Timed out waiting for supervisor status (10s){ $line_break }
+journal.cli.host.health.timeout = timed out waiting for supervisor status (10s){ $line_break }
 
 journal.cli.host.health.usage = usage: { $syntax }{ $line_break }
 
@@ -12048,8 +12048,8 @@ journal.cli.maintenance.speakers.discovery.helper = speaker discovery helper fai
 journal.cli.maintenance.speakers.discovery.input = speaker discovery failed: { $detail }
 
 journal.cli.host.health.timeout.malformed.frames = { $quantity ->
-    [one] Timed out waiting for supervisor status (10s; dropped { $count } malformed frame){ $line_break }
-   *[other] Timed out waiting for supervisor status (10s; dropped { $count } malformed frames){ $line_break }
+    [one] timed out waiting for supervisor status (10s; dropped { $count } malformed frame){ $line_break }
+   *[other] timed out waiting for supervisor status (10s; dropped { $count } malformed frames){ $line_break }
 }
 
 journal.cli.install.status.interrupted = the download was interrupted
@@ -12341,8 +12341,8 @@ journal.cli.top.observe.screencast = screencast { $elapsed }
 journal.cli.top.observe.tmux.badge = [TMUX]
 
 journal.cli.top.observe.tmux.captures = { $quantity ->
-    [one] { $count } capture
-    *[other] { $count } captures
+    [one] { $count } frame
+    *[other] { $count } frames
     }
 
 journal.cli.top.observe.idle.locked = [IDLE] locked
@@ -12362,8 +12362,8 @@ journal.cli.top.section.think = Think
 journal.cli.top.think.segments = seg { $completed }/{ $total }
 
 journal.cli.top.think.agents = { $total_quantity ->
-    [one] { $completed }/{ $total } agent
-    *[other] { $completed }/{ $total } agents
+    [one] { $completed }/{ $total } run
+    *[other] { $completed }/{ $total } runs
     }
 
 journal.cli.top.think.last.prefix = Last: { $success } ok
@@ -12459,34 +12459,34 @@ journal.cli.schedule.weekly.saturday = Saturday { $time }
 journal.cli.schedule.weekly.sunday = Sunday { $time }
 
 journal.cli.think.sense.reprocess.kept.voice.only = { $quantity ->
-    [one] Kept { $count } voice-only output file: a voice-only result is not reprocessed
-    *[other] Kept { $count } voice-only output files: a voice-only result is not reprocessed
+    [one] kept { $count } output file made with "leave out other voices" on: it isn't reprocessed
+    *[other] kept { $count } output files made with "leave out other voices" on: they aren't reprocessed
     }
 
 journal.cli.think.sense.reprocess.kept.before.voice.only = { $quantity ->
-    [one] Kept { $count } transcript made before "leave out other voices" was on: turn it off to reprocess that transcript
-    *[other] Kept { $count } transcripts made before "leave out other voices" was on: turn it off to reprocess them
+    [one] kept { $count } transcript made before "leave out other voices" was on: turn it off to reprocess that transcript
+    *[other] kept { $count } transcripts made before "leave out other voices" was on: turn it off to reprocess them
     }
 
-journal.cli.think.sense.reprocess.dry.empty = No files to delete
+journal.cli.think.sense.reprocess.dry.empty = no files to delete
 
 journal.cli.think.sense.reprocess.dry.would.delete = { $quantity ->
-    [one] Would delete { $count } output file:
-    *[other] Would delete { $count } output files:
+    [one] would delete { $count } output file:
+    *[other] would delete { $count } output files:
     }
 
 journal.cli.think.sense.reprocess.deleted.count = { $quantity ->
-    [one] Deleted { $count } output file
-    *[other] Deleted { $count } output files
+    [one] deleted { $count } output file
+    *[other] deleted { $count } output files
     }
 
-journal.cli.think.sense.reprocess.deleted.file = Deleted: { $path }
+journal.cli.think.sense.reprocess.deleted.file = deleted: { $path }
 
 journal.cli.think.sense.dry.empty = No unprocessed files found
 
 journal.cli.think.sense.dry.would.process = { $quantity ->
-    [one] Would process { $count } file ({ $breakdown }):
-    *[other] Would process { $count } files ({ $breakdown }):
+    [one] would process { $count } file ({ $breakdown }):
+    *[other] would process { $count } files ({ $breakdown }):
     }
 
 journal.cli.install.windows.payload.missing = missing{ $line_break }  { $detail }
@@ -13652,6 +13652,6 @@ journal.cli.importer.preview.image.one = 1 image ({ $format }, { $width }×{ $he
 
 journal.cli.importer.summary.image.none = No readable image found
 
-journal.cli.importer.summary.archive = Journal archive: { $days }, { $entities }, { $facets } ({ $warnings })
+journal.cli.importer.summary.archive = journal export: { $days }, { $entities }, { $facets } ({ $warnings })
 
 journal.cli.importer.force.pdf.day.notice = notice: this file's name dates to { $fresh }, and a previous import was recorded on { $stored }. the PDF's own dates may select a different day. choose --timestamp to set its date. existing recordings are not moved.

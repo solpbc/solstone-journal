@@ -1272,8 +1272,8 @@ mod tests {
             "title": "Standup",
             "date": "20260401",
             "type": "event",
-            "preview": "all day · Weekly on Mon, 1 time",
-            "meta": { "recurrence": "Weekly on Mon, 1 time" },
+            "preview": "all day · weekly on Mon, 1 time",
+            "meta": { "recurrence": "weekly on Mon, 1 time" },
             "display": {
                 "all_day_days": 1,
                 "recurrence": recurrence,
@@ -1283,13 +1283,13 @@ mod tests {
         let mut en_item = manifest_item.clone();
         project_manifest_item(&mut en_item, ENGLISH);
         assert!(en_item.get("display").is_none());
-        assert_eq!(en_item["preview"], "all day · Weekly on Mon, 1 time");
+        assert_eq!(en_item["preview"], "all day · weekly on Mon, 1 time");
 
         project_manifest_item(&mut manifest_item, locale);
         assert!(manifest_item.get("display").is_none());
         if locale != ENGLISH {
-            assert_ne!(manifest_item["meta"]["recurrence"], "Weekly on Mon, 1 time");
-            assert_ne!(manifest_item["preview"], "all day · Weekly on Mon, 1 time");
+            assert_ne!(manifest_item["meta"]["recurrence"], "weekly on Mon, 1 time");
+            assert_ne!(manifest_item["preview"], "all day · weekly on Mon, 1 time");
         }
     }
 

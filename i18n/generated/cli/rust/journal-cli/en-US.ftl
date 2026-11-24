@@ -3438,11 +3438,11 @@ m6a6f75726e616c2e636c692e686f73742e6865616c74682e7461736b73 = Tasks:{ "\u000a" }
 
 m6a6f75726e616c2e636c692e686f73742e6865616c74682e7461736b732e656d707479 = Tasks: none{ "\u000a" }
 
-m6a6f75726e616c2e636c692e686f73742e6865616c74682e74696d656f7574 = Timed out waiting for supervisor status (10s){ "\u000a" }
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e74696d656f7574 = timed out waiting for supervisor status (10s){ "\u000a" }
 
 m6a6f75726e616c2e636c692e686f73742e6865616c74682e74696d656f75742e6d616c666f726d65642e6672616d6573 = { $i18nCategory ->
-    [one] Timed out waiting for supervisor status (10s; dropped { $count } malformed frame){ "\u000a" }
-   *[other] Timed out waiting for supervisor status (10s; dropped { $count } malformed frames){ "\u000a" }
+    [one] timed out waiting for supervisor status (10s; dropped { $count } malformed frame){ "\u000a" }
+   *[other] timed out waiting for supervisor status (10s; dropped { $count } malformed frames){ "\u000a" }
 }
 
 m6a6f75726e616c2e636c692e686f73742e6865616c74682e7573616765 = usage: { "solstone journal health [-h] [-v] [-d]" }{ "\u000a" }
@@ -5612,7 +5612,7 @@ m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e6661696c6564 = { $sourc
 
 m6a6f75726e616c2e636c692e696d706f727465722e736f757263652e70726576696577 = { $source } preview: date_range={ $start }..{ $end } items={ $items } entities={ $entities } summary={ $summary }
 
-m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e61726368697665 = Journal archive: { $days }, { $entities }, { $facets } ({ $warnings })
+m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e61726368697665 = journal export: { $days }, { $entities }, { $facets } ({ $warnings })
 
 m6a6f75726e616c2e636c692e696d706f727465722e73756d6d6172792e636f6e766572736174696f6e73 = imported { $messages } from { $conversations } across { $days }
 
@@ -12780,8 +12780,8 @@ m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6465666572726564 = { $i18nCateg
 m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6472792e656d707479 = No unprocessed files found
 
 m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6472792e776f756c642e70726f63657373 = { $i18nCategory ->
-    [one] Would process { $count } file ({ $breakdown }):
-   *[other] Would process { $count } files ({ $breakdown }):
+    [one] would process { $count } file ({ $breakdown }):
+   *[other] would process { $count } files ({ $breakdown }):
 }
 
 m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e6572726f722e64656c657465 = could not delete { $path }: { $error }
@@ -12828,27 +12828,27 @@ m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e70726f63657373696e672e7365676d6
 m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e72656675736564 = sense batch refused: { $reason }
 
 m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e726570726f636573732e64656c657465642e636f756e74 = { $i18nCategory ->
-    [one] Deleted { $count } output file
-   *[other] Deleted { $count } output files
+    [one] deleted { $count } output file
+   *[other] deleted { $count } output files
 }
 
-m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e726570726f636573732e64656c657465642e66696c65 = Deleted: { $path }
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e726570726f636573732e64656c657465642e66696c65 = deleted: { $path }
 
-m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e726570726f636573732e6472792e656d707479 = No files to delete
+m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e726570726f636573732e6472792e656d707479 = no files to delete
 
 m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e726570726f636573732e6472792e776f756c642e64656c657465 = { $i18nCategory ->
-    [one] Would delete { $count } output file:
-   *[other] Would delete { $count } output files:
+    [one] would delete { $count } output file:
+   *[other] would delete { $count } output files:
 }
 
 m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e726570726f636573732e6b6570742e6265666f72652e766f6963652e6f6e6c79 = { $i18nCategory ->
-    [one] Kept { $count } transcript made before "leave out other voices" was on: turn it off to reprocess that transcript
-   *[other] Kept { $count } transcripts made before "leave out other voices" was on: turn it off to reprocess them
+    [one] kept { $count } transcript made before "leave out other voices" was on: turn it off to reprocess that transcript
+   *[other] kept { $count } transcripts made before "leave out other voices" was on: turn it off to reprocess them
 }
 
 m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e726570726f636573732e6b6570742e766f6963652e6f6e6c79 = { $i18nCategory ->
-    [one] Kept { $count } voice-only output file: a voice-only result is not reprocessed
-   *[other] Kept { $count } voice-only output files: a voice-only result is not reprocessed
+    [one] kept { $count } output file made with "leave out other voices" on: it isn't reprocessed
+   *[other] kept { $count } output files made with "leave out other voices" on: they aren't reprocessed
 }
 
 m6a6f75726e616c2e636c692e7468696e6b2e73656e73652e72657472792e6368616e676564 = native retry inputs changed
@@ -13030,8 +13030,8 @@ m6a6f75726e616c2e636c692e746f702e6f6273657276652e73637265656e63617374 = screenca
 m6a6f75726e616c2e636c692e746f702e6f6273657276652e746d75782e6261646765 = [TMUX]
 
 m6a6f75726e616c2e636c692e746f702e6f6273657276652e746d75782e6361707475726573 = { $i18nCategory ->
-    [one] { $count } capture
-   *[other] { $count } captures
+    [one] { $count } frame
+   *[other] { $count } frames
 }
 
 m6a6f75726e616c2e636c692e746f702e6f6273657276652e7472616e736372696265 = transcribe
@@ -13055,8 +13055,8 @@ m6a6f75726e616c2e636c692e746f702e7461736b2e7374617475732e676f6e65 = gone
 m6a6f75726e616c2e636c692e746f702e7461736b2e7374617475732e6f6b = ok
 
 m6a6f75726e616c2e636c692e746f702e7468696e6b2e6167656e7473 = { $i18nCategory ->
-    [one] { $completed }/{ $total } agent
-   *[other] { $completed }/{ $total } agents
+    [one] { $completed }/{ $total } run
+   *[other] { $completed }/{ $total } runs
 }
 
 m6a6f75726e616c2e636c692e746f702e7468696e6b2e6c6173742e6661696c6564 = { $failed } failed

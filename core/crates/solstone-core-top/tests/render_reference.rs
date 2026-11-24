@@ -25,11 +25,11 @@ fn all_retained_render_sources_transform_to_approved_digests() {
         ),
         (
             "full",
-            "90885b8c5e26147b90a7c58a54214299410fc95888f724d2532580cc4013ac05",
+            "fba410116a03388d6d044d3b25f054f304077b3697ef4c3b1c9f62a32760c852",
         ),
         (
             "wide",
-            "6be69f202db3cf5620e37d0c09011fbbc8be6c48b079254d707d55f6fca692cd",
+            "8fb501b68be58aada7793541b99230fab96a69ef439ff0a4171a9dfc3f55b9c8",
         ),
         (
             "think-failed",
@@ -45,11 +45,11 @@ fn all_retained_render_sources_transform_to_approved_digests() {
         ),
         (
             "observe-tmux-yellow",
-            "b5f08a2c306d2e8ff5df15d29d51992ebde193f3b45845b5d382e5b1b8351549",
+            "f358b0b83d8820b37ff98ca767e1e350b051e3fd964b7a26fa3c224c617cf4c2",
         ),
         (
             "observe-tmux-yellow-upper",
-            "b5f08a2c306d2e8ff5df15d29d51992ebde193f3b45845b5d382e5b1b8351549",
+            "f358b0b83d8820b37ff98ca767e1e350b051e3fd964b7a26fa3c224c617cf4c2",
         ),
         (
             "last-selected",

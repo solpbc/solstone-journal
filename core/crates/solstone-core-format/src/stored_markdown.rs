@@ -1801,7 +1801,7 @@ mod tests {
             },
         });
         ics.push_str("\n");
-        assert!(ics.contains("Repeats: Weekly on Mon, 1 time, until 2026-05-01"));
+        assert!(ics.contains("Repeats: weekly on Mon, 1 time, until 2026-05-01"));
         let ics_path = root
             .path()
             .join("chronicle/20260401/import.ics/091000_300/event_transcript.md");

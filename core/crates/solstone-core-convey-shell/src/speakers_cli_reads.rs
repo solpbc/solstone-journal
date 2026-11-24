@@ -1248,10 +1248,10 @@ mod tests {
         assert_eq!(
             rendered,
             concat!(
-                "Import linkable: Ada (ada) — mentioned in 1 meeting\n",
-                "  Days: 20260808\n",
-                "Import linkable: Bo (bo) — mentioned in 2 meetings\n",
-                "  Days: 20260808, 20260809\n",
+                "ready to link: Ada (ada), mentioned in 1 meeting\n",
+                "  days: 20260808\n",
+                "ready to link: Bo (bo), mentioned in 2 meetings\n",
+                "  days: 20260808, 20260809\n",
                 "Speaker candidate pair: similarity 0.91 (3 vs 4 intervals)\n",
                 "Low confidence review: 20260808/120000_1 — 12 of 20 labels are medium/unresolved",
             )

@@ -23,7 +23,7 @@
     }
   ],
   "format_intent": "text",
-  "source_revision": "62f4fcbd9660c8f8d44f0a2a730e760b9e6c97883f5ebb6ec45cbc3b5ba91883",
+  "source_revision": "6c889e74aa72e9caa22d9a8b2fe4f3eb48a2f77a9518df74e68e82db34f8f70f",
   "max_length": 210,
   "risk": "routine",
   "auto_merge": true,

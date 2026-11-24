@@ -4509,7 +4509,7 @@ mod tests {
         let plan = plan_journal_archive(&archive).unwrap();
         assert_eq!(
             plan.summary,
-            "Journal archive: 1 day, 0 entities, 0 facets (1 warning)"
+            "journal export: 1 day, 0 entities, 0 facets (1 warning)"
         );
         assert_eq!(plan.days, vec!["20260311".to_owned()]);
         assert_eq!(plan.entity_count, 0);
@@ -4520,7 +4520,7 @@ mod tests {
         assert_eq!(preview.item_count, 1);
         assert_eq!(
             preview.summary,
-            "Journal archive: 1 day, 0 entities, 0 facets (1 warning)"
+            "journal export: 1 day, 0 entities, 0 facets (1 warning)"
         );
     }
 

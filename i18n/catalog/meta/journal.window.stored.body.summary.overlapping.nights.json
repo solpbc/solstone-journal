@@ -11,7 +11,7 @@
     }
   ],
   "format_intent": "text",
-  "source_revision": "72f896f4cd308d9f517fa80e9ab94fda1ffcb4ded7feaedb4ed793f85ee93d00",
+  "source_revision": "934e28a70146ef98eaed1ab921cfd6b872601272b0c2968365d89221722fb89a",
   "max_length": 441,
   "risk": "routine",
   "auto_merge": true,
