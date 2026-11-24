@@ -472,7 +472,7 @@ journal.cli.depict.admission.root.missing = l'eseguibile di avvio non ha una rad
 
 journal.cli.depict.admission.server.mismatch = mancata corrispondenza dell'identità del server della pipe di avvio
 
-journal.cli.depict.admission.snapshot.absent = il processo corrente è assente dallo snapshot del genitore
+journal.cli.depict.admission.snapshot.absent = il processo corrente è assente dall'istantanea del genitore
 
 journal.cli.depict.admission.task.provenance = provenienza dell'attività installata non valida
 
@@ -644,7 +644,7 @@ journal.cli.describe.pipeline.retry.input.changed = l'input del nuovo tentativo 
 
 journal.cli.describe.pipeline.retry.input.regular = l'input del nuovo tentativo non è un file regolare
 
-journal.cli.describe.pipeline.retry.io.allocate = non è stato possibile allocare lo stage
+journal.cli.describe.pipeline.retry.io.allocate = non è stato possibile allocare la preparazione
 
 journal.cli.describe.pipeline.retry.io.dest.namespace = lo spazio dei nomi della destinazione è cambiato prima della pubblicazione
 
@@ -662,11 +662,11 @@ journal.cli.describe.pipeline.retry.io.parent.rename = il pathname del padre è 
 
 journal.cli.describe.pipeline.retry.io.parent.reparse = il padre è un punto di reparse
 
-journal.cli.describe.pipeline.retry.io.prepare = l'identità dello stage è cambiata durante la preparazione
+journal.cli.describe.pipeline.retry.io.prepare = l'identità della preparazione è cambiata durante la preparazione
 
-journal.cli.describe.pipeline.retry.io.stage.identity = l'identità dello stage è cambiata prima della pubblicazione
+journal.cli.describe.pipeline.retry.io.stage.identity = l'identità della preparazione è cambiata prima della pubblicazione
 
-journal.cli.describe.pipeline.retry.io.stage.namespace = lo spazio dei nomi dello stage è cambiato prima della pubblicazione
+journal.cli.describe.pipeline.retry.io.stage.namespace = lo spazio dei nomi della preparazione è cambiato prima della pubblicazione
 
 journal.cli.describe.pipeline.retry.io.tmp = non è stato possibile allocare un file temporaneo univoco
 
@@ -774,7 +774,7 @@ journal.cli.describe.pipeline.temp = non è stato possibile allocare il file tem
 
 journal.cli.describe.pipeline.timestamp = il fotogramma { $frame } di describe ha omesso la marca temporale
 
-journal.cli.describe.pipeline.windows.cleanup = { $detail }; non è stato possibile rimuovere lo stage { $stage }: { $error }
+journal.cli.describe.pipeline.windows.cleanup = { $detail }; non è stato possibile rimuovere la preparazione { $stage }: { $error }
 
 journal.cli.describe.pipeline.windows.name.alternate.data.stream = il nome contiene i due punti
 
@@ -1472,7 +1472,7 @@ journal.cli.offload.stopped.archive.repository.identity.changed = trasferimento 
 
 journal.cli.offload.stopped.archive.repository.identity.invalid = trasferimento fermato: non è stato possibile identificare il backup.
 
-journal.cli.offload.stopped.archive.snapshot.identity.invalid = trasferimento fermato: l'archiviazione non ha restituito un'identità completa dell'istantanea.
+journal.cli.offload.stopped.archive.snapshot.identity.invalid = trasferimento fermato: l'archivio non ha restituito un'identità completa dell'istantanea.
 
 journal.cli.offload.stopped.archive.source.unavailable = trasferimento fermato: non è stato possibile confermare i file di archiviazione preparati.
 
@@ -2506,9 +2506,9 @@ journal.cli.talent.daily.artifact.before = conflitto: l'artefatto richiesto è c
 
 journal.cli.talent.daily.artifact.changed = conflitto: l'output richiesto è cambiato dopo la preparazione
 
-journal.cli.talent.daily.artifact.snapshot = manca lo snapshot congelato dell'artefatto richiesto
+journal.cli.talent.daily.artifact.snapshot = manca l'istantanea congelata dell'artefatto richiesto
 
-journal.cli.talent.daily.artifact.snapshot.invalid = snapshot congelato dell'artefatto non valido: { $error }
+journal.cli.talent.daily.artifact.snapshot.invalid = istantanea congelata dell'artefatto non valida: { $error }
 
 journal.cli.talent.daily.attempt.day = manca il giorno del tentativo giornaliero
 
@@ -2536,7 +2536,7 @@ journal.cli.talent.daily.maintenance.output = output di manutenzione non valido:
 
 journal.cli.talent.daily.maintenance.primary = l'output di manutenzione non ha primary
 
-journal.cli.talent.daily.maintenance.snapshot = manca lo snapshot congelato dell'orario giornaliero
+journal.cli.talent.daily.maintenance.snapshot = manca l'istantanea congelata dell'orario giornaliero
 
 journal.cli.talent.daily.observer.changed = conflitto: l'osservazione è cambiata dopo la preparazione del prompt
 
