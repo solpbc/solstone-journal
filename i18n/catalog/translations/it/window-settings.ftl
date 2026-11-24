@@ -1636,7 +1636,7 @@ journal.window.settings.link.label.set.up.your.voice.first = configura prima la 
 
 journal.window.settings.link.label.settings = impostazioni
 
-journal.window.settings.local.access.bookmark.address = un segnalibro a{ $slot1 }{ $journal_address }{ $slot2 }mostra una pagina che ti chiede di aprire il tuo diario dall'app del diario o con solstone journal aperto. questo browser mantiene l'accesso finché il tuo diario non si riavvia; qualsiasi altro browser ha bisogno di un nuovo link monouso.
+journal.window.settings.local.access.bookmark.address = un segnalibro a{ $slot1 }{ $journal_address }{ $slot2 }mostra una pagina che ti chiede di aprire il tuo diario dall'app del diario o con solstone journal open. questo browser mantiene l'accesso finché il tuo diario non si riavvia; qualsiasi altro browser ha bisogno di un nuovo link monouso.
 
 journal.window.settings.local.access.open.address = aperto: chiunque usi questo computer, e qualsiasi programma in esecuzione su di esso, può aprire il tuo diario a{ $slot1 }{ $journal_address }.
 
