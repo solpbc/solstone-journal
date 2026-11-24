@@ -236,6 +236,6 @@
   "i18n/generated/InfoPlist.xcstrings": "d64cbb139fb4e4817a38c1159d06237547f1a353314ab0c33cddb9123cb06a8e",
   "i18n/generated/Journal.xcstrings": "a60bece030e3880481cd2ab52e853be81a4ae8a1953eb14e7767ecc773e17e57",
   "i18n/info.json": "b0e5351b91d176d0a46ba2e9605631e2415d680eb563a1e913f8a890a758f45c",
-  "scripts/catalog.py": "e373a0c227a652797139dc1081fa26ad56d7da64f3a8702065de25f4a95aaaf2",
+  "scripts/catalog.py": "2d0b55b72f27e54064579a7036cd35952e2c4a964693705df35fc4609d842f0f",
   "Info.plist localized fields": "cc2e93dbd15d89cdaefe9d4d52c154ed3eea81f7bce644e39965cb64ce5cc592"
 }

@@ -127,6 +127,17 @@
       "cardinal": "en",
       "android_qualifier": "en-rGB",
       "description": "Labelled test locale for integration; not a launch language."
+    },
+    {
+      "tag": "es-419",
+      "tier": "draft",
+      "purpose": "ordinary",
+      "development": "released",
+      "production": "withheld",
+      "cardinal": "one-many",
+      "android_qualifier": "b+es+419",
+      "webextension_folder": "es_419",
+      "description": "Spanish (Latin America) draft translation; excluded from production."
     }
   ],
   "namespaces": [
@@ -199,7 +210,8 @@
     {
       "id": "account",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
@@ -246,106 +258,123 @@
       "id": "PushMessages",
       "locales": [
         "en-US",
-        "en-GB"
+        "en-GB",
+        "es-419"
       ]
     },
     {
       "id": "link-host",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
       "id": "browser",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
       "id": "support",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
       "id": "transparency",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
       "id": "solpbc-org",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
       "id": "windows",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
       "id": "macos",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
       "id": "android-wear",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
       "id": "android-phone",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
       "id": "ios",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
       "id": "linux",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
       "id": "website",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
       "id": "journal-mac",
       "locales": [
-        "en-US"
+        "en-US",
+        "es-419"
       ]
     },
     {
       "id": "journal-window",
       "locales": [
         "en-US",
-        "en-XA"
+        "en-XA",
+        "es-419"
       ]
     },
     {
       "id": "journal-windows-app",
       "locales": [
         "en-US",
-        "en-XA"
+        "en-XA",
+        "es-419"
       ]
     },
     {
       "id": "journal-cli",
       "locales": [
         "en-US",
-        "en-XA"
+        "en-XA",
+        "es-419"
       ]
     }
   ]

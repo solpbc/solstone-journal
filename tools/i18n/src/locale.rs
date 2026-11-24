@@ -146,15 +146,9 @@ pub fn android_qualifier_from_tag(tag: &str) -> Option<String> {
 
 pub fn is_standard_formatting_locale(tag: &str) -> bool {
     if let Some((lang, region)) = tag.split_once('-') {
-        let lang_bytes = lang.as_bytes();
-        let reg_bytes = region.as_bytes();
-        (lang_bytes.len() == 2 || lang_bytes.len() == 3)
-            && lang_bytes.iter().all(|b| b.is_ascii_lowercase())
-            && reg_bytes.len() == 2
-            && reg_bytes.iter().all(|b| b.is_ascii_uppercase())
+        is_language(lang) && is_region(region)
     } else {
-        let bytes = tag.as_bytes();
-        (bytes.len() == 2 || bytes.len() == 3) && bytes.iter().all(|b| b.is_ascii_lowercase())
+        is_language(tag)
     }
 }
 
@@ -211,6 +205,13 @@ pub struct LocaleRegistry {
 }
 
 impl LocaleRegistry {
+    /// Returns true if the registry declares `tag` at `tier: "draft"`.
+    pub fn is_draft(&self, tag: &str) -> bool {
+        self.locales
+            .iter()
+            .any(|locale| locale.tag == tag && locale.tier == LocaleTier::Draft)
+    }
+
     /// The plural family a locale declares, if it declares one.
     pub fn cardinal_family(&self, tag: &str) -> Option<&'static crate::plural::CardinalFamily> {
         self.locales

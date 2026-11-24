@@ -38,14 +38,28 @@ def snapshot():
     return hashes
 
 
-def compile_table(table, path, destination):
-    path.write_text(dump(table))
-    destination.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["xcrun", "xcstringstool", "compile", path,
-                    "--output-directory", destination], check=True)
+def compile_table(table, path, destination, previous_table=None):
+    rendered = dump(table)
+    path.write_text(rendered)
+    if shutil.which("xcrun"):
+        if destination.is_dir():
+            shutil.rmtree(destination)
+        destination.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["xcrun", "xcstringstool", "compile", path,
+                        "--output-directory", destination], check=True)
+    elif previous_table is not None and previous_table == rendered and destination.is_dir() and any(destination.rglob("*")):
+        return
+    else:
+        raise SystemExit(
+            f"xcrun is not available and {path.relative_to(ROOT)} changed; "
+            "run platforms/macos/scripts/catalog.py on macOS to recompile."
+        )
 
 
 def generate(compiler, channel):
+    has_xcrun = shutil.which("xcrun") is not None
+    prev_journal = (GENERATED / "Journal.xcstrings").read_text() if (GENERATED / "Journal.xcstrings").is_file() else None
+    prev_info = (GENERATED / "InfoPlist.xcstrings").read_text() if (GENERATED / "InfoPlist.xcstrings").is_file() else None
     with tempfile.TemporaryDirectory() as temp:
         out = Path(temp) / "targets"
         ir_file = Path(temp) / "ir.json"
@@ -55,10 +69,13 @@ def generate(compiler, channel):
                         "--out", ir_file], check=True)
         table = json.loads((out / "apple/journal-mac.xcstrings").read_text())
         ir = json.loads(ir_file.read_text())
-    for directory in [GENERATED, RUNTIME / "Localization"]:
-        if directory.is_dir():
-            shutil.rmtree(directory)
-    GENERATED.mkdir(parents=True)
+    if has_xcrun:
+        for directory in [GENERATED, RUNTIME / "Localization"]:
+            if directory.is_dir():
+                shutil.rmtree(directory)
+        GENERATED.mkdir(parents=True)
+    else:
+        GENERATED.mkdir(parents=True, exist_ok=True)
     functions = ["// Generated from the Journal for Mac catalog by scripts/catalog.py.",
                  "extension JournalCopy {",
                  "    static let packagedLanguages = " + json.dumps(ir["locales"]), ""]
@@ -78,7 +95,7 @@ def generate(compiler, channel):
                     source_format(child)
         source_format(entry["localizations"]["en-US"])
         meta = json.loads((CATALOG / "meta" / (identity + ".json")).read_text())
-        if meta["risk"] in {"consent", "legal", "statutory", "payment"}:
+        if meta["risk"] in {"legal", "statutory"}:
             for tag in entry["localizations"]:
                 entry["localizations"][tag] = copy.deepcopy(entry["localizations"]["en-US"])
         if identity in info_keys.values():
@@ -100,8 +117,8 @@ def generate(compiler, channel):
         functions += [f"    public static func {name}({parameters}) -> String {{",
                       f'        {renderer}("{key}", [{", ".join(values)}])', "    }", ""]
     ACCESSORS.write_text("\n".join(functions + ["}", ""]))
-    compile_table(table, GENERATED / "Journal.xcstrings", RUNTIME / "Localization")
-    compile_table(info, GENERATED / "InfoPlist.xcstrings", GENERATED / "AppResources")
+    compile_table(table, GENERATED / "Journal.xcstrings", RUNTIME / "Localization", previous_table=prev_journal)
+    compile_table(info, GENERATED / "InfoPlist.xcstrings", GENERATED / "AppResources", previous_table=prev_info)
     plist["CFBundleDevelopmentRegion"] = "en-US"
     plist["CFBundleLocalizations"] = ir["locales"]
     PLIST.write_bytes(plistlib.dumps(plist, sort_keys=False))

@@ -2303,3 +2303,509 @@ fn test_pseudo_cli_run() {
 
     let _ = fs::remove_dir_all(&temp_out);
 }
+
+fn build_draft_test_catalog(name: &str) -> PathBuf {
+    let dir = unique_temp_dir(name);
+    fs::create_dir_all(dir.join("source")).unwrap();
+    fs::create_dir_all(dir.join("meta")).unwrap();
+    fs::create_dir_all(dir.join("translations")).unwrap();
+
+    fs::write(
+        dir.join("catalog.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "catalog_version": 1,
+            "label": "Draft workflow test catalog",
+            "history": false,
+            "source_locale": "en-US"
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let source_ftl = "\
+link.test.hello = hello world
+link.test.second = open your journal
+link.test.count = { $count ->
+    [one] { $count } item
+   *[other] { $count } items
+}
+link.test.terms = terms of service stay english
+link.test.statute = cancel contracts here
+";
+    fs::write(dir.join("source/en-US.ftl"), source_ftl).unwrap();
+    let parsed = parse_ftl_resource(source_ftl, "en-US").unwrap();
+
+    let write_meta = |id: &str, risk: &str, auto_merge: bool, cardinal: bool| {
+        let rev = crate::freshness::compute_source_hash(&parsed.messages[id]);
+        let mut obj = serde_json::json!({
+            "description": "test message",
+            "context": "test context",
+            "surfaces": ["link-host"],
+            "bundles": ["link-host"],
+            "arguments": [],
+            "format_intent": "text",
+            "max_length": 120,
+            "source_revision": rev,
+            "risk": risk,
+            "auto_merge": auto_merge
+        });
+        if cardinal {
+            obj["format_intent"] = serde_json::json!("cardinal");
+            obj["arguments"] = serde_json::json!([{
+                "name": "count",
+                "type": "cardinal",
+                "numeric_style": "ungrouped",
+                "min": 0,
+                "max": 1000
+            }]);
+            obj["selector"] = serde_json::json!({
+                "name": "count",
+                "type": "cardinal"
+            });
+        }
+        fs::write(
+            dir.join("meta").join(format!("{id}.json")),
+            serde_json::to_string_pretty(&obj).unwrap(),
+        )
+        .unwrap();
+    };
+
+    write_meta("link.test.hello", "routine", true, false);
+    write_meta("link.test.second", "routine", true, false);
+    write_meta("link.test.count", "routine", true, true);
+    write_meta("link.test.terms", "legal", false, false);
+    write_meta("link.test.statute", "statutory", false, false);
+
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "history".into(),
+            dir.to_str().unwrap().into(),
+        ]),
+        0
+    );
+    fs::write(
+        dir.join("catalog.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "catalog_version": 1,
+            "label": "Draft workflow test catalog",
+            "history": true,
+            "source_locale": "en-US"
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "lock".into(),
+            dir.to_str().unwrap().into(),
+        ]),
+        0
+    );
+    dir
+}
+
+#[test]
+fn test_es_419_registry_and_formatting_locale() {
+    let reg = LocaleRegistry::embedded().unwrap();
+    let es = reg
+        .locales
+        .iter()
+        .find(|l| l.tag == "es-419")
+        .expect("es-419 registered");
+    assert_eq!(es.tier, crate::vocab::LocaleTier::Draft);
+    assert_eq!(es.development, crate::vocab::ReleaseState::Released);
+    assert_eq!(es.production, crate::vocab::ReleaseState::Withheld);
+    assert_eq!(es.cardinal.as_deref(), Some("one-many"));
+    assert_eq!(es.android_qualifier.as_deref(), Some("b+es+419"));
+    assert_eq!(es.webextension_folder.as_deref(), Some("es_419"));
+    assert!(crate::locale::is_standard_formatting_locale("es-419"));
+    assert!(!crate::locale::is_standard_formatting_locale("en-x-synth"));
+
+    for bundle_id in [
+        "account",
+        "PushMessages",
+        "link-host",
+        "browser",
+        "support",
+        "transparency",
+        "solpbc-org",
+        "windows",
+        "macos",
+        "android-wear",
+        "android-phone",
+        "ios",
+        "linux",
+        "website",
+        "journal-mac",
+        "journal-window",
+        "journal-windows-app",
+        "journal-cli",
+    ] {
+        let bundles = vec![bundle_id.to_string()];
+        let prod = reg
+            .get_eligible_locales(Channel::Production, &bundles, None)
+            .unwrap();
+        assert_eq!(prod, vec!["en-US".to_string()], "prod bundle {bundle_id}");
+        let dev = reg
+            .get_eligible_locales(Channel::Development, &bundles, None)
+            .unwrap();
+        assert!(
+            dev.iter().any(|l| l == "es-419"),
+            "dev bundle {bundle_id} missing es-419: {dev:?}"
+        );
+    }
+}
+
+#[test]
+fn test_draft_fallback_restricted_guard_and_prod_identity() {
+    let cat = build_draft_test_catalog("draft_fallback");
+    let prod_before = unique_temp_dir("draft_prod_before");
+    let prod_after = unique_temp_dir("draft_prod_after");
+    let dev_out = unique_temp_dir("draft_dev_out");
+    let _ = fs::remove_dir_all(&prod_before);
+    let _ = fs::remove_dir_all(&prod_after);
+    let _ = fs::remove_dir_all(&dev_out);
+
+    // Production output before any es-419 drafts exist
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "targets".into(),
+            cat.to_str().unwrap().into(),
+            "--channel".into(),
+            "production".into(),
+            "--target".into(),
+            "esm".into(),
+            "--out".into(),
+            prod_before.to_str().unwrap().into(),
+        ]),
+        0
+    );
+
+    // Empty es-419 compiles cleanly on development (all cells fall back to English)
+    let loaded_empty =
+        LoadedCatalog::load_and_validate(&cat, Channel::Development, Some("es-419")).unwrap();
+    assert!(!loaded_empty.translations.contains_key("es-419"));
+
+    // Writing a legal or statutory message into es-419 is refused (restricted-draft)
+    fs::write(
+        cat.join("translations/es-419.ftl"),
+        "link.test.hello = hola mundo\nlink.test.terms = terms of service stay english\nlink.test.statute = cancel contracts here\n",
+    )
+    .unwrap();
+    let restricted_faults =
+        LoadedCatalog::load_and_validate(&cat, Channel::Development, Some("es-419")).unwrap_err();
+    assert!(
+        restricted_faults
+            .iter()
+            .any(|f| f.rule == "restricted-draft" && f.message_id == "link.test.terms"),
+        "expected restricted-draft for legal, got {restricted_faults:?}"
+    );
+    assert!(
+        restricted_faults
+            .iter()
+            .any(|f| f.rule == "restricted-draft" && f.message_id == "link.test.statute"),
+        "expected restricted-draft for statutory, got {restricted_faults:?}"
+    );
+    assert_ne!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "lock".into(),
+            cat.to_str().unwrap().into(),
+            "--acknowledge".into(),
+            "es-419".into(),
+        ]),
+        0
+    );
+
+    // Omitting legal, statutory, and an untranslated cardinal cell compiles and lowers cleanly
+    fs::write(
+        cat.join("translations/es-419.ftl"),
+        "link.test.hello = hola mundo\n",
+    )
+    .unwrap();
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "lock".into(),
+            cat.to_str().unwrap().into(),
+            "--acknowledge".into(),
+            "es-419".into(),
+        ]),
+        0
+    );
+
+    // Only the translated message receives an es-419 ack in source-lock.json
+    let lock = crate::freshness::SourceLock::load_from_file(&cat.join("source-lock.json")).unwrap();
+    let acked: Vec<&str> = lock
+        .messages
+        .iter()
+        .filter(|m| m.locales.iter().any(|a| a.locale == "es-419"))
+        .map(|m| m.id.as_str())
+        .collect();
+    assert_eq!(acked, vec!["link.test.hello"]);
+
+    // Development target build emits Spanish for translated cell and English fallback for omitted cells
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "targets".into(),
+            cat.to_str().unwrap().into(),
+            "--channel".into(),
+            "development".into(),
+            "--target".into(),
+            "esm".into(),
+            "--target".into(),
+            "rust".into(),
+            "--target".into(),
+            "android".into(),
+            "--target".into(),
+            "apple".into(),
+            "--target".into(),
+            "gettext".into(),
+            "--out".into(),
+            dev_out.to_str().unwrap().into(),
+        ]),
+        0
+    );
+    let es_ftl = fs::read_to_string(dev_out.join("esm/link-host/es-419.ftl")).unwrap();
+    assert!(es_ftl.contains("hola mundo"));
+    assert!(es_ftl.contains("terms of service stay english"));
+    assert!(es_ftl.contains("cancel contracts here"));
+    assert!(es_ftl.contains("open your journal"));
+    assert!(
+        dev_out
+            .join("android/link-host/values-b+es+419/strings.xml")
+            .is_file()
+    );
+
+    // Production target output is byte-identical after es-419 draft lands
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "targets".into(),
+            cat.to_str().unwrap().into(),
+            "--channel".into(),
+            "production".into(),
+            "--target".into(),
+            "esm".into(),
+            "--out".into(),
+            prod_after.to_str().unwrap().into(),
+        ]),
+        0
+    );
+    for rel in [
+        "esm/link-host/api.mjs",
+        "esm/link-host/catalogs.mjs",
+        "esm/link-host/en-US.ftl",
+        "cases.json",
+    ] {
+        assert_eq!(
+            fs::read(prod_before.join(rel)).unwrap(),
+            fs::read(prod_after.join(rel)).unwrap(),
+            "production byte drift in {rel}"
+        );
+    }
+
+    let _ = fs::remove_dir_all(&cat);
+    let _ = fs::remove_dir_all(&prod_before);
+    let _ = fs::remove_dir_all(&prod_after);
+    let _ = fs::remove_dir_all(&dev_out);
+}
+
+#[test]
+fn test_sharded_translations_scoped_ack_and_english_edit_staleness() {
+    let cat = build_draft_test_catalog("draft_shards_stale");
+    let shard_dir = cat.join("translations/es-419");
+    fs::create_dir_all(&shard_dir).unwrap();
+
+    // Unit A lands shard-a.ftl and acknowledges only its own ID
+    fs::write(
+        shard_dir.join("unit-a.ftl"),
+        "link.test.hello = hola mundo\n",
+    )
+    .unwrap();
+    let unit_a_ids = cat.join("unit-a.ids");
+    fs::write(&unit_a_ids, "link.test.hello\n").unwrap();
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "lock".into(),
+            cat.to_str().unwrap().into(),
+            "--acknowledge".into(),
+            "es-419".into(),
+            "--ids-file".into(),
+            unit_a_ids.to_str().unwrap().into(),
+        ]),
+        0
+    );
+    assert!(LoadedCatalog::load_and_validate(&cat, Channel::Development, Some("es-419")).is_ok());
+
+    // Another session edits English for link.test.hello and refreshes source lock WITHOUT --acknowledge es-419
+    let old_src = fs::read_to_string(cat.join("source/en-US.ftl")).unwrap();
+    let new_src = old_src.replace(
+        "link.test.hello = hello world",
+        "link.test.hello = hello solstone",
+    );
+    fs::write(cat.join("source/en-US.ftl"), &new_src).unwrap();
+    let parsed_new = parse_ftl_resource(&new_src, "en-US").unwrap();
+    let new_rev = crate::freshness::compute_source_hash(&parsed_new.messages["link.test.hello"]);
+    let meta_path = cat.join("meta/link.test.hello.json");
+    let mut meta_val: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&meta_path).unwrap()).unwrap();
+    meta_val["source_revision"] = serde_json::json!(new_rev);
+    fs::write(&meta_path, serde_json::to_string_pretty(&meta_val).unwrap()).unwrap();
+
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "lock".into(),
+            cat.to_str().unwrap().into(),
+        ]),
+        0
+    );
+
+    // Production still compiles cleanly despite stale draft
+    assert!(LoadedCatalog::load_and_validate(&cat, Channel::Production, None).is_ok());
+
+    // Strict development compile flags link.test.hello as stale
+    let stale_faults =
+        LoadedCatalog::load_and_validate(&cat, Channel::Development, Some("es-419")).unwrap_err();
+    assert!(
+        stale_faults.iter().any(|f| f.rule == "stale"
+            && f.locale == "es-419"
+            && f.message_id == "link.test.hello"),
+        "expected stale fault, got {stale_faults:?}"
+    );
+
+    // Unit B lands shard-b.ftl and acknowledges ONLY link.test.second -> unit A stays stale!
+    fs::write(
+        shard_dir.join("unit-b.ftl"),
+        "link.test.second = abre tu diario\n",
+    )
+    .unwrap();
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "lock".into(),
+            cat.to_str().unwrap().into(),
+            "--acknowledge".into(),
+            "es-419".into(),
+            "--id".into(),
+            "link.test.second".into(),
+        ]),
+        0
+    );
+
+    // link.test.hello MUST still be stale; link.test.second MUST be fresh
+    let after_b_faults =
+        LoadedCatalog::load_and_validate(&cat, Channel::Development, Some("es-419")).unwrap_err();
+    assert_eq!(after_b_faults.len(), 1);
+    assert_eq!(after_b_faults[0].rule, "stale");
+    assert_eq!(after_b_faults[0].message_id, "link.test.hello");
+
+    // status CLI exits 1 on whole catalog (stale link.test.hello) and 0 scoped to unit-b
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "status".into(),
+            cat.to_str().unwrap().into(),
+            "--locale".into(),
+            "es-419".into(),
+            "--json".into(),
+        ]),
+        1
+    );
+    let unit_b_ids = cat.join("unit-b.ids");
+    fs::write(&unit_b_ids, "link.test.second\nlink.test.terms\n").unwrap();
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "status".into(),
+            cat.to_str().unwrap().into(),
+            "--locale".into(),
+            "es-419".into(),
+            "--ids-file".into(),
+            unit_b_ids.to_str().unwrap().into(),
+        ]),
+        0
+    );
+
+    // --fallback-stale compiles on development and drops stale draft to English fallback, while refusing production
+    assert!(
+        LoadedCatalog::load_and_validate_with_options(&cat, Channel::Production, None, true)
+            .is_err()
+    );
+    let dev_fb = LoadedCatalog::load_and_validate_with_options(
+        &cat,
+        Channel::Development,
+        Some("es-419"),
+        true,
+    )
+    .unwrap();
+    assert!(!dev_fb.translations["es-419"].contains_key("link.test.hello"));
+    assert!(dev_fb.translations["es-419"].contains_key("link.test.second"));
+    assert!(dev_fb.stale_translations["es-419"].contains("link.test.hello"));
+
+    // Duplicate ID across shards is rejected
+    fs::write(
+        shard_dir.join("unit-c.ftl"),
+        "link.test.second = duplicado\n",
+    )
+    .unwrap();
+    let dup_faults =
+        LoadedCatalog::load_and_validate(&cat, Channel::Development, Some("es-419")).unwrap_err();
+    assert!(
+        dup_faults
+            .iter()
+            .any(|f| f.rule == "duplicate-id" && f.message_id == "link.test.second"),
+        "expected duplicate-id across shards, got {dup_faults:?}"
+    );
+    fs::remove_file(shard_dir.join("unit-c.ftl")).unwrap();
+
+    // Both single-file and shard directory for same locale is rejected
+    fs::write(cat.join("translations/es-419.ftl"), "link.test.hello = x\n").unwrap();
+    let conflict_faults =
+        LoadedCatalog::load_and_validate(&cat, Channel::Development, Some("es-419")).unwrap_err();
+    assert!(
+        conflict_faults
+            .iter()
+            .any(|f| f.rule == "duplicate-locale-source"),
+        "expected duplicate-locale-source, got {conflict_faults:?}"
+    );
+    fs::remove_file(cat.join("translations/es-419.ftl")).unwrap();
+
+    // Export + import preserves sharded translations
+    let exported = unique_temp_dir("draft_shard_export");
+    let imported = unique_temp_dir("draft_shard_import");
+    let _ = fs::remove_dir_all(&exported);
+    let _ = fs::remove_dir_all(&imported);
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "export".into(),
+            cat.to_str().unwrap().into(),
+            "--out".into(),
+            exported.to_str().unwrap().into(),
+        ]),
+        0
+    );
+    assert_eq!(
+        crate::cli::run(vec![
+            "i18n-catalog".into(),
+            "import".into(),
+            exported.to_str().unwrap().into(),
+            "--dest".into(),
+            imported.to_str().unwrap().into(),
+        ]),
+        0
+    );
+    assert!(imported.join("translations/es-419/unit-a.ftl").is_file());
+    assert!(imported.join("translations/es-419/unit-b.ftl").is_file());
+
+    let _ = fs::remove_dir_all(&cat);
+    let _ = fs::remove_dir_all(&exported);
+    let _ = fs::remove_dir_all(&imported);
+}

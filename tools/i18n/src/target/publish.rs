@@ -156,6 +156,10 @@ pub fn publish(
                     && let Some(parsed) = tr_map.get(&id)
                 {
                     translations.insert(loc.tag.clone(), parsed.clone());
+                } else if loc.tier == crate::vocab::LocaleTier::Draft
+                    && let Some(src_parsed) = catalog.source_messages.get(&id)
+                {
+                    translations.insert(loc.tag.clone(), src_parsed.clone());
                 } else {
                     return Err(vec![Fault::new("missing-translation", &loc.tag, &id)]);
                 }

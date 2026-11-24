@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use crate::admit::{ParsedMessage, parse_ftl_resource, validate_admitted_message};
+use crate::admit::{
+    ParsedCatalogFile, ParsedMessage, parse_ftl_resource, validate_admitted_message,
+};
 use crate::fault::{Fault, sort_faults};
 use crate::freshness::{
     SourceLock, compute_contract_hash, compute_protected_hash, compute_source_hash,
@@ -9,11 +11,88 @@ use crate::freshness::{
 use crate::history::{HistoryRegistry, validate_message_id};
 use crate::locale::{LocaleRegistry, resolve_namespace_owner, validate_locale_tag};
 use crate::metadata::MessageMetadata;
-use crate::vocab::Channel;
+use crate::vocab::{Channel, Risk};
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+
+pub(crate) fn is_restricted_draft_message(
+    meta: &MessageMetadata,
+    loc: &str,
+    loc_is_draft: bool,
+) -> bool {
+    loc_is_draft
+        && matches!(meta.risk, Risk::Legal | Risk::Statutory)
+        && meta.approval.as_ref().map(|a| a.locale.as_str()) != Some(loc)
+}
+
+pub(crate) fn load_locale_translations(
+    trans_dir: &Path,
+    loc: &str,
+) -> Result<Option<ParsedCatalogFile>, Vec<Fault>> {
+    let loc_file = trans_dir.join(format!("{}.ftl", loc));
+    let loc_dir = trans_dir.join(loc);
+    let has_file = loc_file.is_file();
+    let has_dir = loc_dir.is_dir();
+
+    if has_file && has_dir {
+        return Err(vec![Fault::new("duplicate-locale-source", loc, "*")]);
+    }
+    if has_file {
+        let content =
+            fs::read_to_string(&loc_file).map_err(|_| vec![Fault::new("io-error", loc, "*")])?;
+        return parse_ftl_resource(&content, loc).map(Some);
+    }
+    if has_dir {
+        let mut shard_paths = Vec::new();
+        let entries = fs::read_dir(&loc_dir).map_err(|_| vec![Fault::new("io-error", loc, "*")])?;
+        for entry in entries {
+            let entry = entry.map_err(|_| vec![Fault::new("io-error", loc, "*")])?;
+            let path = entry.path();
+            if path.is_dir() {
+                return Err(vec![Fault::new("invalid-translation-shard", loc, "*")]);
+            }
+            if path.extension().and_then(|s| s.to_str()) == Some("ftl") {
+                shard_paths.push(path);
+            }
+        }
+        shard_paths.sort();
+
+        let mut combined = HashMap::new();
+        let mut faults = Vec::new();
+        for path in shard_paths {
+            let content = match fs::read_to_string(&path) {
+                Ok(s) => s,
+                Err(_) => {
+                    faults.push(Fault::new("io-error", loc, "*"));
+                    continue;
+                }
+            };
+            match parse_ftl_resource(&content, loc) {
+                Ok(parsed) => {
+                    for (id, msg) in parsed.messages {
+                        match combined.entry(id) {
+                            Entry::Occupied(occ) => {
+                                faults.push(Fault::new("duplicate-id", loc, occ.key()));
+                            }
+                            Entry::Vacant(vac) => {
+                                vac.insert(msg);
+                            }
+                        }
+                    }
+                }
+                Err(mut f) => faults.append(&mut f),
+            }
+        }
+        if !faults.is_empty() {
+            return Err(faults);
+        }
+        return Ok(Some(ParsedCatalogFile { messages: combined }));
+    }
+    Ok(None)
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,6 +122,7 @@ pub struct LoadedCatalog {
     pub source_messages: HashMap<String, ParsedMessage>,
     pub metadata: HashMap<String, MessageMetadata>,
     pub translations: HashMap<String, HashMap<String, ParsedMessage>>,
+    pub stale_translations: HashMap<String, HashSet<String>>,
     pub history: Option<HistoryRegistry>,
     pub lock: Option<SourceLock>,
     pub registry: LocaleRegistry,
@@ -54,22 +134,62 @@ impl LoadedCatalog {
         channel: Channel,
         requested_locale: Option<&str>,
     ) -> Result<Self, Vec<Fault>> {
-        let registry = LocaleRegistry::embedded().map_err(|fault| vec![fault])?;
-        Self::load_with_registry(catalog_dir, channel, requested_locale, registry)
+        Self::load_and_validate_with_options(catalog_dir, channel, requested_locale, false)
     }
 
+    pub fn load_and_validate_with_options(
+        catalog_dir: &Path,
+        channel: Channel,
+        requested_locale: Option<&str>,
+        fallback_stale: bool,
+    ) -> Result<Self, Vec<Fault>> {
+        let registry = LocaleRegistry::embedded().map_err(|fault| vec![fault])?;
+        Self::load_with_registry_options(
+            catalog_dir,
+            channel,
+            requested_locale,
+            registry,
+            fallback_stale,
+        )
+    }
+
+    #[cfg(test)]
     pub(crate) fn load_with_registry(
         catalog_dir: &Path,
         channel: Channel,
         requested_locale: Option<&str>,
         registry: LocaleRegistry,
     ) -> Result<Self, Vec<Fault>> {
-        Self::load_internal(catalog_dir, channel, requested_locale, registry, true)
+        Self::load_with_registry_options(catalog_dir, channel, requested_locale, registry, false)
+    }
+
+    pub(crate) fn load_with_registry_options(
+        catalog_dir: &Path,
+        channel: Channel,
+        requested_locale: Option<&str>,
+        registry: LocaleRegistry,
+        fallback_stale: bool,
+    ) -> Result<Self, Vec<Fault>> {
+        Self::load_internal(
+            catalog_dir,
+            channel,
+            requested_locale,
+            registry,
+            true,
+            fallback_stale,
+        )
     }
 
     pub(crate) fn load_source(catalog_dir: &Path) -> Result<Self, Vec<Fault>> {
         let registry = LocaleRegistry::embedded().map_err(|fault| vec![fault])?;
-        Self::load_internal(catalog_dir, Channel::Production, None, registry, false)
+        Self::load_internal(
+            catalog_dir,
+            Channel::Production,
+            None,
+            registry,
+            false,
+            false,
+        )
     }
 
     fn load_internal(
@@ -78,8 +198,13 @@ impl LoadedCatalog {
         requested_locale: Option<&str>,
         registry: LocaleRegistry,
         include_translations: bool,
+        fallback_stale: bool,
     ) -> Result<Self, Vec<Fault>> {
         let mut faults = Vec::new();
+
+        if fallback_stale && channel == Channel::Production {
+            return Err(vec![Fault::catalog("fallback-stale-production")]);
+        }
 
         if !catalog_dir.is_dir() {
             return Err(vec![Fault::catalog("missing-catalog")]);
@@ -284,47 +409,44 @@ impl LoadedCatalog {
                 faults.push(Fault::new("locale-tag", loc, "*"));
                 continue;
             }
-            let loc_path = trans_dir.join(format!("{}.ftl", loc));
-            if loc_path.is_file() {
-                let content = match fs::read_to_string(&loc_path) {
-                    Ok(s) => s,
-                    Err(_) => {
-                        faults.push(Fault::new("io-error", loc, "*"));
-                        continue;
-                    }
-                };
-                match parse_ftl_resource(&content, loc) {
-                    Ok(mut parsed_file) => {
-                        for (id, msg) in &mut parsed_file.messages {
-                            if !source_file.messages.contains_key(id)
-                                || !metadata_map.contains_key(id)
-                            {
-                                faults.push(Fault::new("unknown-message", loc, id));
-                            } else if let Some(meta) = metadata_map.get(id) {
-                                let src_msg = source_file.messages.get(id);
-                                if let Err(mut f) = validate_admitted_message(
-                                    msg,
-                                    meta,
-                                    loc,
-                                    false,
-                                    src_msg,
-                                    registry.cardinal_family(loc),
-                                ) {
-                                    faults.append(&mut f);
-                                }
+            let loc_is_draft = registry.is_draft(loc);
+            match load_locale_translations(&trans_dir, loc) {
+                Ok(Some(mut parsed_file)) => {
+                    for (id, msg) in &mut parsed_file.messages {
+                        if !source_file.messages.contains_key(id) || !metadata_map.contains_key(id)
+                        {
+                            faults.push(Fault::new("unknown-message", loc, id));
+                        } else if let Some(meta) = metadata_map.get(id) {
+                            if is_restricted_draft_message(meta, loc, loc_is_draft) {
+                                faults.push(Fault::new("restricted-draft", loc, id));
+                            }
+                            let src_msg = source_file.messages.get(id);
+                            if let Err(mut f) = validate_admitted_message(
+                                msg,
+                                meta,
+                                loc,
+                                false,
+                                src_msg,
+                                registry.cardinal_family(loc),
+                            ) {
+                                faults.append(&mut f);
                             }
                         }
-                        translations.insert(loc.clone(), parsed_file.messages);
                     }
-                    Err(mut f) => {
-                        faults.append(&mut f);
-                    }
+                    translations.insert(loc.clone(), parsed_file.messages);
+                }
+                Ok(None) => {}
+                Err(mut f) => {
+                    faults.append(&mut f);
                 }
             }
         }
 
-        // Check missing translations
+        // Check missing translations (draft locales fall back to source English on development)
         for loc in &eligible_locales {
+            if registry.is_draft(loc) {
+                continue;
+            }
             for msg_id in source_file.messages.keys() {
                 if let Some(meta) = metadata_map.get(msg_id) {
                     let is_required = meta.bundles.iter().any(|b| {
@@ -345,11 +467,14 @@ impl LoadedCatalog {
         }
 
         // Check freshness (stale) against lock
+        let mut stale_translations: HashMap<String, HashSet<String>> = HashMap::new();
         if let Some(l) = &lock {
+            let mut drop_stale: Vec<(String, String)> = Vec::new();
             for (loc, tr_msgs) in &translations {
                 if *loc == config.source_locale {
                     continue;
                 }
+                let allow_stale_fallback = fallback_stale && registry.is_draft(loc);
                 for id in tr_msgs.keys() {
                     if let Some(src_msg) = source_file.messages.get(id)
                         && let Some(meta) = metadata_map.get(id)
@@ -360,10 +485,20 @@ impl LoadedCatalog {
                         if let Err(f) =
                             l.check_translation(id, loc, &cur_src, &cur_contract, &cur_prot)
                         {
-                            faults.push(f);
+                            if allow_stale_fallback {
+                                drop_stale.push((loc.clone(), id.clone()));
+                            } else {
+                                faults.push(f);
+                            }
                         }
                     }
                 }
+            }
+            for (loc, id) in drop_stale {
+                if let Some(tr_map) = translations.get_mut(&loc) {
+                    tr_map.remove(&id);
+                }
+                stale_translations.entry(loc).or_default().insert(id);
             }
         }
 
@@ -407,6 +542,7 @@ impl LoadedCatalog {
                 source_messages: source_file.messages,
                 metadata: metadata_map,
                 translations,
+                stale_translations,
                 history,
                 lock,
                 registry,

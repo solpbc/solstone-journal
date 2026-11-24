@@ -83,9 +83,20 @@ pub fn export_bundle(catalog_dir: &Path, out_dir: &Path) -> Result<(), Fault> {
         && let Ok(entries) = fs::read_dir(&trans_dir)
     {
         for entry in entries.flatten() {
+            let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.ends_with(".ftl") {
+            if path.is_file() && name.ends_with(".ftl") {
                 member_paths.push(format!("translations/{}", name));
+            } else if path.is_dir()
+                && let Ok(shard_entries) = fs::read_dir(&path)
+            {
+                for shard in shard_entries.flatten() {
+                    let shard_path = shard.path();
+                    let shard_name = shard.file_name().to_string_lossy().to_string();
+                    if shard_path.is_file() && shard_name.ends_with(".ftl") {
+                        member_paths.push(format!("translations/{}/{}", name, shard_name));
+                    }
+                }
             }
         }
     }

@@ -3,7 +3,9 @@
 
 use crate::admit::parse_ftl_resource;
 use crate::bundle::{export_bundle, import_bundle};
-use crate::catalog::{CatalogConfig, LoadedCatalog};
+use crate::catalog::{
+    CatalogConfig, LoadedCatalog, is_restricted_draft_message, load_locale_translations,
+};
 use crate::coverage::CoverageReport;
 use crate::fault::{Fault, sort_faults};
 use crate::freshness::{
@@ -19,7 +21,8 @@ use crate::locale::{LocaleRegistry, resolve_namespace_owner};
 use crate::metadata::MessageMetadata;
 use crate::pseudo::write_pseudo_locales;
 use crate::publish::atomic_write_file;
-use crate::vocab::Channel;
+use crate::vocab::{Channel, Risk};
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::fs;
@@ -51,6 +54,7 @@ where
         "lock" => run_lock(&args[2..]),
         "pseudo" => run_pseudo(&args[2..]),
         "coverage" => run_coverage(&args[2..]),
+        "status" => run_status(&args[2..]),
         "import" => run_import(&args[2..]),
         "export" => run_export(&args[2..]),
         "targets" => run_targets(&args[2..]),
@@ -68,21 +72,22 @@ fn print_usage() {
          USAGE:\n\
          i18n-catalog <COMMAND> [OPTIONS]\n\n\
          COMMANDS:\n\
-         compile <catalog> --channel <development|production> [--locale <tag>]\n\
-         emit <catalog> --channel <development|production> [--locale <tag>] --out <file>\n\
+         compile <catalog> --channel <development|production> [--locale <tag>] [--fallback-stale]\n\
+         emit <catalog> --channel <development|production> [--locale <tag>] [--fallback-stale] --out <file>\n\
          history <catalog>\n\
          retire <catalog> --id <id> [--replacement <id>]\n\
-         lock <catalog> [--acknowledge <locale>]\n\
+         lock <catalog> [--acknowledge <locale> [--id <id> | --ids-file <path>]]\n\
          pseudo <catalog> --out <dir>\n\
-         coverage <catalog> --channel <development|production>\n\
+         coverage <catalog> --channel <development|production> [--locale <tag>] [--fallback-stale]\n\
+         status <catalog> --locale <tag> [--ids-file <path>] [--json]\n\
          import <bundle> --dest <dir>\n\
          export <catalog> --out <dir>\n\
-         targets <catalog> --channel <development|production> [--locale <tag>] --out <dir> --target <rust|esm|classic|apple|android|webextension|gettext> [--target ...]\n"
+         targets <catalog> --channel <development|production> [--locale <tag>] [--fallback-stale] --out <dir> --target <rust|esm|classic|apple|android|webextension|gettext> [--target ...]\n"
     );
 }
 
 fn run_compile(args: &[String]) -> i32 {
-    let (catalog_dir, channel, locale) = match parse_channel_and_locale_args(args) {
+    let (catalog_dir, channel, locale, fallback_stale) = match parse_channel_and_locale_args(args) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{}", e);
@@ -90,7 +95,12 @@ fn run_compile(args: &[String]) -> i32 {
         }
     };
 
-    match LoadedCatalog::load_and_validate(&catalog_dir, channel, locale.as_deref()) {
+    match LoadedCatalog::load_and_validate_with_options(
+        &catalog_dir,
+        channel,
+        locale.as_deref(),
+        fallback_stale,
+    ) {
         Ok(_) => 0,
         Err(faults) => {
             for f in faults {
@@ -124,7 +134,8 @@ fn run_emit(args: &[String]) -> i32 {
         }
     };
 
-    let (catalog_dir, channel, locale) = match parse_channel_and_locale_args(&rest) {
+    let (catalog_dir, channel, locale, fallback_stale) = match parse_channel_and_locale_args(&rest)
+    {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{}", e);
@@ -132,7 +143,12 @@ fn run_emit(args: &[String]) -> i32 {
         }
     };
 
-    let catalog = match LoadedCatalog::load_and_validate(&catalog_dir, channel, locale.as_deref()) {
+    let catalog = match LoadedCatalog::load_and_validate_with_options(
+        &catalog_dir,
+        channel,
+        locale.as_deref(),
+        fallback_stale,
+    ) {
         Ok(c) => c,
         Err(faults) => {
             for f in faults {
@@ -441,20 +457,53 @@ fn run_retire(args: &[String]) -> i32 {
     0
 }
 
+fn load_ids_file(path: &Path) -> Result<HashSet<String>, String> {
+    let content = fs::read_to_string(path)
+        .map_err(|_| format!("Cannot read ids file: {}", path.display()))?;
+    let mut ids = HashSet::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        ids.insert(trimmed.to_string());
+    }
+    Ok(ids)
+}
+
 fn run_lock(args: &[String]) -> i32 {
     let mut catalog_dir = None;
     let mut ack_locale = None;
+    let mut scoped_ids: Option<HashSet<String>> = None;
 
     let mut i = 0;
     while i < args.len() {
         if args[i] == "--acknowledge" && i + 1 < args.len() {
             ack_locale = Some(args[i + 1].clone());
             i += 2;
-        } else if catalog_dir.is_none() {
+        } else if args[i] == "--id" && i + 1 < args.len() {
+            scoped_ids
+                .get_or_insert_with(HashSet::new)
+                .insert(args[i + 1].clone());
+            i += 2;
+        } else if args[i] == "--ids-file" && i + 1 < args.len() {
+            match load_ids_file(Path::new(&args[i + 1])) {
+                Ok(file_ids) => {
+                    scoped_ids.get_or_insert_with(HashSet::new).extend(file_ids);
+                }
+                Err(err) => {
+                    eprintln!("{}", err);
+                    return 1;
+                }
+            }
+            i += 2;
+        } else if catalog_dir.is_none() && !args[i].starts_with("--") {
             catalog_dir = Some(PathBuf::from(&args[i]));
             i += 1;
         } else {
-            eprintln!("Usage: i18n-catalog lock <catalog> [--acknowledge <locale>]");
+            eprintln!(
+                "Usage: i18n-catalog lock <catalog> [--acknowledge <locale> [--id <id> | --ids-file <path>]]"
+            );
             return 1;
         }
     }
@@ -462,10 +511,17 @@ fn run_lock(args: &[String]) -> i32 {
     let catalog_dir = match catalog_dir {
         Some(d) => d,
         None => {
-            eprintln!("Usage: i18n-catalog lock <catalog> [--acknowledge <locale>]");
+            eprintln!(
+                "Usage: i18n-catalog lock <catalog> [--acknowledge <locale> [--id <id> | --ids-file <path>]]"
+            );
             return 1;
         }
     };
+
+    if scoped_ids.is_some() && ack_locale.is_none() {
+        eprintln!("--id and --ids-file require --acknowledge <locale>");
+        return 1;
+    }
 
     if let Some(ref loc) = ack_locale
         && !crate::locale::validate_locale_tag(loc)
@@ -473,6 +529,14 @@ fn run_lock(args: &[String]) -> i32 {
         eprintln!("{}:*:locale-tag", loc);
         return 1;
     }
+
+    let registry = match LocaleRegistry::embedded() {
+        Ok(r) => r,
+        Err(f) => {
+            eprintln!("{}", f);
+            return 1;
+        }
+    };
 
     let config_path = catalog_dir.join("catalog.json");
     let config_str = match fs::read_to_string(&config_path) {
@@ -533,11 +597,10 @@ fn run_lock(args: &[String]) -> i32 {
         None
     };
 
-    let mut new_messages = Vec::new();
-
     let mut sorted_ids: Vec<String> = source_file.messages.keys().cloned().collect();
     sorted_ids.sort();
 
+    let mut meta_map = HashMap::new();
     for id in &sorted_ids {
         let msg = source_file.messages.get_mut(id).unwrap();
         let meta_path = meta_dir.join(format!("{}.json", id));
@@ -562,19 +625,99 @@ fn run_lock(args: &[String]) -> i32 {
             &config.source_locale,
             true,
             None,
-            LocaleRegistry::embedded()
-                .ok()
-                .and_then(|registry| registry.cardinal_family(&config.source_locale)),
+            registry.cardinal_family(&config.source_locale),
         ) {
             for f in faults {
                 eprintln!("{}", f);
             }
             return 1;
         }
+        meta_map.insert(id.clone(), meta);
+    }
+
+    // Determine which IDs should receive a locale acknowledgment.
+    // For draft locales or when explicit --id / --ids-file is given, require
+    // an admitted, non-restricted translation to be present for each acknowledged ID.
+    let ack_targets: Option<HashSet<String>> = if let Some(ref ack_loc) = ack_locale {
+        let is_draft = registry.is_draft(ack_loc);
+        if is_draft || scoped_ids.is_some() {
+            let mut tr_msgs =
+                match load_locale_translations(&catalog_dir.join("translations"), ack_loc) {
+                    Ok(Some(parsed)) => parsed.messages,
+                    Ok(None) => HashMap::new(),
+                    Err(faults) => {
+                        for f in faults {
+                            eprintln!("{}", f);
+                        }
+                        return 1;
+                    }
+                };
+            let target_ids: Vec<String> = if let Some(ref explicit) = scoped_ids {
+                let mut list: Vec<String> = explicit.iter().cloned().collect();
+                list.sort();
+                list
+            } else {
+                let mut list: Vec<String> = tr_msgs.keys().cloned().collect();
+                list.sort();
+                list
+            };
+
+            let mut faults = Vec::new();
+            let mut validated = HashSet::new();
+            for id in target_ids {
+                let Some(src_msg) = source_file.messages.get(&id) else {
+                    faults.push(Fault::new("unknown-message", ack_loc, &id));
+                    continue;
+                };
+                let Some(meta) = meta_map.get(&id) else {
+                    faults.push(Fault::new("metadata-missing", ack_loc, &id));
+                    continue;
+                };
+                let Some(tr_msg) = tr_msgs.get_mut(&id) else {
+                    faults.push(Fault::new("missing-translation", ack_loc, &id));
+                    continue;
+                };
+                if is_restricted_draft_message(meta, ack_loc, is_draft) {
+                    faults.push(Fault::new("restricted-draft", ack_loc, &id));
+                    continue;
+                }
+                if let Err(mut f) = crate::admit::validate_admitted_message(
+                    tr_msg,
+                    meta,
+                    ack_loc,
+                    false,
+                    Some(src_msg),
+                    registry.cardinal_family(ack_loc),
+                ) {
+                    faults.append(&mut f);
+                    continue;
+                }
+                validated.insert(id);
+            }
+            if !faults.is_empty() {
+                sort_faults(&mut faults);
+                for f in faults {
+                    eprintln!("{}", f);
+                }
+                return 1;
+            }
+            Some(validated)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let mut new_messages = Vec::new();
+
+    for id in &sorted_ids {
+        let msg = &source_file.messages[id];
+        let meta = &meta_map[id];
 
         let src_hash = compute_source_hash(msg);
-        let contract_hash = compute_contract_hash(&meta);
-        let protected_hash = compute_protected_hash(&meta);
+        let contract_hash = compute_contract_hash(meta);
+        let protected_hash = compute_protected_hash(meta);
 
         let mut locales = match &existing_lock {
             Some(ex) => match ex.messages.iter().find(|m| &m.id == id) {
@@ -584,7 +727,13 @@ fn run_lock(args: &[String]) -> i32 {
             None => Vec::new(),
         };
 
-        if let Some(ref ack_loc) = ack_locale {
+        let should_ack = match (&ack_locale, &ack_targets) {
+            (Some(_), Some(targets)) => targets.contains(id),
+            (Some(_), None) => true,
+            (None, _) => false,
+        };
+
+        if should_ack && let Some(ref ack_loc) = ack_locale {
             if let Some(ack) = locales.iter_mut().find(|a| &a.locale == ack_loc) {
                 ack.source = src_hash.clone();
                 ack.contract = contract_hash.clone();
@@ -675,7 +824,7 @@ fn run_pseudo(args: &[String]) -> i32 {
 }
 
 fn run_coverage(args: &[String]) -> i32 {
-    let (catalog_dir, channel, locale) = match parse_channel_and_locale_args(args) {
+    let (catalog_dir, channel, locale, fallback_stale) = match parse_channel_and_locale_args(args) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{}", e);
@@ -683,7 +832,12 @@ fn run_coverage(args: &[String]) -> i32 {
         }
     };
 
-    let catalog = match LoadedCatalog::load_and_validate(&catalog_dir, channel, locale.as_deref()) {
+    let catalog = match LoadedCatalog::load_and_validate_with_options(
+        &catalog_dir,
+        channel,
+        locale.as_deref(),
+        fallback_stale,
+    ) {
         Ok(c) => c,
         Err(faults) => {
             for f in faults {
@@ -730,7 +884,12 @@ fn run_coverage(args: &[String]) -> i32 {
         message_bundles.insert(id.clone(), meta.bundles.clone());
     }
 
-    let stale_message_ids = HashSet::new(); // Already checked in load_and_validate
+    let stale_message_ids: HashSet<String> = catalog
+        .stale_translations
+        .values()
+        .flatten()
+        .cloned()
+        .collect();
 
     let report = CoverageReport::compute(
         &bundle_locales,
@@ -742,6 +901,224 @@ fn run_coverage(args: &[String]) -> i32 {
 
     print!("{}", report.format_stdout());
     0
+}
+
+#[derive(Serialize)]
+struct LocaleStatusReport {
+    locale: String,
+    draft: bool,
+    total: usize,
+    fresh: Vec<String>,
+    stale: Vec<String>,
+    invalid: Vec<String>,
+    unknown_in_translation: Vec<String>,
+    excluded_restricted: Vec<String>,
+    missing: Vec<String>,
+}
+
+fn run_status(args: &[String]) -> i32 {
+    let mut catalog_dir = None;
+    let mut locale = None;
+    let mut ids_file = None;
+    let mut as_json = false;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--locale" if i + 1 < args.len() => {
+                locale = Some(args[i + 1].clone());
+                i += 2;
+            }
+            "--ids-file" if i + 1 < args.len() => {
+                ids_file = Some(PathBuf::from(&args[i + 1]));
+                i += 2;
+            }
+            "--json" => {
+                as_json = true;
+                i += 1;
+            }
+            arg if !arg.starts_with("--") && catalog_dir.is_none() => {
+                catalog_dir = Some(PathBuf::from(arg));
+                i += 1;
+            }
+            other => {
+                eprintln!("Unknown argument: {}", other);
+                return 1;
+            }
+        }
+    }
+
+    let Some(cat_path) = catalog_dir else {
+        eprintln!(
+            "Usage: i18n-catalog status <catalog> --locale <tag> [--ids-file <path>] [--json]"
+        );
+        return 1;
+    };
+    let Some(loc) = locale else {
+        eprintln!("Missing required --locale argument");
+        return 1;
+    };
+    if !crate::locale::validate_locale_tag(&loc) {
+        eprintln!("{}:*:locale-tag", loc);
+        return 1;
+    }
+
+    let filter_ids = match ids_file {
+        Some(ref p) => match load_ids_file(p) {
+            Ok(ids) => Some(ids),
+            Err(err) => {
+                eprintln!("{}", err);
+                return 1;
+            }
+        },
+        None => None,
+    };
+
+    let source_cat = match LoadedCatalog::load_source(&cat_path) {
+        Ok(c) => c,
+        Err(faults) => {
+            for f in faults {
+                eprintln!("{}", f);
+            }
+            return 1;
+        }
+    };
+
+    let loc_is_draft = source_cat.registry.is_draft(&loc);
+    let mut tr_msgs = match load_locale_translations(&cat_path.join("translations"), &loc) {
+        Ok(Some(parsed)) => parsed.messages,
+        Ok(None) => HashMap::new(),
+        Err(faults) => {
+            for f in faults {
+                eprintln!("{}", f);
+            }
+            return 1;
+        }
+    };
+
+    let mut unknown_in_translation: Vec<String> = tr_msgs
+        .keys()
+        .filter(|id| !source_cat.source_messages.contains_key(*id))
+        .cloned()
+        .collect();
+    unknown_in_translation.sort();
+
+    let mut target_ids: Vec<String> = if let Some(ref subset) = filter_ids {
+        let mut ids: Vec<String> = subset.iter().cloned().collect();
+        ids.sort();
+        ids
+    } else {
+        let mut ids: Vec<String> = source_cat.source_messages.keys().cloned().collect();
+        ids.sort();
+        ids
+    };
+    target_ids.sort();
+
+    let mut fresh = Vec::new();
+    let mut stale = Vec::new();
+    let mut invalid = Vec::new();
+    let mut excluded_restricted = Vec::new();
+    let mut missing = Vec::new();
+
+    for id in &target_ids {
+        let (Some(src_msg), Some(meta)) = (
+            source_cat.source_messages.get(id),
+            source_cat.metadata.get(id),
+        ) else {
+            invalid.push(format!("{}:*:unknown-message", id));
+            continue;
+        };
+
+        if let Some(tr_msg) = tr_msgs.get_mut(id) {
+            let mut msg_faults = Vec::new();
+            if is_restricted_draft_message(meta, &loc, loc_is_draft) {
+                msg_faults.push(Fault::new("restricted-draft", &loc, id));
+            }
+            if let Err(mut f) = crate::admit::validate_admitted_message(
+                tr_msg,
+                meta,
+                &loc,
+                false,
+                Some(src_msg),
+                source_cat.registry.cardinal_family(&loc),
+            ) {
+                msg_faults.append(&mut f);
+            }
+            if !msg_faults.is_empty() {
+                sort_faults(&mut msg_faults);
+                for f in msg_faults {
+                    invalid.push(f.to_string());
+                }
+                continue;
+            }
+            let is_stale = match &source_cat.lock {
+                Some(l) => {
+                    let cur_src = compute_source_hash(src_msg);
+                    let cur_contract = compute_contract_hash(meta);
+                    let cur_prot = compute_protected_hash(meta);
+                    l.check_translation(id, &loc, &cur_src, &cur_contract, &cur_prot)
+                        .is_err()
+                }
+                None => true,
+            };
+            if is_stale {
+                stale.push(id.clone());
+            } else {
+                fresh.push(id.clone());
+            }
+        } else if matches!(meta.risk, Risk::Legal | Risk::Statutory) {
+            excluded_restricted.push(id.clone());
+        } else {
+            missing.push(id.clone());
+        }
+    }
+
+    let has_errors = !invalid.is_empty() || !unknown_in_translation.is_empty() || !stale.is_empty();
+    let report = LocaleStatusReport {
+        locale: loc,
+        draft: loc_is_draft,
+        total: target_ids.len(),
+        fresh,
+        stale,
+        invalid,
+        unknown_in_translation,
+        excluded_restricted,
+        missing,
+    };
+
+    if as_json {
+        match serde_json::to_string_pretty(&report) {
+            Ok(out) => println!("{}", out),
+            Err(err) => {
+                eprintln!("Serialization error: {}", err);
+                return 1;
+            }
+        }
+    } else {
+        println!(
+            "Locale: {} (draft={})\nTotal: {}\nFresh: {}\nStale: {}\nInvalid: {}\nUnknown: {}\nExcluded (legal/statutory): {}\nMissing: {}",
+            report.locale,
+            report.draft,
+            report.total,
+            report.fresh.len(),
+            report.stale.len(),
+            report.invalid.len(),
+            report.unknown_in_translation.len(),
+            report.excluded_restricted.len(),
+            report.missing.len(),
+        );
+        for id in &report.stale {
+            println!("  stale: {}", id);
+        }
+        for item in &report.invalid {
+            println!("  invalid: {}", item);
+        }
+        for id in &report.unknown_in_translation {
+            println!("  unknown: {}", id);
+        }
+    }
+
+    if has_errors { 1 } else { 0 }
 }
 
 fn run_import(args: &[String]) -> i32 {
@@ -824,7 +1201,7 @@ fn run_export(args: &[String]) -> i32 {
 
 fn parse_channel_and_locale_args(
     args: &[String],
-) -> Result<(PathBuf, Channel, Option<String>), String> {
+) -> Result<(PathBuf, Channel, Option<String>, bool), String> {
     if args.is_empty() {
         return Err("Missing catalog directory".to_string());
     }
@@ -832,6 +1209,7 @@ fn parse_channel_and_locale_args(
     let catalog_dir = PathBuf::from(&args[0]);
     let mut channel = None;
     let mut locale = None;
+    let mut fallback_stale = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -848,12 +1226,16 @@ fn parse_channel_and_locale_args(
                 locale = Some(args[i + 1].clone());
                 i += 2;
             }
+            "--fallback-stale" => {
+                fallback_stale = true;
+                i += 1;
+            }
             other => return Err(format!("Unknown argument: {}", other)),
         }
     }
 
     let ch = channel.ok_or_else(|| "Missing required --channel argument".to_string())?;
-    Ok((catalog_dir, ch, locale))
+    Ok((catalog_dir, ch, locale, fallback_stale))
 }
 
 fn run_targets(args: &[String]) -> i32 {
@@ -862,6 +1244,7 @@ fn run_targets(args: &[String]) -> i32 {
     let mut locale = None;
     let mut out_dir = None;
     let mut targets = Vec::new();
+    let mut fallback_stale = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -880,6 +1263,10 @@ fn run_targets(args: &[String]) -> i32 {
             "--locale" if i + 1 < args.len() => {
                 locale = Some(args[i + 1].clone());
                 i += 2;
+            }
+            "--fallback-stale" => {
+                fallback_stale = true;
+                i += 1;
             }
             "--out" if i + 1 < args.len() => {
                 out_dir = Some(PathBuf::from(&args[i + 1]));
@@ -932,7 +1319,12 @@ fn run_targets(args: &[String]) -> i32 {
         return 1;
     }
 
-    let catalog = match LoadedCatalog::load_and_validate(&cat_path, ch, locale.as_deref()) {
+    let catalog = match LoadedCatalog::load_and_validate_with_options(
+        &cat_path,
+        ch,
+        locale.as_deref(),
+        fallback_stale,
+    ) {
         Ok(c) => c,
         Err(faults) => {
             for f in faults {
