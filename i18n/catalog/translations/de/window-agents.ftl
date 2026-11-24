@@ -199,27 +199,27 @@ journal.window.agents.button.label.turn.off = ausschalten
 
 journal.window.agents.button.label.turn.off.solstone.me = solstone.me ausschalten
 
-journal.window.agents.byo.dns.address.mismatch.detail = dieser Name zeigt auf{ $slot1 }{ $resolved_addresses }. er sollte einen A-Record haben, für deinen Server unter{ $slot2 }{ $relay_address }, und keine anderen A- oder AAAA-Records. wenn dein DNS-Host für diesen Namen einen Proxy oder ein CDN anbietet, schalte das aus.
+journal.window.agents.byo.dns.address.mismatch.detail = dieser Name zeigt auf{ $slot1 }{ $resolved_addresses }. er sollte einen A-Datensatz haben, für deinen Server unter{ $slot2 }{ $relay_address }, und keine anderen A- oder AAAA-Datensätze. wenn dein DNS-Host für diesen Namen einen Proxy oder ein CDN anbietet, schalte das aus.
 
-journal.window.agents.byo.dns.address.nonpublic.also = dieser Name zeigt auch auf { $addresses }, was nicht im Internet ist. entferne diesen Record. Claude verbindet sich nicht mit einem Namen, der einen hat.
+journal.window.agents.byo.dns.address.nonpublic.also = dieser Name zeigt auch auf { $addresses }, was nicht im Internet ist. entferne diesen Datensatz. Claude verbindet sich nicht mit einem Namen, der einen hat.
 
-journal.window.agents.byo.dns.address.nonpublic.also.unknown = dieser Name zeigt auch auf eine Adresse, die nicht im Internet ist. entferne diesen Record. Claude verbindet sich nicht mit einem Namen, der einen hat.
+journal.window.agents.byo.dns.address.nonpublic.also.unknown = dieser Name zeigt auch auf eine Adresse, die nicht im Internet ist. entferne diesen Datensatz. Claude verbindet sich nicht mit einem Namen, der einen hat.
 
-journal.window.agents.byo.dns.address.nonpublic.only = dieser Name zeigt auf { $addresses }, was nicht im Internet ist. entferne diesen Record. Claude verbindet sich nicht mit einem Namen, der einen hat.
+journal.window.agents.byo.dns.address.nonpublic.only = dieser Name zeigt auf { $addresses }, was nicht im Internet ist. entferne diesen Datensatz. Claude verbindet sich nicht mit einem Namen, der einen hat.
 
-journal.window.agents.byo.dns.address.nonpublic.only.unknown = dieser Name zeigt auf eine Adresse, die nicht im Internet ist. entferne diesen Record. Claude verbindet sich nicht mit einem Namen, der einen hat.
+journal.window.agents.byo.dns.address.nonpublic.only.unknown = dieser Name zeigt auf eine Adresse, die nicht im Internet ist. entferne diesen Datensatz. Claude verbindet sich nicht mit einem Namen, der einen hat.
 
-journal.window.agents.byo.dns.caa.applies.to.domain = der CAA-Record, der für{ $slot1 }{ $domain }{ $slot2 }gilt, stimmt nicht mit dem hier gezeigten überein. füge den hier gezeigten Record bei{ $slot3 }{ $domain }{ $slot4 }selbst hinzu, nicht bei der Domain darüber, und entferne jeden anderen CAA-Record bei{ $slot5 }{ $domain }. wenn er schon da ist, kopiere ihn noch einmal.
+journal.window.agents.byo.dns.caa.applies.to.domain = der CAA-Datensatz, der für{ $slot1 }{ $domain }{ $slot2 }gilt, stimmt nicht mit dem hier gezeigten überein. füge den hier gezeigten Datensatz bei{ $slot3 }{ $domain }{ $slot4 }selbst hinzu, nicht bei der Domain darüber, und entferne jeden anderen CAA-Datensatz bei{ $slot5 }{ $domain }. wenn er schon da ist, kopiere ihn noch einmal.
 
-journal.window.agents.byo.dns.copy.caa.missing.caa.record.not.found.yet.dns = CAA-Record noch nicht gefunden. DNS-Änderungen können ein paar Minuten dauern.
+journal.window.agents.byo.dns.copy.caa.missing.caa.record.not.found.yet.dns = CAA-Datensatz noch nicht gefunden. DNS-Änderungen können ein paar Minuten dauern.
 
-journal.window.agents.byo.dns.copy.cname.this.name.is.a.cname.replace = dieser Name ist ein CNAME. ersetze ihn durch einen A-Record für deinen Server.
+journal.window.agents.byo.dns.copy.cname.this.name.is.a.cname.replace = dieser Name ist ein CNAME. ersetze ihn durch einen A-Datensatz für deinen Server.
 
 journal.window.agents.byo.dns.copy.lookup.error.your.journal.couldn.t.check.dns = dein Journal konnte DNS gerade nicht prüfen. es versucht es erneut.
 
 journal.window.agents.byo.dns.copy.lookup.timeout.the.dns.check.took.too.long = die DNS-Prüfung hat zu lange gedauert. sie versucht es erneut.
 
-journal.window.agents.byo.dns.copy.no.address.no.a.record.found.yet.dns = noch kein A-Record gefunden. DNS-Änderungen können ein paar Minuten dauern.
+journal.window.agents.byo.dns.copy.no.address.no.a.record.found.yet.dns = noch kein A-Datensatz gefunden. DNS-Änderungen können ein paar Minuten dauern.
 
 journal.window.agents.byo.dns.copy.unchecked.not.checked.yet = noch nicht geprüft
 
@@ -235,7 +235,7 @@ journal.window.agents.byo.outside.copy.outside.ok.your.address.reaches.your.jour
 
 journal.window.agents.byo.outside.copy.outside.unreachable.your.address.doesn.t.reach.your = deine Adresse erreicht dein Journal noch nicht. prüfe, dass Port 443 auf deinem Server und in der Firewall deines Anbieters offen ist.
 
-journal.window.agents.byo.outside.copy.outside.wrong.certificate.something.else.answered.at.your.address = etwas anderes hat an deiner Adresse geantwortet, nicht dein Journal. prüfe, dass der A-Record auf deinen Server zeigt und dass kein Proxy oder CDN davor liegt.
+journal.window.agents.byo.outside.copy.outside.wrong.certificate.something.else.answered.at.your.address = etwas anderes hat an deiner Adresse geantwortet, nicht dein Journal. prüfe, dass der A-Datensatz auf deinen Server zeigt und dass kein Proxy oder CDN davor liegt.
 
 journal.window.agents.byo.relay.copy.relay.auth.refused.your.server.didn.t.accept.your = dein Server hat die Anmeldung deines Journals nicht akzeptiert. füge den Befehl noch einmal darauf ein.
 
@@ -544,7 +544,7 @@ journal.window.agents.message.name.this.key = diesen Schlüssel benennen
 
 journal.window.agents.message.remove.your.journal.s.address.agents = Adresse deines Journals entfernen? darüber gekoppelte Agenten verlieren den Zugriff, auch wenn du dieselbe Adresse wieder hinzufügst.
 
-journal.window.agents.message.replace.this.journal.s.certificate.registration = Zertifikatsregistrierung dieses Journals ersetzen? die öffentliche Route geht aus. du musst einen neuen CAA-Record veröffentlichen, bevor du sie wieder einschaltest.
+journal.window.agents.message.replace.this.journal.s.certificate.registration = Zertifikatsregistrierung dieses Journals ersetzen? die öffentliche Route geht aus. du musst einen neuen CAA-Datensatz veröffentlichen, bevor du sie wieder einschaltest.
 
 journal.window.agents.move.byo.connect.named = { $agent_name } an deiner Domain verbinden
 
