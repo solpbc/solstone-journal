@@ -520,15 +520,28 @@ pub async fn update(
     }
 }
 
+/// Top-level `config/journal.json` sections that hold credentials or private
+/// service state and must never appear in public settings responses.
+const REDACTED_CONFIG_SECTIONS: &[&str] = &[
+    "service_key_validation",
+    "support",
+    "granola",
+    "providers",
+    "oura",
+    "backup",
+    "services",
+    "voice",
+];
+
 pub fn project_public_config(mut config: Map<String, Value>) -> Result<Map<String, Value>, ()> {
     let validation = config
         .get("service_key_validation")
         .and_then(Value::as_object)
         .and_then(|values| values.get("plaud"))
         .cloned();
-    config.remove("service_key_validation");
-    config.remove("support");
-    config.remove("granola");
+    for section in REDACTED_CONFIG_SECTIONS {
+        config.remove(*section);
+    }
     if let Some(value) = validation {
         config.insert("key_validation".to_owned(), json!({"plaud": value}));
     }
@@ -537,7 +550,6 @@ pub fn project_public_config(mut config: Map<String, Value>) -> Result<Map<Strin
         "env".to_owned(),
         json!({"PLAUD_ACCESS_TOKEN": env.and_then(|values| values.get("PLAUD_ACCESS_TOKEN")).is_some_and(truthy)}),
     );
-    config.remove("providers");
     if let Some(journal) = config.get_mut("journal").and_then(Value::as_object_mut) {
         journal.remove("name");
         if journal.is_empty() {
@@ -1619,5 +1631,312 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn credential_seeded_config() -> (
+        serde_json::Map<String, serde_json::Value>,
+        Vec<&'static str>,
+    ) {
+        let sentinels = vec![
+            "oura-client-id-SECRET",
+            "oura-client-secret-SECRET",
+            "oura-access-token-SECRET",
+            "oura-refresh-token-SECRET",
+            "backup-daily-key-SECRET",
+            "backup-recovery-key-SECRET",
+            "backup-s3-key-id-SECRET",
+            "backup-s3-secret-key-SECRET",
+            "backup-pending-hmac-SECRET",
+            "services-account-id-SECRET",
+            "services-fingerprint-SECRET",
+            "services-prior-local-cred-SECRET",
+            "services-attempt-detail-SECRET",
+            "voice-openai-key-SECRET",
+            "granola-api-key-SECRET",
+            "providers-local-cred-SECRET",
+            "env-plaud-token-SECRET",
+            "env-openai-key-SECRET",
+            "env-anthropic-key-SECRET",
+            "env-google-key-SECRET",
+            "convey-secret-SECRET",
+            "convey-password-hash-SECRET",
+            "convey-password-SECRET",
+        ];
+        let value = json!({
+            "setup": { "completed_at": 1_700_000_000_000_i64 },
+            "identity": { "name": "Ada Lovelace", "preferred": "Ada", "bio": "mathematician" },
+            "some_future_section": { "kept": true },
+            "service_key_validation": {
+                "plaud": { "valid": true },
+                "other": { "valid": false }
+            },
+            "support": { "portal_url": "https://support.example.org" },
+            "oura": {
+                "client_id": "oura-client-id-SECRET",
+                "client_secret": "oura-client-secret-SECRET",
+                "tokens": {
+                    "access_token": "oura-access-token-SECRET",
+                    "refresh_token": "oura-refresh-token-SECRET",
+                    "token_type": "Bearer",
+                    "expires_at": 1_800_000_000_i64
+                }
+            },
+            "backup": {
+                "enabled": true,
+                "daily_key": "backup-daily-key-SECRET",
+                "recovery_key": "backup-recovery-key-SECRET",
+                "destination": {
+                    "kind": "s3",
+                    "bucket": "example-bucket",
+                    "credentials": {
+                        "access_key_id": "backup-s3-key-id-SECRET",
+                        "secret_access_key": "backup-s3-secret-key-SECRET"
+                    }
+                },
+                "pending_key_revocation": {
+                    "old_key_hmac": "backup-pending-hmac-SECRET"
+                }
+            },
+            "services": {
+                "confidential": {
+                    "account_id": "services-account-id-SECRET",
+                    "endpoint_url": "https://confidential.example.org",
+                    "credential_fingerprint_sha256": "services-fingerprint-SECRET",
+                    "prior_local_endpoint": {
+                        "url": "http://127.0.0.1:8080/v1",
+                        "credential": "services-prior-local-cred-SECRET"
+                    }
+                },
+                "confidential_attempt": {
+                    "detail": "services-attempt-detail-SECRET"
+                }
+            },
+            "voice": {
+                "openai_api_key": "voice-openai-key-SECRET",
+                "model": "gpt-realtime",
+                "brain_model": "haiku"
+            },
+            "granola": {
+                "api_key": "granola-api-key-SECRET"
+            },
+            "providers": {
+                "local": {
+                    "url": "http://127.0.0.1:8080/v1",
+                    "credential": "providers-local-cred-SECRET"
+                }
+            },
+            "env": {
+                "PLAUD_ACCESS_TOKEN": "env-plaud-token-SECRET",
+                "OPENAI_API_KEY": "env-openai-key-SECRET",
+                "ANTHROPIC_API_KEY": "env-anthropic-key-SECRET",
+                "GOOGLE_API_KEY": "env-google-key-SECRET"
+            },
+            "convey": {
+                "bind": "127.0.0.1",
+                "secret": "convey-secret-SECRET",
+                "password_hash": "convey-password-hash-SECRET",
+                "password": "convey-password-SECRET"
+            }
+        });
+        (value.as_object().expect("config object").clone(), sentinels)
+    }
+
+    #[test]
+    fn project_public_config_strips_all_credential_bearing_sections() {
+        let (raw, sentinels) = credential_seeded_config();
+        let projected = super::project_public_config(raw).expect("projection succeeds");
+        let serialized = serde_json::to_string(&projected).expect("JSON");
+
+        for sentinel in &sentinels {
+            assert!(
+                !serialized.contains(sentinel),
+                "projected config leaked {sentinel}"
+            );
+        }
+        assert!(!serialized.contains("SECRET"));
+        for section in [
+            "oura",
+            "backup",
+            "services",
+            "voice",
+            "granola",
+            "providers",
+            "support",
+            "service_key_validation",
+        ] {
+            assert!(
+                projected.get(section).is_none(),
+                "projected config retained redacted section {section}"
+            );
+        }
+        assert_eq!(projected["env"], json!({"PLAUD_ACCESS_TOKEN": true}));
+        assert_eq!(
+            projected["key_validation"],
+            json!({"plaud": {"valid": true}})
+        );
+        assert_eq!(projected["convey"], json!({"bind": "127.0.0.1"}));
+        assert_eq!(projected["identity"]["name"], "Ada Lovelace");
+        assert_eq!(projected["some_future_section"], json!({"kept": true}));
+
+        // Malformed (non-object) shapes in redacted sections must still fail closed.
+        let malformed = json!({
+            "oura": "malformed-oura-SECRET",
+            "backup": ["malformed-backup-SECRET"],
+            "services": "malformed-services-SECRET",
+            "voice": ["malformed-voice-SECRET"],
+            "identity": { "name": "Ada" }
+        })
+        .as_object()
+        .expect("object")
+        .clone();
+        let projected_malformed =
+            super::project_public_config(malformed).expect("malformed projection succeeds");
+        let malformed_text = serde_json::to_string(&projected_malformed).expect("JSON");
+        assert!(!malformed_text.contains("SECRET"));
+        for section in ["oura", "backup", "services", "voice"] {
+            assert!(projected_malformed.get(section).is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn settings_api_config_redacts_secrets_across_get_put_and_post_without_clobbering_disk() {
+        let root = crate::test_support::established_root();
+        let (seeded, sentinels) = credential_seeded_config();
+        let config_path = root.path().join("config/journal.json");
+        std::fs::write(
+            &config_path,
+            serde_json::to_vec(&seeded).expect("seeded JSON"),
+        )
+        .expect("write seeded config");
+
+        let router = crate::test_support::shell_router(root.path());
+
+        let get_response = router
+            .clone()
+            .oneshot(
+                Request::get("/app/settings/api/config")
+                    .body(Body::empty())
+                    .expect("GET request"),
+            )
+            .await
+            .expect("GET response");
+        assert_eq!(get_response.status(), axum::http::StatusCode::OK);
+        let get_bytes = to_bytes(get_response.into_body(), usize::MAX)
+            .await
+            .expect("GET body");
+        let get_text = String::from_utf8_lossy(&get_bytes);
+        let get_json: serde_json::Value = serde_json::from_slice(&get_bytes).expect("GET JSON");
+
+        let put_response = router
+            .clone()
+            .oneshot(
+                Request::put("/app/settings/api/config")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"section": "identity", "data": {"preferred": "Augusta"}})
+                            .to_string(),
+                    ))
+                    .expect("PUT request"),
+            )
+            .await
+            .expect("PUT response");
+        assert_eq!(put_response.status(), axum::http::StatusCode::OK);
+        let put_bytes = to_bytes(put_response.into_body(), usize::MAX)
+            .await
+            .expect("PUT body");
+        let put_text = String::from_utf8_lossy(&put_bytes);
+        let put_json: serde_json::Value = serde_json::from_slice(&put_bytes).expect("PUT JSON");
+        assert_eq!(put_json["config"]["identity"]["preferred"], "Augusta");
+
+        let post_response = router
+            .clone()
+            .oneshot(
+                Request::post("/app/settings/api/config")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"section": "identity", "data": {"bio": "analyst"}}).to_string(),
+                    ))
+                    .expect("POST request"),
+            )
+            .await
+            .expect("POST response");
+        assert_eq!(post_response.status(), axum::http::StatusCode::OK);
+        let post_bytes = to_bytes(post_response.into_body(), usize::MAX)
+            .await
+            .expect("POST body");
+        let post_text = String::from_utf8_lossy(&post_bytes);
+        let post_json: serde_json::Value = serde_json::from_slice(&post_bytes).expect("POST JSON");
+        assert_eq!(post_json["config"]["identity"]["bio"], "analyst");
+
+        for (label, text, config_obj) in [
+            ("GET", get_text.as_ref(), &get_json),
+            ("PUT", put_text.as_ref(), &put_json["config"]),
+            ("POST", post_text.as_ref(), &post_json["config"]),
+        ] {
+            for sentinel in &sentinels {
+                assert!(!text.contains(sentinel), "{label} leaked {sentinel}");
+            }
+            assert!(!text.contains("SECRET"), "{label} leaked a secret sentinel");
+            for section in [
+                "oura",
+                "backup",
+                "services",
+                "voice",
+                "granola",
+                "providers",
+            ] {
+                assert!(
+                    config_obj.get(section).is_none(),
+                    "{label} returned redacted section {section}"
+                );
+            }
+        }
+
+        // Direct writes to redacted sections remain refused and leak nothing.
+        for section in ["oura", "backup", "services", "voice"] {
+            let refused = router
+                .clone()
+                .oneshot(
+                    Request::put("/app/settings/api/config")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            json!({"section": section, "data": {"overwrite": true}}).to_string(),
+                        ))
+                        .expect("refused PUT"),
+                )
+                .await
+                .expect("refused response");
+            assert_eq!(
+                refused.status(),
+                axum::http::StatusCode::BAD_REQUEST,
+                "PUT {section} must be refused"
+            );
+            let refused_bytes = to_bytes(refused.into_body(), usize::MAX)
+                .await
+                .expect("refused body");
+            let refused_text = String::from_utf8_lossy(&refused_bytes);
+            assert!(!refused_text.contains("SECRET"));
+        }
+
+        // Stored credentials on disk remain intact after GET/PUT/POST.
+        let on_disk: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&config_path).expect("disk config"))
+                .expect("disk JSON");
+        for section in [
+            "oura",
+            "backup",
+            "services",
+            "voice",
+            "granola",
+            "providers",
+        ] {
+            assert_eq!(
+                on_disk.get(section),
+                seeded.get(section),
+                "disk section {section} was altered"
+            );
+        }
+        assert_eq!(on_disk["identity"]["preferred"], "Augusta");
+        assert_eq!(on_disk["identity"]["bio"], "analyst");
     }
 }
