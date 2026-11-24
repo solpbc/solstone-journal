@@ -218,7 +218,7 @@ fn fit_to_budget(inputs: &mut ReviewInputs, budget: u32) {
 }
 
 /// Words that name a thing's form, not a different thing.
-const FORM_WORDS: [&str; 10] = [
+pub(super) const FORM_WORDS: [&str; 10] = [
     "the",
     "inc",
     "llc",
@@ -236,7 +236,7 @@ const FORM_WORDS: [&str; 10] = [
 /// review's own standard calls those different things, or can't tell them
 /// apart, so the pair is not asked: a wrong merge is worse than a missed one.
 /// A name that adds only a corporate suffix or a leading article is still asked.
-fn narrows(left: &str, right: &str) -> bool {
+pub(super) fn narrows(left: &str, right: &str) -> bool {
     let words = |name: &str| {
         solstone_core_entity_matching::entity_slug(name)
             .split('_')

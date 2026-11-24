@@ -97,6 +97,9 @@ pub use store::{
     try_load_entity_voiceprints_in_dir, unblock_journal_entity, unrecognized_entity_files,
     validate_review_object, voiceprint_key_from_metadata, write_resolved_identity_map_cache,
 };
+pub use store::{
+    DiscoveredMergeCandidate, record_discovered_merge_candidates, remove_open_merge_candidates_for,
+};
 pub use trust_lock::{
     EntityTrustLock, EntityTrustLockError, FacetTrustLock, FacetTrustLockError,
     after_entity_trust_released, hold_entity_trust_lock, hold_entity_trust_lock_raw_for_test,

@@ -343,6 +343,12 @@ fn build_pulse_context(
     fields.insert("connections".to_owned(), connections);
     fields.insert("show_welcome".to_owned(), show_welcome.into());
     fields.insert("journal_age_days".to_owned(), journal_age_days.into());
+    // A quiet count for the Entities duplicate review: never a need, a notice
+    // or anything the health glance reads.
+    fields.insert(
+        "possible_duplicates_count".to_owned(),
+        possible_duplicates_count(context.journal_root()).into(),
+    );
     fields.insert(
         "home_state".to_owned(),
         if show_welcome { "welcome" } else { "active" }.into(),
@@ -358,11 +364,20 @@ fn build_pulse_context(
             Value::Null
         },
     );
-    debug_assert_eq!(fields.len(), 32);
+    debug_assert_eq!(fields.len(), 33);
     PulseContext {
         fields,
         now: account_context.now_local(),
     }
+}
+
+/// The possible duplicate pairs the Entities review shows now; 0 when the
+/// suggestions can't be read.
+fn possible_duplicates_count(journal: &std::path::Path) -> usize {
+    solstone_core_entities::count_possible_duplicates(journal).unwrap_or_else(|error| {
+        log::warn!("home: possible duplicates not counted: {error}");
+        0
+    })
 }
 
 /// Project a full context to the public pulse API shape.
@@ -851,7 +866,7 @@ mod tests {
             utc_day(),
         );
         let payload = pulse_payload(&context);
-        assert_eq!(payload.as_object().unwrap().len(), 31);
+        assert_eq!(payload.as_object().unwrap().len(), 32);
         assert_eq!(
             payload
                 .as_object()
@@ -889,6 +904,7 @@ mod tests {
                 "yesterday_processing",
                 "connections",
                 "journal_age_days",
+                "possible_duplicates_count",
                 "home_state",
                 "welcome_framing",
             ]
@@ -902,6 +918,54 @@ mod tests {
             payload["briefing_lateness"],
             json!({"late":false,"late_hours":0})
         );
+    }
+
+    #[test]
+    fn possible_duplicates_count_matches_the_review_and_leaves_the_glance_alone() {
+        let root = TempDir::new().unwrap();
+        let at = crate::test_time::utc_at(2026, 8, 14, 22, 28, 35);
+        let before = pulse_payload(&HomeContext::with_zone(root.path(), at, utc_day()));
+        assert_eq!(before["possible_duplicates_count"], 0);
+
+        for (id, blocked) in [
+            ("ana", false),
+            ("anna", false),
+            ("bo", false),
+            ("bob", true),
+        ] {
+            let dir = root.path().join("entities").join(id);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("entity.json"),
+                json!({"id": id, "name": id, "type": "Person", "blocked": blocked}).to_string(),
+            )
+            .unwrap();
+        }
+        let rows = [
+            // Shown: open, both sides live; two facets are one pair.
+            json!({"facet":"work","source_slug":"ana","target_slug":"anna","status":"open"}),
+            json!({"facet":"home","source_slug":"ana","target_slug":"anna","status":"open"}),
+            // Not shown: answered, a hidden side, a side that is gone.
+            json!({"facet":"work","source_slug":"bo","target_slug":"anna","status":"dismissed"}),
+            json!({"facet":"work","source_slug":"bo","target_slug":"bob","status":"open"}),
+            json!({"facet":"work","source_slug":"gone","target_slug":"ana","status":"open"}),
+        ];
+        fs::write(
+            root.path().join("entities/review-candidates.jsonl"),
+            rows.iter()
+                .map(|row| format!("{row}\n"))
+                .collect::<String>(),
+        )
+        .unwrap();
+
+        let after = pulse_payload(&HomeContext::with_zone(root.path(), at, utc_day()));
+        assert_eq!(after["possible_duplicates_count"], 1);
+        assert_eq!(
+            after["possible_duplicates_count"],
+            solstone_core_entities::count_possible_duplicates(root.path()).unwrap()
+        );
+        assert_eq!(after["health_glance"], before["health_glance"]);
+        assert_eq!(after["needs_you_items"], before["needs_you_items"]);
     }
 
     /// The loader wiring, end to end: a journal with a way to think whose first
@@ -1804,6 +1868,9 @@ mod tests {
         }
         let analysis_day = pulse["briefing_analysis_day"].clone();
         pulse.insert("briefing_body".to_owned(), json!([]));
+        // The duplicate count came later; neither reference journal holds a
+        // suggestion.
+        pulse.insert("possible_duplicates_count".to_owned(), json!(0));
         if let Some(processing) = pulse
             .get_mut("yesterday_processing")
             .and_then(Value::as_object_mut)

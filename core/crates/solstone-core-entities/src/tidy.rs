@@ -271,115 +271,14 @@ pub fn build_tidy_up_response(
         paths: plan.damaged_paths,
     };
 
-    let duplicates = match solstone_core_entity::load_merge_candidates(journal_root, None, None) {
+    let duplicates = match open_duplicate_pairs(journal_root, &identity_map) {
         Err(err) => DuplicatesGroupResponse {
             error: Some(err.to_string()),
             count: None,
             items: None,
             members: None,
         },
-        Ok(raw_rows) => {
-            let mut open_rows = Vec::new();
-            for row in raw_rows {
-                if matches!(
-                    solstone_core_entity::entity_merge_open_class(&row),
-                    solstone_core_entity::EntityMergeOpenClass::Open
-                ) {
-                    let evidence = row.get("evidence").and_then(Value::as_object);
-                    let detection_count = evidence.and_then(|e| e.get("detection_count"));
-                    let strength = solstone_core_entity::json_i64(detection_count);
-                    let basis = evidence
-                        .and_then(|e| e.get("basis"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("name-variant")
-                        .to_owned();
-                    let composite = strength as f64;
-                    let facet = row
-                        .get("facet")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned();
-                    let source_slug = row
-                        .get("source_slug")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned();
-                    let target_slug = row
-                        .get("target_slug")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned();
-                    let key = solstone_core_entity::entity_merge_row_key(
-                        &facet,
-                        &source_slug,
-                        &target_slug,
-                    );
-                    let source_name = string_or(&row, "source", &source_slug);
-                    let target_name = string_or(&row, "target", &target_slug);
-                    open_rows.push(RawDuplicateRow {
-                        source_slug,
-                        target_slug,
-                        source_name,
-                        target_name,
-                        facet,
-                        key,
-                        composite,
-                        basis,
-                    });
-                }
-            }
-
-            open_rows.sort_by(|left, right| {
-                solstone_core_entity::cmp_composite_then_key(
-                    left.composite,
-                    &left.key,
-                    right.composite,
-                    &right.key,
-                )
-            });
-
-            let mut pair_order = Vec::new();
-            let mut pair_data: HashMap<(String, String), PairData> = HashMap::new();
-            for row in open_rows {
-                let pair = (row.source_slug.clone(), row.target_slug.clone());
-                let entry = pair_data.entry(pair.clone()).or_insert_with(|| {
-                    pair_order.push(pair);
-                    PairData {
-                        names: [row.source_name, row.target_name],
-                        facets: Vec::new(),
-                        keys: Vec::new(),
-                        rows: Vec::new(),
-                        bases: Vec::new(),
-                    }
-                });
-                if !entry.bases.contains(&row.basis) {
-                    entry.bases.push(row.basis.clone());
-                }
-                if !entry.facets.contains(&row.facet) {
-                    entry.facets.push(row.facet.clone());
-                }
-                entry.keys.push(row.key);
-                entry.rows.push(DuplicateReviewRow {
-                    facet: row.facet,
-                    source_slug: row.source_slug,
-                    target_slug: row.target_slug,
-                });
-            }
-
-            let is_slug_hidden = |slug: &str| -> bool {
-                let Some(winner_dir) = identity_map.resolved.get(slug) else {
-                    return false;
-                };
-                let Ok(Some(identity)) =
-                    solstone_core_entity::read_entity_identity(journal_root, winner_dir)
-                else {
-                    return false;
-                };
-                solstone_core_entity::entity_is_hidden(identity.value())
-            };
-
-            pair_order.retain(|pair| !is_slug_hidden(&pair.0) && !is_slug_hidden(&pair.1));
-
+        Ok((pair_order, pair_data)) => {
             let dup_count = pair_order.len();
             let dup_members: Vec<DuplicateMember> = pair_order
                 .iter()
@@ -427,4 +326,134 @@ pub fn build_tidy_up_response(
         id_shaped,
         duplicates,
     })
+}
+
+type DuplicatePairs = (Vec<(String, String)>, HashMap<(String, String), PairData>);
+
+/// How many possible duplicate pairs the duplicate review shows: the same
+/// live, open pairs as `GET /app/entities/api/journal/tidy-up`.
+pub fn count_possible_duplicates(
+    journal_root: &Path,
+) -> Result<usize, solstone_core_entity::EntityStoreError> {
+    // Most journals hold no open suggestion, and then no entity is read.
+    if !solstone_core_entity::load_merge_candidates(journal_root, None, None)?
+        .iter()
+        .any(|row| {
+            solstone_core_entity::entity_merge_open_class(row)
+                == solstone_core_entity::EntityMergeOpenClass::Open
+        })
+    {
+        return Ok(0);
+    }
+    let identity_map = solstone_core_entity::read_identity_map(journal_root)?;
+    Ok(open_duplicate_pairs(journal_root, &identity_map)?.0.len())
+}
+
+/// The open, unsuppressed suggestions grouped by pair, strongest first. A pair
+/// is left out while either side is hidden or is no live entity: one in the
+/// trash, merged away or never saved can't be merged.
+fn open_duplicate_pairs(
+    journal_root: &Path,
+    identity_map: &solstone_core_entity::EntityIdentityMap,
+) -> Result<DuplicatePairs, solstone_core_entity::EntityStoreError> {
+    let raw_rows = solstone_core_entity::load_merge_candidates(journal_root, None, None)?;
+    let mut open_rows = Vec::new();
+    for row in raw_rows {
+        if !matches!(
+            solstone_core_entity::entity_merge_open_class(&row),
+            solstone_core_entity::EntityMergeOpenClass::Open
+        ) {
+            continue;
+        }
+        let evidence = row.get("evidence").and_then(Value::as_object);
+        let detection_count = evidence.and_then(|e| e.get("detection_count"));
+        let strength = solstone_core_entity::json_i64(detection_count);
+        let basis = evidence
+            .and_then(|e| e.get("basis"))
+            .and_then(Value::as_str)
+            .unwrap_or("name-variant")
+            .to_owned();
+        let composite = strength as f64;
+        let facet = row
+            .get("facet")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let source_slug = row
+            .get("source_slug")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let target_slug = row
+            .get("target_slug")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let key = solstone_core_entity::entity_merge_row_key(&facet, &source_slug, &target_slug);
+        let source_name = string_or(&row, "source", &source_slug);
+        let target_name = string_or(&row, "target", &target_slug);
+        open_rows.push(RawDuplicateRow {
+            source_slug,
+            target_slug,
+            source_name,
+            target_name,
+            facet,
+            key,
+            composite,
+            basis,
+        });
+    }
+
+    open_rows.sort_by(|left, right| {
+        solstone_core_entity::cmp_composite_then_key(
+            left.composite,
+            &left.key,
+            right.composite,
+            &right.key,
+        )
+    });
+
+    let mut pair_order = Vec::new();
+    let mut pair_data: HashMap<(String, String), PairData> = HashMap::new();
+    for row in open_rows {
+        let pair = (row.source_slug.clone(), row.target_slug.clone());
+        let entry = pair_data.entry(pair.clone()).or_insert_with(|| {
+            pair_order.push(pair);
+            PairData {
+                names: [row.source_name, row.target_name],
+                facets: Vec::new(),
+                keys: Vec::new(),
+                rows: Vec::new(),
+                bases: Vec::new(),
+            }
+        });
+        if !entry.bases.contains(&row.basis) {
+            entry.bases.push(row.basis.clone());
+        }
+        if !entry.facets.contains(&row.facet) {
+            entry.facets.push(row.facet.clone());
+        }
+        entry.keys.push(row.key);
+        entry.rows.push(DuplicateReviewRow {
+            facet: row.facet,
+            source_slug: row.source_slug,
+            target_slug: row.target_slug,
+        });
+    }
+
+    // Each side is shown only while it is a live entity the owner hasn't hidden.
+    let is_slug_shown = |slug: &str| -> bool {
+        let Some(winner_dir) = identity_map.resolved.get(slug) else {
+            return false;
+        };
+        let Ok(Some(identity)) =
+            solstone_core_entity::read_entity_identity(journal_root, winner_dir)
+        else {
+            return true;
+        };
+        !solstone_core_entity::entity_is_hidden(identity.value())
+    };
+
+    pair_order.retain(|pair| is_slug_shown(&pair.0) && is_slug_shown(&pair.1));
+    Ok((pair_order, pair_data))
 }

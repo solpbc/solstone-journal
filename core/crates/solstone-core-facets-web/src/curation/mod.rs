@@ -814,8 +814,9 @@ async fn entity_preview(
             ),
         );
     }
-    // Photos and facet links remain unmeasured by this preview.
-    match preview_entity_merge(&root, &source, &target, EntityMergeOptions::default()) {
+    // Photos and facet links remain unmeasured by this preview. The source's
+    // name is kept as an alias, as the accept below keeps it.
+    match preview_entity_merge(&root, &source, &target, KEEP_SOURCE_NAME) {
         Ok(preview) => Json(json!({"status":"preview","kind":"entity_merge","key":entity_key(&facet,&source,&target),"merge":{"would_identity":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added}},"preview":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added,"voiceprints_added": preview.voiceprints_added,
         "voiceprints_target_total": preview.voiceprints_target_total,
         "notes_on_source": preview.notes_on_source,
@@ -928,7 +929,7 @@ fn entity_transition_value(
             root,
             source,
             target,
-            EntityMergeOptions::default(),
+            KEEP_SOURCE_NAME,
             &unresolved_voiceprint_encoder(),
         ) {
             Ok(report) => report,
@@ -1460,6 +1461,12 @@ fn entity_key(facet: &str, source: &str, target: &str) -> String {
     format!("{facet}|{source}|{target}")
 }
 
+/// A suggested merge keeps the merged name as an alias, as a manual merge,
+/// a speaker merge and a connected agent's same-person answer do.
+const KEEP_SOURCE_NAME: EntityMergeOptions = EntityMergeOptions {
+    keep_source_as_aka: true,
+};
+
 enum TransitionFailure {
     Busy,
     Internal(String),
@@ -1957,6 +1964,122 @@ mod tests {
                 .as_array()
                 .expect("aliases")
                 .contains(&Value::String("Source Alias".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_suggested_merge_keeps_the_merged_name_in_its_preview_and_its_commit() {
+        let root = mergeable_entity_root();
+        let pair = json!({"facet":"work","source_slug":"source","target_slug":"target"});
+        let preview = post_json(
+            routes(root.path().to_path_buf()),
+            "/app/curation/api/entity/preview",
+            pair.clone(),
+        )
+        .await;
+        assert_eq!(preview["status"], "preview", "{preview}");
+        // The source's alias and its name.
+        assert_eq!(preview["preview"]["akas_added"], 2);
+        let accepted = post_json(
+            routes(root.path().to_path_buf()),
+            "/app/curation/api/entity/accept",
+            pair,
+        )
+        .await;
+        assert_eq!(accepted["status"], "accepted", "{accepted}");
+        assert_eq!(accepted["merge"]["aliases_added"], 2);
+        let target = solstone_core_entity::read_entity_identity(root.path(), "target")
+            .expect("target identity")
+            .expect("target exists");
+        let akas = target.value()["aka"].as_array().expect("aliases");
+        assert!(akas.contains(&json!("Source")), "{akas:?}");
+        assert!(akas.contains(&json!("Source Alias")), "{akas:?}");
+    }
+
+    /// A pair found across facets carries the facet of one of its entities,
+    /// and the review's preview, merge and keep-separate all take that row.
+    #[tokio::test]
+    async fn a_discovered_cross_facet_pair_previews_merges_and_keeps_separate() {
+        let root = crate::test_support::phase_root("established_empty");
+        for (id, name) in [
+            ("ann_lee", "Ann Lee"),
+            ("lee_ann", "Lee Ann"),
+            ("cal", "Cal"),
+            ("calvin", "Calvin"),
+        ] {
+            solstone_core_entity::save_entity_identity(
+                root.path(),
+                id,
+                &json!({"id":id,"name":name,"type":"Person","aka":[],"emails":[]}),
+                None,
+            )
+            .expect("identity");
+        }
+        let found = |source: &str, source_name: &str, target: &str, target_name: &str| {
+            solstone_core_entity::DiscoveredMergeCandidate {
+                facet: "home".to_owned(),
+                source: source_name.to_owned(),
+                source_slug: source.to_owned(),
+                target: target_name.to_owned(),
+                target_slug: target.to_owned(),
+                basis: "name-variant".to_owned(),
+                summary: String::new(),
+            }
+        };
+        solstone_core_entity::record_discovered_merge_candidates(
+            root.path(),
+            "20260515",
+            &[
+                found("lee_ann", "Lee Ann", "ann_lee", "Ann Lee"),
+                found("cal", "Cal", "calvin", "Calvin"),
+            ],
+        )
+        .expect("discovered rows");
+
+        let merge = json!({"facet":"home","source_slug":"lee_ann","target_slug":"ann_lee"});
+        let preview = post_json(
+            routes(root.path().to_path_buf()),
+            "/app/curation/api/entity/preview",
+            merge.clone(),
+        )
+        .await;
+        assert_eq!(preview["status"], "preview", "{preview}");
+        assert_eq!(preview["preview"]["akas_added"], 1);
+        let accepted = post_json(
+            routes(root.path().to_path_buf()),
+            "/app/curation/api/entity/accept-batch",
+            json!({"items":[merge]}),
+        )
+        .await;
+        assert_eq!(accepted["accepted"], 1, "{accepted}");
+        let target = solstone_core_entity::read_entity_identity(root.path(), "ann_lee")
+            .expect("target identity")
+            .expect("target exists");
+        assert!(
+            target.value()["aka"]
+                .as_array()
+                .expect("aliases")
+                .contains(&json!("Lee Ann"))
+        );
+
+        let kept = post_json(
+            routes(root.path().to_path_buf()),
+            "/app/curation/api/entity/dismiss-batch",
+            json!({"items":[{"facet":"home","source_slug":"cal","target_slug":"calvin"}]}),
+        )
+        .await;
+        assert_eq!(kept["results"][0]["status"], "dismissed", "{kept}");
+        let statuses = solstone_core_entity::load_merge_candidates(root.path(), None, None)
+            .expect("candidates")
+            .into_iter()
+            .map(|row| (string(&row, "source_slug"), string(&row, "status")))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            statuses,
+            [
+                ("lee_ann".to_owned(), "accepted".to_owned()),
+                ("cal".to_owned(), "dismissed".to_owned()),
+            ]
         );
     }
 

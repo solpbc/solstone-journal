@@ -105,6 +105,9 @@ pub use retired::{
     read_retired_entities, record_deleted_entity, retired_record_damage, retired_state,
 };
 pub use review_candidates::{
+    DiscoveredMergeCandidate, record_discovered_merge_candidates, remove_open_merge_candidates_for,
+};
+pub use review_candidates::{
     EntityMergeOpenClass, EntityReviewCandidateError, PreparedMergeProposals,
     accept_merge_candidate, cmp_composite_then_key, dismiss_merge_candidate,
     entity_merge_open_class, entity_merge_row_key, find_active_recorded_merge, json_i64,

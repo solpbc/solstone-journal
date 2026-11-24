@@ -894,6 +894,7 @@ mod tests {
             "yesterday_processing",
             "connections",
             "journal_age_days",
+            "possible_duplicates_count",
             "home_state",
             "welcome_framing",
             "originals_total",

@@ -1701,6 +1701,13 @@ async fn merge_route(
     }
 }
 
+/// A suggested merge keeps the merged name as an alias in its preview and its
+/// commit, as the manual merge here does by default.
+const SUGGESTED_MERGE: solstone_core_entity::EntityMergeOptions =
+    solstone_core_entity::EntityMergeOptions {
+        keep_source_as_aka: true,
+    };
+
 async fn accept_merge_candidate_route(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
@@ -1814,7 +1821,7 @@ async fn accept_merge_candidate_route(
                     &root,
                     &source_slug,
                     &target_slug,
-                    solstone_core_entity::EntityMergeOptions::default(),
+                    SUGGESTED_MERGE,
                 )
             }
         })
@@ -1900,7 +1907,7 @@ async fn accept_merge_candidate_route(
                     &root,
                     &source_slug,
                     &target_slug,
-                    solstone_core_entity::EntityMergeOptions::default(),
+                    SUGGESTED_MERGE,
                     &fallback_encoder,
                 )
                 .map_err(AcceptError::Merge)?,

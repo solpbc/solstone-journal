@@ -24,6 +24,9 @@
 //!   always rewrote it (the candidate stripped, a choice of it reopened), and
 //!   what the rewrite took is kept with the item. Coming back, each row gets
 //!   back only the fields that were taken, where nothing has replaced them.
+//! - **Open duplicate suggestions** naming it are removed going, and not put
+//!   back: discovery suggests the pair again once it returns. The owner's
+//!   answers (dismissed, accepted) are kept.
 //! - **The identity map cache and entity search**, rewritten and queued.
 //! - **The search index**, told about every file that left or came back.
 //!
@@ -333,6 +336,15 @@ impl Kind for Entities<'_> {
                     &mut |records| keep_ambiguities(journal, &item.id, records),
                 )
                 .map_err(|error| format!("its ambiguities weren't rewritten: {error}"))?;
+                // Open duplicate suggestions naming it go; answered ones stay.
+                // Nothing is kept to put back: once it returns, discovery
+                // finds the pair again. The duplicate review leaves out a pair
+                // whose entity is gone, so a failure here hides nothing.
+                if let Err(error) =
+                    solstone_core_entity::remove_open_merge_candidates_for(journal, &id)
+                {
+                    log::warn!("trash: {id}'s open duplicate suggestions weren't removed: {error}");
+                }
                 solstone_core_entity::rewrite_identity_map_cache(journal)
                     .map_err(|error| format!("the entity map wasn't rewritten: {error}"))?;
                 let removed: Vec<RemovedPath> =

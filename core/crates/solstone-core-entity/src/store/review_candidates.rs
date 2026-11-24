@@ -612,6 +612,138 @@ pub fn dismiss_merge_candidate(
     })
 }
 
+/// Remove every open suggestion that names `entity_id` on either side, as the
+/// entity leaves the journal. Owner answers (dismissed, accepted) and resolved
+/// rows stay; nothing is marked resolved, so a later discovery can suggest the
+/// pair again once the entity is back. Returns how many rows went.
+pub fn remove_open_merge_candidates_for(
+    journal_root: &Path,
+    entity_id: &str,
+) -> Result<usize, EntityReviewCandidateError> {
+    let _trust =
+        hold_entity_trust_lock(journal_root).map_err(EntityReviewCandidateError::TrustLock)?;
+    let names = |row: &Value| {
+        row.get("status").and_then(Value::as_str).unwrap_or("open") == "open"
+            && [row.get("source_slug"), row.get("target_slug")]
+                .iter()
+                .any(|side| side.and_then(Value::as_str) == Some(entity_id))
+    };
+    // Nothing to remove leaves the file as it is, and absent when it is.
+    if !load_merge_candidates_strict(journal_root)
+        .map_err(EntityReviewCandidateError::Store)?
+        .iter()
+        .any(names)
+    {
+        return Ok(0);
+    }
+    mutate_candidates(journal_root, |rows| {
+        let before = rows.len();
+        rows.retain(|row| !names(row));
+        Ok(before - rows.len())
+    })
+}
+
+/// One duplicate pair a deterministic pass found between two saved entities.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoveredMergeCandidate {
+    /// A facet one of the two entities is attached to.
+    pub facet: String,
+    pub source: String,
+    pub source_slug: String,
+    pub target: String,
+    pub target_slug: String,
+    /// Why the pair was found (`name-variant`, `same-email`, `shared-alias`).
+    pub basis: String,
+    /// The shared value that formed the pair, as the journal holds it.
+    pub summary: String,
+}
+
+/// Record discovered pairs as open suggestions. A pair that already has a row
+/// in any facet, in either direction and with any status, is left alone, so an
+/// owner's answer is never reopened and a standing suggestion is never
+/// repeated. Returns how many rows were added.
+pub fn record_discovered_merge_candidates(
+    journal_root: &Path,
+    day: &str,
+    discovered: &[DiscoveredMergeCandidate],
+) -> Result<usize, EntityReviewCandidateError> {
+    if discovered.is_empty() {
+        return Ok(0);
+    }
+    let _trust =
+        hold_entity_trust_lock(journal_root).map_err(EntityReviewCandidateError::TrustLock)?;
+    let pair = |a: &str, b: &str| {
+        if a <= b {
+            (a.to_owned(), b.to_owned())
+        } else {
+            (b.to_owned(), a.to_owned())
+        }
+    };
+    let known = |rows: &[Value]| {
+        rows.iter()
+            .map(|row| {
+                pair(
+                    row.get("source_slug")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    row.get("target_slug")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                )
+            })
+            .collect::<HashSet<_>>()
+    };
+    let existing = known(
+        &load_merge_candidates_strict(journal_root).map_err(EntityReviewCandidateError::Store)?,
+    );
+    if discovered
+        .iter()
+        .all(|found| existing.contains(&pair(&found.source_slug, &found.target_slug)))
+    {
+        return Ok(0);
+    }
+    let census = super::census::scan_identity_census(journal_root)
+        .map_err(EntityReviewCandidateError::Store)?;
+    mutate_candidates(journal_root, |rows| {
+        let mut seen = known(rows);
+        let now = candidate_now_iso();
+        let mut added = 0;
+        for found in discovered {
+            if found.source_slug == found.target_slug
+                || !seen.insert(pair(&found.source_slug, &found.target_slug))
+            {
+                continue;
+            }
+            let mut row = serde_json::json!({
+                "facet": found.facet,
+                "source": found.source,
+                "source_slug": found.source_slug,
+                "target": found.target,
+                "target_slug": found.target_slug,
+                "status": "open",
+                "evidence": {
+                    "basis": found.basis,
+                    "summary": found.summary,
+                    "detection_count": null,
+                    "needs": null,
+                },
+                "first_surfaced": day,
+                "last_surfaced": day,
+                "created_at": now,
+                "updated_at": now,
+            });
+            super::review_policy::apply_merge_candidate_review_policy(
+                row.as_object_mut().expect("candidate object"),
+                &census,
+                &now,
+            );
+            rows.push(row);
+            added += 1;
+        }
+        Ok(added)
+    })
+}
+
 /// Load durable entity merge-review candidates, optionally filtered by facet and status.
 pub fn load_merge_candidates(
     journal_root: &Path,

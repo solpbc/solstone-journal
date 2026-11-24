@@ -924,3 +924,80 @@ fn moving_an_entity_queues_the_detections_of_each_facet_its_links_leave_and_retu
         "{keys:?}"
     );
 }
+
+#[test]
+fn a_trashed_entity_leaves_open_duplicate_suggestions_and_its_pairs_can_return() {
+    let journal = bob_and_ann();
+    journal.person("cal", "Cal");
+    journal.person("dee", "Dee");
+    let row = |facet: &str, source: &str, target: &str, status: &str| {
+        json!({"facet": facet, "source": source, "source_slug": source,
+               "target": target, "target_slug": target, "status": status,
+               "evidence": {"basis": "name-variant", "summary": ""}})
+        .to_string()
+    };
+    let rows = [
+        row("work", "bob", "ann", "open"),
+        row("home", "cal", "bob", "open"),
+        row("work", "bob", "dee", "dismissed"),
+        row("home", "bob", "cal", "accepted"),
+        row("work", "ann", "cal", "open"),
+    ];
+    let path = journal.root().join("entities/review-candidates.jsonl");
+    fs::write(&path, rows.join("\n") + "\n").unwrap();
+    let pairs = |journal: &Journal| {
+        solstone_core_entity::load_merge_candidates(journal.root(), None, None)
+            .unwrap()
+            .iter()
+            .map(|row| {
+                format!(
+                    "{}>{}:{}",
+                    row["source_slug"].as_str().unwrap(),
+                    row["target_slug"].as_str().unwrap(),
+                    row["status"].as_str().unwrap()
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let told = Told::default();
+
+    let item = trash(&journal, &told, "bob").unwrap();
+    // Only the open rows naming bob went; nothing was marked resolved, and
+    // the owner's answers and other pairs stay as they were.
+    assert_eq!(
+        pairs(&journal),
+        ["bob>dee:dismissed", "bob>cal:accepted", "ann>cal:open"]
+    );
+
+    recover(&journal, &told, &item.id).unwrap();
+    // Back from the trash, a fresh discovery can suggest the pair again.
+    let (_, created) = solstone_core_entity::record_merge_candidate(
+        journal.root(),
+        "work",
+        "20260110",
+        "Bob",
+        "bob",
+        "Ann",
+        "ann",
+        "seen again",
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    assert!(created);
+    assert!(pairs(&journal).contains(&"bob>ann:open".to_owned()));
+}
+
+#[test]
+fn trashing_an_entity_with_no_suggestions_leaves_no_suggestion_file() {
+    let journal = bob_and_ann();
+    let told = Told::default();
+    trash(&journal, &told, "bob").unwrap();
+    assert!(
+        !journal
+            .root()
+            .join("entities/review-candidates.jsonl")
+            .exists()
+    );
+}

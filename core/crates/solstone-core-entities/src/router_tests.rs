@@ -5138,7 +5138,8 @@ async fn accept_merge_candidate_previews_open_candidate() {
     assert_eq!(response["status"], "preview");
     assert_eq!(response["kind"], "entity_merge");
     assert_eq!(response["key"], "work|source|target");
-    assert_eq!(response["fields"]["akas_added"], 0);
+    // The merged name is kept as an alias, as the commit keeps it.
+    assert_eq!(response["fields"]["akas_added"], 1);
     assert_eq!(response["fields"]["emails_added_count"], 0);
     assert_eq!(response["fields"]["other_changes_not_previewed"], true);
     assert!(response["fields"].get("facet_moved_count").is_none());
@@ -5180,6 +5181,16 @@ async fn accept_merge_candidate_commits_and_marks_candidate_accepted() {
     let (_, candidates) = call(j.path(), "/app/entities/api/merge-candidates?facet=work").await;
     assert_eq!(candidates["items"][0]["status"], "accepted");
     assert_eq!(candidates["items"][0]["merge_id"], response["merge_id"]);
+    let target = solstone_core_entity::read_entity_identity(j.path(), "target")
+        .unwrap()
+        .unwrap();
+    assert!(
+        target.value()["aka"]
+            .as_array()
+            .is_some_and(|aka| aka.contains(&json!("Source"))),
+        "{}",
+        target.value()
+    );
 }
 
 /// A journal where v2.0.19 stopped a merge of `source` into `target` before
@@ -8982,6 +8993,14 @@ async fn tidy_up_duplicates_say_why_each_pair_was_suggested() {
     let j = Journal::new();
     write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
     write(j.path(), "facets/home/facet.json", json!({"title": "Home"}));
+    for (id, name) in [
+        ("ana", "Ana"),
+        ("anna", "Anna"),
+        ("bo", "Bo"),
+        ("bob", "Bob"),
+    ] {
+        seed_entity(j.path(), id, name);
+    }
     let candidates = [
         r#"{"facet":"work","source_slug":"ana","target_slug":"anna","status":"open","evidence":{"basis":"meeting-face","detection_count":0}}"#,
         r#"{"facet":"home","source_slug":"ana","target_slug":"anna","status":"open","evidence":{"detection_count":4}}"#,
@@ -9011,6 +9030,110 @@ async fn tidy_up_duplicates_say_why_each_pair_was_suggested() {
         json!(["name-variant", "meeting-face"])
     );
     assert_eq!(bases(["bo", "bob"]), json!(["name-variant"]));
+}
+
+#[tokio::test]
+async fn tidy_up_leaves_out_pairs_whose_entity_is_gone() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    seed_entity(j.path(), "ana", "Ana");
+    seed_entity(j.path(), "anna", "Anna");
+    seed_entity(j.path(), "cy", "Cy");
+    // "gone" is no entity in the journal (deleted before its suggestions were
+    // removed, or merged away), on either side of a pair.
+    let candidates = [
+        r#"{"facet":"work","source_slug":"ana","target_slug":"anna","status":"open","evidence":{"detection_count":1}}"#,
+        r#"{"facet":"work","source_slug":"gone","target_slug":"anna","status":"open","evidence":{"detection_count":9}}"#,
+        r#"{"facet":"work","source_slug":"cy","target_slug":"gone","status":"open","evidence":{"detection_count":9}}"#,
+    ]
+    .join("\n")
+        + "\n";
+    write_raw(
+        j.path(),
+        "entities/review-candidates.jsonl",
+        candidates.as_bytes(),
+    );
+    let (status, full) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+    assert_eq!(full["duplicates"]["count"], 1);
+    let pairs = |group: &str| {
+        full["duplicates"][group]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["pair"].clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(pairs("items"), [json!(["ana", "anna"])]);
+    assert_eq!(pairs("members"), [json!(["ana", "anna"])]);
+    assert_eq!(crate::count_possible_duplicates(j.path()).unwrap(), 1);
+}
+
+#[tokio::test]
+async fn tidy_up_shows_discovered_pairs_with_their_basis_and_real_facets() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(j.path(), "facets/home/facet.json", json!({"title": "Home"}));
+    for (id, name) in [
+        ("ann_lee", "Ann Lee"),
+        ("annie", "Annie"),
+        ("bo", "Bo"),
+        ("bob", "Bob"),
+        ("cat", "Cat"),
+        ("catherine", "Catherine"),
+        ("hidden_one", "Hidden One"),
+    ] {
+        seed_entity(j.path(), id, name);
+    }
+    write(
+        j.path(),
+        "entities/hidden_one/entity.json",
+        json!({"id":"hidden_one","name":"Hidden One","type":"Person","blocked":true}),
+    );
+    let found = |facet: &str, source: &str, target: &str, basis: &str| {
+        solstone_core_entity::DiscoveredMergeCandidate {
+            facet: facet.to_owned(),
+            source: source.to_owned(),
+            source_slug: source.to_owned(),
+            target: target.to_owned(),
+            target_slug: target.to_owned(),
+            basis: basis.to_owned(),
+            summary: String::new(),
+        }
+    };
+    solstone_core_entity::record_discovered_merge_candidates(
+        j.path(),
+        "20260110",
+        &[
+            found("work", "annie", "ann_lee", "same-email"),
+            found("home", "bo", "bob", "shared-alias"),
+            found("work", "cat", "catherine", "name-variant"),
+            found("work", "hidden_one", "bob", "same-email"),
+        ],
+    )
+    .unwrap();
+    let (status, full) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+    let items = full["duplicates"]["items"].as_array().unwrap();
+    let item = |pair: [&str; 2]| {
+        items
+            .iter()
+            .find(|item| item["pair"] == json!(pair))
+            .unwrap_or_else(|| panic!("{pair:?} in {items:?}"))
+    };
+    assert_eq!(item(["annie", "ann_lee"])["bases"], json!(["same-email"]));
+    assert_eq!(item(["bo", "bob"])["bases"], json!(["shared-alias"]));
+    assert_eq!(item(["cat", "catherine"])["bases"], json!(["name-variant"]));
+    // The live list renders `facets` as written: only real facet names.
+    let real = ["work", "home"];
+    for item in items {
+        for facet in item["facets"].as_array().unwrap() {
+            assert!(real.contains(&facet.as_str().unwrap()), "{item}");
+        }
+    }
+    // A hidden side keeps its pair out, in the list and in the count.
+    assert_eq!(full["duplicates"]["count"], 3);
+    assert_eq!(crate::count_possible_duplicates(j.path()).unwrap(), 3);
 }
 
 #[tokio::test]
@@ -9061,6 +9184,15 @@ async fn tidy_up_pages_both_groups() {
         "entities/echo/entity.json",
         br#"{"id":"echo","name":"Echo","blocked":"true"}"#,
     );
+    for (id, name) in [
+        ("alpha", "Alpha"),
+        ("bravo", "Bravo"),
+        ("carol", "Carol"),
+        ("dora", "Dora"),
+        ("foxtrot", "Foxtrot"),
+    ] {
+        seed_entity(j.path(), id, name);
+    }
 
     let (status, full) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
     assert_eq!(status, 200);
@@ -9688,6 +9820,8 @@ async fn tidy_up_items_carry_folder_names_and_rows() {
         "entities/review-candidates.jsonl",
         candidates.as_bytes(),
     );
+    seed_entity(j.path(), "src_slug", "Source");
+    seed_entity(j.path(), "tgt_slug", "Target");
 
     let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
     assert_eq!(status, 200);

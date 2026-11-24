@@ -21,6 +21,7 @@ pub use model::{
 pub use router::api_router;
 #[cfg(test)]
 pub(crate) use router::router;
+pub use tidy::count_possible_duplicates;
 
 #[cfg(test)]
 mod router_tests;
