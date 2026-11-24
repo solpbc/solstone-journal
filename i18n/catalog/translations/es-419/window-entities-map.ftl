@@ -14,7 +14,7 @@ journal.window.entities.accessible.name.sort.entities = ordenar entidades
 
 journal.window.entities.aliases.other.names = también se conoce como: { $aliases }
 
-journal.window.entities.button.detail.reattach = volver a adjuntar
+journal.window.entities.button.detail.reattach = volver a agregar
 
 journal.window.entities.button.label.attach.to.facet = adjuntar a la faceta
 
@@ -347,13 +347,13 @@ journal.window.entities.copy.conn.with.you.summary.scheduled = solo en tu calend
 
 journal.window.entities.copy.conn.with.you.toggle = los momentos detrás de esto ›
 
-journal.window.entities.copy.detach.confirm = ¿separar { $slot1 } de { $slot2 }? sigue en tu diario y puedes volver a adjuntarla cuando quieras.
+journal.window.entities.copy.detach.confirm = ¿separar { $slot1 } de { $slot2 }? sigue en tu diario y puedes volver a agregarla cuando quieras.
 
 journal.window.entities.copy.detach.done = se separó de { $slot1 }. { $slot2 } sigue en tu diario.
 
 journal.window.entities.copy.detach.find.action = buscarla en tu diario →
 
-journal.window.entities.copy.detach.reattach.action = volver a adjuntarla →
+journal.window.entities.copy.detach.reattach.action = volver a agregarla →
 
 journal.window.entities.copy.detected.all.hidden = todo lo detectado aquí últimamente está oculto.
 
@@ -2162,7 +2162,7 @@ journal.window.entities.window.state.text.couldn.t.detach.entity = no se pudo se
 
 journal.window.entities.window.state.text.couldn.t.hide.entity = no se pudo ocultar la entidad
 
-journal.window.entities.window.state.text.couldn.t.re.attach.entity = no se pudo volver a adjuntar la entidad
+journal.window.entities.window.state.text.couldn.t.re.attach.entity = no se pudo volver a agregar la entidad
 
 journal.window.entities.window.state.text.couldn.t.save.description = no se pudo guardar la descripción
 
@@ -2174,7 +2174,7 @@ journal.window.entities.window.state.text.failed.to.attach.variant2 = no se pudo
 
 journal.window.entities.window.state.text.failed.to.detach = No se pudo separar
 
-journal.window.entities.window.state.text.failed.to.re.attach = No se pudo volver a adjuntar
+journal.window.entities.window.state.text.failed.to.re.attach = No se pudo volver a agregar
 
 journal.window.entities.window.state.text.failed.to.save = No se pudo guardar
 
