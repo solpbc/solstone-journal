@@ -2228,15 +2228,15 @@ journal.cli.speakers.backfill.error.not.found = Auffüll-Vorgang nicht gefunden:
 
 journal.cli.speakers.backfill.error.scan = Scan des Auffüllens ist fehlgeschlagen: { $error }
 
-journal.cli.speakers.owner.voice.error.identity.invalid = konfigurierte Eigentümeridentität ist nicht zugelassen
+journal.cli.speakers.owner.voice.error.identity.invalid = deine eingerichtete Identität ist nicht zugelassen
 
 journal.cli.speakers.owner.voice.error.no.candidate = Kein Kandidat verfügbar
 
-journal.cli.speakers.owner.voice.error.no.saved.voice = Keine Stimme des Eigentümers ist gespeichert
+journal.cli.speakers.owner.voice.error.no.saved.voice = Keine Stimme von dir ist gespeichert
 
 journal.cli.speakers.owner.voice.error.stale.candidate = Kandidatenversion stimmt nicht überein oder Generation ist veraltet
 
-journal.cli.speakers.pool.error.centroid.width = Zentroidbreite des Kandidatenpools stimmt nicht überein
+journal.cli.speakers.pool.error.centroid.width = Breite des Schwerpunkts im Kandidatenpool stimmt nicht überein
 
 journal.cli.speakers.pool.error.lock = Sperre des Kandidatenpools ist fehlgeschlagen: { $error }
 
@@ -2779,7 +2779,7 @@ journal.cli.talent.list.visible = { $count ->
 
 journal.cli.talent.log.event.thinking = Denken
 
-journal.cli.talent.log.event.tool = Tool
+journal.cli.talent.log.event.tool = Werkzeug
 
 journal.cli.talent.log.event.updated = aktualisiert
 

@@ -375,13 +375,13 @@ journal.window.entities.copy.faces.possible.lede = diese Gesichter aus deinen Be
 
 journal.window.entities.copy.faces.possible.title = Profilbild für { $slot1 } wählen
 
-journal.window.entities.copy.faces.refresh = neu laden
+journal.window.entities.copy.faces.refresh = aktualisieren
 
 journal.window.entities.copy.faces.remove = kein Profilbild verwenden
 
 journal.window.entities.copy.faces.retry = erneut versuchen
 
-journal.window.entities.copy.faces.see.others = ein anderes wählen
+journal.window.entities.copy.faces.see.others = anderes wählen
 
 journal.window.entities.copy.faces.settings.link = schalte sie in den Einstellungen ein
 
@@ -548,7 +548,7 @@ journal.window.entities.delete.erased.of = { $processed_quantity ->
     } endgültig gelöscht
 }
 
-journal.window.entities.delete.erases.unless.you.recover.it = wird { $erase_day } endgültig gelöscht, außer du stellst sie wieder her.
+journal.window.entities.delete.erases.unless.you.recover.it = wird { $erase_day } endgültig gelöscht, außer du stellst es wieder her.
 
 journal.window.entities.delete.facet.many.its.place.and.notes.in = { $facets_quantity ->
     [one] ihr Ort und ihre Notizen in { $facets } Facette
@@ -561,9 +561,9 @@ journal.window.entities.delete.gone.more.many.more.are.no.longer.listed = { $gon
 }
 
 journal.window.entities.delete.items.find.after.failed.erase = { $remaining_quantity ->
-    [one] such es unten oder im Papierkorb.
-   *[other] such sie unten oder im Papierkorb.
-}
+        [one] such es unten oder im Papierkorb.
+       *[other] such sie unten oder im Papierkorb.
+    }
 
 journal.window.entities.delete.many.delete.entities = { $total_quantity ->
     [one] { $total } Entität löschen?
@@ -602,9 +602,9 @@ journal.window.entities.delete.moved.to.the.trash = { $total_quantity ->
 }
 
 journal.window.entities.delete.none.still.many.are.still.in.your.journal = { $remaining_quantity ->
-    [one] { $remaining } ist noch in deinem Journal, unten markiert.
-   *[other] { $remaining } sind noch in deinem Journal, unten markiert.
-}
+        [one] { $remaining } ist noch in deinem Journal, unten markiert.
+       *[other] { $remaining } sind noch in deinem Journal, unten markiert.
+    }
 
 journal.window.entities.delete.noun.erased.from.your.journal = Entität aus deinem Journal endgültig gelöscht
 
@@ -614,14 +614,14 @@ journal.window.entities.delete.other.items.gone = { $other_quantity ->
 }
 
 journal.window.entities.delete.partial.items.not.erased = { $remaining_quantity ->
-    [one] das andere wurde nicht endgültig gelöscht. such es unten oder im Papierkorb.
-   *[other] die anderen wurden nicht endgültig gelöscht. such sie unten oder im Papierkorb.
-}
+        [one] das andere wurde nicht endgültig gelöscht. such es unten oder im Papierkorb.
+       *[other] die anderen wurden nicht endgültig gelöscht. such sie unten oder im Papierkorb.
+    }
 
 journal.window.entities.delete.partial.items.not.recovered = { $remaining_quantity ->
-    [one] das andere ist noch im Papierkorb. von dort kannst du es noch einmal versuchen.
-   *[other] die anderen sind noch im Papierkorb. von dort kannst du es noch einmal versuchen.
-}
+        [one] das andere ist noch im Papierkorb. du kannst es von dort noch einmal versuchen.
+       *[other] die anderen sind noch im Papierkorb. du kannst sie von dort noch einmal versuchen.
+    }
 
 journal.window.entities.delete.pick.label.select.name = { $entity_name } auswählen
 
@@ -649,9 +649,9 @@ journal.window.entities.delete.selected.selected = { $selected_quantity ->
 }
 
 journal.window.entities.delete.still.many.couldn.t.be.moved.and = { $remaining_quantity ->
-    [one] { $remaining } konnte nicht verschoben werden und ist noch in deinem Journal, unten markiert.
-   *[other] { $remaining } konnten nicht verschoben werden und sind noch in deinem Journal, unten markiert.
-}
+        [one] { $remaining } konnte nicht verschoben werden und ist noch in deinem Journal, unten markiert.
+       *[other] { $remaining } konnten nicht verschoben werden und sind noch in deinem Journal, unten markiert.
+    }
 
 journal.window.entities.delete.they.erase.unless.you.recover = sie werden { $erase_day } endgültig gelöscht, außer du stellst sie wieder her.
 
@@ -1132,11 +1132,11 @@ journal.window.entities.message.it.s.still.in.the.trash = sie ist noch im Papier
 
 journal.window.entities.message.it.s.still.in.your.journal = sie ist noch in deinem Journal.
 
-journal.window.entities.message.they.may.already.be.back.in = sie können schon wieder in deinem Journal sein. lade neu, um zu prüfen.
+journal.window.entities.message.they.may.already.be.back.in = sie sind vielleicht schon wieder in deinem Journal. lade neu, um zu prüfen.
 
-journal.window.entities.message.they.may.already.be.erased.reload = sie können schon endgültig gelöscht sein. lade neu, um zu prüfen.
+journal.window.entities.message.they.may.already.be.erased.reload = sie sind vielleicht schon endgültig gelöscht. lade neu, um zu prüfen.
 
-journal.window.entities.message.they.may.already.be.in.the = sie können schon im Papierkorb sein. lade neu, um zu prüfen.
+journal.window.entities.message.they.may.already.be.in.the = sie sind vielleicht schon im Papierkorb. lade neu, um zu prüfen.
 
 journal.window.entities.message.they.re.back.in.your.journal = sie sind wieder in deinem Journal.
 
@@ -1172,9 +1172,9 @@ journal.window.entities.observation.disclosure = { $visible_quantity ->
 }
 
 journal.window.entities.observation.grid.count = { $quantity ->
-    [one] 1 Moment
-   *[other] { $count } Momente
-}
+        [one] 1 Moment
+       *[other] { $count } Momente
+    }
 
 journal.window.entities.observation.latest.day = jüngster Tag: { $day }
 
@@ -1371,7 +1371,7 @@ journal.window.entities.response.detail.limit.bounded.two.hundred = Limit muss z
 
 journal.window.entities.response.detail.limit.is.required = Limit ist erforderlich
 
-journal.window.entities.response.detail.limit.must.be.an.integer = Limit muss eine ganze Zahl sein
+journal.window.entities.response.detail.limit.must.be.an.integer = das Limit muss eine ganze Zahl sein
 
 journal.window.entities.response.detail.member.ids.is.required = { $slot1 } ist erforderlich
 
@@ -1389,7 +1389,7 @@ journal.window.entities.response.detail.merge.commit.failed = die Zusammenführu
 
 journal.window.entities.response.detail.merge.preview.failed = Zusammenführungsvorschau konnte nicht angezeigt werden
 
-journal.window.entities.response.detail.missing.name.key = Es fehlt { $slot1 }
+journal.window.entities.response.detail.missing.name.key = Fehlt { $slot1 }
 
 journal.window.entities.response.detail.name.is.required = Name ist erforderlich
 
@@ -1771,7 +1771,7 @@ journal.window.entities.visible.text.saving = wird gespeichert…
 
 journal.window.entities.visible.text.select.a.facet.to.add.entities = Wähle eine Facette aus, um Entitäten deinem Journal hinzuzufügen.
 
-journal.window.entities.visible.text.still.working = wird noch gearbeitet…
+journal.window.entities.visible.text.still.working = arbeitet noch…
 
 journal.window.entities.visible.text.they.move.to.hidden.where.you = sie wechseln zu ausgeblendet, wo du sie wieder einblenden kannst. verbundene Agenten erreichen sie nicht. deine eigene Entität ist nie in dieser Gruppe.
 
@@ -2021,9 +2021,9 @@ journal.window.facets.activities.history.suggested.agent = vorgeschlagen von { $
 journal.window.facets.activities.line.correction.help = deine Antwort gilt für die Zeilen, die du ankreuzst, nicht für ihre Stimmen. um deinem Journal eine Stimme beizubringen oder die Stimmen, die es kennt, aufzuräumen, geh zu { $speakers_start }Sprecher{ $speakers_end }.
 
 journal.window.facets.activities.line.drawer.count = { $quantity ->
-    [one] 1 Zeile
-   *[other] { $count } Zeilen
-}
+        [one] 1 Zeile
+       *[other] { $count } Zeilen
+    }
 
 journal.window.facets.activities.line.play.time = Zeile um { $time } abspielen
 
@@ -2083,7 +2083,7 @@ journal.window.facets.activities.response.error.detail.each.line.names.its.strea
 
 journal.window.facets.activities.response.error.detail.facet.must.not.be.empty = Facette darf nicht leer sein
 
-journal.window.facets.activities.response.error.detail.invalid.month.format.expected.yyyymm = Ungültiges Monatsformat, erwartet wird { $slot1 }
+journal.window.facets.activities.response.error.detail.invalid.month.format.expected.yyyymm = Ungültiges Monatsformat, erwartet { $slot1 }
 
 journal.window.facets.activities.response.error.detail.lines.must.be.a.list.of = Zeilen müssen eine Liste von Zeilen sein
 
@@ -2129,7 +2129,7 @@ journal.window.facets.activities.response.error.message.that.edit.couldn.t.be.re
 
 journal.window.facets.activities.response.error.message.that.month.couldn.t.be.used = dieser Monat konnte nicht verwendet werden.
 
-journal.window.facets.activities.response.error.message.that.request.didn.t.finish = diese Anfrage wurde nicht abgeschlossen.
+journal.window.facets.activities.response.error.message.that.request.didn.t.finish = diese Anfrage wurde nicht fertig.
 
 journal.window.facets.activities.response.error.message.this.isn.t.grouped.with.anything = das ist mit nichts gruppiert.
 
@@ -2265,7 +2265,7 @@ journal.window.facets.awareness.response.error.message.that.json.request.couldn.
 
 journal.window.facets.awareness.response.error.message.that.part.of.your.journal.couldn = dieser Teil deines Journals konnte nicht gefunden werden.
 
-journal.window.facets.awareness.response.error.message.that.request.didn.t.finish = diese Anfrage wurde nicht abgeschlossen.
+journal.window.facets.awareness.response.error.message.that.request.didn.t.finish = diese Anfrage wurde nicht fertig.
 
 journal.window.facets.awareness.response.error.message.that.request.had.no.data.in = diese Anfrage enthielt keine Daten.
 
@@ -2953,9 +2953,9 @@ journal.window.map.count.area = { $quantity ->
 }
 
 journal.window.map.count.day = { $quantity ->
-    [one] { $count } Tag
-   *[other] { $count } Tage
-}
+        [one] { $count } Tag
+       *[other] { $count } Tage
+    }
 
 journal.window.map.count.night = { $quantity ->
     [one] { $count } Nacht
@@ -3498,7 +3498,7 @@ journal.window.map.month.strip.faded.bar = einem verblassenden Balken fehlt die 
 
 journal.window.map.month.strip.visits.and.stays = gefüllte Balken sind Besuche, die dein Telefon gemeldet hat; umrandete Balken sind Aufenthalte, die dein Journal ermittelt hat.
 
-journal.window.map.month.time.all.day = den ganzen Tag
+journal.window.map.month.time.all.day = ganztägig
 
 journal.window.map.month.time.from = von{ $slot1 }{ $time }
 

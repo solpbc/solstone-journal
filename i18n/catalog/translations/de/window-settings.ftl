@@ -368,11 +368,11 @@ journal.window.network.local.network.firewall.note = wenn Windows nicht gefragt 
 
 journal.window.network.local.network.not.reachable = Geräte können dein Journal gerade nicht erreichen.
 
-journal.window.network.local.network.open = für Geräte in deinem Netzwerk öffnen
+journal.window.network.local.network.open = für Geräte in deinem Netzwerk offen
 
 journal.window.network.local.network.open.cta = für Geräte in deinem Netzwerk öffnen
 
-journal.window.network.local.network.open.note = Geräte im selben Netzwerk können direkt mit deinem Journal koppeln.
+journal.window.network.local.network.open.note = Geräte im selben Netzwerk können sich direkt mit deinem Journal koppeln.
 
 journal.window.network.local.network.other.devices.note = Geräte können über dein privates Netzwerk koppeln, wenn es an ist. öffne dein Journal für Geräte in deinem Netzwerk, um direkt zu koppeln.
 
@@ -482,7 +482,7 @@ journal.window.network.private.link.disable.success.closed = dein privates Netzw
 
 journal.window.network.private.link.needs.repair = dein privates Netzwerk muss erneut eingerichtet werden.
 
-journal.window.network.private.link.needs.subscription.cta = das Diensteportal öffnen
+journal.window.network.private.link.needs.subscription.cta = Diensteportal öffnen
 
 journal.window.network.private.link.needs.subscription.detail = deine Einwilligung ist gespeichert. schließe das Einschalten im Diensteportal innerhalb einer Stunde ab, und dein Journal holt es sich von selbst.
 
@@ -510,7 +510,7 @@ journal.window.network.reach.home.address.label = Adresse deines Journals
 
 journal.window.network.reach.home.address.unusable = diese gespeicherte Adresse kann nicht zum Koppeln verwendet werden.
 
-journal.window.network.reach.home.candidates.label = eine Adresse für dein Journal wählen
+journal.window.network.reach.home.candidates.label = Adresse für dein Journal wählen
 
 journal.window.network.reach.home.candidates.refresh.fail = gespeichert, aber das Aktualisieren ist nicht gelungen. die zuletzt bestätigte Adresse wird angezeigt.
 
@@ -574,7 +574,7 @@ journal.window.network.status.text.couldn.t.copy.journal.id = das Kopieren der J
 
 journal.window.network.status.text.journal.id.copied = Journal-ID kopiert
 
-journal.window.network.status.text.open.the.services.portal = das Diensteportal öffnen
+journal.window.network.status.text.open.the.services.portal = Diensteportal öffnen
 
 journal.window.network.status.text.time.unavailable = Zeit nicht verfügbar
 
@@ -590,9 +590,9 @@ journal.window.network.success.remove.label = dieses Gerät entkoppeln
 
 journal.window.network.success.removed = entkoppelt. das Gerät kann dein Journal nicht erreichen, bis es wieder gekoppelt ist.
 
-journal.window.network.success.verify.note = prüfe auf diesem Gerät, ob es dieselbe mark zeigt, und antworte dann dort. hast du es nicht gekoppelt?
+journal.window.network.success.verify.note = prüfe auf diesem Gerät, ob es dieselbe mark zeigt, dann antworte dort. hast du es nicht gekoppelt?
 
-journal.window.network.success.verify.note.anywhere = prüfe auf diesem Gerät, ob es dieselbe mark zeigt, und antworte dann dort. es kann dein Journal von überall erreichen. hast du es nicht gekoppelt?
+journal.window.network.success.verify.note.anywhere = prüfe auf diesem Gerät, ob es dieselbe mark zeigt, dann antworte dort. es kann dein Journal von überall erreichen. hast du es nicht gekoppelt?
 
 journal.window.network.success.verify.note.this.computer = wenn die solstone-App dich fragt, prüfe, ob sie dieselbe mark zeigt, und antworte dann dort. hast du es nicht gekoppelt?
 
@@ -650,7 +650,7 @@ journal.window.network.window.explanation.couldn.t.confirm.the.save.check = das 
 
 journal.window.network.window.explanation.couldn.t.finish.setting.up.your = das Abschließen der Einrichtung deines privaten Netzwerks ist nicht gelungen.
 
-journal.window.network.window.explanation.couldn.t.finish.that.request = das Abschließen dieser Anfrage ist nicht gelungen.
+journal.window.network.window.explanation.couldn.t.finish.that.request = diese Anfrage konnte nicht abgeschlossen werden.
 
 journal.window.network.window.explanation.couldn.t.turn.off.your.private = das Ausschalten deines privaten Netzwerks ist nicht gelungen.
 
@@ -830,7 +830,7 @@ journal.window.settings.activity.default.writing.name = Schreiben
 
 journal.window.settings.activity.icon.placeholder = z. B. 🔬
 
-journal.window.settings.button.label.about = Über
+journal.window.settings.button.label.about = über
 
 journal.window.settings.button.label.activities = Aktivitäten
 
@@ -1022,7 +1022,7 @@ journal.window.settings.consent.facet.delete.copy.stays.segments.sorted.into.it.
 
 journal.window.settings.consent.facet.delete.copy.stays.segments.sorted.into.it.and.the.variant2 = Segmente, die darein einsortiert sind, und die Entitäten, die daran angehängt sind, bleiben in deinem Journal. Zusammenfassungen anderswo in deinem Journal bleiben, wo sie sind, und können es noch erwähnen.
 
-journal.window.settings.consent.facet.delete.copy.title.couldn.t.move.that.to.the = das Verschieben in den Papierkorb ist nicht gelungen
+journal.window.settings.consent.facet.delete.copy.title.couldn.t.move.that.to.the = das konnte nicht in den Papierkorb verschoben werden
 
 journal.window.settings.consent.facet.delete.copy.title.delete.this.facet = diese Facette löschen?
 
@@ -1128,9 +1128,9 @@ journal.window.settings.consent.trash.copy.mergenomanifest.recovering.puts.these
 
 journal.window.settings.consent.trash.copy.nametaken.this.can.t.be.recovered.while = das kann nicht wiederhergestellt werden, solange eine andere Datei an seiner Stelle im Segment liegt.
 
-journal.window.settings.consent.trash.copy.originalsgomany.their.original.media.in.the.trash = ihre Originalmedien im Papierkorb werden mit ihnen zusammen endgültig gelöscht.
+journal.window.settings.consent.trash.copy.originalsgomany.their.original.media.in.the.trash = ihre Originalmedien im Papierkorb werden mit ihnen endgültig gelöscht.
 
-journal.window.settings.consent.trash.copy.originalsgoone.its.original.media.in.the.trash = seine Originalmedien im Papierkorb werden mit ihm zusammen endgültig gelöscht.
+journal.window.settings.consent.trash.copy.originalsgoone.its.original.media.in.the.trash = seine Originalmedien im Papierkorb werden mit ihm endgültig gelöscht.
 
 journal.window.settings.consent.trash.copy.originalslive.recovering.puts.it.back.in.its = die Wiederherstellung setzt es in sein Segment zurück. wenn deine Aufbewahrungseinstellungen es noch kennzeichnen, steht es wieder auf der Liste von Start, sobald diese Liste neu aufgebaut wird.
 
@@ -1206,7 +1206,7 @@ journal.window.settings.consent.trash.copy.speakersreplaces.recovering.puts.back
 
 journal.window.settings.consent.trash.copy.staysmany.summaries.made.from.them.elsewhere.in = Zusammenfassungen, die anderswo in deinem Journal aus ihnen erstellt wurden, werden nicht endgültig gelöscht und können sie noch erwähnen.
 
-journal.window.settings.consent.trash.copy.staysone.summaries.made.from.it.elsewhere.in = Zusammenfassungen, die anderswo in deinem Journal daraus erstellt wurden, werden nicht endgültig gelöscht und können es noch erwähnen.
+journal.window.settings.consent.trash.copy.staysone.summaries.made.from.it.elsewhere.in = Zusammenfassungen daraus anderswo in deinem Journal werden nicht endgültig gelöscht und können es noch erwähnen.
 
 journal.window.settings.consent.trash.copy.stopped.removing.erased.things.from.your.backups = das Entfernen endgültig gelöschter Dinge aus deinen Sicherungen hat auf halbem Weg aufgehört. dein Journal setzt es von selbst fort.
 
@@ -1310,7 +1310,7 @@ journal.window.settings.facet.mute = stummschalten
 
 journal.window.settings.facet.mute.name = stummschalten{ $slot1 }{ $title }
 
-journal.window.settings.facet.receipt.erase.date = löscht endgültig { $erase_day }, außer wenn du es wiederherstellst.
+journal.window.settings.facet.receipt.erase.date = wird { $erase_day } endgültig gelöscht, außer du stellst es wieder her.
 
 journal.window.settings.facet.receipt.erase.failed = das endgültige Löschen dieser Facette ist nicht gelungen
 
@@ -1577,7 +1577,7 @@ journal.window.settings.http.activity.settings.unavailable.those.activity.settin
 
 journal.window.settings.http.config.busy.settings.configuration.is.busy = die Konfiguration der Einstellungen ist belegt
 
-journal.window.settings.http.config.busy.those.settings.couldn.t.be.saved = diese Einstellungen konnten gerade nicht gespeichert werden, weil sie belegt waren. versuch es in einem Moment noch einmal.
+journal.window.settings.http.config.busy.those.settings.couldn.t.be.saved = diese Einstellungen konnten gerade nicht gespeichert werden. sie waren belegt. versuch es in einem Moment noch einmal.
 
 journal.window.settings.http.detail.something.went.wrong.try.again.and = da ist etwas schiefgelaufen — versuch es noch einmal, und wenn es weiterhin auftritt, prüfe das Zustandsdashboard
 
@@ -1680,7 +1680,7 @@ journal.window.settings.logs.skipped.count = { $quantity ->
        *[other] { $count } übersprungen
     }
 
-journal.window.settings.option.label.about = Über
+journal.window.settings.option.label.about = über
 
 journal.window.settings.option.label.all.streams = alle Datenströme
 
@@ -2778,7 +2778,7 @@ journal.window.settings.removal.source.journal.archive.journal = Journal
 
 journal.window.settings.removal.source.quick.quick.import = Schnellimport
 
-journal.window.settings.removal.source.recording.meeting.audio = Besprechungsaudio
+journal.window.settings.removal.source.recording.meeting.audio = Besprechungs-Audio
 
 journal.window.settings.removal.source.text.text = Text
 
@@ -2851,7 +2851,7 @@ journal.window.settings.save.failed = Das Speichern ist nicht gelungen
 
 journal.window.settings.save.not.saved = nicht gespeichert
 
-journal.window.settings.section.heading.about = Über
+journal.window.settings.section.heading.about = über
 
 journal.window.settings.section.heading.activities = Aktivitäten
 
@@ -2865,7 +2865,7 @@ journal.window.settings.section.heading.appearance = Darstellung
 
 journal.window.settings.section.heading.build.the.list = die Liste aufbauen
 
-journal.window.settings.section.heading.choose.an.icon = ein Symbol auswählen
+journal.window.settings.section.heading.choose.an.icon = Symbol auswählen
 
 journal.window.settings.section.heading.choose.lucide.icon = Lucide-Symbol auswählen
 
@@ -3962,9 +3962,9 @@ journal.window.settings.vision.detail.redact.must.be.a.list.of = redact muss ein
 
 journal.window.settings.vision.detail.unknown.category = Unbekannte Kategorie:{ $slot1 }{ $name }
 
-journal.window.sources.copy.empty.no.devices.are.paired.yet = noch keine Geräte gekoppelt.
+journal.window.sources.copy.empty.no.devices.are.paired.yet = es sind noch keine Geräte gekoppelt.
 
-journal.window.sources.copy.error.this.didn.t.load = das konnte nicht geladen werden.
+journal.window.sources.copy.error.this.didn.t.load = das wurde nicht geladen.
 
 journal.window.sources.copy.import.import.files.from.other.apps = Dateien aus anderen Apps importieren
 
@@ -4073,13 +4073,13 @@ journal.window.system.health.backlog.day.the.ai.provider.refused.a.request.retry
 
 journal.window.system.health.backlog.day.the.ai.provider.was.unreachable.try.again = der KI-Anbieter war nicht erreichbar. versuch es noch einmal
 
-journal.window.system.health.backlog.day.this.chatgpt.account.can.t.be.used.for.thinking.pick.another.provider.o = dieses ChatGPT-Konto kann nicht fürs Denken verwendet werden. wähle auf der Seite Denken einen anderen Anbieter
+journal.window.system.health.backlog.day.this.chatgpt.account.can.t.be.used.for.thinking.pick.another.provider.o = dieses ChatGPT-Konto kann nicht fürs Denken verwendet werden. wähl auf der Seite Denken einen anderen Anbieter
 
 journal.window.system.health.backlog.day.this.day.s.remaining.content.still.will.not.fit.the.on.device.model.aft = der verbleibende Inhalt dieses Tags passt nach dem Kürzen immer noch nicht ins Modell auf dem Gerät. es versucht es weiter
 
 journal.window.system.health.backlog.day.waiting.to.retry.automatically.no.action.needed.yet = wartet auf den automatischen erneuten Versuch. noch ist keine Aktion nötig
 
-journal.window.system.health.backlog.day.your.ai.provider.turned.down.your.key.check.it.on.the.thinking.page = dein KI-Anbieter hat deinen Schlüssel abgelehnt. prüfe ihn auf der Seite Denken
+journal.window.system.health.backlog.day.your.ai.provider.turned.down.your.key.check.it.on.the.thinking.page = dein KI-Anbieter hat deinen Schlüssel abgelehnt. prüf ihn auf der Seite Denken
 
 journal.window.system.health.backlog.verdict.age.unknown = ohne verlässliche Zeit der letzten Statusaktualisierung kann dein Journal nicht sagen, ob es auf dem neuesten Stand ist.
 

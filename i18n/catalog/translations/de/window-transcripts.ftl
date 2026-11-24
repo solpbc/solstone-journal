@@ -152,7 +152,7 @@ journal.window.health.backlog.catching.up.day = { $day } holt noch auf →
 
 journal.window.health.backlog.confirm.redo.scratch = diesen ganzen Tag von vorn neu machen? das macht die schon fertigen Teile noch einmal, deshalb dauert es länger.
 
-journal.window.health.backlog.day.badge = hängt fest
+journal.window.health.backlog.day.badge = steckt fest
 
 journal.window.health.backlog.media.segments = { $quantity ->
         [one] { $count } Segment wartet auf Medienverarbeitung
@@ -161,7 +161,7 @@ journal.window.health.backlog.media.segments = { $quantity ->
 
 journal.window.health.backlog.queued.feedback = Anfrage gespeichert; die Arbeit von heute geht zuerst
 
-journal.window.health.backlog.scope = jüngste Tage
+journal.window.health.backlog.scope = neuere Tage
 
 journal.window.health.backlog.verdict.scoped = { $scope }: { $verdict }
 
@@ -365,8 +365,8 @@ journal.window.health.glance.devices.pair.pair.a.device = Gerät koppeln →
 journal.window.health.glance.devices.see.see.your.devices.in.network = deine Geräte im Netzwerk ansehen →
 
 journal.window.health.glance.devices.silent = { $quantity ->
-        [one] { $count } Gerät hat deinem Journal kürzlich nichts hinzugefügt: { $devices }.
-       *[other] { $count } Geräte haben deinem Journal kürzlich nichts hinzugefügt: { $devices }.
+        [one] { $count } Gerät hat deinem Journal in letzter Zeit nichts hinzugefügt: { $devices }.
+       *[other] { $count } Geräte haben deinem Journal in letzter Zeit nichts hinzugefügt: { $devices }.
     }
 
 journal.window.health.glance.glance.checking.checking.where.your.journal.stands = wird geprüft, wie es um dein Journal steht…
@@ -381,7 +381,7 @@ journal.window.health.glance.glance.ok.the.journal.s.live.services.and = die Liv
 
 journal.window.health.glance.glance.services.the.journal.s.services.couldn.t = die Dienste des Journals konnten nicht erreicht werden. prüfe, ob dein Journal läuft.
 
-journal.window.health.glance.glance.work.queued.work.status.is.unavailable.right = Status der Arbeit in der Warteschlange ist gerade jetzt nicht verfügbar
+journal.window.health.glance.glance.work.queued.work.status.is.unavailable.right = der Status der Arbeit in der Warteschlange ist gerade nicht verfügbar.
 
 journal.window.health.glance.glance.work.some.queued.work.is.on.hold = manche Warteschlangenarbeit ist zur Sicherheitsprüfung zurückgehalten
 
@@ -768,7 +768,7 @@ journal.window.health.status.queued.processing = Verarbeitung in der Warteschlan
 
 journal.window.health.status.quiet = ruhig
 
-journal.window.health.status.recent.days = jüngste Tage
+journal.window.health.status.recent.days = neuere Tage
 
 journal.window.health.status.retrying = wird erneut versucht
 
@@ -818,7 +818,7 @@ journal.window.health.storage.privacy.heading = Datenschutz des Journalordners
 
 journal.window.health.storage.privacy.private = der Ordner deines Journals ist für dein Konto auf diesem Computer privat.
 
-journal.window.health.storage.privacy.save.failed = deine Wahl konnte nicht gespeichert werden. bitte versuch es noch einmal.
+journal.window.health.storage.privacy.save.failed = deine Auswahl konnte nicht gespeichert werden. bitte versuch es noch einmal.
 
 journal.window.health.storage.privacy.unavailable = der Datenschutz des Ordners deines Journals konnte nicht geprüft werden.
 
@@ -930,19 +930,19 @@ journal.window.health.visible.text.older.work.is.allowed.to.use = ältere Arbeit
 
 journal.window.health.visible.text.on.the.computer.running.your.journal = auf dem Computer, auf dem dein Journal läuft:
 
-journal.window.health.visible.text.processing.details = Details der Verarbeitung
+journal.window.health.visible.text.processing.details = Details zur Verarbeitung
 
 journal.window.health.visible.text.processing.status.unavailable = Verarbeitungsstatus nicht verfügbar.
 
 journal.window.health.visible.text.programs.that.reach.your.journal.without = Programme, die seit dem Start deines Journals dein Journal ohne einen Browser erreichen. diese Liste bleibt auf diesem Computer.
 
-journal.window.health.visible.text.queued.work.status.is.unavailable = Status der Warteschlangenarbeit ist nicht verfügbar.
+journal.window.health.visible.text.queued.work.status.is.unavailable = Status der Arbeit in der Warteschlange ist nicht verfügbar.
 
 journal.window.health.visible.text.queues = Warteschlangen
 
 journal.window.health.visible.text.recent.errors = Letzte Fehler
 
-journal.window.health.visible.text.retry = erneuter Versuch
+journal.window.health.visible.text.retry = erneut versuchen
 
 journal.window.health.visible.text.retry.failed = erneuter Versuch fehlgeschlagen
 
@@ -1024,7 +1024,7 @@ journal.window.health.visible.text.what.s.going.into.your.journal = was in dein 
 
 journal.window.health.visible.text.your.choice.could.not.be.saved = deine Wahl konnte nicht gespeichert werden. versuch es noch einmal.
 
-journal.window.health.visible.text.your.choice.could.not.be.saved.variant2 = deine Wahl konnte nicht gespeichert werden. bitte versuch es noch einmal.
+journal.window.health.visible.text.your.choice.could.not.be.saved.variant2 = deine Auswahl konnte nicht gespeichert werden. bitte versuch es noch einmal.
 
 journal.window.health.visible.text.your.devices = deine Geräte
 
@@ -1116,7 +1116,7 @@ journal.window.health.window.explanation.older.history.is.still.catching.up = ä
 
 journal.window.health.window.explanation.ran.into.a.problem = auf ein Problem gestoßen
 
-journal.window.health.window.explanation.reload.to.try.again = lade neu, um es erneut zu versuchen.
+journal.window.health.window.explanation.reload.to.try.again = neu laden, um es erneut zu versuchen.
 
 journal.window.health.window.explanation.the.model.repeatedly.returned.an.unusable = das Modell hat wiederholt ein unbrauchbares Ergebnis zurückgegeben.
 
@@ -1642,7 +1642,7 @@ journal.window.speakers.copy.owner.teach.start.label = Beibringen starten
 
 journal.window.speakers.copy.owner.teach.title = deine Stimme beibringen
 
-journal.window.speakers.copy.owner.undo.cancel.label = es behalten
+journal.window.speakers.copy.owner.undo.cancel.label = behalten
 
 journal.window.speakers.copy.owner.undo.confirm.body = vergangene Gespräche kehren zu unbenannten Stimmen zurück. dein Journal sucht deine Stimme wieder und bietet die hier nicht an. was du selbst beschriftet oder benannt hast, bleibt. Aktivitäten von heute und den letzten 7 Tagen bekommen ihre Personen und Geschichte passend umgeschrieben, und ältere bleiben, wie geschrieben.
 
@@ -2927,7 +2927,7 @@ journal.window.transcripts.owner.desc.now.pick.a.block.in.the = wähle jetzt ein
 
 journal.window.transcripts.owner.desc.pick.part.of.the.day.on = wähle links einen Teil des Tages, dann einen Block im Detail, um ihn zu lesen
 
-journal.window.transcripts.owner.desc.reload.to.try.again = lade neu, um es erneut zu versuchen.
+journal.window.transcripts.owner.desc.reload.to.try.again = neu laden, um es erneut zu versuchen.
 
 journal.window.transcripts.owner.desc.something.went.wrong.decoding.the.screen = da ist etwas schiefgelaufen beim Dekodieren der Bildschirmdaten. versuch, das Segment erneut zu wählen.
 
@@ -2987,7 +2987,7 @@ journal.window.transcripts.photo.copy.noprocessingaction.set.up.thinking = Denke
 
 journal.window.transcripts.photo.copy.unavailable.this.photo.couldn.t.be.described = dieses Foto konnte nicht beschrieben werden. das Foto bleibt in deinem Journal.
 
-journal.window.transcripts.photo.copy.uploadfallback.no.date.in.photo.placed.at = kein Datum im Foto · zur Importzeit eingeordnet
+journal.window.transcripts.photo.copy.uploadfallback.no.date.in.photo.placed.at = kein Datum im Foto · zur Importzeit platziert
 
 journal.window.transcripts.photo.copy.viewerlabel.photo.viewer = Fotobetrachter
 
@@ -3023,7 +3023,7 @@ journal.window.transcripts.response.detail.modality.must.be.audio.screen.or = Mo
 
 journal.window.transcripts.response.detail.raw.media.is.no.longer.available = Rohmedien sind nicht mehr verfügbar
 
-journal.window.transcripts.response.detail.saying.who.said.a.line.needs = anzugeben, wer einen Satz gesagt hat, braucht dich
+journal.window.transcripts.response.detail.saying.who.said.a.line.needs = sagen, wer eine Zeile gesagt hat, braucht dich
 
 journal.window.transcripts.response.detail.segment.directory.not.found = Segmentverzeichnis nicht gefunden
 
@@ -3229,9 +3229,9 @@ journal.window.transcripts.speaker.copy.line.only.body = deine Antwort gilt für
 
 journal.window.transcripts.speaker.copy.line.only.link = Sprecher
 
-journal.window.transcripts.speaker.copy.line.owner = dein Journal weiß noch nicht, welche Person du bist, also kann es Zeilen nicht als deine kennzeichnen.
+journal.window.transcripts.speaker.copy.line.owner = dein Journal weiß noch nicht, welche Person du bist, also kann es Zeilen nicht als deine markieren.
 
-journal.window.transcripts.speaker.copy.line.person = diese Person kann nicht gewählt werden. wähl eine andere oder eine dir unbekannte Person.
+journal.window.transcripts.speaker.copy.line.person = diese Person kann nicht gewählt werden. wähle jemanden anderen oder jemanden, den du nicht kennst.
 
 journal.window.transcripts.speaker.copy.line.refused = diese Antwort konnte nicht gespeichert werden
 
@@ -3267,7 +3267,7 @@ journal.window.transcripts.speaker.copy.picker.search.placeholder = Person finde
 
 journal.window.transcripts.speaker.copy.picker.title = Sprecher wählen
 
-journal.window.transcripts.speaker.copy.picker.unknown = mir unbekannte Person
+journal.window.transcripts.speaker.copy.picker.unknown = jemand, den ich nicht kenne
 
 journal.window.transcripts.speaker.copy.propagation.dismiss = verwerfen
 
@@ -3443,7 +3443,7 @@ journal.window.transcripts.trash.copy.message.they.may.already.be.in.the = sie s
 
 journal.window.transcripts.trash.copy.message.they.re.back.in.your.journal = sie sind wieder in deinem Journal.
 
-journal.window.transcripts.trash.copy.message.they.re.still.in.the.trash = sie sind immer noch im Papierkorb. du kannst sie von dort noch einmal versuchen.
+journal.window.transcripts.trash.copy.message.they.re.still.in.the.trash = sie sind noch im Papierkorb. du kannst es von dort noch einmal versuchen.
 
 journal.window.transcripts.trash.copy.opentrash.open.trash = Papierkorb öffnen
 
@@ -3611,7 +3611,7 @@ journal.window.transcripts.visible.text.show.less.output = weniger Ausgabe anzei
 
 journal.window.transcripts.visible.text.sleep = Schlaf
 
-journal.window.transcripts.visible.text.still.working = läuft noch…
+journal.window.transcripts.visible.text.still.working = arbeitet noch…
 
 journal.window.transcripts.visible.text.transcripts = Transkripte
 

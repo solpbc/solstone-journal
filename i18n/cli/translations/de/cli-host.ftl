@@ -1369,7 +1369,7 @@ journal.cli.host.config.service.summary.service.not.installed.will.move = Dienst
 
 journal.cli.host.config.service.summary.service.not.installed.will.rewrite = Dienst: nicht installiert; wird den Wrapper umschreiben
 
-journal.cli.host.config.show.next.next = weiter: { $next }
+journal.cli.host.config.show.next.next = nächstes: { $next }
 
 journal.cli.host.config.show.source.built.in.default = eingebauter Standard ({ $literal_1 })
 
@@ -2260,7 +2260,7 @@ journal.cli.host.service.create.service.health.directory = Zustandsverzeichnis d
 
 journal.cli.host.service.duplicate.systemd.property = doppelte { $systemd }-Eigenschaft: { $key }
 
-journal.cli.host.service.entry.is.not.a.regular.file = Eintrag ist keine reguläre Datei
+journal.cli.host.service.entry.is.not.a.regular.file = der Eintrag ist keine reguläre Datei
 
 journal.cli.host.service.error.details = Fehler: { $detail }
 

@@ -152,7 +152,7 @@ journal.window.backup.copy.action.labels.cleanup.blocked = es ließ sich nicht b
 
 journal.window.backup.copy.action.labels.cleanup.checking = Verfügbarkeit der Sicherung wird geprüft
 
-journal.window.backup.copy.action.labels.cleanup.contended = versuch es gleich noch einmal zu prüfen.
+journal.window.backup.copy.action.labels.cleanup.contended = versuch in einem Moment noch einmal zu prüfen.
 
 journal.window.backup.copy.action.labels.cleanup.waiting = Sicherungsaktionen warten
 
@@ -768,7 +768,7 @@ journal.window.backup.response.backup.refusal.a.backup.can.t.start.because = ein
 
 journal.window.backup.response.backup.refusal.a.backup.couldn.t.be.set = eine Sicherung konnte dort nicht eingerichtet werden. nichts wurde gespeichert.
 
-journal.window.backup.response.backup.refusal.a.required.field.is.missing = ein Pflichtfeld fehlt.
+journal.window.backup.response.backup.refusal.a.required.field.is.missing = ein erforderliches Feld fehlt.
 
 journal.window.backup.response.backup.refusal.backup.can.t.be.turned.on = Sicherung lässt sich nicht einschalten, bis du deinen Wiederherstellungsschlüssel bestätigst.
 
@@ -800,13 +800,13 @@ journal.window.backup.response.backup.refusal.detail.unsupported.backend = nicht
 
 journal.window.backup.response.backup.refusal.detail.use.the.hosted.restore.prepare.flow = nutze den Ablauf zum Vorbereiten der gehosteten Wiederherstellung
 
-journal.window.backup.response.backup.refusal.one.of.those.values.couldn.t = einer dieser Werte ließ sich nicht verwenden.
+journal.window.backup.response.backup.refusal.one.of.those.values.couldn.t = einer dieser Werte konnte nicht verwendet werden.
 
 journal.window.backup.response.backup.refusal.restore.couldn.t.start = Wiederherstellung konnte nicht starten.
 
 journal.window.backup.response.backup.refusal.that.action.isn.t.available.in = diese Aktion ist im aktuellen Zustand nicht verfügbar.
 
-journal.window.backup.response.backup.refusal.that.day.couldn.t.be.used = dieser Tag ließ sich nicht verwenden.
+journal.window.backup.response.backup.refusal.that.day.couldn.t.be.used = dieser Tag konnte nicht verwendet werden.
 
 journal.window.backup.response.backup.refusal.that.didn.t.match.your.recovery = das hat nicht zu deinem Wiederherstellungsschlüssel gepasst.
 
@@ -1170,7 +1170,7 @@ journal.window.backup.window.explanation.a.backup.waits.until.this.finishes = ei
 
 journal.window.handoff.sme.already.enabled.detail = solstone.me ist bereits an
 
-journal.window.handoff.sme.consent.link.prepare.failed.detail = Einschalten von solstone.me konnte nicht starten. versuch es noch einmal.
+journal.window.handoff.sme.consent.link.prepare.failed.detail = Einschalten von solstone.me konnte nicht beginnen. versuch es noch einmal.
 
 journal.window.handoff.sme.outcome.guidance.expired = die Anfrage wurde innerhalb von etwa fünfzehn Minuten nicht erlaubt. schalte solstone.me wieder ein, wenn du bereit bist.
 
@@ -1386,11 +1386,11 @@ journal.window.import.consent.import.removal.erasenow.erase.now = jetzt endgült
 
 journal.window.import.consent.import.removal.found.detected.entities.drop.it.too.and = erkannte Entitäten lassen es auch los, und Stimmproben daraus verlassen deine bekannten Stimmen. die Entitäten, die du pflegst, bleiben, und was dein Journal über sie geschrieben hat, kann es noch erwähnen.
 
-journal.window.import.consent.import.removal.found.detected.entities.drop.it.too.and.variant2 = erkannte Entitäten lassen es auch los, und Stimmproben daraus verlassen deine bekannten Stimmen. die Entitäten, die du pflegst, werden nicht endgültig gelöscht, und was dein Journal über sie geschrieben hat, kann es noch erwähnen.
+journal.window.import.consent.import.removal.found.detected.entities.drop.it.too.and.variant2 = erkannte Entitäten lassen es auch los, und Stimmproben daraus verlassen deine bekannten Stimmen. Entitäten, die du pflegst, werden nicht endgültig gelöscht, und was dein Journal über sie schrieb, kann es noch erwähnen.
 
 journal.window.import.consent.import.removal.foundmany.detected.entities.drop.them.too.and = erkannte Entitäten lassen sie auch los, und Stimmproben aus ihnen verlassen deine bekannten Stimmen. die Entitäten, die du pflegst, bleiben, und was dein Journal über sie geschrieben hat, kann sie noch erwähnen.
 
-journal.window.import.consent.import.removal.foundmany.detected.entities.drop.them.too.and.variant2 = erkannte Entitäten lassen sie auch los, und Stimmproben aus ihnen verlassen deine bekannten Stimmen. die Entitäten, die du pflegst, werden nicht endgültig gelöscht, und was dein Journal über sie geschrieben hat, kann sie noch erwähnen.
+journal.window.import.consent.import.removal.foundmany.detected.entities.drop.them.too.and.variant2 = erkannte Entitäten lassen sie auch los, und Stimmproben aus ihnen verlassen deine bekannten Stimmen. Entitäten, die du pflegst, werden nicht endgültig gelöscht, und was dein Journal über sie schrieb, kann sie noch erwähnen.
 
 journal.window.import.consent.import.removal.lead.this.erases.the.import.s.own = dies löscht endgültig das Eigene des Imports:
 
@@ -1420,7 +1420,7 @@ journal.window.import.consent.import.removal.sharedunknown.some.of.what.it.broug
 
 journal.window.import.consent.import.removal.stays.activities.made.from.it.drop.it = Aktivitäten, die daraus erstellt wurden, lassen es jetzt los, und die Berichte seiner Tage und Wochen verlassen die Suche. dein Journal schreibt diese dann aus dem, was bleibt, neu, mit dem Denken, das du gewählt hast.
 
-journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from = Aktivitäten, Zusammenfassungen und Entitäten, die anderswo in deinem Journal daraus erstellt wurden, werden nicht endgültig gelöscht und können es noch erwähnen.
+journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from = Aktivitäten, Zusammenfassungen und Entitäten daraus, anderswo in deinem Journal, werden nicht endgültig gelöscht und können es noch erwähnen.
 
 journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from.variant2 = Aktivitäten, Zusammenfassungen und Entitäten, die anderswo in deinem Journal daraus erstellt wurden, bleiben, wo sie sind, und können es noch erwähnen.
 
@@ -1428,7 +1428,7 @@ journal.window.import.consent.import.removal.staysbodymany.activities.summaries.
 
 journal.window.import.consent.import.removal.staysbodymany.activities.summaries.and.entities.made.from.variant2 = Aktivitäten, Zusammenfassungen und Entitäten, die anderswo in deinem Journal aus ihnen erstellt wurden, bleiben, wo sie sind, und können sie noch erwähnen.
 
-journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them = Aktivitäten, die aus ihnen erstellt wurden, lassen sie jetzt los, und die Berichte ihrer Tage und Wochen verlassen die Suche. dein Journal schreibt diese dann aus dem, was bleibt, neu, mit dem Denken, das du gewählt hast.
+journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them = aus ihnen erstellte Aktivitäten lassen sie jetzt los, und die Berichte ihrer Tage und Wochen verlassen die Suche. dein Journal schreibt diese dann aus dem, was bleibt, neu, mit dem Denken, das du gewählt hast.
 
 journal.window.import.consent.import.removal.title.delete.this.import = diesen Import löschen?
 
@@ -1579,16 +1579,16 @@ journal.window.import.detail.duration.elapsed.short = unter einer Minute
 journal.window.import.detail.heading.timestamp = Import: { $date } · { $clock_time }
 
 journal.window.import.detail.merge.body.days.hidden = { $quantity ->
-        [one] 1 Tag mit Körperdaten war im Archiv verborgen, also ist er auch in diesem Journal verborgen.
-       *[other] { $count } Tage mit Körperdaten waren im Archiv verborgen, also sind sie auch in diesem Journal verborgen.
-    }
+    [one] 1 Tag mit Körperdaten wurde im Archiv ausgeblendet, daher ist er auch in diesem Journal ausgeblendet.
+   *[other] { $count } Tage mit Körperdaten wurden im Archiv ausgeblendet, daher sind sie auch in diesem Journal ausgeblendet.
+}
 
 journal.window.import.detail.merge.clock.hours = { $quantity ->
-        [one] 1 Stunde von { $source } kann zur falschen Zeit erscheinen: sie wurde in einer anderen Zeitzone gespeichert als in der, die dieses Journal für { $source } hält.
-       *[other] { $count } Stunden von { $source } können zur falschen Zeit erscheinen: sie wurden in einer anderen Zeitzone gespeichert als in der, die dieses Journal für { $source } hält.
-    }
+    [one] 1 Stunde von { $source } kann zur falschen Zeit erscheinen: sie wurde in einer anderen Zeitzone gespeichert als diejenige, die dieses Journal für { $source } hält.
+   *[other] { $count } Stunden von { $source } können zur falschen Zeit erscheinen: sie wurden in einer anderen Zeitzone gespeichert als diejenige, die dieses Journal für { $source } hält.
+}
 
-journal.window.import.detail.merge.clock.under.hour = weniger als eine Stunde von { $source } kann zur falschen Zeit erscheinen: sie wurde in einer anderen Zeitzone gespeichert als in der, die dieses Journal für { $source } hält.
+journal.window.import.detail.merge.clock.under.hour = weniger als eine Stunde von { $source } kann zur falschen Zeit erscheinen: sie wurde in einer anderen Zeitzone gespeichert als diejenige, die dieses Journal für { $source } hält.
 
 journal.window.import.detail.merge.copied = { $quantity ->
         [one] { $count } kopiert
@@ -1842,7 +1842,7 @@ journal.window.import.handoff.notebook = Notizbuchname (optional)
 
 journal.window.import.handoff.origin.android = von der solstone-App für Android
 
-journal.window.import.handoff.origin.browser = von deinem Browser
+journal.window.import.handoff.origin.browser = aus deinem Browser
 
 journal.window.import.handoff.origin.cli = von der Befehlszeile
 
@@ -1927,7 +1927,7 @@ journal.window.import.import.delete.copy.back.back = zurück
 
 journal.window.import.import.delete.copy.bodyunknown.the.body.data.it.brought.in = die Körperdaten, die es hereingeholt hat
 
-journal.window.import.import.delete.copy.busy.this.is.already.being.moved.or = das wird bereits verschoben oder endgültig gelöscht. lade in einer Minute neu, um zu prüfen.
+journal.window.import.import.delete.copy.busy.this.is.already.being.moved.or = das wird schon verschoben oder endgültig gelöscht. lade in einer Minute neu, um zu prüfen.
 
 journal.window.import.import.delete.copy.cancel.cancel = abbrechen
 
@@ -1935,13 +1935,13 @@ journal.window.import.import.delete.copy.delete.delete = löschen
 
 journal.window.import.import.delete.copy.done.done = fertig
 
-journal.window.import.import.delete.copy.eraseimporting.this.wasn.t.erased.because.it = das wurde nicht endgültig gelöscht, weil es noch importiert wird. versuch es noch einmal, wenn es fertig ist.
+journal.window.import.import.delete.copy.eraseimporting.this.wasn.t.erased.because.it = das wurde nicht endgültig gelöscht: der Import läuft noch. versuch es noch einmal, sobald er fertig ist.
 
 journal.window.import.import.delete.copy.eraseother.this.wasn.t.erased.try.again = das wurde nicht endgültig gelöscht. versuch es noch einmal.
 
 journal.window.import.import.delete.copy.hideday.a.day.you.hide.on.the = ein Tag, den du auf der Seite Körper verbirgst, bleibt beim erneuten Import oder Abgleich verborgen.
 
-journal.window.import.import.delete.copy.importing.this.wasn.t.moved.because.it = das wurde nicht verschoben, weil es noch importiert wird. versuch es noch einmal, wenn es fertig ist.
+journal.window.import.import.delete.copy.importing.this.wasn.t.moved.because.it = das wurde nicht verschoben, weil es noch importiert wird. versuch es noch einmal, sobald es fertig ist.
 
 journal.window.import.import.delete.copy.message.it.may.already.be.back.in = es ist vielleicht schon wieder in deinem Journal. lade neu, um zu prüfen.
 
@@ -1965,7 +1965,7 @@ journal.window.import.import.delete.copy.message.they.may.already.be.in.the = si
 
 journal.window.import.import.delete.copy.message.they.re.back.in.your.journal = sie sind wieder in deinem Journal.
 
-journal.window.import.import.delete.copy.message.they.re.still.in.the.trash = sie sind noch im Papierkorb. du kannst sie von dort noch einmal versuchen.
+journal.window.import.import.delete.copy.message.they.re.still.in.the.trash = sie sind noch im Papierkorb. du kannst es von dort noch einmal versuchen.
 
 journal.window.import.import.delete.copy.oneunknown.any.of.its.segments.waiting.in = alle seine Segmente, die für sich im Papierkorb warten, werden mit ihm endgültig gelöscht.
 
@@ -2023,7 +2023,7 @@ journal.window.import.import.view.could.not.read.the.archive.size = die Archivgr
 
 journal.window.import.import.view.could.not.read.the.import.size = die Importgröße ließ sich nicht lesen
 
-journal.window.import.import.view.import.failed = Import ist nicht gelungen
+journal.window.import.import.view.import.failed = Import fehlgeschlagen
 
 journal.window.import.import.view.import.status.unavailable = Importstatus nicht verfügbar
 
@@ -2055,7 +2055,7 @@ journal.window.import.link.label.back.to.sources = ← zurück zu Quellen
 
 journal.window.import.link.label.browse.what.was.imported = durchsehen, was importiert wurde →
 
-journal.window.import.link.label.choose.a.source = eine Quelle wählen →
+journal.window.import.link.label.choose.a.source = Quelle wählen →
 
 journal.window.import.link.label.download.this.journal = dieses Journal herunterladen
 
@@ -2071,7 +2071,7 @@ journal.window.import.option.label.all.months = alle Monate
 
 journal.window.import.option.label.all.sources = alle Quellen
 
-journal.window.import.option.label.choose.a.time.zone = eine Zeitzone wählen
+journal.window.import.option.label.choose.a.time.zone = Zeitzone wählen
 
 journal.window.import.owner.desc.import.from.any.source.above = importiere aus einer beliebigen Quelle oben.
 
@@ -2165,7 +2165,7 @@ journal.window.import.ox.tray.review.heading = wartet auf deine Prüfung
 
 journal.window.import.ox.tray.sending.device = sendet von deinem { $device }…
 
-journal.window.import.ox.tray.sending.generic = sendet an dein Journal…
+journal.window.import.ox.tray.sending.generic = wird an dein Journal gesendet…
 
 journal.window.import.ox.tray.view.import = Import ansehen
 
@@ -2222,8 +2222,8 @@ journal.window.import.preview.apple.nights.label = { $quantity ->
     }
 
 journal.window.import.preview.apple.readings = { $quantity ->
-        [one] { $count } Messwert
-       *[other] { $count } Messwerte
+    [one] { $count } Messwert
+   *[other] { $count } Messwerte
     }
 
 journal.window.import.preview.apple.readings.label = { $quantity ->
@@ -2423,9 +2423,9 @@ journal.window.import.removal.receipt.gone.more = { $quantity ->
        *[other] { $no_longer_listed } mehr sind nicht mehr aufgeführt.
     }
 
-journal.window.import.removal.receipt.import.erase.failed = diesen Import endgültig zu löschen ist nicht gelungen
+journal.window.import.removal.receipt.import.erase.failed = dieser Import konnte nicht endgültig gelöscht werden
 
-journal.window.import.removal.receipt.import.recover.failed = diesen Import wiederherzustellen ist nicht gelungen
+journal.window.import.removal.receipt.import.recover.failed = dieser Import konnte nicht wiederhergestellt werden
 
 journal.window.import.removal.receipt.marked = { $quantity ->
         [one] { $marked_count } ließ sich nicht verschieben und ist unten markiert.
@@ -2534,11 +2534,11 @@ journal.window.import.removal.waiting.one.import = { $quantity ->
 
 journal.window.import.response.apple.insufficient.space = dieser Import braucht etwa{ $slot1 }{ $need }{ $slot2 }frei, und diese Festplatte hat{ $slot3 }{ $free }{ $slot4 }frei, wie das System es meldet. gib etwa{ $slot5 }{ $difference } frei, dann starte ihn.
 
-journal.window.import.response.error.a.required.field.is.missing = ein Pflichtfeld fehlt.
+journal.window.import.response.error.a.required.field.is.missing = ein erforderliches Feld fehlt.
 
 journal.window.import.response.error.could.not.read.progress = das Lesen des Importfortschritts ist nicht gelungen
 
-journal.window.import.response.error.one.of.those.values.couldn.t = einer dieser Werte ließ sich nicht verwenden.
+journal.window.import.response.error.one.of.those.values.couldn.t = einer dieser Werte konnte nicht verwendet werden.
 
 journal.window.import.response.error.something.changed.so.choose.the.source = etwas hat sich geändert, also wähle die Quelle erneut.
 
@@ -2546,7 +2546,7 @@ journal.window.import.response.error.that.action.isn.t.available.in = diese Akti
 
 journal.window.import.response.error.that.archive.couldn.t.be.previewed = die Vorschau dieses Archivs ist nicht gelungen.
 
-journal.window.import.response.error.that.delete.couldn.t.be.read = dieses Löschen ließ sich nicht lesen, also wurde nichts gelöscht.
+journal.window.import.response.error.that.delete.couldn.t.be.read = dieses Löschen konnte nicht gelesen werden, also wurde nichts gelöscht.
 
 journal.window.import.response.error.that.file.is.too.large.to = diese Datei ist zu groß, um sie hereinzuholen.
 
@@ -2822,7 +2822,7 @@ journal.window.import.status.conflict.already.started = dieser Import ist schon 
 
 journal.window.import.status.conflict.changed = dieser Import hat sich geändert. lade die Seite neu und versuch es noch einmal.
 
-journal.window.import.status.error.failed = Import ist nicht gelungen
+journal.window.import.status.error.failed = Import fehlgeschlagen
 
 journal.window.import.status.error.never.completed = Import wurde nie abgeschlossen
 
@@ -3114,7 +3114,7 @@ journal.window.import.visible.text.optional = (optional)
 
 journal.window.import.visible.text.original.saved.description.unavailable = Original gespeichert (Beschreibung nicht verfügbar)
 
-journal.window.import.visible.text.overview = Übersicht
+journal.window.import.visible.text.overview = Überblick
 
 journal.window.import.visible.text.overview.unavailable = Übersicht nicht verfügbar
 

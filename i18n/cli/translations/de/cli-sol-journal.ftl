@@ -187,7 +187,7 @@ journal.cli.journal.archive.import.stage.changed = das übergeordnete Verzeichni
 
 journal.cli.journal.archive.import.stopped = Import gestoppt
 
-journal.cli.journal.archive.import.symlink = Symlink
+journal.cli.journal.archive.import.symlink = symbolischer Link
 
 journal.cli.journal.archive.import.traversal = absoluter Pfad oder Verzeichnisaufstieg
 
@@ -429,7 +429,7 @@ journal.cli.journal.archive.source.windows.wait.for.recursive.namespace.witness.
 
 journal.cli.journal.archive.space.overflow = Überlauf des verfügbaren Speicherplatzes
 
-journal.cli.journal.archive.space.platform = die Speicherplatzprüfung ist auf dieser Plattform nicht unterstützt
+journal.cli.journal.archive.space.platform = die Speicherplatzprüfung wird auf dieser Plattform nicht unterstützt
 
 journal.cli.journal.archive.summary = Archivzusammenführung: { $committed } übernommen, { $skipped } übersprungen, { $failed } fehlgeschlagen.
 
@@ -496,7 +496,7 @@ journal.cli.journal.facet.doctor.argument.merge = { $merge_flag } erfordert { $a
 
 journal.cli.journal.facet.doctor.collision.heading = Kollisionen regulärer Dateien
 
-journal.cli.journal.facet.doctor.empty = Nichts zu melden.
+journal.cli.journal.facet.doctor.empty = Nichts zu berichten.
 
 journal.cli.journal.facet.doctor.failed.heading = Fehlgeschlagene verwaiste Facetten
 
@@ -802,7 +802,7 @@ journal.cli.journal.facet.record.declaration.damaged = Facettendeklaration ist b
 
 journal.cli.journal.facet.record.declaration.exists = Facettendeklaration ist bereits vorhanden: { $path }
 
-journal.cli.journal.facet.record.declaration.invalid = Facettendeklaration ist kein Objekt: { $path }
+journal.cli.journal.facet.record.declaration.invalid = die Facetten-Deklaration ist kein Objekt: { $path }
 
 journal.cli.journal.facet.record.declaration.missing = Facettendeklaration fehlt: { $path }
 
@@ -872,13 +872,13 @@ journal.cli.journal.facet.transaction.rollback.failed = Transaktion fehlgeschlag
 
 journal.cli.journal.facet.trash.absent = das ist nicht mehr im Papierkorb
 
-journal.cli.journal.facet.trash.busy = das wird bereits wiederhergestellt oder endgültig gelöscht
+journal.cli.journal.facet.trash.busy = das wird schon wiederhergestellt oder endgültig gelöscht
 
 journal.cli.journal.facet.trash.io = dein Papierkorb konnte nicht geändert werden: { $error }
 
 journal.cli.journal.facet.trash.missing = { $item } gibt es so in deinem Journal nicht
 
-journal.cli.journal.facet.trash.unfinished = es liegt im Papierkorb, der es noch fertig weglegt
+journal.cli.journal.facet.trash.unfinished = es ist im Papierkorb, der es noch fertig wegräumen wird
 
 journal.cli.journal.facet.trash.unknown = dieser Build kann das nicht wiederherstellen
 
@@ -1428,7 +1428,7 @@ journal.cli.journal.notify.sent = Benachrichtigung gesendet
 
 journal.cli.journal.notify.utf8 = native Journal-Benachrichtigung fehlgeschlagen: deine Argumente sind kein gültiges UTF-8
 
-journal.cli.journal.process.admission = Zulassung des Journal-Prozesses fehlgeschlagen: { $detail }
+journal.cli.journal.process.admission = die Zulassung des Journal-Prozesses ist fehlgeschlagen: { $detail }
 
 journal.cli.journal.process.body = nativer Start des Journal-Prozesses fehlgeschlagen: keine native Implementierung für { $token }
 

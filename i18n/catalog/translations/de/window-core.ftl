@@ -46,7 +46,7 @@ journal.setup.downloads.speech = Spracherkennung
 
 journal.setup.downloads.thinking = lokales Denken
 
-journal.setup.drive.unsupported = dein Journal kann auf diesem Laufwerk nicht laufen, weil das Laufwerk Dateien nicht so speichern kann, wie dein Journal es braucht. verwend ein Mac-formatiertes Laufwerk für dein Journal.
+journal.setup.drive.unsupported = dein Journal kann auf diesem Laufwerk nicht laufen, weil das Laufwerk Dateien nicht so speichern kann, wie dein Journal es braucht. verwende ein Mac-formatiertes Laufwerk für dein Journal.
 
 journal.setup.fits.app = läuft auf jedem Gerät, das du wählst, und nimmt entgegen, was du mit ihr teilst. alles davon geht in dein Journal.
 
@@ -68,7 +68,7 @@ journal.setup.folder.continue = fortfahren
 
 journal.setup.folder.help = wo dein Journal auf dem Computer deines Journals aufbewahrt wird.
 
-journal.setup.folder.title = Journal-Ordner
+journal.setup.folder.title = Journalordner
 
 journal.setup.footer.computer = dein Journal wird auf dem Computer deines Journals behalten. Denken nutzt die Option, die du wählst.
 
@@ -90,7 +90,7 @@ journal.setup.identity.io.error = { $path }: { $error }
 
 journal.setup.identity.locations = diese Installation konnte nicht überprüft werden.{ $paragraph }Details: { $error }{ $paragraph }Wiederherstellungsorte der Ersteinrichtung sind nicht verfügbar: { $location_error }
 
-journal.setup.identity.lock.timeout = konnte die Sperre für { $path } nicht innerhalb von { $seconds } s erlangen
+journal.setup.identity.lock.timeout = Sperre für { $path } konnte nicht innerhalb von { $seconds } s erlangt werden
 
 journal.setup.identity.mark.asset.invalid = ungültiges mark-Asset: { $detail }
 
@@ -335,14 +335,14 @@ journal.window.body.accessible.name.empty.day = leerer Tag
 journal.window.body.button.label.delete = löschen
 
 journal.window.body.count.day = { $quantity ->
-    [one] { $count } Tag
-   *[other] { $count } Tage
-}
+        [one] { $count } Tag
+       *[other] { $count } Tage
+    }
 
 journal.window.body.count.entry = { $quantity ->
-    [one] { $count } Eintrag
-   *[other] { $count } Einträge
-}
+        [one] { $count } Eintrag
+       *[other] { $count } Einträge
+    }
 
 journal.window.body.count.interval = { $quantity ->
     [one] { $count } Intervall
@@ -825,7 +825,7 @@ journal.window.body.strava.workout = Training
 
 journal.window.body.title.couldn.t.erase.that.workout = dieses Training konnte nicht endgültig gelöscht werden
 
-journal.window.body.title.couldn.t.move.that.to.the = das ließ sich nicht in den Papierkorb verschieben
+journal.window.body.title.couldn.t.move.that.to.the = das konnte nicht in den Papierkorb verschoben werden
 
 journal.window.body.title.couldn.t.recover.that.workout = dieses Training konnte nicht wiederhergestellt werden
 
@@ -863,7 +863,7 @@ journal.window.body.workout.copy.cancel.cancel = abbrechen
 
 journal.window.body.workout.copy.erase.now.erase.now = jetzt endgültig löschen
 
-journal.window.body.workout.copy.move.to.trash.move.to.trash = in den Papierkorb legen
+journal.window.body.workout.copy.move.to.trash.move.to.trash = in den Papierkorb verschieben
 
 journal.window.body.workout.copy.open.trash.open.trash = Papierkorb öffnen
 
@@ -1613,7 +1613,7 @@ journal.window.home.health.device.setup = eins einrichten →
 
 journal.window.home.health.device.sources = { $device } ({ $sources })
 
-journal.window.home.health.devices.view = Geräte ansehen →
+journal.window.home.health.devices.view = Geräte anzeigen →
 
 journal.window.home.health.empty.registry.headline = noch läuft die solstone-App auf keinem Gerät. richte eins ein, um dein Journal zu starten.
 
@@ -1701,7 +1701,7 @@ journal.window.home.link.label.name.voices.in.speakers = Stimmen in Sprechern be
 
 journal.window.home.link.label.other.agents.and.pairing.codes = andere Agenten und Kopplungscodes →
 
-journal.window.home.link.label.pair.a.device = ein Gerät koppeln →
+journal.window.home.link.label.pair.a.device = Gerät koppeln →
 
 journal.window.home.link.label.try.again.on.the.thinking.page = auf der Seite Denken erneut versuchen →
 
@@ -1945,7 +1945,7 @@ journal.window.home.originals.copy.card.unavailable = die Liste konnte nicht gel
 
 journal.window.home.originals.copy.confirm.cancel = abbrechen
 
-journal.window.home.originals.copy.confirm.go.trash = in den Papierkorb legen
+journal.window.home.originals.copy.confirm.go.trash = in den Papierkorb verschieben
 
 journal.window.home.originals.copy.confirm.recover.body = das schließt jede Löschung ab, die mittendrin anhielt. jedes noch nicht gelöschte Original kehrt in sein Segment zurück. der Rest bleibt gelöscht, und was deine Aufbewahrungseinstellungen markiert haben, ist im Papierkorb.
 
@@ -2129,7 +2129,7 @@ journal.window.home.setup.agent.description = lass{ $slot1 }{ $agent }{ $slot2 }
 
 journal.window.home.setup.phone.download = hol dir solstone auf dein Telefon unter{ $slot1 }{ $site }, dann kopple es mit deinem Journal.
 
-journal.window.home.setup.speech.package.repair = repariere die Journal-App oder installiere sie neu, und starte dann dein Journal neu.
+journal.window.home.setup.speech.package.repair = repariere die journal-App oder installiere sie neu, dann starte dein Journal neu.
 
 journal.window.home.text.backup.status.is.unavailable = Status der Sicherung ist nicht verfügbar.
 
@@ -2215,7 +2215,7 @@ journal.window.home.visible.text.and.authenticate = und authentifiziere dich.
 
 journal.window.home.visible.text.choose.another.way.when.you.re = wähle einen anderen Weg, wenn du bereit bist. dein Journal behält bis dahin alles.
 
-journal.window.home.visible.text.connect.an.agent = einen Agenten verbinden
+journal.window.home.visible.text.connect.an.agent = Agenten verbinden
 
 journal.window.home.visible.text.connections.are.unavailable.right.now = Verbindungen sind gerade nicht verfügbar.
 
@@ -2561,7 +2561,7 @@ journal.window.loading.stats = Statistiken werden geladen…
 
 journal.window.loading.support = Support wird geladen…
 
-journal.window.loading.thinking = Einstellungen fürs Denken werden geladen…
+journal.window.loading.thinking = Denkeinstellungen werden geladen…
 
 journal.window.loading.transcripts = Transkripte werden geladen…
 
@@ -2977,7 +2977,7 @@ journal.window.shared.app.window.explanation.also.remove.it.from.your.backups = 
 
 journal.window.shared.app.window.explanation.also.remove.them.from.your.backups = sie auch aus deinen Sicherungen entfernen
 
-journal.window.shared.app.window.explanation.backup.is.paused.so.this.happens = die Sicherung ist pausiert, das passiert also, sobald du sie fortsetzt.
+journal.window.shared.app.window.explanation.backup.is.paused.so.this.happens = die Sicherung ist pausiert, also passiert das, sobald du sie fortsetzt.
 
 journal.window.shared.app.window.explanation.couldn.t.load.this.section = dieser Abschnitt konnte nicht geladen werden
 
@@ -3266,7 +3266,7 @@ journal.window.shared.gate.drawer.window.explanation.you.ve.taught.enough.to.sav
 
 journal.window.shared.import.item.dated.label = { $label } · { $date }
 
-journal.window.shared.import.item.kind.conversation = Unterhaltung
+journal.window.shared.import.item.kind.conversation = Gespräch
 
 journal.window.shared.import.item.kind.document = Dokument
 

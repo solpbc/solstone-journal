@@ -509,7 +509,7 @@ journal.window.agents.memory.recall.count = { $quantity ->
        *[other] es kann sich an seine { $count } Erinnerungen erinnern.
     }
 
-journal.window.agents.memory.receipt.erase.day = löscht { $erase_day } endgültig, außer du stellst es wieder her.
+journal.window.agents.memory.receipt.erase.day = wird { $erase_day } endgültig gelöscht, außer du stellst es wieder her.
 
 journal.window.agents.memory.receipt.erase.failed = diese Erinnerung konnte nicht endgültig gelöscht werden
 
@@ -731,7 +731,7 @@ journal.window.agents.section.heading.turn.off.solstone.me = solstone.me ausscha
 
 journal.window.agents.section.heading.what = was
 
-journal.window.agents.section.heading.what.happened = was geschehen ist
+journal.window.agents.section.heading.what.happened = was passiert ist
 
 journal.window.agents.section.heading.what.it.asked = was es gefragt hat
 
@@ -1998,7 +1998,7 @@ journal.window.thinking.copy.continue.with.chatgpt = Mit ChatGPT fortfahren
 
 journal.window.thinking.copy.correct.the.local.file.access.problem = behebe das lokale Dateizugriffsproblem, dann prüf erneut.
 
-journal.window.thinking.copy.couldn.t.check = das Prüfen ist nicht gelungen
+journal.window.thinking.copy.couldn.t.check = konnte nicht prüfen
 
 journal.window.thinking.copy.couldn.t.check.gpu.memory = GPU-Arbeitsspeicher konnte nicht geprüft werden
 
@@ -2739,7 +2739,7 @@ journal.window.thinking.runs.show.more = { $next_quantity ->
     } übrig
     }
 
-journal.window.thinking.runs.status.failed = fehlgeschlagen
+journal.window.thinking.runs.status.failed = nicht gelungen
 
 journal.window.thinking.runs.status.unknown = unbekannt
 
@@ -3100,7 +3100,7 @@ journal.window.thinking.visible.text.show.all.facets = alle Facetten anzeigen
 
 journal.window.thinking.visible.text.show.all.runs = alle Läufe anzeigen
 
-journal.window.thinking.visible.text.still.working = wird noch gearbeitet…
+journal.window.thinking.visible.text.still.working = arbeitet noch…
 
 journal.window.thinking.visible.text.stored.text = gespeicherter Text
 
@@ -3210,7 +3210,7 @@ journal.window.thinking.window.state.text.confidential.processing = Vertrauliche
 
 journal.window.thinking.window.state.text.continue.in.browser = im Browser fortfahren →
 
-journal.window.thinking.window.state.text.couldn.t.check = das Prüfen ist nicht gelungen
+journal.window.thinking.window.state.text.couldn.t.check = konnte nicht prüfen
 
 journal.window.thinking.window.state.text.did.not.complete = nicht abgeschlossen
 

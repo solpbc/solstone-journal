@@ -90,13 +90,13 @@ journal.cli.backup.enable.repository.missing = Repository nicht gefunden; initia
 
 journal.cli.backup.error = Fehler: { $message }
 
-journal.cli.backup.help.destination = Aufruf: { $syntax }
+journal.cli.backup.help.destination = Verwendung: { $syntax }
 
-journal.cli.backup.help.offload = Aufruf: { $syntax }
+journal.cli.backup.help.offload = Verwendung: { $syntax }
 
-journal.cli.backup.help.recovery.key = Aufruf: { $syntax }
+journal.cli.backup.help.recovery.key = Verwendung: { $syntax }
 
-journal.cli.backup.help.root = Aufruf: { $syntax }
+journal.cli.backup.help.root = Verwendung: { $syntax }
 
 journal.cli.backup.hosted.field = { $name } fehlt.
 
@@ -834,9 +834,9 @@ journal.cli.importer.body.days.hidden = { $quantity ->
 
 journal.cli.importer.body.facet.ask.existing = deine Trainings, deinen Schlaf und andere Körperdaten unter der Facette einordnen, die du { $facet } genannt hast?
 
-journal.cli.importer.body.facet.ask.make.body = eine Körper-Facette für deine Trainings, deinen Schlaf und andere Körperdaten anlegen?
+journal.cli.importer.body.facet.ask.make.body = leg eine Körperfacette für deine Trainings, deinen Schlaf und andere Körperdaten an?
 
-journal.cli.importer.body.facet.ask.unmute = deine Körper-Facette ist stummgeschaltet. schalte sie für deine Trainings, deinen Schlaf und andere Körperdaten wieder ein?
+journal.cli.importer.body.facet.ask.unmute = deine Körperfacette ist stummgeschaltet. schalte sie für deine Trainings, Schlaf und andere Körperdaten wieder ein?
 
 journal.cli.importer.body.facet.moves.body = { $quantity ->
     [one] ein Ja kann bis zu 1 Datensatz, der bereits auf der Aktivitätenseite aufgeführt ist, von { $from } verschieben.
@@ -848,9 +848,9 @@ journal.cli.importer.body.facet.moves.strava = { $quantity ->
    *[other] ein Ja verschiebt { $count } bereits eingeordnete Trainings, von { $from }.
 }
 
-journal.cli.importer.body.facet.no.means.body = wenn du nein sagst, werden neue Trainings und neuer Schlaf nicht auf der Aktivitätenseite aufgeführt, und Agenten, die auf manche Facetten beschränkt sind, sehen sie nicht. die Suche und die Körper-App zeigen sie weiterhin.
+journal.cli.importer.body.facet.no.means.body = wenn du nein sagst, stehen neue Trainings und neuer Schlaf nicht auf der Seite Aktivitäten, und Agenten nur für manche Facetten sehen sie nicht. Suche und Körper-App zeigen sie weiter.
 
-journal.cli.importer.body.facet.no.means.strava = wenn du nein sagst, werden neue Trainings nicht auf der Aktivitätenseite aufgeführt, keine Personen oder Dinge kommen aus ihnen, und Agenten, die auf manche Facetten beschränkt sind, sehen sie nicht. die Suche und die Körper-App zeigen sie weiterhin.
+journal.cli.importer.body.facet.no.means.strava = wenn du nein sagst, stehen neue Trainings nicht auf der Seite Aktivitäten, keine Personen oder Dinge kommen aus ihnen, und Agenten nur für manche Facetten sehen sie nicht. Suche und Körper-App zeigen sie weiter.
 
 journal.cli.importer.body.facet.prompt.yn = { $question } [y/n]
 
@@ -1212,7 +1212,7 @@ journal.cli.importer.plaud.failure.download = Download ist fehlgeschlagen
 
 journal.cli.importer.plaud.failure.manifest = Import-Zuordnung ist fehlgeschlagen
 
-journal.cli.importer.plaud.failure.pipeline = Import ist fehlgeschlagen
+journal.cli.importer.plaud.failure.pipeline = Import fehlgeschlagen
 
 journal.cli.importer.plaud.failure.temporary.url = die Download-URL konnte nicht geholt werden
 
@@ -1220,7 +1220,7 @@ journal.cli.importer.plaud.failure.token.refused = die Anmeldung ist abgelaufen 
 
 journal.cli.importer.plaud.preview.complete = Plaud-Abgleich-Vorschau abgeschlossen: files={ $files }
 
-journal.cli.importer.plaud.sync.busy = dein Journal prüft { $provider } bereits. versuch es noch einmal, wenn das fertig ist.
+journal.cli.importer.plaud.sync.busy = dein Journal prüft { $provider } schon. versuch es noch einmal, wenn es fertig ist.
 
 journal.cli.importer.plaud.sync.missing.credential = Plaud-Zugangsdaten sind nicht konfiguriert
 
@@ -1357,7 +1357,7 @@ journal.cli.importer.text.unconfirmed = der Text-Import wurde in deinem Journal 
 
 journal.cli.importer.timestamp.confirm = erkannter Zeitstempel { $timestamp }; führe erneut aus mit --timestamp { $timestamp } oder --auto
 
-journal.cli.oauth.callback.failure = die Anmeldung wurde nicht abgeschlossen. geh zurück zu deinem Journal und versuch es noch einmal
+journal.cli.oauth.callback.failure = die Anmeldung ist nicht fertig. geh zurück zu deinem Journal und versuch es noch einmal
 
 journal.cli.oauth.callback.success = angemeldet. du kannst diesen Tab schließen und zu deinem Journal zurückgehen
 
@@ -1439,7 +1439,7 @@ journal.cli.setup.clean.outcome.stopped.failed = saubere Deinstallation nach ein
 
 journal.cli.setup.clean.preflight.census.error = Erfassung der Installationsidentität ist nicht lesbar: { $error }
 
-journal.cli.setup.clean.preflight.census.unreadable = Erfassung der Installationsidentität ist nicht lesbar
+journal.cli.setup.clean.preflight.census.unreadable = Zensus der Installationsidentität ist unlesbar
 
 journal.cli.setup.clean.preflight.config.mismatch = das Journal der Konfiguration passt nicht zur Installationsidentität
 
@@ -1775,7 +1775,7 @@ journal.cli.think.argument.integer = Argument { $option }: ungültiger int-Wert
 
 journal.cli.think.argument.unknown = nicht erkannte Argumente: { $argument }
 
-journal.cli.think.argument.value = Argument { $option }: ein Argument erwartet
+journal.cli.think.argument.value = Argument { $option }: erwartet ein Argument
 
 journal.cli.think.cancelled = Denken abgebrochen
 
@@ -1840,7 +1840,7 @@ journal.cli.think.health.read = E/A-Fehler des Journals: { $detail }
 
 journal.cli.think.health.source = Fehler der Zustandsprotokoll-Quelle: { $detail }
 
-journal.cli.think.help = Aufruf: { $syntax }
+journal.cli.think.help = Verwendung: { $syntax }
 
 journal.cli.think.host.sense.missing = gehosteter Sense-Executor ist nicht verfügbar
 
@@ -1967,7 +1967,7 @@ journal.cli.think.outcome.failed = { $command }: { $count } fehlgeschlagen
 
 journal.cli.think.phase.daily.prerequisites = die tägliche Arbeit wartet auf ihre Segmentvoraussetzungen
 
-journal.cli.think.phase.exit = Exit { $code }
+journal.cli.think.phase.exit = Austritt { $code }
 
 journal.cli.think.phase.segment.prerequisites = Segmentvoraussetzungen haben sich geändert
 
@@ -2851,7 +2851,7 @@ journal.cli.transcribe.error.writer.durations.s.must.be.finite.f32.values = { $c
 
 journal.cli.transcribe.error.writer.encoder.must.be.nonempty = Encoder darf nicht leer sein
 
-journal.cli.transcribe.error.writer.field.must.be.a.boolean = { $field } muss ein boolescher Wert sein
+journal.cli.transcribe.error.writer.field.must.be.a.boolean = { $field } muss ein Wahrheitswert sein
 
 journal.cli.transcribe.error.writer.field.must.be.a.finite.number = { $field } muss eine endliche Zahl sein
 
@@ -3147,7 +3147,7 @@ journal.cli.transcribe.sound.windows.package.member = signierte CED-App-Nutzdate
 
 journal.cli.transcribe.sound.windows.package.parent = laufende Programmdatei hat kein umschließendes Verzeichnis
 
-journal.cli.transcribe.sound.windows.package.root = Paket-bin-Verzeichnis hat keine Paketwurzel
+journal.cli.transcribe.sound.windows.package.root = das bin-Verzeichnis des Pakets hat keine Paketwurzel
 
 journal.cli.transcribe.sound.windows.probe = CED-Helfer hat eine ungültige Sondenantwort zurückgegeben
 
