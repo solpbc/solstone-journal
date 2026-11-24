@@ -6058,6 +6058,7 @@ dependencies = [
  "solstone-core-segment",
  "solstone-core-speaker-resolve",
  "solstone-core-system",
+ "solstone-core-talent-runtime",
  "solstone-core-time",
  "solstone-core-trash",
  "tempfile",

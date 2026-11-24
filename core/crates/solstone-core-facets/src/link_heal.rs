@@ -34,7 +34,6 @@ use std::path::Path;
 use serde_json::Value;
 use solstone_core_entity::facet_links::{LinkDirs, LinkIssueKind};
 use solstone_core_entity::{IdentityMapLoserReason, RetiredState};
-use solstone_core_journal_io::{DirEntryKind, list_dir_entries};
 use solstone_core_removals::{Action, Surface};
 use solstone_core_trash::{State, TrashError};
 
@@ -268,7 +267,7 @@ fn remove_deleted_entity_links(
             {
                 continue;
             }
-            if !holds_only_link(&dirs, &link.dir) {
+            if !dirs.holds_only_link_file(&link.dir) {
                 log::info!(
                     "facet link self-heal: left {facet}/entities/{} to deleted entity {id}: it holds notes or other files",
                     link.dir
@@ -292,18 +291,6 @@ fn remove_deleted_entity_links(
             }
         }
     }
-}
-
-/// Whether a link folder holds its `entity.json` and nothing else.
-fn holds_only_link(dirs: &LinkDirs, dir: &str) -> bool {
-    dirs.folder_path(dir)
-        .ok()
-        .and_then(|path| list_dir_entries(&path).ok())
-        .is_some_and(|entries| {
-            entries.iter().all(|entry| {
-                entry.kind == DirEntryKind::File && entry.name.to_str() == Some("entity.json")
-            })
-        })
 }
 
 /// The id of every entity something in the trash could still bring back, and

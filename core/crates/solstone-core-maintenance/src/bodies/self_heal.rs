@@ -12,9 +12,32 @@ use std::path::Path;
 use solstone_core_segment::LockOptions;
 
 /// Run every quiet repair once. A failing pass is logged and the next still runs.
-pub(crate) fn run_self_heal(journal: &Path) {
+/// `day` (`YYYYMMDD`, the owner's today) dates any new duplicate suggestion.
+pub(crate) fn run_self_heal(journal: &Path, day: &str) {
     heal_stream_tails(journal);
     heal_facet_links(journal);
+    suggest_duplicates(journal, day);
+}
+
+/// Possible duplicate people found by shared email, shared alias or a similar
+/// name across facets become open suggestions for the owner to review. This
+/// never merges anything.
+fn suggest_duplicates(journal: &Path, day: &str) {
+    if !journal.join("entities").is_dir() {
+        return;
+    }
+    match solstone_core_talent_runtime::entities::duplicates::record_duplicate_candidates(
+        journal, day,
+    ) {
+        Ok(discovery) if discovery.recorded > 0 => {
+            log::info!(
+                "possible duplicates: {} new suggestions",
+                discovery.recorded
+            );
+        }
+        Ok(_) => {}
+        Err(error) => log::warn!("possible duplicate discovery skipped: {error}"),
+    }
 }
 
 fn heal_stream_tails(journal: &Path) {
@@ -54,7 +77,7 @@ mod tests {
     fn quiet_repairs_create_no_stream_records_in_an_empty_journal() {
         let root = tempfile::tempdir().expect("journal root");
         // An empty journal: nothing to repair, nothing created.
-        run_self_heal(root.path());
+        run_self_heal(root.path(), "20260301");
         assert!(!root.path().join("streams").exists());
     }
 }

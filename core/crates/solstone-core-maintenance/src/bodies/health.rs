@@ -69,7 +69,9 @@ pub(crate) fn run_checked_in(
             // add nothing to the routine's output and never run on a dry run.
             let dry_run = matches!(parse_prune_args(args), Ok((true, _)));
             if !dry_run && journal.is_dir() && checkpoint().is_ok() {
-                crate::bodies::self_heal::run_self_heal(journal);
+                let today = services.now.to_zoned_datetime(services.zone.clone()).date();
+                let day = today.strftime("%Y%m%d").to_string();
+                crate::bodies::self_heal::run_self_heal(journal, &day);
             }
             run
         }

@@ -371,6 +371,20 @@ impl LinkDirs {
         contained_path(&self.root, &self.folder_rel(dir))
     }
 
+    /// Whether the link folder holds its link file and nothing else, so
+    /// removing it takes no notes or other owner material with it. A folder
+    /// that can't be listed answers false.
+    pub fn holds_only_link_file(&self, dir: &str) -> bool {
+        self.folder_path(dir)
+            .ok()
+            .and_then(|path| list_dir_entries(&path).ok())
+            .is_some_and(|entries| {
+                entries.iter().all(|entry| {
+                    entry.kind == DirEntryKind::File && entry.name.to_str() == Some(LINK_FILE)
+                })
+            })
+    }
+
     pub fn link_path(&self, dir: &str) -> Result<PathBuf, PathError> {
         contained_path(&self.root, &format!("{}/{LINK_FILE}", self.folder_rel(dir)))
     }

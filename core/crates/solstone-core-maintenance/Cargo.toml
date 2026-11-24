@@ -35,6 +35,7 @@ solstone-core-import.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-system.workspace = true
+solstone-core-talent-runtime.workspace = true
 
 [dev-dependencies]
 solstone-core-removals.workspace = true
