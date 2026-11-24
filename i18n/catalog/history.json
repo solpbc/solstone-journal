@@ -5843,6 +5843,202 @@
       "selector": null
     },
     {
+      "id": "journal.window.agents.ideas.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e68656164696e67",
+      "namespace": "journal.window.agents.ideas",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.lead",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e6c656164",
+      "namespace": "journal.window.agents.ideas",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.prompt.chapter",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e70726f6d70742e63686170746572",
+      "namespace": "journal.window.agents.ideas.prompt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.prompt.entities",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e70726f6d70742e656e746974696573",
+      "namespace": "journal.window.agents.ideas.prompt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.prompt.people.circles",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e70726f6d70742e70656f706c652e636972636c6573",
+      "namespace": "journal.window.agents.ideas.prompt.people",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.prompt.photos",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e70726f6d70742e70686f746f73",
+      "namespace": "journal.window.agents.ideas.prompt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.prompt.places.list",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e70726f6d70742e706c616365732e6c697374",
+      "namespace": "journal.window.agents.ideas.prompt.places",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.prompt.places.map",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e70726f6d70742e706c616365732e6d6170",
+      "namespace": "journal.window.agents.ideas.prompt.places",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.prompt.today",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e70726f6d70742e746f646179",
+      "namespace": "journal.window.agents.ideas.prompt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.uses.entities",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e757365732e656e746974696573",
+      "namespace": "journal.window.agents.ideas.uses",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.uses.entities.summaries.transcripts",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e757365732e656e7469746965732e73756d6d61726965732e7472616e73637269707473",
+      "namespace": "journal.window.agents.ideas.uses.entities.summaries",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.uses.photos",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e757365732e70686f746f73",
+      "namespace": "journal.window.agents.ideas.uses",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.uses.places",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e757365732e706c61636573",
+      "namespace": "journal.window.agents.ideas.uses",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.uses.transcripts",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e757365732e7472616e73637269707473",
+      "namespace": "journal.window.agents.ideas.uses",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.ideas.uses.transcripts.summaries",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e69646561732e757365732e7472616e736372697074732e73756d6d6172696573",
+      "namespace": "journal.window.agents.ideas.uses.transcripts",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.agents.lane.byo",
       "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e6c616e652e62796f",
       "namespace": "journal.window.agents.lane",

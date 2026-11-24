@@ -1,0 +1,16 @@
+{
+  "description": "Copyable example prompt asking a connected agent to make a map of where the owner spent the year.",
+  "context": "Journal window, agents view. Copyable starter question shown when the journal has places and the agent can read full or approximate place coordinates across the whole journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d0419b5f023169d32a240146b9ad04bd4667b26696af43cb0e7b87510f28131",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

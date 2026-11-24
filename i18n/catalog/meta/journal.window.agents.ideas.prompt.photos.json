@@ -1,0 +1,16 @@
+{
+  "description": "Copyable example prompt asking a connected agent to turn this year's photos into a day-by-day contact sheet.",
+  "context": "Journal window, agents view. Copyable starter question shown when the journal has imported photos and the agent can read photos across the whole journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9296004bb227b2b05d9215ec0d932c4bd2cab9d5044776406e957307260532e",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

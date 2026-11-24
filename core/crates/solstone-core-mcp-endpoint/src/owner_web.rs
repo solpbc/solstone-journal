@@ -3,7 +3,7 @@
 
 //! Owner control plane for journal agent connections.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -296,6 +296,7 @@ pub(crate) fn state_value_with_iface(
     }
     let facet_names =
         solstone_core_facets::list_declared_facet_names(root).map_err(|error| error.to_string())?;
+    let journal_kinds = journal_kinds_json(root, &facet_names);
     let facets = facet_names
         .into_iter()
         .map(|name| {
@@ -921,6 +922,7 @@ pub(crate) fn state_value_with_iface(
             })),
         },
         "facets": facets,
+        "journal_kinds": journal_kinds,
         "permission_kinds": solstone_core_format::content::kinds::permission_kinds()
             .map(|kind| {
                 use solstone_core_convey_http::window_catalog::text;
@@ -953,6 +955,340 @@ pub(crate) fn state_value_with_iface(
         response["subscribe_url"] = json!(format!("{}/services/solstone-me", portal_origin()));
     }
     Ok(response)
+}
+
+/// Bounded-I/O summary of what kinds of material the journal currently holds,
+/// used by `/app/agents/` to offer grounded example questions without scanning
+/// or parsing the full journal on page load.
+fn journal_kinds_json(root: &std::path::Path, facet_names: &[String]) -> Value {
+    const MAX_DAYS_SCAN: usize = 400;
+    let mut days: Vec<String> = solstone_core_journal_io::day_dirs(root)
+        .map(|map| map.into_keys().collect())
+        .unwrap_or_default();
+    days.sort_unstable_by(|a, b| b.cmp(a));
+    if days.len() > MAX_DAYS_SCAN {
+        days.truncate(MAX_DAYS_SCAN);
+    }
+
+    let (has_transcripts, transcript_days_7_plus) = journal_transcript_day_flags(root, &days);
+
+    json!({
+        "has_transcripts": has_transcripts,
+        "transcript_days_7_plus": transcript_days_7_plus,
+        "has_summaries": journal_has_summaries(root, facet_names, &days),
+        "has_entities": journal_has_entities(root, facet_names),
+        "has_places": journal_has_places(root, &days),
+        "has_photos": journal_has_photos(root, &days),
+    })
+}
+
+fn journal_transcript_day_flags(root: &std::path::Path, days: &[String]) -> (bool, bool) {
+    const MAX_SEGMENTS_SCAN: usize = 2_000;
+    let transcript_only =
+        BTreeSet::from([solstone_core_format::content::AdmittedCategory::Transcripts]);
+    let mut transcript_days = 0usize;
+    let mut segments_checked = 0usize;
+
+    for day in days {
+        let Ok(day_segments) = solstone_core_journal_io::iter_segments_skipping_unreadable_streams(
+            root,
+            solstone_core_journal_io::PathOrDay::Day(day),
+        ) else {
+            continue;
+        };
+        let mut day_matched = false;
+        for segment in day_segments {
+            segments_checked += 1;
+            if segments_checked > MAX_SEGMENTS_SCAN {
+                return (transcript_days >= 1, false);
+            }
+            let Ok(identity) = segment.record_identity() else {
+                continue;
+            };
+            if identity.stream.starts_with("agent-memory-")
+                || matches!(
+                    identity.stream,
+                    "import.image"
+                        | "import.document"
+                        | "import.ics"
+                        | "import.oura"
+                        | "import.strava"
+                )
+                || solstone_core_segment::is_calendar_stream(root, identity.stream)
+                || solstone_core_segment::is_body_only_segment(&segment)
+            {
+                continue;
+            }
+            if crate::source_release::check_segment_transcript_release(
+                root,
+                day,
+                identity.stream,
+                identity.name,
+            ) && solstone_core_transcripts::segment_has_permitted_files(
+                &segment,
+                &transcript_only,
+            ) {
+                day_matched = true;
+                break;
+            }
+        }
+        if day_matched {
+            transcript_days += 1;
+            if transcript_days >= 7 {
+                return (true, true);
+            }
+        }
+    }
+    (transcript_days >= 1, false)
+}
+
+fn journal_has_summaries(root: &std::path::Path, facet_names: &[String], days: &[String]) -> bool {
+    for facet_name in facet_names.iter().take(64) {
+        let activities_dir = root.join("facets").join(facet_name).join("activities");
+        let Ok(entries) = std::fs::read_dir(&activities_dir) else {
+            continue;
+        };
+        let mut stems: Vec<String> = entries
+            .take(512)
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_ok_and(|ft| ft.is_file()))
+            .filter_map(|entry| {
+                let name = entry.file_name();
+                let stem = name.to_str()?.strip_suffix(".jsonl")?;
+                solstone_core_journal_io::is_day_key(stem).then(|| stem.to_owned())
+            })
+            .collect();
+        stems.sort_unstable_by(|a, b| b.cmp(a));
+        for stem in stems.into_iter().take(8) {
+            if let Ok(records) =
+                solstone_core_facets::read_activity_records_readable(root, facet_name, &stem)
+                && records.iter().any(|rec| {
+                    rec.get("hidden") != Some(&Value::Bool(true))
+                        && !solstone_core_facets::is_body_record(rec)
+                        && !solstone_core_format::content::is_strava_reading(rec)
+                })
+            {
+                return true;
+            }
+        }
+    }
+
+    let weekly_dir = root.join("reflections").join("weekly");
+    if let Ok(entries) = std::fs::read_dir(&weekly_dir) {
+        for entry in entries.take(64).filter_map(Result::ok) {
+            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if name.ends_with(".md")
+                && std::fs::symlink_metadata(entry.path())
+                    .is_ok_and(|meta| meta.is_file() && meta.len() > 0)
+                && crate::source_release::check_indexed_source_release(
+                    root,
+                    &format!("reflections/weekly/{name}"),
+                )
+            {
+                return true;
+            }
+        }
+    }
+
+    for day in days.iter().take(30) {
+        let talents_dir = root.join("chronicle").join(day).join("talents");
+        let Ok(entries) = std::fs::read_dir(&talents_dir) else {
+            continue;
+        };
+        for entry in entries.take(32).filter_map(Result::ok) {
+            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if name.ends_with(".md")
+                && name != "screen.md"
+                && name != "screen_text.md"
+                && std::fs::symlink_metadata(entry.path())
+                    .is_ok_and(|meta| meta.is_file() && meta.len() > 0)
+                && crate::source_release::check_indexed_source_release(
+                    root,
+                    &format!("chronicle/{day}/talents/{name}"),
+                )
+            {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+fn journal_has_entities(root: &std::path::Path, facet_names: &[String]) -> bool {
+    let mut fallback_identities: Option<std::collections::HashMap<String, Value>> = None;
+
+    for facet_name in facet_names.iter().take(64) {
+        let entities_dir = root.join("facets").join(facet_name).join("entities");
+        let Ok(entries) = std::fs::read_dir(&entities_dir) else {
+            continue;
+        };
+        for entry in entries.take(128).filter_map(Result::ok) {
+            if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+                continue;
+            }
+            let Some(rel_dir) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            let Ok(Some(link)) =
+                solstone_core_facets::read_facet_entity_link(root, facet_name, &rel_dir)
+            else {
+                continue;
+            };
+            if link.value().get("detached") == Some(&Value::Bool(true)) {
+                continue;
+            }
+            let entity_id = link.entity_id();
+            let direct = match solstone_core_entity::observe_entity_identity(root, entity_id) {
+                Ok(solstone_core_entity::IdentityObservation::Present(snap))
+                    if snap.entity_id() == entity_id =>
+                {
+                    Some(snap.value().clone())
+                }
+                _ => None,
+            };
+            let identity = direct.or_else(|| {
+                let map = fallback_identities.get_or_insert_with(|| {
+                    let mut scanned = std::collections::HashMap::new();
+                    if let Ok(global_entries) = std::fs::read_dir(root.join("entities")) {
+                        for item in global_entries.take(128).filter_map(Result::ok) {
+                            if !item.file_type().is_ok_and(|ft| ft.is_dir()) {
+                                continue;
+                            }
+                            let Some(dir_name) = item.file_name().to_str().map(str::to_owned)
+                            else {
+                                continue;
+                            };
+                            if let Ok(solstone_core_entity::IdentityObservation::Present(snap)) =
+                                solstone_core_entity::observe_entity_identity(root, &dir_name)
+                            {
+                                scanned
+                                    .entry(snap.entity_id().to_owned())
+                                    .or_insert_with(|| snap.value().clone());
+                            }
+                        }
+                    }
+                    scanned
+                });
+                map.get(entity_id).cloned()
+            });
+            if let Some(identity) = identity
+                && identity.get("blocked") != Some(&Value::Bool(true))
+                && !solstone_core_entity::identity_is_principal(&identity)
+            {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+fn journal_has_places(root: &std::path::Path, days: &[String]) -> bool {
+    for (idx, day) in days.iter().enumerate() {
+        let doc_path = solstone_core_location::projection::document_path(root, day);
+        if std::fs::symlink_metadata(&doc_path).is_ok_and(|meta| meta.is_file() && meta.len() > 0)
+            && crate::source_release::check_indexed_source_release(
+                root,
+                &format!("chronicle/{day}/location.md"),
+            )
+        {
+            return true;
+        }
+        if idx < 14
+            && let Ok(day_segments) =
+                solstone_core_journal_io::iter_segments_skipping_unreadable_streams(
+                    root,
+                    solstone_core_journal_io::PathOrDay::Day(day),
+                )
+        {
+            for segment in day_segments.into_iter().take(64) {
+                let Ok(identity) = segment.record_identity() else {
+                    continue;
+                };
+                if crate::source_release::check_segment_transcript_release(
+                    root,
+                    day,
+                    identity.stream,
+                    identity.name,
+                ) && std::fs::symlink_metadata(segment.path().join("location.jsonl"))
+                    .is_ok_and(|meta| meta.is_file() && meta.len() > 0)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn journal_has_photos(root: &std::path::Path, days: &[String]) -> bool {
+    const MAX_IMAGE_SEGMENTS_SCAN: usize = 500;
+    let mut candidate_days: Vec<String> = days.to_vec();
+    if let Ok(root_entries) = std::fs::read_dir(root) {
+        for entry in root_entries.take(128).filter_map(Result::ok) {
+            if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+                continue;
+            }
+            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if solstone_core_journal_io::is_day_key(&name) && !candidate_days.contains(&name) {
+                candidate_days.push(name);
+            }
+        }
+        candidate_days.sort_unstable_by(|a, b| b.cmp(a));
+    }
+
+    let mut image_segments_checked = 0usize;
+    for day in candidate_days.iter().take(400) {
+        for stream_dir in [
+            root.join("chronicle").join(day).join("import.image"),
+            root.join(day).join("import.image"),
+        ] {
+            if !std::fs::symlink_metadata(&stream_dir).is_ok_and(|meta| meta.is_dir()) {
+                continue;
+            }
+            let Ok(entries) = std::fs::read_dir(&stream_dir) else {
+                continue;
+            };
+            for seg_entry in entries.take(256).filter_map(Result::ok) {
+                if !seg_entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+                    continue;
+                }
+                image_segments_checked += 1;
+                if image_segments_checked > MAX_IMAGE_SEGMENTS_SCAN {
+                    return false;
+                }
+                let Some(seg_name) = seg_entry.file_name().to_str().map(str::to_owned) else {
+                    continue;
+                };
+                if !crate::source_release::check_segment_transcript_release(
+                    root,
+                    day,
+                    "import.image",
+                    &seg_name,
+                ) {
+                    continue;
+                }
+                let seg_path = seg_entry.path();
+                let has_photo = std::fs::symlink_metadata(seg_path.join("image_transcript.md"))
+                    .is_ok_and(|meta| meta.is_file());
+                let has_screenshot =
+                    std::fs::symlink_metadata(seg_path.join("screenshot_transcript.md"))
+                        .is_ok_and(|meta| meta.is_file());
+                if has_photo && !has_screenshot {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }
 
 /// Places precision tiers advertised to the owner Agents workspace.
@@ -5759,5 +6095,222 @@ mod tests {
         )
         .await;
         assert_eq!(bad.status(), StatusCode::BAD_REQUEST);
+    }
+
+    async fn read_state_json(root: &Arc<PathBuf>) -> Value {
+        let resp = state(Extension(Arc::clone(root))).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn state_journal_kinds_reflects_transcripts_summaries_entities_and_places() {
+        use std::fs;
+        let dir = TempDir::new_in(crate::test_scratch()).unwrap();
+        let root = Arc::new(dir.path().to_path_buf());
+
+        let initial = read_state_json(&root).await;
+        assert_eq!(
+            initial["journal_kinds"],
+            json!({
+                "has_transcripts": false,
+                "transcript_days_7_plus": false,
+                "has_summaries": false,
+                "has_entities": false,
+                "has_places": false,
+                "has_photos": false,
+            })
+        );
+
+        let facet_dir = root.join("facets").join("personal");
+        fs::create_dir_all(&facet_dir).unwrap();
+        fs::write(
+            facet_dir.join("facet.json"),
+            r#"{"id":"facet-personal","title":"Personal"}"#,
+        )
+        .unwrap();
+
+        // Six transcript days plus an image-import day stay below the 7-day threshold.
+        for day in [
+            "20261101", "20261102", "20261103", "20261104", "20261105", "20261106",
+        ] {
+            let seg = root.join("chronicle").join(day).join("090000_60");
+            fs::create_dir_all(&seg).unwrap();
+            fs::write(
+                seg.join("audio.jsonl"),
+                "{\"_solstone_processing\":{\"handler\":\"transcribe\"}}\n{\"text\":\"hello\"}\n",
+            )
+            .unwrap();
+        }
+        let non_transcript_seg = root
+            .join("chronicle")
+            .join("20261107")
+            .join("import.ics")
+            .join("100000_60");
+        fs::create_dir_all(&non_transcript_seg).unwrap();
+        fs::write(
+            non_transcript_seg.join("event_transcript.md"),
+            "# Calendar\n",
+        )
+        .unwrap();
+
+        let six_days = read_state_json(&root).await;
+        assert_eq!(six_days["journal_kinds"]["has_transcripts"], true);
+        assert_eq!(six_days["journal_kinds"]["transcript_days_7_plus"], false);
+
+        // Seventh spoken transcript day crosses the threshold.
+        let seventh = root.join("chronicle").join("20261108").join("090000_60");
+        fs::create_dir_all(&seventh).unwrap();
+        fs::write(
+            seventh.join("audio.jsonl"),
+            "{\"_solstone_processing\":{\"handler\":\"transcribe\"}}\n{\"text\":\"seventh\"}\n",
+        )
+        .unwrap();
+        let seven_days = read_state_json(&root).await;
+        assert_eq!(seven_days["journal_kinds"]["transcript_days_7_plus"], true);
+
+        // Hidden activity does not set has_summaries; visible activity does.
+        let activities_dir = facet_dir.join("activities");
+        fs::create_dir_all(&activities_dir).unwrap();
+        fs::write(
+            activities_dir.join("20261108.jsonl"),
+            "{\"id\":\"act-hidden\",\"title\":\"Hidden\",\"hidden\":true}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            read_state_json(&root).await["journal_kinds"]["has_summaries"],
+            false
+        );
+        fs::write(
+            activities_dir.join("20261108.jsonl"),
+            "{\"id\":\"act-1\",\"title\":\"Morning walk\"}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            read_state_json(&root).await["journal_kinds"]["has_summaries"],
+            true
+        );
+
+        // Principal owner entity and blocked entity do not set has_entities; live non-principal does.
+        fs::create_dir_all(root.join("entities").join("ent-owner")).unwrap();
+        fs::write(
+            root.join("entities").join("ent-owner").join("entity.json"),
+            r#"{"id":"ent-owner","name":"Owner","type":"Person","is_principal":true}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(facet_dir.join("entities").join("ent-owner")).unwrap();
+        fs::write(
+            facet_dir
+                .join("entities")
+                .join("ent-owner")
+                .join("entity.json"),
+            r#"{"id":"ent-owner"}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("entities").join("ent-blocked")).unwrap();
+        fs::write(
+            root.join("entities")
+                .join("ent-blocked")
+                .join("entity.json"),
+            r#"{"id":"ent-blocked","name":"Blocked","type":"Person","blocked":true}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(facet_dir.join("entities").join("ent-blocked")).unwrap();
+        fs::write(
+            facet_dir
+                .join("entities")
+                .join("ent-blocked")
+                .join("entity.json"),
+            r#"{"id":"ent-blocked"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            read_state_json(&root).await["journal_kinds"]["has_entities"],
+            false
+        );
+
+        fs::create_dir_all(root.join("entities").join("ent-friend")).unwrap();
+        fs::write(
+            root.join("entities").join("ent-friend").join("entity.json"),
+            r#"{"id":"ent-friend","name":"Sam","type":"Person"}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(facet_dir.join("entities").join("ent-friend")).unwrap();
+        fs::write(
+            facet_dir
+                .join("entities")
+                .join("ent-friend")
+                .join("entity.json"),
+            r#"{"id":"ent-friend"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            read_state_json(&root).await["journal_kinds"]["has_entities"],
+            true
+        );
+
+        // Day location document sets has_places.
+        fs::write(
+            root.join("chronicle").join("20261108").join("location.md"),
+            "# Location\n- Golden, Colorado\n",
+        )
+        .unwrap();
+        assert_eq!(
+            read_state_json(&root).await["journal_kinds"]["has_places"],
+            true
+        );
+    }
+
+    #[tokio::test]
+    async fn state_journal_kinds_has_photos_excludes_screenshots() {
+        use std::fs;
+        let dir = TempDir::new_in(crate::test_scratch()).unwrap();
+        let root = Arc::new(dir.path().to_path_buf());
+
+        let screenshot_seg = root
+            .join("chronicle")
+            .join("20261110")
+            .join("import.image")
+            .join("100000_0_screen");
+        fs::create_dir_all(&screenshot_seg).unwrap();
+        fs::write(
+            screenshot_seg.join("screenshot_transcript.md"),
+            "# Screenshot\n",
+        )
+        .unwrap();
+        assert_eq!(
+            read_state_json(&root).await["journal_kinds"]["has_photos"],
+            false
+        );
+
+        // A segment containing screenshot_transcript.md stays classified as screenshot even if image_transcript.md is present.
+        let mixed_seg = root
+            .join("chronicle")
+            .join("20261110")
+            .join("import.image")
+            .join("100100_0_mixed");
+        fs::create_dir_all(&mixed_seg).unwrap();
+        fs::write(mixed_seg.join("image_transcript.md"), "# Mixed\n").unwrap();
+        fs::write(mixed_seg.join("screenshot_transcript.md"), "# Screen\n").unwrap();
+        assert_eq!(
+            read_state_json(&root).await["journal_kinds"]["has_photos"],
+            false
+        );
+
+        // A real photo segment (image_transcript.md without screenshot_transcript.md) sets has_photos.
+        let photo_seg = root
+            .join("chronicle")
+            .join("20261110")
+            .join("import.image")
+            .join("100200_0_photo");
+        fs::create_dir_all(&photo_seg).unwrap();
+        fs::write(photo_seg.join("image_transcript.md"), "# Photo\n").unwrap();
+        assert_eq!(
+            read_state_json(&root).await["journal_kinds"]["has_photos"],
+            true
+        );
     }
 }

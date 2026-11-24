@@ -22570,3 +22570,33 @@ journal.window.stored.body.summary.strava.names.created =
     }
 
 journal.window.stored.body.summary.strava.names.none.created = no people or things were added this time.
+
+journal.window.agents.ideas.heading = ideas to ask { $agent_name }
+
+journal.window.agents.ideas.lead = based on what your journal holds and what { $agent_name } may see.
+
+journal.window.agents.ideas.prompt.chapter = turn last week from my journal into a short chapter, with quotes and links back to each day.
+
+journal.window.agents.ideas.prompt.people.circles = map the people i spent the most time with this year, grouped by circles, with the days we shared.
+
+journal.window.agents.ideas.prompt.entities = who are the people and projects in my journal, and what has it noted about each?
+
+journal.window.agents.ideas.prompt.places.map = make a map of where i spent the year, with the trips i took.
+
+journal.window.agents.ideas.prompt.places.list = list the places and trips from my year.
+
+journal.window.agents.ideas.prompt.photos = turn this year's photos into a day-by-day contact sheet, with a short line for each photo.
+
+journal.window.agents.ideas.prompt.today = what did i talk about recently, and which people or topics came up?
+
+journal.window.agents.ideas.uses.transcripts.summaries = uses transcripts, summaries
+
+journal.window.agents.ideas.uses.entities.summaries.transcripts = uses entities, summaries, transcripts
+
+journal.window.agents.ideas.uses.entities = uses entities
+
+journal.window.agents.ideas.uses.places = uses places
+
+journal.window.agents.ideas.uses.photos = uses photos
+
+journal.window.agents.ideas.uses.transcripts = uses transcripts

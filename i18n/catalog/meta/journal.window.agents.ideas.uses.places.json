@@ -1,0 +1,16 @@
+{
+  "description": "Data-source caption under an example agent question that uses places.",
+  "context": "Journal window, agents view. Short caption below an example question naming the journal material it draws on.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d166947f0a2d8b23349bbc89f5e7831a32d77f90a38f6d8ee8dc42f6e45d76ad",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

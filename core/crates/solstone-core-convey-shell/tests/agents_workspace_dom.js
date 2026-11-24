@@ -136,9 +136,10 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
     set href(v) { this.assigned = v; },
     assign(v) { this.assigned = v; },
   };
+  const copied = [];
   const navigator = {
     userAgent: 'Mozilla/5.0 (X11; Linux x86_64)',
-    clipboard: { writeText: async () => {} },
+    clipboard: { writeText: async text => { copied.push(text); } },
   };
   const window = { createViewReady: () => () => {},
     location,
@@ -276,6 +277,7 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
     };
     for (const listener of view.listeners.click || []) await listener({target, preventDefault() {}});
     await settle();
+    return target;
   };
   // Run the timers that are due now, as the page's own clock would, then let their requests settle.
   const tick = async () => {
@@ -290,7 +292,7 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
     await settle();
     return event;
   };
-  return {view, calls, click, opened, popups, location, tick, fields, keydown, journal: watched, notifications};
+  return {view, calls, click, opened, popups, location, tick, fields, keydown, journal: watched, notifications, copied};
 }
 async function settle() { for (let i = 0; i < 6; i += 1) await new Promise(resolve => setImmediate(resolve)); }
 
@@ -1611,6 +1613,168 @@ async function test(name, body) {
     has(view, 'id="places-precision-field"');
     has(view, 'class="hidden"');
     has(view, 'name="places_precision" value="full" checked');
+  });
+
+  await test('grounded example questions filter by journal_kinds, scope, categories, places precision, and zero-request state', async () => {
+    const ideaIds = targetView => [...targetView.innerHTML.matchAll(/data-agent-idea="([^"]+)"/g)].map(m => m[1]);
+    const allKinds = {
+      has_transcripts: true,
+      transcript_days_7_plus: true,
+      has_summaries: true,
+      has_entities: true,
+      has_places: true,
+      has_photos: true,
+    };
+    const emptyKinds = {
+      has_transcripts: false,
+      transcript_days_7_plus: false,
+      has_summaries: false,
+      has_entities: false,
+      has_places: false,
+      has_photos: false,
+    };
+
+    const richWhole = {
+      ...connection('oauth', 'g-rich', 'Claude', 'local'),
+      requests_this_week: 0,
+      permission: {read: {categories: ['transcripts', 'facets', 'entities', 'places', 'places_full', 'photos'], scope: {kind: 'whole_journal'}}},
+    };
+    const activeWeek = {
+      ...richWhole,
+      id: 'g-busy',
+      key: 'oauth:g-busy',
+      name: 'BusyAgent',
+      requests_this_week: 3,
+    };
+    const pausedZero = {
+      ...richWhole,
+      id: 'g-paused',
+      key: 'oauth:g-paused',
+      name: 'PausedAgent',
+      paused: {by: 'owner', since: '2026-11-01T00:00:00Z'},
+    };
+
+    // Rich whole-journal connection caps at 3 and suppresses entities-only when people-circles qualifies.
+    const rich = await boot(baseState({...door({listening: true}), journal_kinds: allKinds, connections: [richWhole, activeWeek, pausedZero]}));
+    await rich.click({connection: 'oauth:g-rich'});
+    has(rich.view, 'data-agent-ideas="page"');
+    assert.deepStrictEqual(ideaIds(rich.view), ['chapter', 'people-circles', 'places-map']);
+
+    // Copy button writes exact catalog prompt text to clipboard and updates button state.
+    const chapterPrompt = runWithJournalCatalog("window.JournalI18n.render('journal.window.agents.ideas.prompt.chapter')");
+    const copiedLabel = runWithJournalCatalog("window.JournalI18n.render('journal.window.agents.visible.text.copied')");
+    has(rich.view, `data-copy="${escText(chapterPrompt)}"`);
+    const copyBtn = await rich.click({copy: chapterPrompt});
+    assert.deepStrictEqual(rich.copied, [chapterPrompt]);
+    assert.strictEqual(copyBtn.textContent, copiedLabel);
+
+    // Non-zero requests_this_week omits the ideas section on the connection page.
+    await rich.click({route: 'home'});
+    await rich.click({connection: 'oauth:g-busy'});
+    lacks(rich.view, 'data-agent-ideas=');
+
+    // Paused connection omits the ideas section.
+    await rich.click({route: 'home'});
+    await rich.click({connection: 'oauth:g-paused'});
+    lacks(rich.view, 'data-agent-ideas=');
+
+    // Without summaries, chapter & people-circles drop out so entities, places, and photos surface.
+    const noSummaries = await boot(baseState({
+      ...door({listening: true}),
+      journal_kinds: {...allKinds, has_summaries: false},
+      connections: [
+        {...richWhole, id: 'g-approx', key: 'oauth:g-approx', permission: {read: {categories: ['transcripts', 'facets', 'entities', 'places', 'places_approx', 'photos'], scope: {kind: 'whole_journal'}}}},
+        {...richWhole, id: 'g-names', key: 'oauth:g-names', permission: {read: {categories: ['entities', 'places', 'places_names'], scope: {kind: 'whole_journal'}}}},
+        {...richWhole, id: 'g-bare-places', key: 'oauth:g-bare-places', permission: {read: {categories: ['places'], scope: {kind: 'whole_journal'}}}},
+      ],
+    }));
+    await noSummaries.click({connection: 'oauth:g-approx'});
+    assert.deepStrictEqual(ideaIds(noSummaries.view), ['entities', 'places-map', 'photos']);
+    await noSummaries.click({route: 'home'});
+    await noSummaries.click({connection: 'oauth:g-names'});
+    assert.deepStrictEqual(ideaIds(noSummaries.view), ['entities', 'places-list']);
+    await noSummaries.click({route: 'home'});
+    await noSummaries.click({connection: 'oauth:g-bare-places'});
+    assert.deepStrictEqual(ideaIds(noSummaries.view), ['places-list']);
+
+    // Facets scope allows only entities when scope.ids is non-empty, and omits everything when scope.ids is empty.
+    const facetScoped = await boot(baseState({
+      ...door({listening: true}),
+      journal_kinds: allKinds,
+      facets: [{id: 'f1', name: 'work', title: 'Work', color: '#e07a3a'}],
+      connections: [
+        {...richWhole, id: 'g-facet', key: 'oauth:g-facet', permission: {read: {categories: ['transcripts', 'facets', 'entities', 'places', 'photos'], scope: {kind: 'facets', ids: ['f1']}}}},
+        {...richWhole, id: 'g-empty-facet', key: 'oauth:g-empty-facet', permission: {read: {categories: ['entities', 'transcripts'], scope: {kind: 'facets', ids: []}}}},
+      ],
+    }));
+    await facetScoped.click({connection: 'oauth:g-facet'});
+    assert.deepStrictEqual(ideaIds(facetScoped.view), ['entities']);
+    await facetScoped.click({route: 'home'});
+    await facetScoped.click({connection: 'oauth:g-empty-facet'});
+    lacks(facetScoped.view, 'data-agent-ideas=');
+
+    // Fresh journal fallback triggers only when 1-5 yield 0, has_transcripts is true, and whole_journal + transcripts are granted.
+    const fresh = await boot(baseState({
+      ...door({listening: true}),
+      journal_kinds: {...emptyKinds, has_transcripts: true},
+      connections: [
+        {...richWhole, id: 'g-fresh-tx', key: 'oauth:g-fresh-tx', permission: {read: {categories: ['transcripts'], scope: {kind: 'whole_journal'}}}},
+        {...richWhole, id: 'g-fresh-no-tx', key: 'oauth:g-fresh-no-tx', permission: {read: {categories: ['photos'], scope: {kind: 'whole_journal'}}}},
+      ],
+    }));
+    await fresh.click({connection: 'oauth:g-fresh-tx'});
+    assert.deepStrictEqual(ideaIds(fresh.view), ['today']);
+    await fresh.click({route: 'home'});
+    await fresh.click({connection: 'oauth:g-fresh-no-tx'});
+    lacks(fresh.view, 'data-agent-ideas=');
+
+    // Completely empty journal (has_transcripts: false) omits the ideas section even when transcripts are granted.
+    const emptyJournal = await boot(baseState({
+      ...door({listening: true}),
+      journal_kinds: emptyKinds,
+      connections: [
+        {...richWhole, id: 'g-empty-tx', key: 'oauth:g-empty-tx', permission: {read: {categories: ['transcripts'], scope: {kind: 'whole_journal'}}}},
+      ],
+    }));
+    await emptyJournal.click({connection: 'oauth:g-empty-tx'});
+    lacks(emptyJournal.view, 'data-agent-ideas=');
+
+    // Post-pairing connectedDialog shows ideas while requests is empty and hides them once a request arrives.
+    let dynamicEntries = [];
+    const watched = {now: '2026-09-24T12:00:00Z', today: '20260924', pairing: null, connections: []};
+    const dialogBoot = await boot(
+      baseState({...door({listening: true}), journal_kinds: {...emptyKinds, has_photos: true}}),
+      {journal: watched, activity: {entries: [], counts: {}, examination_complete: true}},
+    );
+    await dialogBoot.click({action: 'connect'});
+    await dialogBoot.click({action: 'new-code'});
+    watched.pairing = null;
+    watched.connections = [{
+      kind: 'oauth',
+      id: 'g-paired',
+      key: 'oauth:g-paired',
+      name: 'Codex',
+      door: 'local',
+      created_at: '2026-09-24T12:01:00Z',
+      paired_at: '2026-09-24T12:01:00Z',
+      permission: {read: {categories: ['photos', 'transcripts'], scope: {kind: 'whole_journal'}}},
+    }];
+    await dialogBoot.tick();
+    has(dialogBoot.view, 'data-agent-ideas="dialog"');
+    assert.deepStrictEqual(ideaIds(dialogBoot.view), ['photos']);
+    dynamicEntries = [{day: '20260924', segment: 's', timestamp: '2026-09-24T12:02:00Z', connection: 'oauth:g-paired', agent_identity: 'Codex', tool: 'search', request: {arguments: {query: 'trip'}}, outcome: 'served'}];
+    // Update the stubbed activity response via a second boot check with a recorded first request.
+    const dialogWithReq = await boot(
+      baseState({...door({listening: true}), journal_kinds: {...emptyKinds, has_photos: true}}),
+      {journal: {now: '2026-09-24T12:00:00Z', today: '20260924', pairing: null, connections: []}, activity: {entries: dynamicEntries, counts: {served: 1}, examination_complete: true}},
+    );
+    await dialogWithReq.click({action: 'connect'});
+    await dialogWithReq.click({action: 'new-code'});
+    dialogWithReq.journal.pairing = null;
+    dialogWithReq.journal.connections = watched.connections;
+    await dialogWithReq.tick();
+    has(dialogWithReq.view, 'data-first-request');
+    lacks(dialogWithReq.view, 'data-agent-ideas=');
   });
 
   await selectLandingCases();
