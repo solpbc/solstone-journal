@@ -2862,7 +2862,7 @@ journal.cli.host.supervisor.binding.journal.token = token del diario: { $error }
 
 journal.cli.host.supervisor.binding.owner.storage = archiviazione del titolare: { $error }
 
-journal.cli.host.supervisor.binding.root.token = token della radice: { $error }
+journal.cli.host.supervisor.binding.root.token = token root: { $error }
 
 journal.cli.host.supervisor.binding.saved.binding = vincolo salvato: { $error }
 
@@ -3060,7 +3060,7 @@ journal.cli.host.windows.service.could.not.read.update.intent.record = non è st
 
 journal.cli.host.windows.service.could.not.resolve.identity.root.from.executable.directory = non è stato possibile risolvere la radice dell'identità dalla directory dell'eseguibile
 
-journal.cli.host.windows.service.could.not.resolve.root.token = non è stato possibile risolvere il token della radice: { $error }
+journal.cli.host.windows.service.could.not.resolve.root.token = non è stato possibile risolvere il token root: { $error }
 
 journal.cli.host.windows.service.could.not.resolve.uninstall.root = non è stato possibile risolvere la radice di disinstallazione
 
