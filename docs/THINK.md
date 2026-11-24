@@ -52,6 +52,16 @@ notes and labels are records kept current in place. `entities_review` promotes r
 entities to attached by itself, and `entity_observer` adds or corrects notes from
 `entity_suggest`'s candidates without asking the owner.
 
+Sense picks each segment's facets ([CORTEX.md](CORTEX.md) § Segment Talents and Facets), and
+activities are tracked per facet from them, so a Sense error reaches every talent that reads a
+segment's facets or its activities. When a story is written, its opening sentence replaces the
+activity's title and description, unless the owner wrote the activity or edited that field. An
+opening longer than 320 characters leaves both as they were. So a story that gets the activity
+wrong also overwrites a description that had it right, and everything that reads either field
+afterwards gets the story's line until a later story, an owner edit, or removing one of its
+segments replaces it. Every talent runs on the one active brain, so changing it changes them
+all ([PROVIDERS.md](PROVIDERS.md) § One Active Brain).
+
 To test a talent's behavior, render its prompt with `solstone journal talent show <name>
 --prompt` for a real `--day` and `--segment`, and set `debug.log_talent_requests` to `true` in
 `config/journal.json` to keep the exact request each run sent ([CORTEX.md](CORTEX.md) § `generate_input`). Outputs land at
