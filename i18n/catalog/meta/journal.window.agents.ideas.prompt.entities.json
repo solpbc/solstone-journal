@@ -1,0 +1,16 @@
+{
+  "description": "Copyable example prompt asking a connected agent about the people and projects in the journal.",
+  "context": "Journal window, agents view. Copyable starter question shown when the journal has entities and the agent can read entities.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b24f594e835f4cb33bcfd1b181d0b439303ab00c6df9ad57c91061fc218658c",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

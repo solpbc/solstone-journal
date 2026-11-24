@@ -39,6 +39,17 @@ the owner's request to it.\n"
     )
 }
 
+/// Under the header of a session the owner has taken in on its output alone
+/// and also typed at: what was typed is theirs, the rest the agent's.
+pub(super) fn typed_line(session: &str) -> String {
+    format!(
+        "The owner typed requests to the agent in session \"{session}\": it is taken in on its output alone, \
+which the owner turns on for a session where an AI agent or a program works on its own. What was typed at its \
+keyboard, and a message written to the agent in its transcript, is the owner's request to it. Everything else \
+that appears here is the work of the agent in {session}, not the owner's.\n"
+    )
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(super) struct Fit {
     /// The rendered text for each session, in order.
@@ -114,8 +125,12 @@ fn render(sessions: &[Session], base_ms: i64, choice: &Choice) -> (Vec<String>, 
             session.captures,
             session.windows.join(", ")
         ));
-        if session.output_only {
-            text.push_str(&output_only_line(&session.name));
+        if session.listed {
+            text.push_str(&if session.typed {
+                typed_line(&session.name)
+            } else {
+                output_only_line(&session.name)
+            });
         }
         let typed: Vec<&Item> = session
             .items
@@ -170,7 +185,7 @@ fn render(sessions: &[Session], base_ms: i64, choice: &Choice) -> (Vec<String>, 
                 Kind::FirstSeen | Kind::NewText => {
                     let what = if item.kind == Kind::FirstSeen {
                         "already on screen at its first capture (earlier work)".to_owned()
-                    } else if session.output_only {
+                    } else if session.listed {
                         format!("new text from the agent in {}", session.name)
                     } else {
                         "new text".to_owned()
@@ -349,7 +364,8 @@ mod tests {
                 .collect(),
             captures: 60,
             typed_left_out: 0,
-            output_only: false,
+            listed: false,
+            typed: false,
         }
     }
     fn words(text: &str) -> u32 {

@@ -76,10 +76,14 @@ final class JournalAppConfig {
     init(
         defaults: UserDefaults = UserDefaults(suiteName: suiteName) ?? .standard,
         loginItemManager: any LoginItemManaging = LiveJournalLoginItemManager(),
+        // A login item only from a place the app stays. A disk image mounts read-only,
+        // so an app opened straight from the download never enrolls.
         loginItemEligibility: @escaping () -> Bool = {
             let fileManager = FileManager.default
-            return WatchdogAppLocationEligibility.isEligible(
-                enclosingAppURL: Bundle.main.bundleURL,
+            let bundleURL = Bundle.main.bundleURL
+            let readOnly = (try? bundleURL.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly ?? false
+            return !readOnly && WatchdogAppLocationEligibility.isEligible(
+                enclosingAppURL: bundleURL,
                 cachesURL: fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0],
                 temporaryDirectoryURL: fileManager.temporaryDirectory
             )

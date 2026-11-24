@@ -21,4 +21,4 @@ pub mod webextension;
 pub mod tests;
 
 pub use model::Target;
-pub use publish::publish;
+pub use publish::{publish, publish_for_locales};

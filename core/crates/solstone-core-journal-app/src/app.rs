@@ -162,7 +162,9 @@ struct Context {
 }
 
 fn journal_port() -> Option<u16> {
-    journal::status().ok().and_then(|status| status.port)
+    crate::status::bound_port(journal::status, || {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    })
 }
 
 fn dispatch_effect(context: &Context, effect: &crate::setup_flow::Effect, port: Option<u16>) {

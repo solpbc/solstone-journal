@@ -8244,6 +8244,18 @@
       "selector": null
     },
     {
+      "id": "journal.cli.client.error.not.set.up",
+      "resource": "m6a6f75726e616c2e636c692e636c69656e742e6572726f722e6e6f742e7365742e7570",
+      "namespace": "journal.cli.client.error.not.set",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.cli.client.error.timeout",
       "resource": "m6a6f75726e616c2e636c692e636c69656e742e6572726f722e74696d656f7574",
       "namespace": "journal.cli.client.error",

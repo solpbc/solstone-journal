@@ -50,6 +50,18 @@ pub fn decode_response(response: &HttpResponse) -> DecodeResult<JsonValue> {
         });
     }
 
+    // Before first-run setup the journal answers every call by sending it to
+    // its setup page.
+    if (300..400).contains(&response.status)
+        && response.headers.iter().any(|(name, value)| {
+            name.eq_ignore_ascii_case("location") && value.trim_end_matches('/').ends_with("/init")
+        })
+    {
+        return Err(ClientError::NotSetUp {
+            status: response.status,
+        });
+    }
+
     Err(ClientError::UnreadableServerError {
         status: Some(response.status),
     })
@@ -145,6 +157,19 @@ mod tests {
         let error = decode_response(&response(500, b"<html>")).expect_err("500 html fails");
         assert_eq!(error.message(), SERVER_ERROR_MESSAGE);
         assert_eq!(error.status(), Some(500));
+    }
+
+    #[test]
+    fn a_call_sent_to_first_run_setup_says_the_journal_is_not_set_up() {
+        let mut redirect = response(302, b"<html>");
+        redirect.headers = vec![("Location".to_owned(), "/init".to_owned())];
+        let error = decode_response(&redirect).expect_err("setup redirect fails");
+        assert_eq!(error, ClientError::NotSetUp { status: 302 });
+        assert_eq!(error.message_for("en-US"), error.message());
+
+        redirect.headers = vec![("location".to_owned(), "/elsewhere".to_owned())];
+        let error = decode_response(&redirect).expect_err("other redirect fails");
+        assert_eq!(error.message(), SERVER_ERROR_MESSAGE);
     }
 
     #[test]

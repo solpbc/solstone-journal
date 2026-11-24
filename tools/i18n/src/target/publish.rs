@@ -58,6 +58,17 @@ pub fn publish(
     targets: &[Target],
     out_dir: &Path,
 ) -> Result<(), Vec<Fault>> {
+    let requested: Vec<String> = requested_locale.into_iter().map(str::to_string).collect();
+    publish_for_locales(catalog, channel, &requested, targets, out_dir)
+}
+
+pub fn publish_for_locales(
+    catalog: &LoadedCatalog,
+    channel: Channel,
+    requested_locales: &[String],
+    targets: &[Target],
+    out_dir: &Path,
+) -> Result<(), Vec<Fault>> {
     // Validate destination safety
     if let Ok(meta) = fs::symlink_metadata(out_dir)
         && meta.file_type().is_symlink()
@@ -115,8 +126,7 @@ pub fn publish(
 
         let mut eligible_locales = Vec::new();
         for loc_tag in &b_entry.locales {
-            if let Some(req) = requested_locale
-                && loc_tag != req
+            if !requested_locales.is_empty() && !requested_locales.iter().any(|req| req == loc_tag)
             {
                 continue;
             }

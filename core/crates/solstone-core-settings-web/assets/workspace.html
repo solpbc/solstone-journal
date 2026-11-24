@@ -8092,7 +8092,7 @@ function activityDescription(activity) {
   const {id, description} = activity;
   if (Object.hasOwn(DEFAULT_ACTIVITY_DESCRIPTIONS, id)) {
     const message = DEFAULT_ACTIVITY_DESCRIPTIONS[id];
-    if (description === window.JournalI18n.render(message)) {
+    if (description === window.JournalI18n.renderEnglish(message)) {
       return window.JournalI18n.render(message);
     }
   }

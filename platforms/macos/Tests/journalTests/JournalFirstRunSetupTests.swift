@@ -506,6 +506,66 @@ extension JournalFirstRunModelTests {
         expectQuietLaunch(world)
     }
 
+    @Test func aLaunchStillInSetupRegistersNoLoginItemUntilSetupLandsHome() async throws {
+        func config(_ items: CountingLoginItems) -> JournalAppConfig {
+            let suite = "app.solstone.journal.first-run.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defaults.removePersistentDomain(forName: suite)
+            return JournalAppConfig(defaults: defaults, loginItemManager: items, loginItemEligibility: { true })
+        }
+
+        let freshItems = CountingLoginItems()
+        let fresh = try makeSetupWorld(config: config(freshItems))
+        defer { fresh.refresh.release() }
+        await fresh.fixture.model.reconcileActivation()
+        #expect(fresh.fixture.model.route == .ritual(.welcome))
+        #expect(freshItems.registerCalls == 0)
+
+        let setUpItems = CountingLoginItems()
+        let setUp = try makeSetupWorld(
+            configureRoot: true, done: true, supervisorLive: true, probes: [.complete],
+            config: config(setUpItems)
+        )
+        defer { setUp.refresh.release() }
+        await setUp.fixture.model.reconcileActivation()
+        #expect(setUp.fixture.model.route == .home)
+        await setUp.fixture.model.launchAtLoginTask?.value
+        #expect(setUpItems.registerCalls == 1)
+        await setUp.fixture.model.reconcileForReopen()
+        await setUp.fixture.model.launchAtLoginTask?.value
+        #expect(setUpItems.registerCalls == 1)
+    }
+
+    @Test func landingHomeDoesNotWaitOnAnAwaitedUnregister() async throws {
+        let suite = "app.solstone.journal.first-run.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let items = HeldUnregisterLoginItems()
+        let config = JournalAppConfig(
+            defaults: defaults,
+            loginItemManager: items,
+            loginItemEligibility: { true },
+            loginItemBundleIdentity: { (URL(fileURLWithPath: "/Applications/Journal.app"), "2") }
+        )
+        let world = try makeSetupWorld(
+            configureRoot: true, done: true, supervisorLive: true, probes: [.complete], config: config
+        )
+        defer { world.refresh.release() }
+
+        await world.fixture.model.reconcileActivation()
+        await items.waitUntilUnregisterStarts()
+        #expect(world.fixture.model.route == .home)
+        #expect(items.registerCalls == 0)
+
+        items.shouldThrowOnRegister = true
+        items.releaseUnregister()
+        await world.fixture.model.launchAtLoginTask?.value
+        #expect(items.registerCalls == 1)
+        #expect(config.launchAtLoginIssue == .failed)
+        #expect(world.fixture.model.loginFailure == config.launchAtLoginFailureSentence)
+    }
+
     @Test func loginFailureStaysOnScreenAndIsNotStored() async throws {
         let suite = "app.solstone.journal.first-run.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -2407,6 +2467,51 @@ private final class Flag: @unchecked Sendable {
     private var stored = false
     var value: Bool { lock.withLock { stored } }
     func set(_ value: Bool) { lock.withLock { stored = value } }
+}
+
+@MainActor
+private final class CountingLoginItems: LoginItemManaging {
+    var status: SMAppService.Status = .notRegistered
+    private(set) var registerCalls = 0
+
+    func register() throws {
+        registerCalls += 1
+        status = .enabled
+    }
+    func unregister() throws { status = .notRegistered }
+    func unregisterAwaitingCompletion() async throws { status = .notRegistered }
+}
+
+@MainActor
+private final class HeldUnregisterLoginItems: LoginItemManaging {
+    var status: SMAppService.Status = .enabled
+    private(set) var registerCalls = 0
+    var shouldThrowOnRegister = false
+    private var held: CheckedContinuation<Void, Never>?
+    private var started: CheckedContinuation<Void, Never>?
+    private var hasStarted = false
+
+    func register() throws {
+        registerCalls += 1
+        if shouldThrowOnRegister { throw CocoaError(.fileWriteUnknown) }
+    }
+    func unregister() throws {}
+    func unregisterAwaitingCompletion() async throws {
+        await withCheckedContinuation { cont in
+            held = cont
+            hasStarted = true
+            started?.resume()
+            started = nil
+        }
+    }
+    func waitUntilUnregisterStarts() async {
+        if hasStarted { return }
+        await withCheckedContinuation { started = $0 }
+    }
+    func releaseUnregister() {
+        held?.resume()
+        held = nil
+    }
 }
 
 @MainActor

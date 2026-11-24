@@ -1,0 +1,16 @@
+{
+  "description": "Data-source caption under an example agent question that uses entities.",
+  "context": "Journal window, agents view. Short caption below an example question naming the journal material it draws on.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d16e066f34d94953a95abccde7850bcd645a536aea9e6882de8b9ecf238fdfa3",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

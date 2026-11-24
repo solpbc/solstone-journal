@@ -80,9 +80,10 @@ def generate(compiler, channel):
     with tempfile.TemporaryDirectory() as temp:
         out = Path(temp) / "targets"
         ir_file = Path(temp) / "ir.json"
-        subprocess.run([compiler, "targets", CATALOG, "--channel", channel,
+        extra = ["--fallback-stale"] if channel == "development" else []
+        subprocess.run([compiler, "targets", CATALOG, "--channel", channel, *extra,
                         "--target", "apple", "--out", out], check=True)
-        subprocess.run([compiler, "emit", CATALOG, "--channel", channel,
+        subprocess.run([compiler, "emit", CATALOG, "--channel", channel, *extra,
                         "--out", ir_file], check=True)
         table = json.loads((out / "apple/journal-mac.xcstrings").read_text())
         ir = json.loads(ir_file.read_text())

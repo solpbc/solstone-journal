@@ -1,0 +1,17 @@
+{
+  "description": "Synthetic newer-bundle message for unknown-ID fallback tests.",
+  "context": "Notification after device-side decryption; no owner content.",
+  "bundles": [
+    "PushMessages"
+  ],
+  "surfaces": [
+    "phone",
+    "notification-extension"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 200,
+  "source_revision": "1839f3b196019bee6b469582eaf844448127aab538df86d6a5299566a630472d",
+  "risk": "routine",
+  "auto_merge": true
+}

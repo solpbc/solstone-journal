@@ -1,0 +1,16 @@
+{
+  "description": "Copyable example prompt asking a connected agent to list the places and trips from the owner's year.",
+  "context": "Journal window, agents view. Copyable starter question shown when the journal has places and the agent can read place names only across the whole journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "44146d31549f5bd430a9e5f879ca5f0503b4e789c57c23c872e0c2f16ea8291a",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

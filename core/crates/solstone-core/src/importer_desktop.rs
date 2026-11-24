@@ -33,6 +33,7 @@ pub fn run<E>(
     arguments: &[String],
     resolve_journal: impl FnOnce() -> Result<PathBuf, E>,
 ) -> Result<(String, String, i32), E> {
+    solstone_core_import_host::audio::quiet_media_log();
     run_with(arguments, resolve_journal, require_solstone)
 }
 

@@ -1161,6 +1161,8 @@ journal.cli.client.error.unreachable = your journal couldn't be reached over { $
 
 journal.cli.client.error.unreadable = The journal returned an unreadable error.
 
+journal.cli.client.error.not.set.up = your journal isn't set up yet. finish setup, then try again.
+
 journal.cli.client.port.invalid = { $variable } must be an integer from 1 to 65535.
 
 journal.cli.describe.usage.argument.unknown = usage: { $syntax }{ $line_break }{ $command }: error: unknown argument: { $argument }

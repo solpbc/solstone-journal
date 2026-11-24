@@ -1,0 +1,21 @@
+{
+  "description": "Helper sub-line explaining how example questions for a connected agent are chosen.",
+  "context": "Journal window, agents view. Sub-line under 'ideas to ask {agent_name}' explaining that the questions match what the journal holds and what the agent is allowed to read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2a2998ea8bbfd5f01d974c10ce21dc077ccc2c81b96c9c91630183aefd211f4e",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

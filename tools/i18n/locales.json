@@ -435,7 +435,6 @@
       "id": "journal-window",
       "locales": [
         "en-US",
-        "en-XA",
         "es-419",
         "de",
         "it",
@@ -446,7 +445,6 @@
       "id": "journal-windows-app",
       "locales": [
         "en-US",
-        "en-XA",
         "es-419",
         "de",
         "it",
@@ -457,7 +455,6 @@
       "id": "journal-cli",
       "locales": [
         "en-US",
-        "en-XA",
         "es-419",
         "de",
         "it",

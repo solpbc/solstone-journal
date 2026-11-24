@@ -1,0 +1,16 @@
+{
+  "description": "Data-source caption under an example agent question that uses transcripts.",
+  "context": "Journal window, agents view. Short caption below an example question naming the journal material it draws on.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dae14f4ca62a6051fb77c5eca30d74f7f350ea4d13e3088d0b12eec0e5d09438",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

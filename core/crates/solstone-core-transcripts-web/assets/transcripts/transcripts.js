@@ -628,7 +628,7 @@
     });
     const PHOTO_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M20.5 16l-4.5-4.5-6.5 6.5"/></svg>';
 
-    const screenshotStreamKind = window.JournalI18n.render('journal.window.transcripts.screenshot.copy.j4.screenshots');
+    const screenshotStreamKind = 'screenshots';
 
     // A screenshots stream, by what its label says.
     function isScreenshotsStream(stream) {

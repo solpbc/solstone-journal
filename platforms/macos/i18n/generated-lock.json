@@ -231,12 +231,13 @@
   "i18n/catalog/meta/journal.mac.window.model.unknown.json": "29ff15e187d666f10fe357fe3bd923e7cc22992d482e4cbaf8345f0686b5569b",
   "i18n/catalog/meta/journal.mac.window.model.updates.json": "25cf8d8ce74a5a38932b46328c5e310d128f9e52e73ee9037e0f6a2e9c309209",
   "i18n/catalog/source/en-US.ftl": "e23d4973f0b159f3f506d9ebe473ac688aee2afa339cc8192d06939d431cc726",
-  "i18n/catalog/source-lock.json": "610d7dba5e479b8c1a3f31f54fac9d192152020001439c1b92d331d8d17c8e7d",
+  "i18n/catalog/source-lock.json": "2e4ba5d9d888f216faa170d3a190242e3bb2d048a63be2152ccfe3cb29303004",
+  "i18n/catalog/translations/de.ftl": "0a445bd0214b8afa6b0ec69d5d2f713ae0c8da96b2c2385715c65b24a8a92d84",
   "i18n/catalog/translations/es-419.ftl": "6f2f39154a93e3946da3794a00618c232eca6ab9136672063254a21fea7cea9e",
   "i18n/generated/AppResources/en-US.lproj/InfoPlist.strings": "ba20d22fd4286dbd66d82effd58c064a7231d748221cdeee2bf07e4e5956f78b",
   "i18n/generated/InfoPlist.xcstrings": "d64cbb139fb4e4817a38c1159d06237547f1a353314ab0c33cddb9123cb06a8e",
   "i18n/generated/Journal.xcstrings": "a60bece030e3880481cd2ab52e853be81a4ae8a1953eb14e7767ecc773e17e57",
   "i18n/info.json": "b0e5351b91d176d0a46ba2e9605631e2415d680eb563a1e913f8a890a758f45c",
-  "scripts/catalog.py": "fa8e65c35662d71e1da62a8c46aa71eb3cce5b313314b04e4eed7b79215dcd35",
+  "scripts/catalog.py": "ea16810515231511124c5ed574a11efdc27bac3c853434fd2d7f1a9974249aca",
   "Info.plist localized fields": "cc2e93dbd15d89cdaefe9d4d52c154ed3eea81f7bce644e39965cb64ce5cc592"
 }

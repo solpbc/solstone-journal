@@ -1,0 +1,16 @@
+{
+  "description": "Copyable example prompt asking a connected agent to turn last week into a short chapter.",
+  "context": "Journal window, agents view. Copyable starter question shown when the journal has 7+ transcript days and summaries, and the agent can read transcripts and summaries across the whole journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "18fb1c9766bd60e95f06b6d96cafe8545c43feb6f8bc979ed23432a9626df434",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

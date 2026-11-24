@@ -1,0 +1,17 @@
+{
+  "description": "Shared notification test message.",
+  "context": "Notification after device-side decryption; no owner content.",
+  "bundles": [
+    "PushMessages"
+  ],
+  "surfaces": [
+    "phone",
+    "notification-extension"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 200,
+  "source_revision": "b3570d088b7e3daadf37b24aafaf3967cbb3f7dd0233e64de71847ebf5d72a71",
+  "risk": "routine",
+  "auto_merge": true
+}

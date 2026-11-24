@@ -1,0 +1,16 @@
+{
+  "description": "Copyable example prompt asking a connected agent to map the people the owner spent the most time with this year.",
+  "context": "Journal window, agents view. Copyable starter question shown when the journal has entities and summaries, and the agent can read entities, summaries, and transcripts across the whole journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "65bb2690685f7ac8e1aca1ba559c053801d1ae468390e6e5f1ae14c9bc3c848e",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

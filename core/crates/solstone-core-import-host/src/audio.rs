@@ -288,16 +288,8 @@ where
     ) -> Result<(), AudioSliceError>,
     E: for<'segment> FnMut(&'segment ObservingSegment),
 {
-    let probe = (seams.probe)(&request.source_media).map_err(|error| match error {
-        AudioProbeError::Unavailable { detail } => ImportError::AudioDurationUnavailable {
-            path: request.source_media.clone(),
-            detail,
-        },
-        AudioProbeError::InputUnreadable { detail } => ImportError::AudioInputUnreadable {
-            path: request.source_media.clone(),
-            detail,
-        },
-    })?;
+    let probe = (seams.probe)(&request.source_media)
+        .map_err(|error| probe_error(&request.source_media, error))?;
     let duration = probe.duration_seconds;
     if !duration.is_finite() || duration < 0.0 {
         return Err(ImportError::AudioDurationUnavailable {
@@ -747,13 +739,29 @@ fn chunk_start(request: &AudioImportRequest, index: u64) -> Result<DateTime, Imp
 pub fn preview(
     request: &AudioImportRequest,
 ) -> Result<solstone_core_import::size::ImportSize, ImportError> {
-    let probe = native_source_probe(&request.source_media).map_err(|error| {
-        ImportError::AudioInputUnreadable {
-            path: request.source_media.clone(),
-            detail: format!("{error:?}"),
-        }
-    })?;
+    let probe = native_source_probe(&request.source_media)
+        .map_err(|error| probe_error(&request.source_media, error))?;
     preview_with_probe(request, probe)
+}
+
+fn probe_error(path: &Path, error: AudioProbeError) -> ImportError {
+    match error {
+        AudioProbeError::Unavailable { detail } => ImportError::AudioDurationUnavailable {
+            path: path.to_path_buf(),
+            detail,
+        },
+        AudioProbeError::InputUnreadable { detail } => ImportError::AudioInputUnreadable {
+            path: path.to_path_buf(),
+            detail,
+        },
+    }
+}
+
+/// Keep the media library's own log lines out of a command an owner typed.
+/// Every failure it reports also comes back as an error the importer words
+/// itself, so its lines only repeat that in the library's terms.
+pub fn quiet_media_log() {
+    ffmpeg::log::set_level(ffmpeg::log::Level::Quiet);
 }
 
 pub fn preview_with_probe(

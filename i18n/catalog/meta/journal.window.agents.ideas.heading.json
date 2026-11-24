@@ -1,0 +1,21 @@
+{
+  "description": "Section heading for grounded example questions to ask a connected agent.",
+  "context": "Journal window, agents view. Heading above up to 3 copyable example questions tailored to the journal's contents and the agent's read permissions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bd73a9dd2bc81e7233c026e3a4cf77cbfdc30c0290f0ea68ffaf69f4f8475cab",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

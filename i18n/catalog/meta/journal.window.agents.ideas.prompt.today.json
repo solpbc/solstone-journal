@@ -1,0 +1,16 @@
+{
+  "description": "Copyable fallback example prompt asking a connected agent what the owner talked about recently.",
+  "context": "Journal window, agents view. Copyable starter question shown on a fresh journal with at least one transcript when richer prompts do not yet qualify and the agent can read transcripts across the whole journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5a83561e6d4e1be8dae57603431fb6d7985793de6a63d170345604087d110fd6",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

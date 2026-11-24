@@ -4036,7 +4036,7 @@
       })
       .catch(() => {
         viewport.textContent = '';
-        appendDeepLinkLogLine(viewport, window.JournalI18n.render('journal.window.health.window.explanation.network.error.loading.log.file'), 'stderr', window.JournalI18n.render('journal.window.health.window.explanation.error.network.error.loading.log.file'));
+        appendDeepLinkLogLine(viewport, window.JournalI18n.render('journal.window.health.window.explanation.network.error.loading.log.file'), 'stderr', 'ERROR: network error loading log file');
       });
 
     document.addEventListener('click', function(e) {
