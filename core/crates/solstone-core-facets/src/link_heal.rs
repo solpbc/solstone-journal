@@ -98,6 +98,11 @@ impl std::error::Error for FacetLinkHealError {
 /// the entity trust lock throughout, the order every facet-and-entity writer
 /// takes them. A step that fails is reported and the others still run.
 pub fn self_heal_facet_links(journal: &Path) -> Result<FacetLinkHealReport, FacetLinkHealError> {
+    // Links and merge leftovers both live under `facets/`; without it there is
+    // nothing to repair and no reason to take the journal's locks.
+    if !journal.join("facets").is_dir() {
+        return Ok(FacetLinkHealReport::default());
+    }
     let _facet = hold_facet_trust_lock(journal).map_err(FacetLinkHealError::FacetTrustLock)?;
     let _entity = solstone_core_entity::hold_entity_trust_lock(journal)
         .map_err(FacetLinkHealError::EntityTrustLock)?;

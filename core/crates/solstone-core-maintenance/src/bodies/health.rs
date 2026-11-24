@@ -63,7 +63,16 @@ pub(crate) fn run_checked_in(
     match id {
         "health:mark-raw" if args.is_empty() => mark_raw(copy, journal, services, checkpoint),
         "health:mark-raw" => usage_error(copy, "health:mark-raw", args),
-        "health:prune-logs" => prune_logs(copy, args, journal, services, checkpoint),
+        "health:prune-logs" => {
+            let run = prune_logs(copy, args, journal, services, checkpoint);
+            // Daily housekeeping also carries the quiet structural repairs. They
+            // add nothing to the routine's output and never run on a dry run.
+            let dry_run = matches!(parse_prune_args(args), Ok((true, _)));
+            if !dry_run && journal.is_dir() && checkpoint().is_ok() {
+                crate::bodies::self_heal::run_self_heal(journal);
+            }
+            run
+        }
         _ => usage_error(copy, id, args),
     }
 }

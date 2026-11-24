@@ -384,6 +384,11 @@ fn expected_consumers() -> BTreeSet<(String, String)> {
             "solstone-core-segment/src/stream_repair.rs",
             "set_stream_tail_unconditionally",
         ),
+        // daily housekeeping runs the marker-keyed tail self-heal
+        (
+            "solstone-core-maintenance/src/bodies/self_heal.rs",
+            "heal_stream_tails",
+        ),
         // settings storage listing; surfaces a record's name field
         ("solstone-core-settings-web/src/storage.rs", "streams"),
         // operator CLI tool; name is the explicit argv, no binding-identity risk

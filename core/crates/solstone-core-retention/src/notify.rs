@@ -6,9 +6,9 @@
 //! # The ordering is a safety property, not a preference
 //!
 //! Index discovery is a filesystem glob with no database input. A full rescan
-//! deletes a stored row the glob no longer produces. A light scan does not: a day
-//! discovery found nothing in keeps those rows until `--rescan-full`. The two
-//! orderings fail differently:
+//! deletes a stored row the glob no longer produces. A light scan does too, unless
+//! so many indexed days vanished at once that it holds them back as a guard against
+//! an unmounted chronicle. The two orderings fail differently:
 //!
 //! - **Remove, then tell.** A crash between them leaves index rows for a file that
 //!   is gone. Search returns that hit's text from the index and does not open the

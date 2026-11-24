@@ -4,6 +4,7 @@
 pub(crate) mod backup;
 pub mod health;
 pub mod retention;
+pub(crate) mod self_heal;
 pub(crate) mod speakers;
 pub mod trash;
 
