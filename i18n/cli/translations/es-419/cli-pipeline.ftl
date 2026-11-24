@@ -34,7 +34,7 @@ journal.cli.backup.config.invalid.retention.value = los valores de retención de
 
 journal.cli.backup.config.invalid.verification.status = el estado de la verificación de copia de seguridad debe ser { $ok_value }, { $skipped_value } o { $error_value }
 
-journal.cli.backup.config.lock.timeout = no se pudo obtener el bloqueo para { $path } dentro de { $seconds }s
+journal.cli.backup.config.lock.timeout = no se pudo adquirir el bloqueo para { $path } dentro de { $seconds }s
 
 journal.cli.backup.config.missing.credential = falta la credencial de copia de seguridad: { $key }
 
@@ -858,9 +858,9 @@ journal.cli.importer.body.days.hidden =
 
 journal.cli.importer.body.facet.ask.existing = ¿clasificar tus entrenamientos, el sueño y otros datos del cuerpo bajo la faceta que nombraste { $facet }?
 
-journal.cli.importer.body.facet.ask.make.body = ¿crear una faceta del cuerpo para tus entrenamientos, el sueño y otros datos del cuerpo?
+journal.cli.importer.body.facet.ask.make.body = ¿crear una faceta del cuerpo para tus entrenamientos, tu sueño y otros datos del cuerpo?
 
-journal.cli.importer.body.facet.ask.unmute = tu faceta del cuerpo está silenciada. ¿la vuelves a activar para tus entrenamientos, el sueño y otros datos del cuerpo?
+journal.cli.importer.body.facet.ask.unmute = tu faceta del cuerpo está silenciada. ¿la vuelves a activar para tus entrenamientos, tu sueño y otros datos del cuerpo?
 
 journal.cli.importer.body.facet.moves.body =
     { $quantity ->
@@ -894,14 +894,13 @@ journal.cli.importer.body.oura.window.conflict = usa --window-days o fechas, no 
 
 journal.cli.importer.body.oura.window.zero = --window-days necesita al menos un día. no se leyó nada.
 
-journal.cli.importer.body.zones.hours =
-    { $quantity ->
-        [one] 1 hora de { $source } puede mostrarse a la hora incorrecta: se guardó en una zona horaria distinta de la que este diario guarda para { $source }.
-        [many] { $count } horas de { $source } pueden mostrarse a la hora incorrecta: se guardaron en una zona horaria distinta de la que este diario guarda para { $source }.
-       *[other] { $count } horas de { $source } pueden mostrarse a la hora incorrecta: se guardaron en una zona horaria distinta de la que este diario guarda para { $source }.
+journal.cli.importer.body.zones.hours = { $quantity ->
+    [one] 1 hora de { $source } puede mostrarse a la hora equivocada: se guardó en una zona horaria distinta de la que este diario guarda para { $source }.
+    [many] { $count } horas de { $source } pueden mostrarse a la hora equivocada: se guardaron en una zona horaria distinta de la que este diario guarda para { $source }.
+   *[other] { $count } horas de { $source } pueden mostrarse a la hora equivocada: se guardaron en una zona horaria distinta de la que este diario guarda para { $source }.
     }
 
-journal.cli.importer.body.zones.under.hour = menos de una hora de { $source } puede mostrarse a la hora incorrecta: se guardó en una zona horaria distinta de la que este diario guarda para { $source }.
+journal.cli.importer.body.zones.under.hour = menos de una hora de { $source } puede mostrarse a la hora equivocada: se guardó en una zona horaria distinta de la que este diario guarda para { $source }.
 
 journal.cli.importer.connect.available = Backends conectables: oura, plaud
 
@@ -1288,7 +1287,7 @@ journal.cli.importer.plaud.failure.download = falló la descarga
 
 journal.cli.importer.plaud.failure.manifest = falló el emparejamiento de la importación
 
-journal.cli.importer.plaud.failure.pipeline = falló la importación
+journal.cli.importer.plaud.failure.pipeline = no se pudo importar
 
 journal.cli.importer.plaud.failure.temporary.url = no se pudo obtener la URL de descarga
 
@@ -3204,7 +3203,7 @@ journal.cli.transcribe.feed.pool.lock = falló el bloqueo de la reserva de candi
 
 journal.cli.transcribe.feed.pool.read = falló la lectura de la reserva de candidatos: { $detail }
 
-journal.cli.transcribe.feed.pool.width = no coincide el ancho del centroide de la reserva de candidatos
+journal.cli.transcribe.feed.pool.width = el ancho del centroide del conjunto de candidatos no coincide
 
 journal.cli.transcribe.feed.pool.write = falló la escritura de la reserva de candidatos: { $detail }
 
@@ -3316,7 +3315,7 @@ journal.cli.transcribe.sound.windows.package.member = la carga útil firmada de 
 
 journal.cli.transcribe.sound.windows.package.parent = el ejecutable en ejecución no tiene un directorio que lo contenga
 
-journal.cli.transcribe.sound.windows.package.root = el directorio bin del paquete no tiene raíz de paquete
+journal.cli.transcribe.sound.windows.package.root = el directorio bin del paquete no tiene una raíz de paquete
 
 journal.cli.transcribe.sound.windows.probe = el auxiliar CED devolvió una respuesta de sondeo no válida
 

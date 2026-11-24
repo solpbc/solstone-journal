@@ -188,7 +188,7 @@ journal.cli.journal.archive.import.stage = falló la escritura de preparación e
 
 journal.cli.journal.archive.import.stage.changed = cambió el directorio padre de preparación
 
-journal.cli.journal.archive.import.stopped = la importación se detuvo
+journal.cli.journal.archive.import.stopped = se detuvo la importación
 
 journal.cli.journal.archive.import.symlink = enlace simbólico
 
@@ -242,7 +242,7 @@ journal.cli.journal.archive.metadata.reason.second.must.be.in.seconds = el segun
 
 journal.cli.journal.archive.metadata.reason.year.must.be.in.years = el año debe estar en 1980..=2107
 
-journal.cli.journal.archive.negative.identity = la identidad de origen es negativa
+journal.cli.journal.archive.negative.identity = la identidad del origen es negativa
 
 journal.cli.journal.archive.negative.size = el tamaño del archivo regular es negativo
 
@@ -430,7 +430,7 @@ journal.cli.journal.archive.source.windows.wait.for.recursive.namespace.witness 
 
 journal.cli.journal.archive.source.windows.wait.for.recursive.namespace.witness.member = esperar el testigo recursivo del espacio de nombres { $member }: { $detail }
 
-journal.cli.journal.archive.space.overflow = desbordamiento del espacio disponible en disco
+journal.cli.journal.archive.space.overflow = desbordamiento del espacio en disco disponible
 
 journal.cli.journal.archive.space.platform = la inspección del espacio en disco no es compatible con esta plataforma
 
@@ -902,7 +902,7 @@ journal.cli.journal.facet.trash.io = no se pudo cambiar tu papelera: { $error }
 
 journal.cli.journal.facet.trash.missing = no hay tal { $item } en tu diario
 
-journal.cli.journal.facet.trash.unfinished = está en la papelera, que terminará de guardarlo
+journal.cli.journal.facet.trash.unfinished = está en la papelera, que terminará de apartarlo
 
 journal.cli.journal.facet.trash.unknown = esta compilación no puede recuperar eso
 
@@ -1466,7 +1466,7 @@ journal.cli.journal.notify.sent = Notificación enviada
 
 journal.cli.journal.notify.utf8 = falló la notificación nativa del diario: los argumentos del propietario no son UTF-8 válido
 
-journal.cli.journal.process.admission = falló la admisión del proceso del diario: { $detail }
+journal.cli.journal.process.admission = no se pudo admitir el proceso del diario: { $detail }
 
 journal.cli.journal.process.body = falló el inicio del proceso nativo del diario: no hay cuerpo nativo para { $token }
 
@@ -1584,7 +1584,7 @@ journal.cli.sol.call.thinking.lane = carril activo: { $lane }
 
 journal.cli.sol.call.thinking.next = siguiente: { $literal_1 }
 
-journal.cli.sol.call.thinking.not.ready = no listo
+journal.cli.sol.call.thinking.not.ready = no está listo
 
 journal.cli.sol.call.thinking.operation = operación: { $operation_phase }
 

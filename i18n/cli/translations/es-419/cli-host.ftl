@@ -1172,7 +1172,7 @@ journal.cli.doctor.sync.kind.fifo = tubería con nombre
 
 journal.cli.doctor.sync.kind.other = otro objeto del sistema de archivos
 
-journal.cli.doctor.sync.kind.regularfile = archivo normal
+journal.cli.doctor.sync.kind.regularfile = archivo regular
 
 journal.cli.doctor.sync.kind.socket = Socket de Unix
 
@@ -3072,7 +3072,7 @@ journal.cli.host.windows.service.direct.worker.stop.request.direct.worker.observ
 
 journal.cli.host.windows.service.error.invalid.port = error: puerto no válido '{ $port }'
 
-journal.cli.host.windows.service.installation.identity.census.is.unreadable = no se puede leer el censo de identidad de la instalación
+journal.cli.host.windows.service.installation.identity.census.is.unreadable = el censo de identidad de la instalación es ilegible
 
 journal.cli.host.windows.service.installation.provider.location.is.unavailable = la ubicación del proveedor de la instalación no está disponible
 
@@ -3368,7 +3368,7 @@ journal.cli.install.fit.gpu.vulkan.probe.incomplete = La sonda de la GPU Vulkan 
 
 journal.cli.install.fit.header = { $artifact } revisión de compatibilidad: { $overall }
 
-journal.cli.install.fit.platform.embedded.blocked = la app del diario no incluye este entorno de ejecución local
+journal.cli.install.fit.platform.embedded.blocked = la app del diario no proporciona este entorno de ejecución local
 
 journal.cli.install.fit.platform.embedded.ok = el entorno de ejecución local está incluido en la app del diario
 
@@ -3564,7 +3564,7 @@ journal.cli.install.rfdetr.windows.runtime = La verificación del paquete RF-DET
 
 journal.cli.install.rfdetr.windows.verify.failed = Falló la verificación del paquete RF-DETR de Windows: { $error }
 
-journal.cli.install.runtime.unavailable = la app del diario no incluye este entorno de ejecución local
+journal.cli.install.runtime.unavailable = la app del diario no proporciona este entorno de ejecución local
 
 journal.cli.install.speech.platform = { $program } no es compatible con { $os_name }/{ $arch }
 

@@ -648,7 +648,7 @@ journal.cli.describe.pipeline.retry.io.allocate = no se pudo asignar la etapa
 
 journal.cli.describe.pipeline.retry.io.dest.namespace = el espacio de nombres del destino cambió antes de la publicación
 
-journal.cli.describe.pipeline.retry.io.file.kind = la entrada no es un archivo normal
+journal.cli.describe.pipeline.retry.io.file.kind = la entrada no es un archivo regular
 
 journal.cli.describe.pipeline.retry.io.file.reparse = la entrada es un punto de reanálisis
 
