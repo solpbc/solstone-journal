@@ -598,7 +598,7 @@ journal.cli.doctor.facet.unrouted = { $active_quantity ->
     } unter keiner Facette abgelegt
 }
 
-journal.cli.doctor.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Führe die { $brand }-Diagnose aus.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $indent }{ $help_option }{ $help_gap }diese Hilfemeldung anzeigen und beenden{ $line_break }{ $indent }{ $verbose_option }{ $verbose_gap }jedes Prüfergebnis ausgeben{ $line_break }{ $indent }{ $json_option }{ $json_gap }JSON statt Text ausgeben{ $line_break }{ $indent }{ $jsonl_option }{ $jsonl_gap }Ereignisse als ein JSON pro Zeile statt Text ausgeben{ $line_break }{ $indent }{ $port_option }{ $port_gap }Port zum Prüfen (Standard: { $port }){ $line_break }{ $indent }{ $readiness_option }{ $readiness_gap }die Bereitschaftsreihe der Ersteinrichtung ausführen{ $line_break }{ $line_break }Wenn '{ $command }' nicht verfügbar ist, baue den nativen doctor aus diesem Checkout:{ $line_break }{ $build_command }
+journal.cli.doctor.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Führe die { $brand }-Diagnose aus.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $indent }{ $help_option }{ $help_gap }diese Hilfenachricht anzeigen und beenden{ $line_break }{ $indent }{ $verbose_option }{ $verbose_gap }jedes Prüfergebnis ausgeben{ $line_break }{ $indent }{ $json_option }{ $json_gap }JSON statt Text ausgeben{ $line_break }{ $indent }{ $jsonl_option }{ $jsonl_gap }Ereignisse als ein JSON pro Zeile statt Text ausgeben{ $line_break }{ $indent }{ $port_option }{ $port_gap }Port zum Prüfen (Standard: { $port }){ $line_break }{ $indent }{ $readiness_option }{ $readiness_gap }die Bereitschaftsreihe der Ersteinrichtung ausführen{ $line_break }{ $line_break }Wenn '{ $command }' nicht verfügbar ist, baue den nativen doctor aus diesem Checkout:{ $line_break }{ $build_command }
 
 journal.cli.doctor.holds.partition = zurückgehaltene Partition { $partition }
 
@@ -1207,7 +1207,7 @@ journal.cli.doctor.windows.parakeet.verification = die signierten { $parakeet_na
 
 journal.cli.host.arguments.invalid = { $command }: Fehler: ungültige Argumente
 
-journal.cli.host.backfill.facet.ids.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Fehlende { $term }-Kennungen über alle Facetten-Deklarationen hinweg nachtragen.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }diese Hilfemeldung anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_4 }Nachgetragene Facetten-IDs auf den Datenträger schreiben (Standard ist ein Probelauf){ $line_break }
+journal.cli.host.backfill.facet.ids.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Fehlende { $term }-Kennungen über alle Facetten-Deklarationen hinweg nachtragen.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }diese Hilfenachricht anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_4 }Nachgetragene Facetten-IDs auf den Datenträger schreiben (Standard ist ein Probelauf){ $line_break }
 
 journal.cli.host.backfill.facet.ids.solstone.journal.backfill.facet.ids.error = { $command_solstone_journal_backfill_facet_ids }: Fehler: { $error }
 
@@ -1235,7 +1235,7 @@ journal.cli.host.backfill.facets.dry = { $scanned_quantity ->
         }
     }
 
-journal.cli.host.check.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Bereitschaftsurteil für mitgelieferte lokale Journal-Modelle.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }diese Hilfemeldung anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_5 }{ $spaces_6 }das Bereitschaftsurteil als { $term } für Agenten ausgeben{ $line_break }
+journal.cli.host.check.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Bereitschaftsurteil für mitgelieferte lokale Journal-Modelle.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }diese Hilfenachricht anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_5 }{ $spaces_6 }das Bereitschaftsurteil als { $term } für Agenten ausgeben{ $line_break }
 
 journal.cli.host.check.usage = Verwendung: { $syntax }{ $line_break }
 
@@ -1401,11 +1401,11 @@ journal.cli.host.contract.build.bundle.path.format.id.must.be = Vertrag: { $path
 
 journal.cli.host.contract.build.bundle.schema.must.be.json.object = Vertrag: Schema muss ein { $literal_1 }-Objekt sein: { $path }
 
-journal.cli.host.contract.build.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Baue das Journal-Vertragsbündel.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }diese Hilfemeldung anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_15 }Prüfe, ob das Bündel aktuell ist, ohne zu schreiben.{ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_11 }Vertrags-Checkout oder Wurzel des installierten Pakets.{ $line_break }
+journal.cli.host.contract.build.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Baue das Journal-Vertragsbündel.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }diese Hilfenachricht anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_15 }Prüfe, ob das Bündel aktuell ist, ohne zu schreiben.{ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_11 }Vertrags-Checkout oder Wurzel des installierten Pakets.{ $line_break }
 
 journal.cli.host.contract.build.usage = Verwendung: { $syntax }{ $line_break }
 
-journal.cli.host.contract.check.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Prüfe das Bündel und die Journal-Dateien gegen ihre Schemas.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }diese Hilfemeldung anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_8 }Zusätzliche Journal-Wurzel zum Validieren (wiederholbar).{ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_11 }Vertrags-Checkout oder Wurzel des installierten Pakets.{ $line_break }
+journal.cli.host.contract.check.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Prüfe das Bündel und die Journal-Dateien gegen ihre Schemas.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }diese Hilfenachricht anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_8 }Zusätzliche Journal-Wurzel zum Validieren (wiederholbar).{ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_11 }Vertrags-Checkout oder Wurzel des installierten Pakets.{ $line_break }
 
 journal.cli.host.contract.check.usage = Verwendung: { $syntax }{ $line_break }
 
@@ -1425,7 +1425,7 @@ journal.cli.host.contract.format.errors.invalid.json.schema = ungültiges { $lit
 
 journal.cli.host.contract.from.root.package.tree.not.found.path = Vertrag: solstone-Paketbaum nicht gefunden: { $path }
 
-journal.cli.host.contract.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Baue das Journal-Vertragsbündel und validiere es.{ $line_break }{ $line_break }Positionsargumente:{ $line_break }{ $spaces_2 }{ $choices }{ $line_break }{ $spaces_4 }{ $subcommand }{ $spaces_15 }Baue das Vertragsbündel.{ $line_break }{ $spaces_4 }{ $subcommand_8 }{ $spaces_15 }Prüfe das Bündel und die Journal-Dateien.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }diese Hilfemeldung anzeigen und beenden{ $line_break }
+journal.cli.host.contract.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Baue das Journal-Vertragsbündel und validiere es.{ $line_break }{ $line_break }Positionsargumente:{ $line_break }{ $spaces_2 }{ $choices }{ $line_break }{ $spaces_4 }{ $subcommand }{ $spaces_15 }Baue das Vertragsbündel.{ $line_break }{ $spaces_4 }{ $subcommand_8 }{ $spaces_15 }Prüfe das Bündel und die Journal-Dateien.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }diese Hilfenachricht anzeigen und beenden{ $line_break }
 
 journal.cli.host.contract.load.json.invalid.json.in.path = Vertrag: ungültiges { $literal_1 } in { $path }: { $error }
 
@@ -1478,19 +1478,19 @@ journal.cli.host.contract.walk.schema.files.cannot.read.path = Vertrag: { $path 
 
 journal.cli.host.contract.walk.schema.files.cannot.read.schema.entry = Vertrag: Schemaeintrag kann nicht gelesen werden: { $error }
 
-journal.cli.host.convey.help = Verwendung: { $syntax }{ $line_break }{ $line_break }{ $term }-Weboberfläche{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }diese Hilfemeldung anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_4 }Port, auf dem bereitgestellt wird{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_2 }Ausführliche Ausgabe aktivieren{ $line_break }{ $spaces_2 }{ $option_10 }{ $spaces_4 }Debug-Protokollierung aktivieren{ $line_break }
+journal.cli.host.convey.help = Verwendung: { $syntax }{ $line_break }{ $line_break }{ $term }-Weboberfläche{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }diese Hilfenachricht anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_4 }Port, auf dem bereitgestellt wird{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_2 }Ausführliche Ausgabe aktivieren{ $line_break }{ $spaces_2 }{ $option_10 }{ $spaces_4 }Debug-Protokollierung aktivieren{ $line_break }
 
 journal.cli.host.convey.usage = Verwendung: { $syntax }{ $line_break }
 
-journal.cli.host.cortex.help = Verwendung: { $syntax }{ $line_break }{ $line_break }{ $term } { $term_4 } Talent-Manager{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }diese Hilfemeldung anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_2 }Ausführliche Ausgabe aktivieren{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_4 }Debug-Protokollierung aktivieren{ $line_break }
+journal.cli.host.cortex.help = Verwendung: { $syntax }{ $line_break }{ $line_break }{ $term } { $term_4 } Talent-Manager{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }diese Hilfenachricht anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_2 }Ausführliche Ausgabe aktivieren{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_4 }Debug-Protokollierung aktivieren{ $line_break }
 
 journal.cli.host.cortex.service.cortex.service.failed = cortex-Dienst fehlgeschlagen: { $error }
 
 journal.cli.host.cortex.usage = Verwendung: { $syntax }{ $line_break }
 
-journal.cli.host.down.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Beende den Journal-Dienst.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }diese Hilfemeldung anzeigen und beenden{ $line_break }
+journal.cli.host.down.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Beende den Journal-Dienst.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }diese Hilfenachricht anzeigen und beenden{ $line_break }
 
-journal.cli.host.facet.candidates.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Erfasse wiederkehrende Kandidaten der Facettenprüfung.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }diese Hilfemeldung anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_2 }Ausführliche Ausgabe aktivieren{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_4 }Debug-Protokollierung aktivieren{ $line_break }
+journal.cli.host.facet.candidates.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Erfasse wiederkehrende Kandidaten der Facettenprüfung.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }diese Hilfenachricht anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_2 }Ausführliche Ausgabe aktivieren{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_4 }Debug-Protokollierung aktivieren{ $line_break }
 
 journal.cli.host.facet.candidates.recorded = { $quantity ->
     [one] { $display_count } Facettenkandidat erfasst/aktualisiert.
@@ -1503,7 +1503,7 @@ journal.cli.host.facet.candidates.run.facet.candidates.root.path.not = solstone 
 
 journal.cli.host.facet.candidates.usage = Verwendung: { $syntax }{ $line_break }
 
-journal.cli.host.grab.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Gehe beobachtete Bildschirmbilder durch und schreibe optional Einzelbilder.{ $line_break }{ $line_break }Positionsargumente:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_11 }Pfad-Token: { $path_tokens }{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }diese Hilfemeldung anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_6 }Schreibe das ausgewählte Einzelbild hierhin ({ $extension }, { $extension_12 }, { $extension_13 } oder{ $line_break }{ $spaces_17 }{ $extension_15 }).{ $line_break }{ $spaces_2 }{ $option_16 }{ $spaces_8 }Ersetze einen vorhandenen Ausgabepfad.{ $line_break }{ $spaces_2 }{ $option_18 }{ $spaces_9 }Gib { $term } aus statt einer Tabelle oder einer einfachen Ausgabe.{ $line_break }{ $spaces_2 }{ $option_21 }{ $spaces_2 }Ausführliche Ausgabe aktivieren{ $line_break }{ $spaces_2 }{ $option_22 }{ $spaces_4 }Debug-Protokollierung aktivieren{ $line_break }
+journal.cli.host.grab.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Gehe beobachtete Bildschirmbilder durch und schreibe optional Einzelbilder.{ $line_break }{ $line_break }Positionsargumente:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_11 }Pfad-Token: { $path_tokens }{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }diese Hilfenachricht anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_6 }Schreibe das ausgewählte Einzelbild hierhin ({ $extension }, { $extension_12 }, { $extension_13 } oder{ $line_break }{ $spaces_17 }{ $extension_15 }).{ $line_break }{ $spaces_2 }{ $option_16 }{ $spaces_8 }Ersetze einen vorhandenen Ausgabepfad.{ $line_break }{ $spaces_2 }{ $option_18 }{ $spaces_9 }Gib { $term } aus statt einer Tabelle oder einer einfachen Ausgabe.{ $line_break }{ $spaces_2 }{ $option_21 }{ $spaces_2 }Ausführliche Ausgabe aktivieren{ $line_break }{ $spaces_2 }{ $option_22 }{ $spaces_4 }Debug-Protokollierung aktivieren{ $line_break }
 
 journal.cli.host.grab.usage = Verwendung: { $syntax }{ $line_break }
 
@@ -1534,9 +1534,9 @@ journal.cli.host.health.heartbeat.stale = { $line_break }Herzschlag: VERALTET ({
 
 journal.cli.host.health.held = { $space_2 }zurückgehalten { $partition } { $reason }
 
-journal.cli.host.health.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Zeige den behaltenen Dienstzustand des Supervisors.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }diese Hilfemeldung anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_2 }ausführliche Ausgabe aktivieren{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_4 }detaillierte Debug-Ausgabe aktivieren{ $line_break }
+journal.cli.host.health.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Zeige den behaltenen Dienstzustand des Supervisors.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }diese Hilfenachricht anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_2 }ausführliche Ausgabe aktivieren{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_4 }detaillierte Debug-Ausgabe aktivieren{ $line_break }
 
-journal.cli.host.health.logs.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Zeige betriebliche Dienstprotokolle.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }diese Hilfemeldung anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_18 }Anzahl der anzuzeigenden Zeilen (Standard: 5){ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_20 }Protokollausgabe folgen{ $line_break }{ $spaces_2 }{ $option_10 }{ $spaces_10 }Zeilen ab { $argument } anzeigen{ $line_break }{ $spaces_2 }{ $option_13 }{ $spaces_8 }Zeilen für einen Dienst anzeigen{ $line_break }{ $spaces_2 }{ $option_15 }{ $spaces_8 }Zeilen anzeigen, die zu { $argument_16 } passen{ $line_break }{ $spaces_2 }{ $option_17 }{ $spaces_9 }ausführliche Ausgabe aktivieren{ $line_break }{ $spaces_2 }{ $option_19 }{ $spaces_11 }detaillierte Debug-Ausgabe aktivieren{ $line_break }
+journal.cli.host.health.logs.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Zeige betriebliche Dienstprotokolle.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }diese Hilfenachricht anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_18 }Anzahl der anzuzeigenden Zeilen (Standard: 5){ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_20 }Protokollausgabe folgen{ $line_break }{ $spaces_2 }{ $option_10 }{ $spaces_10 }Zeilen ab { $argument } anzeigen{ $line_break }{ $spaces_2 }{ $option_13 }{ $spaces_8 }Zeilen für einen Dienst anzeigen{ $line_break }{ $spaces_2 }{ $option_15 }{ $spaces_8 }Zeilen anzeigen, die zu { $argument_16 } passen{ $line_break }{ $spaces_2 }{ $option_17 }{ $spaces_9 }ausführliche Ausgabe aktivieren{ $line_break }{ $spaces_2 }{ $option_19 }{ $spaces_11 }detaillierte Debug-Ausgabe aktivieren{ $line_break }
 
 journal.cli.host.health.logs.usage = Verwendung: { $syntax }{ $line_break }
 
@@ -1617,7 +1617,7 @@ journal.cli.host.health.usage = Verwendung: { $syntax }{ $line_break }
 
 journal.cli.host.heartbeat.error = { $command }: { $detail }
 
-journal.cli.host.heartbeat.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Führe einen deterministischen Reparaturdurchlauf für den Zustand aus{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }diese Hilfemeldung anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_5 }{ $spaces_5 }Führe eine vollständige Prüfung unabhängig vom Alter der letzten Prüfung aus{ $line_break }
+journal.cli.host.heartbeat.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Führe einen deterministischen Reparaturdurchlauf für den Zustand aus{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }diese Hilfenachricht anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_5 }{ $spaces_5 }Führe eine vollständige Prüfung unabhängig vom Alter der letzten Prüfung aus{ $line_break }
 
 journal.cli.host.heartbeat.oplog = heartbeat-oplog konnte nicht erstellt werden: { $detail }
 
@@ -1631,7 +1631,7 @@ journal.cli.host.importer.desktop.run.resolved.could.not.show.import.size = die 
 
 journal.cli.host.install.models.coreml.disclosure.parakeet.assets.downloading.parakeet.tdt = parakeet-Assets: das { $model }-{ $literal_4 }-Modell ({ $literal_3 }) wird von { $literal_2 } heruntergeladen. siehe { $literal_1 }.
 
-journal.cli.host.install.models.help = Verwendung: { $syntax }{ $line_break }{ $spaces_30 }{ $syntax_4 }{ $line_break }{ $spaces_30 }{ $syntax_5 }{ $line_break }{ $line_break }mitgelieferte { $argument }-Modelle von { $term } installieren und prüfen (lokale { $argument_8 } plus mitgelieferte{ $line_break }{ $term_9 }{ $path }-Assets). die Standardaktion prüft die lokalen { $argument_8 }-Artefakte und{ $line_break }holt sie, wenn sie fehlen; { $flag } holt erneut; { $flag_12 } prüft nur und beendet{ $line_break }bei jedem Problem mit einem Wert ungleich null.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }diese Hilfemeldung anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_16 }{ $spaces_15 }mitgelieferte Assets und lokale { $argument_8 }-Artefakte prüfen, ohne{ $line_break }{ $spaces_24 }etwas zu holen.{ $line_break }{ $spaces_2 }{ $option_19 }{ $spaces_15 }Bereitschaft ignorieren und erneut holen{ $path_20 } lokale { $argument_8 }{ $line_break }{ $spaces_24 }Artefakte.{ $line_break }{ $spaces_2 }{ $option_21 }{ $spaces_7 }nur mitgelieferte Modelle installieren oder prüfen, die für die{ $line_break }{ $spaces_24 }Journal-Bereitschaft nötig sind; optionale Anbieter nicht holen.{ $line_break }{ $spaces_2 }{ $flag_23 } { $choices }{ $line_break }{ $spaces_24 }Journal-Variante zum Installieren oder Prüfen. { $literal } berücksichtigt{ $line_break }{ $spaces_24 }{ $argument_26 } auf { $literal_27 }{ $path_28 }, danach erkennt { $literal } automatisch.{ $line_break }
+journal.cli.host.install.models.help = Verwendung: { $syntax }{ $line_break }{ $spaces_30 }{ $syntax_4 }{ $line_break }{ $spaces_30 }{ $syntax_5 }{ $line_break }{ $line_break }mitgelieferte { $argument }-Modelle von { $term } installieren und prüfen (lokale { $argument_8 } plus mitgelieferte{ $line_break }{ $term_9 }{ $path }-Assets). die Standardaktion prüft die lokalen { $argument_8 }-Artefakte und{ $line_break }holt sie, wenn sie fehlen; { $flag } holt erneut; { $flag_12 } prüft nur und beendet{ $line_break }bei jedem Problem mit einem Wert ungleich null.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }diese Hilfenachricht anzeigen und beenden{ $line_break }{ $spaces_2 }{ $option_16 }{ $spaces_15 }mitgelieferte Assets und lokale { $argument_8 }-Artefakte prüfen, ohne{ $line_break }{ $spaces_24 }etwas zu holen.{ $line_break }{ $spaces_2 }{ $option_19 }{ $spaces_15 }Bereitschaft ignorieren und erneut holen{ $path_20 } lokale { $argument_8 }{ $line_break }{ $spaces_24 }Artefakte.{ $line_break }{ $spaces_2 }{ $option_21 }{ $spaces_7 }nur mitgelieferte Modelle installieren oder prüfen, die für die{ $line_break }{ $spaces_24 }Journal-Bereitschaft nötig sind; optionale Anbieter nicht holen.{ $line_break }{ $spaces_2 }{ $flag_23 } { $choices }{ $line_break }{ $spaces_24 }Journal-Variante zum Installieren oder Prüfen. { $literal } berücksichtigt{ $line_break }{ $spaces_24 }{ $argument_26 } auf { $literal_27 }{ $path_28 }, danach erkennt { $literal } automatisch.{ $line_break }
 
 journal.cli.host.install.models.install.required.rfdetr.rf.detr.install.unsupported.platform = { $literal_1 }-Installation: Plattform { $os }/{ $arch } wird nicht unterstützt; { $literal_1 }-Objekterkennungs-Assets werden übersprungen
 
@@ -1709,7 +1709,7 @@ journal.cli.host.install.provider.global.parakeet.cpp.can.t.run = { $literal_1 }
 
 journal.cli.host.install.provider.global.parakeet.cpp.fetches.two.artifacts = { $literal_4 } holt zwei Artefakte in den Anbieter-Zwischenspeicher dieses Journals, bevor der Lauf möglich ist, beide von { $literal_2 }: die { $literal_3 }-Server-Binärdatei ({ $literal_6 }) und das Sprachmodell ({ $literal_5 }). siehe { $literal_1 }.
 
-journal.cli.host.install.provider.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Installiere eine Anbieter-Laufzeitumgebung oder versuche es erneut.{ $line_break }{ $line_break }Positionsargumente:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_8 }Zu installierender Anbieter: '{ $literal }' oder '{ $literal_7 }'.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }diese Hilfemeldung anzeigen und beenden{ $line_break }
+journal.cli.host.install.provider.help = Verwendung: { $syntax }{ $line_break }{ $line_break }Installiere eine Anbieter-Laufzeitumgebung oder versuche es erneut.{ $line_break }{ $line_break }Positionsargumente:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_8 }Zu installierender Anbieter: '{ $literal }' oder '{ $literal_7 }'.{ $line_break }{ $line_break }Optionen:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }diese Hilfenachricht anzeigen und beenden{ $line_break }
 
 journal.cli.host.install.provider.local.target.sha.local.fingerprint.dispatch.omitted.target = lokaler Fingerabdruck-Dispatch hat target_fingerprint_sha256 ausgelassen
 
