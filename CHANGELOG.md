@@ -15,24 +15,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- connected agents with entities permission now see each entity's type when listing people and projects, with shared entries combined into one listing unless filtered to a single facet. they can also read up to 12 entities and their allowed profile pics in one request, and weekly and date-range summaries now list up to 50 other people per day alongside a summary of who came up and who appeared together across the whole range.
-- when connected agents read activities or a week, people seen in imported photos are now listed separately from people who appeared on screen, such as in screen recordings and imported screenshots.
-- connected agents also receive updated instructions for reading people across a date range, counting both participants and people heard in a moment as present, telling people seen in imported photos apart from people who appeared on screen, and loading allowed profile pics in batches of up to 12.
 - the import page on android and iphone development journals no longer has a Plaud row.
 
 ### Fixed
 
-- audio recordings that stopped before any sound was saved no longer show up on your health page as recordings that could not be read. audio recordings already held that way get one more check, clearing the empty ones while unreadable recordings stay on hold.
-- an audio file you imported now reads "audio" when you delete it from the import page. it read "audio folder" before, which only fits files the old audio folder sync brought in.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
-- `solstone journal importer` now prints a short summary line when an audio import finishes instead of an internal debug dump.
-- the journal storage reference for your agents no longer lists a `social/` folder that isn't part of your journal.
-- `solstone journal doctor` now explains when thinking hasn't been checked yet instead of printing the raw code `brain_record_missing`.
-- the import page's tray and history now use the same "review and confirm" label for files waiting on your review.
-- `solstone journal mcp permission set --help` now includes `--places-precision LEVEL` in its usage line.
 - the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.
 - fixed a status check that left home and health unable to report unfinished daily work in the android development journal.
 - original screen recordings can now finish opening in the android development journal when the player seeks ahead in the video.
@@ -61,11 +51,29 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on the settings page on an iphone, choosing any section but facets or support from the section menu now leaves focus on the menu. before, focus was dropped as the menu closed.
 - on an iphone, choosing from a menu now leaves focus on that menu in more places: in settings, the pronouns, transcription backend and parakeet.cpp device menus; the level menu in health's service logs; the source menu in import; the "call it" menu on a map place; and the type menu when you edit an entity. before, focus was dropped as the menu closed.
 - on an iphone, when a priority change on the settings page can't be saved, its menu no longer opens again by itself.
-- during first-run setup, if your journal returned an error, the setup page could show a script error instead of the actual message. it now shows the error message.
 
 ### Removed
 
 - the journal's built-in audio folder sync is gone, including its controls and scheduled sync on the android and iphone development journals. leftover audio-folder schedules are removed on startup. recordings already in your journal stay, and you can still import an audio file or an audio archive.
+
+## [2.0.90] - 2026-11-24
+
+### Changed
+
+- connected agents allowed to see entities now see each one's type when listing people and projects, and a person or project in more than one facet shows once unless the agent asks about a single facet. they can also read several entities and their allowed profile pics at once, and weekly and date-range summaries now list up to 50 other people per day alongside a summary of who came up and who appeared together across the whole range.
+- when connected agents read activities or a week, people seen in imported photos are now listed separately from people who appeared on screen, such as in screen frames and imported screenshots.
+- connected agents also get updated instructions for reading people across a date range, counting both participants and people heard in a moment as present.
+
+### Fixed
+
+- audio recordings that stopped before any sound was saved no longer show up on your health page as recordings that could not be read. audio recordings already held that way get one more check, which takes the empty ones off your health page while unreadable recordings stay on hold.
+- an audio file you imported now reads "audio" when you delete it from the import page. it read "audio folder" before, which only fits files the old audio folder sync brought in.
+- during first-run setup, if your journal returned an error, the setup page could show a script error instead of the actual message. it now shows the error message.
+- `solstone journal importer` now prints a short summary line when an audio import finishes instead of an internal debug dump.
+- the journal storage reference for your agents no longer lists a `social/` folder that isn't part of your journal.
+- `solstone journal doctor` now explains when thinking hasn't been checked yet instead of printing the raw code `brain_record_missing`.
+- the import page's tray and history now use the same "review and confirm" label for files waiting on your review.
+- a count of one now reads in the singular in more places, mostly when you delete or erase something: entities, imports, segments and what's in the trash, a backup that holds the only copy of a day, and a voice's statement count when you teach it. connecting an agent again also reads more clearly.
 
 ## [2.0.89] - 2026-11-23
 
