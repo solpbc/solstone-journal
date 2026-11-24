@@ -104,9 +104,10 @@ def check_fixed_terms(
         dst_body = strip_ftl_header_and_placeables(dst_raw)
 
         for term in ordered:
-            # Word-boundary match around alphanumeric ends
+            # Match whole brand tokens without matching inside domains (solstone.app) or hyphenated slugs (solstone-app),
+            # while still matching sentence-final punctuation like "con la app de solstone."
             pattern = re.compile(
-                rf"(?<![A-Za-z0-9_.-]){re.escape(term)}(?![A-Za-z0-9_.-])",
+                rf"(?<![A-Za-z0-9_-])(?<![A-Za-z0-9]\.){re.escape(term)}(?![A-Za-z0-9_-])(?!\.[A-Za-z0-9])",
                 re.IGNORECASE,
             )
             src_matches = pattern.findall(src_body)

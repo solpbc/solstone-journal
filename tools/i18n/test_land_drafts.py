@@ -508,6 +508,37 @@ class LandDraftsTests(unittest.TestCase):
             self.assertEqual(st["stale"], [])
             self.assertEqual(st["excluded_restricted"], ["link.test.statute", "link.test.terms"])
 
+    def test_fixed_terms_allow_sentence_final_period_and_catch_casing(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("land_drafts", LAND_DRAFTS)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        terms = ["sol pbc", "solstone", "vit", "solstone.me"]
+        self.assertEqual(
+            mod.check_fixed_terms(
+                {
+                    "a": "a = open with the solstone app.",
+                    "b": "b = open in sol pbc's apps.",
+                    "c": "c = visit solstone.app/install",
+                },
+                {
+                    "a": "a = abre con la app de solstone.",
+                    "b": "b = se abre en las apps de sol pbc.",
+                    "c": "c = visita solstone.app/install",
+                },
+                terms,
+            ),
+            [],
+        )
+        violations = mod.check_fixed_terms(
+            {"a": "a = open with the solstone app."},
+            {"a": "a = abre con la app de Solstone."},
+            terms,
+        )
+        self.assertEqual(len(violations), 1)
+        self.assertIn("changed casing", violations[0])
+
 
 if __name__ == "__main__":
     unittest.main()
