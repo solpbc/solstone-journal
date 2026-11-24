@@ -1,0 +1,28 @@
+{
+  "description": "Empty-state hint in the syncs section when neither Plaud nor Granola is turned on.",
+  "context": "Journal window, sources view. Calm note shown in the syncs section when no third-party syncs are connected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "91272c797b0018bb46d917c0213bf12dcc6a0ba85d84b007406a554206b36aa1",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "plaud",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    },
+    {
+      "name": "granola",
+      "kind": "accepted-input",
+      "value": "Granola"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Secondary state label shown while a connected sync is checking now.",
+  "context": "Journal window, sources view. Secondary status word on a sync row when a check is currently running.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d768e8c72ed45a3c76fbe689db4178483bc674da29966cea3b8af8a98cc7678e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

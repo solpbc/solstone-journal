@@ -1,0 +1,16 @@
+{
+  "description": "Subtitle inside the framed switcher header on the import view.",
+  "context": "Journal window, import view. Short line explaining that this page is for files and exports the owner chose to bring in.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "844dbd2f199417cd460542baa123ba408666d2628df093fd407c8c63c4b0b061",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

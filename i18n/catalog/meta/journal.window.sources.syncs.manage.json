@@ -1,0 +1,16 @@
+{
+  "description": "Link from the syncs section on the sources view to sync settings.",
+  "context": "Journal window, sources view. Link label opening /app/settings/#sync to configure or manage syncs.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be61b9e2dea7adcd5ca2f0fa3bffc0f59df452b3ae8fbf4a1ad7cf247b1761e6",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

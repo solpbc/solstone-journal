@@ -17,6 +17,9 @@ const { journalContext } = require('./journal_catalog_dom.js');
 
 const ORIGIN = 'http://journal.test';
 const CLIENTS = '/app/network/api/clients';
+const PLAUD = '/app/settings/api/plaud';
+const GRANOLA = '/app/settings/api/granola';
+const FIRST_READS = [CLIENTS, PLAUD, GRANOLA];
 
 let cases = 0;
 async function test(name, fn) {
@@ -284,7 +287,12 @@ function makePage(env, { wide = true, withApi = false } = {}) {
     },
     root: () => doc.getElementById('sources-root'),
     reads: () => calls.filter((c) => c.url === CLIENTS && c.method === 'GET'),
-    last: () => calls[calls.length - 1],
+    readsOf: (url) => calls.filter((c) => c.url === url && c.method === 'GET'),
+    answerSyncs({ plaud = [200, { connected: false, syncing: false }], granola = [200, { connected: false, syncing: false }] } = {}) {
+      calls.filter((c) => c.url === PLAUD && !c.settled).forEach((c) => c.answer(plaud[0], plaud[1]));
+      calls.filter((c) => c.url === GRANOLA && !c.settled).forEach((c) => c.answer(granola[0], granola[1]));
+    },
+    last: () => calls.filter((c) => c.url === CLIENTS && c.method === 'GET').slice(-1)[0],
     leave() {
       window.SolViews.dispose();
       shellMain.replaceChildren();
@@ -328,9 +336,9 @@ module.exports = async function sourcesContractCases(manifestDir) {
   const script = fs.readFileSync(path.join(manifestDir, 'assets/sources/sources.js'), 'utf8');
   const env = { manifestDir, script, workspace };
 
-  await test('the fragment declares the contract and its first read', async () => {
+  await test('the fragment declares the contract and its first reads', async () => {
     assert.ok(workspace.includes('<!-- view-contract -->'), 'the view-contract marker');
-    assert.ok(workspace.includes(`<!-- first-read: /app/sources/ -> ${CLIENTS} -->`), 'the first read');
+    assert.ok(workspace.includes(`<!-- first-read: /app/sources/ -> ${FIRST_READS.join(' ')} -->`), 'the first reads');
   });
 
   await test('the script only registers: nothing reads, draws, listens or times at load', async () => {
@@ -347,15 +355,19 @@ module.exports = async function sourcesContractCases(manifestDir) {
     assert.strictEqual(p.window.SolViews.registered('sources'), true, 'it registers');
   });
 
-  await test('a mount reads the clients once through the store, draws them and reports content', async () => {
+  await test('a mount reads clients and syncs once through the store, draws them and reports content', async () => {
     const p = await boot(env);
-    assert.strictEqual(p.reads().length, 1, 'one read');
+    assert.strictEqual(p.reads().length, 1, 'one clients read');
+    assert.strictEqual(p.readsOf(PLAUD).length, 1, 'one plaud read');
+    assert.strictEqual(p.readsOf(GRANOLA).length, 1, 'one granola read');
     assert.ok(p.reads()[0].url === CLIENTS, 'of the clients, by its absolute address');
     assert.ok(p.media.query === '(max-width: 700px)', 'the layout query');
     assert.strictEqual(p.media.listenerCount(), 1, 'one media listener');
     p.reads()[0].answer(200, { clients: [device('studio', 5)] });
+    p.answerSyncs();
     await settle();
     assert.ok(p.root().querySelector('table') !== null, 'the wide table is drawn');
+    assert.ok(p.root().querySelector('.sources-syncs') !== null, 'the syncs section is drawn');
     assert.deepStrictEqual(p.ready, ['content'], 'ready as content');
     assert.strictEqual(p.errors.length, 0, 'no error');
   });
@@ -368,8 +380,10 @@ module.exports = async function sourcesContractCases(manifestDir) {
     await test(`${label} draws and reports ${state}`, async () => {
       const p = await boot(env);
       p.reads()[0].answer(status, body);
+      p.answerSyncs();
       await settle();
       assert.deepStrictEqual(p.ready, [state]);
+      assert.ok(p.root().querySelector('.sources-syncs') !== null, 'syncs still renders alongside devices state');
       if (state === 'empty') assert.ok(p.root().querySelector('.sources-empty') !== null, 'the empty state');
       if (state === 'error') assert.ok(p.root().querySelector('.sources-retry') !== null, 'the error state');
     });
@@ -378,6 +392,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
   await test('the phone layout draws cards, and a layout change redraws in place', async () => {
     const p = await boot(env, { wide: false });
     p.reads()[0].answer(200, { clients: [device('studio', 5), device('phone', 8)] });
+    p.answerSyncs();
     await settle();
     assert.strictEqual(p.root().querySelectorAll('article').length, 2, 'one card each');
     p.media.matches = false;
@@ -393,6 +408,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
     const keys = p.windowKeys();
     await p.mount();
     p.reads()[0].answer(200, { clients: [device('studio', 5)] });
+    p.answerSyncs();
     await settle();
     const view = p.view;
     p.leave();
@@ -409,21 +425,24 @@ module.exports = async function sourcesContractCases(manifestDir) {
     await p.mount();
     assert.strictEqual(p.reads().length, 2, 'the second mount reads its own');
     p.reads()[1].answer(200, { clients: [device('studio', 5)] });
+    p.answerSyncs();
     await settle();
     assert.ok(p.root().querySelector('table') !== null, 'and draws');
     assert.strictEqual(p.media.listenerCount(), 1, 'one media listener, not two');
     assert.deepStrictEqual(p.ready, ['content']);
   });
 
-  await test('leaving while the read is out aborts it, and its late answer draws nothing', async () => {
+  await test('leaving while the reads are out aborts them, and their late answers draw nothing', async () => {
     const p = await boot(env);
-    const call = p.reads()[0];
+    const allCalls = [...p.calls];
+    assert.strictEqual(allCalls.length, 3, 'three reads in flight');
     const root = p.root();
     p.leave();
     await settle();
-    assert.strictEqual(call.aborted, true, 'the read is aborted');
-    call.settled = false;
-    call.answer(200, { clients: [device('studio', 5)] });
+    assert.ok(allCalls.every((c) => c.aborted), 'every read is aborted');
+    allCalls.forEach((c) => { c.settled = false; });
+    p.reads()[0].answer(200, { clients: [device('studio', 5)] });
+    p.answerSyncs();
     await settle();
     assert.strictEqual(root.childNodes.length, 0, 'the old root draws nothing');
     assert.ok(p.doc.getElementById('home') !== null, 'the page stays the next view');
@@ -434,6 +453,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
   await test('leaving after the answer and before its body draws nothing', async () => {
     const p = await boot(env);
     const call = p.reads()[0];
+    p.answerSyncs();
     const root = p.root();
     call.respond(200);
     await settle();
@@ -469,16 +489,29 @@ module.exports = async function sourcesContractCases(manifestDir) {
 
   await test('"try again" makes a read of its own: never the early read that answered, nor one from an earlier arrival', async () => {
     const p = makePage(env, { withApi: true });
-    const href = ORIGIN + CLIENTS;
     const unreadable = { clients: [Object.assign(device('studio', 5), { unassessed_reason: 'activity_unreadable' })] };
-    const earlyResponse = { ok: true, status: 200, redirected: false, headers: { get: () => 'application/json' }, json: async () => unreadable };
-    p.window.__solEarly = { view: 'sources', claimed: true, stats: {}, reads: { [href]: { response: Promise.resolve(earlyResponse), controller: null, startedAt: Date.now(), expect: 'json' } } };
+    const mkEarly = (body) => ({
+      response: Promise.resolve({ ok: true, status: 200, redirected: false, headers: { get: () => 'application/json' }, json: async () => body }),
+      controller: null,
+      startedAt: Date.now(),
+      expect: 'json',
+    });
+    p.window.__solEarly = {
+      view: 'sources',
+      claimed: true,
+      stats: {},
+      reads: {
+        [ORIGIN + CLIENTS]: mkEarly(unreadable),
+        [ORIGIN + PLAUD]: mkEarly({ connected: false, syncing: false }),
+        [ORIGIN + GRANOLA]: mkEarly({ connected: false, syncing: false }),
+      },
+    };
     p.loadScript();
     p.place();
     await p.mount();
-    assert.strictEqual(p.calls.length, 0, 'the first load takes the early read and asks nothing');
-    assert.strictEqual(p.window.__solEarly.stats.adopted, 1, 'adopted once');
-    assert.deepStrictEqual(Object.keys(p.window.__solEarly.reads), [], 'the early read is taken');
+    assert.strictEqual(p.calls.length, 0, 'the first load takes all three early reads and asks nothing');
+    assert.strictEqual(p.window.__solEarly.stats.adopted, 3, 'adopted all three');
+    assert.deepStrictEqual(Object.keys(p.window.__solEarly.reads), [], 'all early reads are taken');
     assert.deepStrictEqual(p.ready, ['error'], 'it drew the unreadable device as the error state');
     p.root().querySelector('.sources-retry').click();
     assert.strictEqual(p.reads().length, 1, '"try again" asks the journal');
@@ -492,6 +525,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
     await p.mount();
     assert.strictEqual(p.reads().length, 2, 'the next arrival reads its own');
     p.reads()[1].answer(503, {});
+    p.answerSyncs();
     await settle();
     p.root().querySelector('.sources-retry').click();
     assert.strictEqual(p.reads().length, 3, 'and its "try again" reads again');
@@ -503,6 +537,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
   await test('"try again" that fails again keeps focus on "try again"; one that draws devices puts it on the view', async () => {
     const p = await boot(env);
     p.reads()[0].answer(503, {});
+    p.answerSyncs();
     await settle();
     let retry = p.root().querySelector('.sources-retry');
     retry.focus();
@@ -523,6 +558,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
   await test('a layout redraw with a link focused keeps focus on that link', async () => {
     const p = await boot(env);
     p.reads()[0].answer(200, { clients: [device('studio', 5)] });
+    p.answerSyncs();
     await settle();
     p.root().querySelector('.sources-manage').focus();
     p.media.matches = true;
@@ -536,6 +572,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
   await test('a layout redraw with the import link focused keeps focus on that link', async () => {
     const p = await boot(env);
     p.reads()[0].answer(200, { clients: [] });
+    p.answerSyncs();
     await settle();
     p.root().querySelector('.sources-import').focus();
     p.media.matches = true;
@@ -548,6 +585,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
   await test('a layout redraw leaves focus outside the view where it is', async () => {
     const p = await boot(env);
     p.reads()[0].answer(200, { clients: [] });
+    p.answerSyncs();
     await settle();
     const outside = p.doc.createElement('button');
     p.doc.body.appendChild(outside);

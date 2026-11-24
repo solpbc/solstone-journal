@@ -1,0 +1,16 @@
+{
+  "description": "Status text shown beside a sync service name when its local status in the journal could not be loaded.",
+  "context": "Journal window, sources view. Calm unavailable note beside Plaud or Granola when reading local sync status failed, linking to sync settings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "65bf20379cc583d2976139e3c8cc1ca13f1a876ea1cc6f2b645002807beda1fc",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

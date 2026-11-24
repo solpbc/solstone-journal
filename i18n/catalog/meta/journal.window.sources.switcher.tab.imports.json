@@ -1,0 +1,16 @@
+{
+  "description": "Switcher tab label linking to the imports view.",
+  "context": "Journal window, sources and import views. Tab label inside the framed switcher header linking to /app/import/.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c7c373c73fdb79e2f1c885d0e177187d25aae9c08da421e91d9a4b35e0f3cfdf",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

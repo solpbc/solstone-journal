@@ -421,11 +421,11 @@ test('wide layout keeps client order and cards have no table', () => {
 
 test('empty, unreadable, and failed reads stay distinct', () => {
   const empty = render({ status: 200, body: { clients: [] } });
-  assert.strictEqual(empty.textContent.includes('no devices are paired yet.'), true);
-  const pair = empty.querySelector('a');
-  assert.strictEqual(pair.textContent, 'pair a device');
+  assert.strictEqual(empty.textContent.includes(globalThis.JournalI18n.render('journal.window.sources.copy.empty.no.devices.are.paired.yet')), true);
+  const pair = empty.querySelector('.sources-pair');
+  assert.strictEqual(pair.textContent, globalThis.JournalI18n.render('journal.window.sources.copy.pair.pair.a.device'));
   assert.strictEqual(pair.getAttribute('href'), '/app/network/');
-  assert.strictEqual(empty.textContent.includes("this didn't load."), false);
+  assert.strictEqual(empty.textContent.includes(globalThis.JournalI18n.render('journal.window.sources.copy.error.this.didn.t.load')), false);
 
   [
     { status: 503, body: { reason_code: 'authorization_ledger_unreadable' } },
@@ -435,58 +435,294 @@ test('empty, unreadable, and failed reads stay distinct', () => {
     { status: 200, body: { clients: [client('studio', { capture_state: 'unknown', unassessed_reason: 'activity_malformed', last_accepted_ingest_at: null })] } },
   ].forEach((payload) => {
     const root = render(payload);
-    assert.strictEqual(root.textContent.includes("this didn't load."), true, JSON.stringify(payload.body));
-    assert.strictEqual(root.textContent.includes('no devices are paired yet.'), false);
-    assert.strictEqual(count(root, 'nothing added yet'), 0);
+    assert.strictEqual(root.textContent.includes(globalThis.JournalI18n.render('journal.window.sources.copy.error.this.didn.t.load')), true, JSON.stringify(payload.body));
+    assert.strictEqual(root.textContent.includes(globalThis.JournalI18n.render('journal.window.sources.copy.empty.no.devices.are.paired.yet')), false);
+    assert.strictEqual(count(root, globalThis.JournalI18n.render('journal.window.sources.copy.nothing.nothing.added.yet')), 0);
   });
 });
 
 test('try again replaces the error with the device it gets back', async () => {
   const { doc, root } = documentFor();
   const calls = [];
-  let attempt = 0;
+  let clientAttempts = 0;
   const opts = {
     now: NOW,
     timeZone: ZONE,
     layout: 'wide',
     fetch: async (url, init) => {
       calls.push({ url, method: init && init.method });
-      attempt += 1;
-      if (attempt === 1) return { status: 503, json: async () => ({ reason_code: 'authorization_ledger_unreadable' }) };
+      if (url === '/app/settings/api/plaud' || url === '/app/settings/api/granola') {
+        return { status: 200, json: async () => ({ connected: false, syncing: false }) };
+      }
+      clientAttempts += 1;
+      if (clientAttempts === 1) return { status: 503, json: async () => ({ reason_code: 'authorization_ledger_unreadable' }) };
       return { status: 200, json: async () => ok([client('studio', { last_accepted_ingest_at: iso(NOW - 5 * MIN) })]).body };
     },
   };
   await sources.load(doc, root, opts);
-  assert.strictEqual(root.textContent.includes("this didn't load."), true);
+  assert.strictEqual(root.textContent.includes(globalThis.JournalI18n.render('journal.window.sources.copy.error.this.didn.t.load')), true);
   await root.querySelector('[data-retry]').click();
-  assert.strictEqual(root.textContent.includes("this didn't load."), false);
+  assert.strictEqual(root.textContent.includes(globalThis.JournalI18n.render('journal.window.sources.copy.error.this.didn.t.load')), false);
   assert.strictEqual(deviceBox(root, 'studio').querySelector('.sources-device-time').textContent, '5 min ago');
-  assert.deepStrictEqual(calls.map((call) => call.url), ['/app/network/api/clients', '/app/network/api/clients']);
-  assert.deepStrictEqual(calls.map((call) => call.method), ['GET', 'GET']);
+  assert.deepStrictEqual(calls.map((call) => call.url), [
+    '/app/network/api/clients',
+    '/app/settings/api/plaud',
+    '/app/settings/api/granola',
+    '/app/network/api/clients',
+  ]);
+  assert.ok(calls.every((call) => call.method === 'GET'));
 });
 
 test('a paired device links to network and has no pairing controls', () => {
   const root = render(ok([client('studio', { last_accepted_ingest_at: iso(NOW - 5 * MIN) })]));
-  const link = root.querySelector('a');
-  assert.strictEqual(link.textContent, 'manage devices');
+  const link = root.querySelector('.sources-manage');
+  assert.strictEqual(link.textContent, globalThis.JournalI18n.render('journal.window.sources.copy.manage.manage.devices'));
   assert.strictEqual(link.getAttribute('href'), '/app/network/');
   assert.deepStrictEqual(controls(root), []);
-  ['rename', 'forget', 'unpair', 'pair a device'].forEach((word) => {
+  ['rename', 'forget', 'unpair', globalThis.JournalI18n.render('journal.window.sources.copy.pair.pair.a.device')].forEach((word) => {
     assert.strictEqual(root.textContent.includes(word), false, word);
   });
 });
 
-test('both the empty view and a paired device link to import', () => {
-  const label = globalThis.JournalI18n.render('journal.window.sources.copy.import.import.files.from.other.apps');
-  [ok([]), ok([client('studio', { last_accepted_ingest_at: iso(NOW - 5 * MIN) })])].forEach((payload) => {
+test('framed switcher links sources and imports across empty, paired, and error states', () => {
+  const sourcesLabel = globalThis.JournalI18n.render('journal.window.sources.copy.title.sources');
+  const importsLabel = globalThis.JournalI18n.render('journal.window.sources.switcher.tab.imports');
+  const lede = globalThis.JournalI18n.render('journal.window.sources.switcher.lede');
+  [ok([]), ok([client('studio', { last_accepted_ingest_at: iso(NOW - 5 * MIN) })]), { status: 503, body: {} }].forEach((payload) => {
     ['wide', 'cards'].forEach((layout) => {
-      const links = render(payload, layout).querySelectorAll('.sources-import');
-      assert.strictEqual(links.length, 1, layout);
-      assert.strictEqual(links[0].tagName, 'A');
-      assert.strictEqual(links[0].getAttribute('href'), '/app/import/');
-      assert.strictEqual(links[0].textContent, label);
+      const root = render(payload, layout);
+      const current = root.querySelectorAll('.sources-current');
+      const imports = root.querySelectorAll('.sources-import');
+      assert.strictEqual(current.length, 1, layout);
+      assert.strictEqual(current[0].tagName, 'A');
+      assert.strictEqual(current[0].getAttribute('href'), '/app/sources/');
+      assert.strictEqual(current[0].getAttribute('aria-current'), 'page');
+      assert.strictEqual(current[0].textContent, sourcesLabel);
+      assert.strictEqual(imports.length, 1, layout);
+      assert.strictEqual(imports[0].tagName, 'A');
+      assert.strictEqual(imports[0].getAttribute('href'), '/app/import/');
+      assert.strictEqual(imports[0].getAttribute('aria-current'), null);
+      assert.strictEqual(imports[0].textContent, importsLabel);
+      assert.strictEqual(root.querySelector('.intake-switcher-lede').textContent, lede);
     });
   });
+  assert.strictEqual(render(ok([])).querySelector('.sources-manage'), null);
+  assert.strictEqual(render({ status: 503, body: {} }).querySelector('.sources-manage'), null);
+  assert.notStrictEqual(render(ok([client('studio', {})])).querySelector('.sources-manage'), null);
+});
+
+test('syncs renders unconfigured hint alongside paired, empty, and failed device reads', () => {
+  const heading = globalThis.JournalI18n.render('journal.window.sources.syncs.heading');
+  const manage = globalThis.JournalI18n.render('journal.window.sources.syncs.manage');
+  const emptyHint = globalThis.JournalI18n.render('journal.window.sources.syncs.empty.hint');
+  [
+    ok([client('studio', { last_accepted_ingest_at: iso(NOW - 5 * MIN) })]),
+    ok([]),
+    { status: 503, body: {} },
+  ].forEach((clientsPayload) => {
+    const root = render({
+      clients: clientsPayload,
+      plaud: { status: 200, body: { connected: false, syncing: false } },
+      granola: { status: 200, body: { connected: false, syncing: false } },
+    });
+    const syncs = root.querySelector('.sources-syncs');
+    assert.notStrictEqual(syncs, null);
+    assert.strictEqual(syncs.querySelector('.sources-syncs-title').textContent, heading);
+    const manageLink = syncs.querySelector('.sources-syncs-manage');
+    assert.strictEqual(manageLink.getAttribute('href'), '/app/settings/#sync');
+    assert.strictEqual(manageLink.textContent, manage);
+    assert.strictEqual(syncs.querySelector('.sources-syncs-empty').textContent, emptyHint);
+    assert.strictEqual(syncs.querySelectorAll('.sources-sync-row').length, 0);
+  });
+});
+
+test('connected Plaud and Granola rows cover last_added, nothing added yet, syncing, paused, and last_sync', () => {
+  const root = render({
+    clients: ok([client('studio', { last_accepted_ingest_at: iso(NOW - 5 * MIN) })]),
+    plaud: {
+      status: 200,
+      body: {
+        connected: true,
+        enabled: false,
+        syncing: false,
+        last_added: iso(NOW - 14 * MIN),
+        last_sync: iso(NOW - 2 * MIN),
+        attention: null,
+        attention_code: null,
+      },
+    },
+    granola: {
+      status: 200,
+      body: {
+        connected: true,
+        syncing: true,
+        last_added: null,
+        last_sync: iso(NOW - 8 * MIN),
+        attention: null,
+        attention_code: null,
+      },
+    },
+  });
+  assert.strictEqual(root.querySelector('.sources-syncs-empty'), null);
+  const rows = root.querySelectorAll('.sources-sync-row');
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(rows[0].getAttribute('data-sync'), 'plaud');
+  assert.strictEqual(
+    rows[0].querySelector('.sources-sync-status').textContent,
+    globalThis.JournalI18n.render('journal.window.sources.syncs.last.added', [['when', '14 min ago']]),
+  );
+  assert.strictEqual(
+    rows[0].querySelector('.sources-sync-secondary').textContent,
+    globalThis.JournalI18n.render('journal.window.sources.syncs.state.paused'),
+  );
+  assert.strictEqual(rows[1].getAttribute('data-sync'), 'granola');
+  assert.strictEqual(
+    rows[1].querySelector('.sources-sync-status').textContent,
+    globalThis.JournalI18n.render('journal.window.sources.copy.nothing.nothing.added.yet'),
+  );
+  assert.strictEqual(
+    rows[1].querySelector('.sources-sync-secondary').textContent,
+    globalThis.JournalI18n.render('journal.window.sources.syncs.state.syncing'),
+  );
+
+  // When syncing is false and enabled is true: last_sync renders last checked; null omits secondary.
+  const checkedAndIdle = render({
+    clients: ok([]),
+    plaud: {
+      status: 200,
+      body: { connected: true, enabled: true, syncing: false, last_added: iso(NOW - 30 * MIN), last_sync: iso(NOW - 3 * MIN) },
+    },
+    granola: {
+      status: 200,
+      body: { connected: true, syncing: false, last_added: null, last_sync: null },
+    },
+  });
+  const rows2 = checkedAndIdle.querySelectorAll('.sources-sync-row');
+  assert.strictEqual(
+    rows2[0].querySelector('.sources-sync-secondary').textContent,
+    globalThis.JournalI18n.render('journal.window.sources.syncs.last.checked', [['when', '3 min ago']]),
+  );
+  assert.strictEqual(rows2[1].querySelector('.sources-sync-secondary'), null);
+});
+
+test('sync attention maps Granola attention_code via catalog, falls back on unknown, and renders Plaud server attention directly', () => {
+  const mapped = render({
+    clients: ok([]),
+    plaud: {
+      status: 200,
+      body: {
+        connected: true,
+        enabled: true,
+        syncing: false,
+        last_added: null,
+        last_sync: null,
+        attention: 'server localized plaud message',
+        attention_code: 'auth',
+      },
+    },
+    granola: {
+      status: 200,
+      body: {
+        connected: true,
+        syncing: false,
+        last_added: null,
+        last_sync: null,
+        attention: 'raw persisted english error',
+        attention_code: 'invalid_key',
+      },
+    },
+  });
+  const rows = mapped.querySelectorAll('.sources-sync-row');
+  const plaudAtt = rows[0].querySelector('.sources-sync-attention');
+  assert.strictEqual(plaudAtt.getAttribute('href'), '/app/settings/#sync');
+  assert.strictEqual(plaudAtt.textContent, 'server localized plaud message');
+  const granolaAtt = rows[1].querySelector('.sources-sync-attention');
+  assert.strictEqual(granolaAtt.getAttribute('href'), '/app/settings/#sync');
+  assert.strictEqual(granolaAtt.textContent, globalThis.JournalI18n.render('journal.window.settings.granola.response.invalidkey'));
+
+  const fallback = render({
+    clients: ok([]),
+    plaud: { status: 200, body: { connected: false, syncing: false } },
+    granola: {
+      status: 200,
+      body: {
+        connected: true,
+        syncing: false,
+        last_added: null,
+        last_sync: null,
+        attention: 'legacy granola fault text',
+        attention_code: 'unknown',
+      },
+    },
+  });
+  const oneRow = fallback.querySelectorAll('.sources-sync-row');
+  assert.strictEqual(oneRow.length, 1);
+  assert.strictEqual(oneRow[0].querySelector('.sources-sync-attention').textContent, 'legacy granola fault text');
+});
+
+test('sync endpoint failure isolates per tool, never claims unconfigured, and retry refetches clients plus failed syncs only', async () => {
+  const { doc, root } = documentFor();
+  const calls = [];
+  let clientAttempts = 0;
+  let granolaAttempts = 0;
+  const opts = {
+    now: NOW,
+    timeZone: ZONE,
+    layout: 'wide',
+    fetch: async (url, init) => {
+      calls.push({ url, method: init && init.method });
+      if (url === '/app/network/api/clients') {
+        clientAttempts += 1;
+        if (clientAttempts === 1) return { status: 503, json: async () => ({}) };
+        return { status: 200, json: async () => ({ clients: [client('studio', { last_accepted_ingest_at: iso(NOW - 4 * MIN) })] }) };
+      }
+      if (url === '/app/settings/api/plaud') {
+        return {
+          status: 200,
+          json: async () => ({ connected: false, enabled: false, syncing: false }),
+        };
+      }
+      granolaAttempts += 1;
+      if (granolaAttempts === 1) return { status: 400, json: async () => ({ error: 'storage', code: 'storage' }) };
+      return {
+        status: 200,
+        json: async () => ({ connected: true, syncing: false, last_added: iso(NOW - 10 * MIN), last_sync: iso(NOW - 1 * MIN), attention: null, attention_code: null }),
+      };
+    },
+  };
+  await sources.load(doc, root, opts);
+  // Devices failed, Plaud is unconfigured, Granola returned HTTP 400:
+  // must NOT show the unconfigured hint, and must show Granola's unavailable link.
+  assert.notStrictEqual(root.querySelector('[data-retry]'), null);
+  assert.strictEqual(root.querySelector('.sources-syncs-empty'), null);
+  const unavailableRows = root.querySelectorAll('.sources-sync-unavailable');
+  assert.strictEqual(unavailableRows.length, 1);
+  assert.strictEqual(unavailableRows[0].getAttribute('data-sync'), 'granola');
+  const unavailableLink = unavailableRows[0].querySelector('.sources-sync-link');
+  assert.strictEqual(unavailableLink.getAttribute('href'), '/app/settings/#sync');
+  assert.strictEqual(
+    unavailableLink.querySelector('.sources-sync-status').textContent,
+    globalThis.JournalI18n.render('journal.window.sources.syncs.unavailable'),
+  );
+
+  // Clicking retry refetches clients + failed Granola, skipping healthy Plaud.
+  await root.querySelector('[data-retry]').click();
+  assert.strictEqual(root.querySelector('[data-retry]'), null);
+  assert.strictEqual(deviceBox(root, 'studio').querySelector('.sources-device-time').textContent, '4 min ago');
+  assert.strictEqual(root.querySelectorAll('.sources-sync-unavailable').length, 0);
+  const connectedRow = root.querySelector('.sources-sync-row');
+  assert.strictEqual(connectedRow.getAttribute('data-sync'), 'granola');
+  assert.strictEqual(
+    connectedRow.querySelector('.sources-sync-status').textContent,
+    globalThis.JournalI18n.render('journal.window.sources.syncs.last.added', [['when', '10 min ago']]),
+  );
+  assert.deepStrictEqual(calls.map((c) => c.url), [
+    '/app/network/api/clients',
+    '/app/settings/api/plaud',
+    '/app/settings/api/granola',
+    '/app/network/api/clients',
+    '/app/settings/api/granola',
+  ]);
 });
 
 (async () => {
