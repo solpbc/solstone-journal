@@ -882,9 +882,9 @@ journal.window.settings.button.label.done = listo
 
 journal.window.settings.button.label.emoji = emoji
 
-journal.window.settings.button.label.erase.face.data = borrar datos del rostro…
+journal.window.settings.button.label.erase.face.data = borrar datos faciales…
 
-journal.window.settings.button.label.erase.face.data.variant2 = borrar datos del rostro
+journal.window.settings.button.label.erase.face.data.variant2 = borrar datos faciales
 
 journal.window.settings.button.label.facets = facetas
 
@@ -4026,7 +4026,7 @@ journal.window.settings.visible.text.this.runs.after.audio.arrives.in = esto cor
 
 journal.window.settings.visible.text.this.setting.could.not.be.read = no se pudo leer esta configuración. vuelve a intentarlo en un momento.
 
-journal.window.settings.visible.text.to.erase.the.face.data.your = para borrar los datos de caras que encontró tu diario, desactiva esto primero.
+journal.window.settings.visible.text.to.erase.the.face.data.your = para borrar los datos faciales que encontró tu diario, desactiva esto primero.
 
 journal.window.settings.visible.text.try.again = reintentar
 
@@ -4046,7 +4046,7 @@ journal.window.settings.visible.text.what.happens.to.the.audio = qué pasa con e
 
 journal.window.settings.visible.text.what.the.solstone.app.reads.from = qué lee la app de solstone de tu pantalla, qué tan de cerca y qué llega a tu diario.
 
-journal.window.settings.visible.text.when.no.speech.is.found.in = cuando no se encuentra habla en un fragmento de audio, esta configuración decide si se conserva o si se lista para quitar después del procesamiento, sea lo que hayas elegido para el contenido multimedia original, incluidos los reemplazos por flujo. no se elimina nada hasta que tú lo digas.
+journal.window.settings.visible.text.when.no.speech.is.found.in = cuando no se encuentra habla en un fragmento de audio, esta configuración decide si se conserva o si se lista para quitar después del procesamiento, sea lo que hayas elegido para el contenido multimedia original, incluidas las anulaciones por flujo. no se elimina nada hasta que tú lo digas.
 
 journal.window.settings.visible.text.whether.other.accounts.and.programs.on = si otras cuentas y otros programas de esta computadora pueden abrir tu diario sin un enlace de tu parte.
 
@@ -4074,7 +4074,7 @@ journal.window.settings.visible.text.your.meetings.stay.in.your.journal = tus re
 
 journal.window.settings.visible.text.your.past.meeting.recordings.are.read = tus grabaciones de reuniones pasadas se leen poco a poco, en segundo plano, mientras todavía están en tu diario.
 
-journal.window.settings.visible.text.your.people.their.names.and.your = tus personas, sus nombres y tus grabaciones se quedan. una copia de seguridad hecha antes de ahora todavía puede guardar datos de caras.
+journal.window.settings.visible.text.your.people.their.names.and.your = tus personas, sus nombres y tus grabaciones se quedan. una copia de seguridad hecha antes de ahora todavía puede guardar datos faciales.
 
 journal.window.settings.vision.category.label.browsing = navegación
 
