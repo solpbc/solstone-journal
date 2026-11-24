@@ -55,6 +55,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on windows, a single slow status check during setup no longer leaves the journal window saying "the journal isn't answering". the window checks once more first.
 - importing an audio file the journal can't read with `solstone journal importer` now prints one plain line, without the media library's extra log lines or an internal error dump.
 - `solstone call` before first-run setup is finished now says your journal isn't set up yet, instead of saying the journal returned an unreadable error.
+- a transcript with one damaged line now shows the rest of its lines instead of nothing, and the journal no longer drops an entry it was adding to a day when two of its parts write at once.
 
 ### Removed
 
